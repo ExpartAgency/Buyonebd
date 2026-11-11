@@ -1,0 +1,6 @@
+{
+  "name": "BuyOne BD - E-Commerce & AI Voice Agent",
+  "description": "Premier Bangladeshi E-Commerce platform with 1-click checkout, bKash/Nagad/Rocket/COD gateways, real-time courier tracking, automated AI voice calls, and WhatsApp AI bot.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
