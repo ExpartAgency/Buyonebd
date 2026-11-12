@@ -117,12 +117,94 @@ export const BD_DISTRICTS: DistrictInfo[] = [
 ];
 
 export const INITIAL_CATEGORIES: Category[] = [
-  { id: 'smart-gadgets', nameBn: 'স্মার্ট গ্যাজেট', nameEn: 'Smart Gadgets', slug: 'smart-gadgets', icon: 'Watch', isActive: true, order: 1 },
-  { id: 'fashion', nameBn: 'ফ্যাশন ও লাইফস্টাইল', nameEn: 'Fashion & Lifestyle', slug: 'fashion', icon: 'Shirt', isActive: true, order: 2 },
-  { id: 'organic-food', nameBn: 'অর্গানিক ফুড ও মধু', nameEn: 'Organic Foods & Honey', slug: 'organic-food', icon: 'Apple', isActive: true, order: 3 },
-  { id: 'home-kitchen', nameBn: 'হোম ও কিচেন', nameEn: 'Home & Kitchen', slug: 'home-kitchen', icon: 'Home', isActive: true, order: 4 },
-  { id: 'islamic-lifestyle', nameBn: 'ইসলামিক ও আতর', nameEn: 'Islamic & Attar', slug: 'islamic-lifestyle', icon: 'Moon', isActive: true, order: 5 },
-  { id: 'beauty-care', nameBn: 'বিউটি ও পার্সোনাল কেয়ার', nameEn: 'Beauty & Personal Care', slug: 'beauty-care', icon: 'Sparkles', isActive: true, order: 6 }
+  {
+    id: 'smart-gadgets',
+    nameBn: 'স্মার্ট গ্যাজেট',
+    nameEn: 'Smart Gadgets',
+    slug: 'smart-gadgets',
+    icon: 'Watch',
+    isActive: true,
+    order: 1,
+    subcategories: [
+      { nameBn: 'স্মার্ট ওয়াচ', nameEn: 'Smart Watches', slug: 'smart-gadgets' },
+      { nameBn: 'ব্লুটুথ ইয়ারবাডস', nameEn: 'TWS Earbuds', slug: 'smart-gadgets' },
+      { nameBn: 'পাওয়ার ব্যাংক', nameEn: 'Power Banks', slug: 'smart-gadgets' },
+      { nameBn: 'ট্রিমার ও শেভার', nameEn: 'Trimmers & Shavers', slug: 'smart-gadgets' }
+    ]
+  },
+  {
+    id: 'fashion',
+    nameBn: 'ফ্যাশন ও লাইফস্টাইল',
+    nameEn: 'Fashion & Lifestyle',
+    slug: 'fashion',
+    icon: 'Shirt',
+    isActive: true,
+    order: 2,
+    subcategories: [
+      { nameBn: 'প্রিমিয়াম টি-শার্ট', nameEn: 'Polo & T-Shirts', slug: 'fashion' },
+      { nameBn: 'পাঞ্জাবি ও কাবলি', nameEn: 'Panjabi & Kabli', slug: 'fashion' },
+      { nameBn: 'লেদার ওয়ালেট', nameEn: 'Leather Wallets', slug: 'fashion' },
+      { nameBn: 'সানগ্লাস', nameEn: 'Sunglasses', slug: 'fashion' }
+    ]
+  },
+  {
+    id: 'organic-food',
+    nameBn: 'অর্গানিক ফুড ও মধু',
+    nameEn: 'Organic Foods & Honey',
+    slug: 'organic-food',
+    icon: 'Apple',
+    isActive: true,
+    order: 3,
+    subcategories: [
+      { nameBn: 'সুন্দরবনের খাঁটি মধু', nameEn: 'Wild Raw Honey', slug: 'organic-food' },
+      { nameBn: 'ঘানির সরিষার তেল', nameEn: 'Cold Pressed Mustard Oil', slug: 'organic-food' },
+      { nameBn: 'খাঁটি গাওয়া ঘি', nameEn: 'Pure Desi Ghee', slug: 'organic-food' },
+      { nameBn: 'ড্রাই ফ্রুটস ও বাদাম', nameEn: 'Dry Fruits & Nuts', slug: 'organic-food' }
+    ]
+  },
+  {
+    id: 'islamic-lifestyle',
+    nameBn: 'ইসলামিক ও আতর',
+    nameEn: 'Islamic & Attar',
+    slug: 'islamic-lifestyle',
+    icon: 'Moon',
+    isActive: true,
+    order: 4,
+    subcategories: [
+      { nameBn: 'জান্নাতুল ফেরদৌস আতর', nameEn: 'Premium Roll-on Attar', slug: 'islamic-lifestyle' },
+      { nameBn: 'ডিজিটাল তসবিহ', nameEn: 'Digital Tasbih Counter', slug: 'islamic-lifestyle' },
+      { nameBn: 'জায়নামাজ', nameEn: 'Luxury Prayer Mat', slug: 'islamic-lifestyle' },
+      { nameBn: 'কুরআন স্ট্যান্ড', nameEn: 'Rehal & Stands', slug: 'islamic-lifestyle' }
+    ]
+  },
+  {
+    id: 'home-kitchen',
+    nameBn: 'হোম ও কিচেন',
+    nameEn: 'Home & Kitchen',
+    slug: 'home-kitchen',
+    icon: 'Home',
+    isActive: true,
+    order: 5,
+    subcategories: [
+      { nameBn: 'পোর্টেবল ব্লেন্ডার', nameEn: 'Juicer & Blenders', slug: 'home-kitchen' },
+      { nameBn: 'কিচেন গ্যাজেটস', nameEn: 'Kitchen Accessories', slug: 'home-kitchen' },
+      { nameBn: 'স্মার্ট ক্লক ও লাইট', nameEn: 'Night Lamps & Clocks', slug: 'home-kitchen' }
+    ]
+  },
+  {
+    id: 'beauty-care',
+    nameBn: 'বিউটি ও পার্সোনাল কেয়ার',
+    nameEn: 'Beauty & Personal Care',
+    slug: 'beauty-care',
+    icon: 'Sparkles',
+    isActive: true,
+    order: 6,
+    subcategories: [
+      { nameBn: 'হেয়ার ট্রিমার ও গ্রুমিং', nameEn: 'Hair Grooming Kits', slug: 'beauty-care' },
+      { nameBn: 'অর্গানিক স্কিনকেয়ার', nameEn: 'Herbal Skincare', slug: 'beauty-care' },
+      { nameBn: 'বডি ম্যাসেজার', nameEn: 'Body Massagers', slug: 'beauty-care' }
+    ]
+  }
 ];
 
 export const INITIAL_SLIDERS: HomeSlide[] = [
@@ -663,25 +745,37 @@ export const INITIAL_SETTINGS: StoreSettings = {
     textBn: '⚡ সুপার অফার: সারাদেশে ক্যাশ অন ডেলিভারি | বিকাশ/নগদে ১০০% নিরাপদ পেমেন্ট | ২-৩ দিনে দ্রুত ডেলিভারি | হটলাইন: 01886-BUYONE',
     textEn: '⚡ Super Deal: Cash on Delivery All Over Bangladesh | bKash/Nagad Verified | 24-48h Delivery | Hotline: 01886-BUYONE'
   },
+  theme: 'gadgets',
   spinSettings: {
     enabled: true,
-    headlineBn: '🎉 লাকি স্পিন হুইল! ঘুরিয়ে জিতুন ৳১০০-৳৫০০ ক্যাশ ডিসকাউন্ট',
-    headlineEn: '🎉 Lucky Spin Wheel! Win ৳100 - ৳500 Instant Discount',
+    headlineBn: '🎉 লাকি স্পিন হুইল! ঘুরিয়ে জিতুন আকর্ষণীয় উপহার',
+    headlineEn: '🎉 Lucky Spin Wheel! Spin & Win Instant Rewards',
+    spinsPerDay: 1,
     rewards: [
-      { id: 'spin-1', labelBn: '৳১৫০ ক্যাশ ছাড়', labelEn: '৳150 OFF', code: 'SPIN150', discountType: 'fixed', value: 150, color: '#f43f5e', isTryAgain: false },
-      { id: 'spin-2', labelBn: 'ফ্রি হোম ডেলিভারি', labelEn: 'Free Delivery', code: 'FREESHIP', discountType: 'free_shipping', value: 0, color: '#0ea5e9', isTryAgain: false },
-      { id: 'spin-3', labelBn: 'আবার চেষ্টা করুন', labelEn: 'Try Again', code: 'TRYAGAIN', discountType: 'try_again', value: 0, color: '#475569', isTryAgain: true },
-      { id: 'spin-4', labelBn: '৳২৫০ ধামাকা ভাউচার', labelEn: '৳250 OFF', code: 'MEGA250', discountType: 'fixed', value: 250, color: '#10b981', isTryAgain: false },
-      { id: 'spin-5', labelBn: '১৫% মেগা ডিসকাউন্ট', labelEn: '15% OFF', code: 'SUPER15', discountType: 'percent', value: 15, color: '#8b5cf6', isTryAgain: false },
-      { id: 'spin-6', labelBn: '৳১০০ বিশেষ ছাড়', labelEn: '৳100 OFF', code: 'SPIN100', discountType: 'fixed', value: 100, color: '#f59e0b', isTryAgain: false },
-      { id: 'spin-7', labelBn: 'আবার চেষ্টা করুন', labelEn: 'Try Again', code: 'TRYAGAIN', discountType: 'try_again', value: 0, color: '#334155', isTryAgain: true },
-      { id: 'spin-8', labelBn: '৳৫০০ ক্যাশব্যাক', labelEn: '৳500 OFF', code: 'LUCKY500', discountType: 'fixed', value: 500, color: '#ec4899', isTryAgain: false }
+      { id: 'spin-1', labelBn: '৳৫০০ ক্যাশ', labelEn: '৳500 OFF', code: 'TEMU500', discountType: 'fixed', value: 500, color: '#f43f5e', isTryAgain: false },
+      { id: 'spin-2', labelBn: 'ফ্রি ডেলিভারি', labelEn: 'Free Ship', code: 'FREESHIP', discountType: 'free_shipping', value: 70, color: '#0284c7', isTryAgain: false },
+      { id: 'spin-3', labelBn: '৳২৫০ ছাড়', labelEn: '৳250 OFF', code: 'MEGA250', discountType: 'fixed', value: 250, color: '#10b981', isTryAgain: false },
+      { id: 'spin-4', labelBn: '৫০% মেগা', labelEn: '50% OFF', code: 'HALFPRICE', discountType: 'percent', value: 50, color: '#8b5cf6', isTryAgain: false },
+      { id: 'spin-5', labelBn: '৳১৫০ ক্যাশ', labelEn: '৳150 OFF', code: 'CASH150', discountType: 'fixed', value: 150, color: '#f59e0b', isTryAgain: false },
+      { id: 'spin-6', labelBn: '৳১০০ ওয়ালেট', labelEn: '৳100 OFF', code: 'GIFT100', discountType: 'fixed', value: 100, color: '#059669', isTryAgain: false },
+      { id: 'spin-7', labelBn: '২০% ভাউচার', labelEn: '20% OFF', code: 'DEAL20', discountType: 'percent', value: 20, color: '#d97706', isTryAgain: false },
+      { id: 'spin-8', labelBn: '৳৩০০ বোনাস', labelEn: '৳300 OFF', code: 'BONUS300', discountType: 'fixed', value: 300, color: '#ec4899', isTryAgain: false }
     ]
   },
   whatsappTemplates: {
     orderConfirmationMsg: 'আসসালামু আলাইকুম {customer_name} ভাই/আপু, BuyOne BD থেকে আপনার অর্ডার #{order_id} সফলভাবে কনফার্ম করা হয়েছে।\nমোট বিল: ৳{total_amount} (ক্যাশ অন ডেলিভারি)\nডেলিভারি ঠিকানা: {address}, {district}\nকুরিয়ার ট্র্যাকিং কোড: {tracking_code}\nযে কোনো তথ্যে যোগাযোগ করুন: 01886-BUYONE। ধন্যবাদ!',
     riderDispatchMsg: 'প্রিয় {customer_name}, আপনার পার্সেলটি (#{order_id}) স্টিডফাস্ট কুরিয়ারে বুকিং দেওয়া হয়েছে। ট্র্যাকিং কোড: {tracking_code}। ২-৩ দিনে আপনার ঠিকানায় পৌঁছাবে। ধন্যবাদ, BuyOne BD।',
     abandonedCartMsg: 'আসসালামু আলাইকুম {customer_name} ভাই! আপনি BuyOne BD তে কার্টে কিছু আকর্ষণীয় পণ্য রেখে গেছেন। অর্ডারটি এখনই সম্পন্ন করলে বিশেষ কুপন [COMEBACK10] দিয়ে পাবেন অতিরিক্ত ১০% ছাড় ও ফ্রি গিফট! লিংক: {recovery_link}'
+  },
+  marketingTemplates: {
+    orderConfirmation: 'আসসালামু আলাইকুম {customer_name}! BuyOne BD-তে আপনার অর্ডার #{order_id} সফলভাবে গ্রহণ করা হয়েছে। মোট বিল: ৳{total_amount} (COD)। ঠিকানা: {customer_address}। দ্রুততম সময়ে আপনার ঠিকানায় পৌঁছে যাবে। ধন্যবাদ!',
+    shippingDispatched: 'প্রিয় {customer_name}! আপনার অর্ডার #{order_id} কুরিয়ারে ({courier_name}) বুকিং সম্পন্ন হয়েছে। লাইভ ট্র্যাকিং কোড: {tracking_code}। পার্সেল আসার পর চেক করে মূল্য পরিশোধ করুন। ধন্যবাদ, BuyOne BD।',
+    orderHold: 'আসসালামু আলাইকুম {customer_name}! আপনার অর্ডার #{order_id}-এর জন্য ফোন নম্বর ও সঠিক ডেলিভারি ঠিকানা যাচাই প্রয়োজন। অনুগ্রহ করে আপনার সম্পূর্ণ ঠিকানা নিশ্চিত করুন। BuyOne BD হেল্পলাইন: 01886-289663।',
+    orderCancellation: 'প্রিয় {customer_name}, আপনার অনুরোধ অনুযায়ী অর্ডার #{order_id} বাতিল করা হয়েছে। ভবিষ্যতে BuyOne BD-তে আপনাকে আবার স্বাগত জানাই!',
+    cartRecovery: 'আসসালামু আলাইকুম {customer_name}! আপনি BuyOne BD-তে কার্টে পণ্য রেখে গেছেন। আজই অর্ডার নিশ্চিত করলে পাচ্ছেন বিশেষ ৳১০০ ডিসকাউন্ট! কুপন কোড: WIN100।',
+    promotionalBroadcast: '🔥 ধামাকা অফার BuyOne BD-তে! সীমিত সময়ের জন্য ৫০% পর্যন্ত মূল্যছাড় চলছে। এখনই ভিজিট করুন এবং ক্যাশ অন ডেলিভারিতে পছন্দের পণ্য কিনুন!',
+    autoTriggerOnOrder: true,
+    autoTriggerOnShipped: true
   },
   categories: INITIAL_CATEGORIES,
   sliders: INITIAL_SLIDERS,
@@ -725,6 +819,10 @@ export const INITIAL_SETTINGS: StoreSettings = {
       enabled: true,
       autoFollowupAbandoned: true,
       followupDelayMinutes: 30
+    },
+    tiktokPixel: {
+      enabled: true,
+      pixelId: 'C789TTIKTOK990'
     }
   },
   aiSettings: {
@@ -737,9 +835,15 @@ export const INITIAL_SETTINGS: StoreSettings = {
     autoRestockAlert: true,
     autoFraudDetection: true
   },
+  seoSettings: {
+    metaTitle: 'BuyOne BD - বাংলাদেশের বিশ্বস্ত অনলাইন শপিং',
+    metaDescription: 'স্মার্ট গ্যাজেট, প্রিমিয়াম আতর, অর্গানিক ফুড ও লাইফস্টাইল পণ্য সারাদেশে ক্যাশ অন ডেলিভারিতে কিনুন BuyOne BD-তে।',
+    keywords: 'BuyOne BD, smart gadgets bangladesh, organic honey, roll-on attar, cash on delivery bangladesh',
+    ogImage: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=1200'
+  },
   footerSettings: {
-    aboutTextBn: 'BuyOne BD হলো বাংলাদেশের বিশ্বস্ত ১-ক্লিক স্মার্ট ই-কমার্স প্ল্যাটফর্ম। সারাদেশে ক্যাশ অন ডেলিভারি, এআই অটোমেটেড ভয়েস কল কনফার্মেশন ও স্টিডফাস্ট কুরিয়ারের মাধ্যমে দ্রুততম সময়ে আসল পণ্য পৌঁছে দিতে আমরা প্রতিশ্রুতিবদ্ধ।',
-    aboutTextEn: 'BuyOne BD is Bangladesh\'s premier 1-click smart shopping destination with instant AI confirmation calls and nationwide Cash on Delivery.',
+    aboutTextBn: 'BuyOne BD হলো বাংলাদেশের বিশ্বস্ত অনলাইন শপিং প্ল্যাটফর্ম। সারাদেশে ক্যাশ অন ডেলিভারি, এআই অটোমেটেড ভয়েস কল কনফার্মেশন ও স্টিডফাস্ট কুরিয়ারের মাধ্যমে দ্রুততম সময়ে আসল পণ্য পৌঁছে দিতে আমরা প্রতিশ্রুতিবদ্ধ।',
+    aboutTextEn: 'BuyOne BD is Bangladesh\'s premier shopping destination with instant AI confirmation calls and nationwide Cash on Delivery.',
     hotline: '01886-BUYONE (01886-289663)',
     whatsappNumber: '8801886289663',
     email: 'buyonebd@gmail.com',

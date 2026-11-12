@@ -16,6 +16,8 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AdminLoginModal } from './components/auth/AdminLoginModal';
 import { ToastContainer } from './components/common/ToastContainer';
 import { LuckySpinModal, LuckySpinLeftLauncher } from './components/spin/LuckySpinModal';
+import { SingleProductView } from './components/home/SingleProductView';
+import { CustomerDashboardModal } from './components/customer/CustomerDashboardModal';
 import { Product } from './types';
 import { Flame, PackageSearch } from 'lucide-react';
 
@@ -29,7 +31,9 @@ function StoreMainContent() {
     lang,
     t,
     setIsAdminLoginOpen,
-    isAdminLoggedIn
+    isAdminLoggedIn,
+    selectedProductForPage,
+    setSelectedProductForPage
   } = useStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -158,6 +162,7 @@ function StoreMainContent() {
         <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
         <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
         <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
+        <CustomerDashboardModal />
         <MobileCategoryDrawer
           isOpen={isMobileCategoryDrawerOpen}
           onClose={() => setIsMobileCategoryDrawerOpen(false)}
@@ -170,10 +175,44 @@ function StoreMainContent() {
     );
   }
 
+  // View: Single Product Page View (Req 10: "click one products open single product show all not popup view")
+  if (selectedProductForPage) {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 pb-16 md:pb-0">
+        <Navbar
+          onOpenMobileCategories={() => setIsMobileCategoryDrawerOpen(true)}
+          onSelectCategory={(cat) => {
+            setSelectedProductForPage(null);
+            setSelectedCategory(cat);
+          }}
+        />
+        <main className="flex-1">
+          <SingleProductView
+            product={selectedProductForPage}
+            onBack={() => setSelectedProductForPage(null)}
+          />
+        </main>
+        <Footer />
+        <OneClickCheckoutModal />
+        <CartDrawer />
+        <AIVoiceCallModal />
+        <WhatsAppAgentModal />
+        <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
+        <CustomerDashboardModal />
+        <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
+        <ToastContainer />
+        <MobileBottomNav onOpenCategories={() => setIsMobileCategoryDrawerOpen(true)} />
+      </div>
+    );
+  }
+
   // View: Main Storefront
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 pb-16 md:pb-0">
-      <Navbar onOpenMobileCategories={() => setIsMobileCategoryDrawerOpen(true)} />
+      <Navbar
+        onOpenMobileCategories={() => setIsMobileCategoryDrawerOpen(true)}
+        onSelectCategory={(cat) => setSelectedCategory(cat)}
+      />
 
       <main className="flex-1 max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-6 sm:space-y-8 w-full">
         {/* Dynamic 5-6 Slider Hero Carousel if not searching */}
@@ -256,7 +295,10 @@ function StoreMainContent() {
                 <ProductCard
                   key={`flash-${prod.id}`}
                   product={prod}
-                  onViewDetails={(p) => setDetailProduct(p)}
+                  onViewDetails={(p) => {
+                    setSelectedProductForPage(p);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
                 />
               ))}
             </div>
@@ -324,7 +366,10 @@ function StoreMainContent() {
               <ProductCard
                 key={prod.id}
                 product={prod}
-                onViewDetails={(p) => setDetailProduct(p)}
+                onViewDetails={(p) => {
+                  setSelectedProductForPage(p);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
               />
             ))}
           </div>
@@ -359,6 +404,7 @@ function StoreMainContent() {
       <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
 
       {/* Global Modals & Drawers */}
+      <CustomerDashboardModal />
       <ProductDetailModal
         product={detailProduct}
         onClose={() => setDetailProduct(null)}

@@ -40,12 +40,6 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
     }, 400);
   };
 
-  const handleFillDemo = () => {
-    setEmail('hossain@gmail.com');
-    setPassword('Hossain777@#$');
-    setError(null);
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
       <div 
@@ -81,16 +75,6 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
               )}
             </p>
           </div>
-
-          {/* Quick Demo Credential Autofill */}
-          <button
-            type="button"
-            onClick={handleFillDemo}
-            className="w-full mb-5 py-2 px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 text-xs font-semibold flex items-center justify-center gap-2 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
-          >
-            <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400 animate-pulse" />
-            <span>{t('১-ক্লিকে হোসাইন আইডি ও পাসওয়ার্ড বসান', '1-Click Autofill Hossain Credentials')}</span>
-          </button>
 
           {/* Error Banner */}
           {error && (

@@ -14,7 +14,9 @@ import {
   ProductReview,
   OrderFraudCheck,
   CourierProvider,
-  PriceAlert
+  PriceAlert,
+  CustomerProfile,
+  DailyCheckInState
 } from '../types';
 import {
   INITIAL_PRODUCTS,
@@ -89,10 +91,20 @@ interface StoreContextType {
   updateOrderDetails: (orderId: string, updates: Partial<Order>) => void;
   deleteOrder: (orderId: string) => void;
 
-  // Customer Wallet
+  // Customer Wallet & Profile
   customerWalletBalance: number;
   addToWallet: (amount: number, reason?: string) => void;
   deductWallet: (amount: number) => boolean;
+  customerProfile: CustomerProfile;
+  updateCustomerProfile: (updates: Partial<CustomerProfile>) => void;
+  claimDailyCheckIn: () => { success: boolean; amount: number; message: string };
+  redeemLoyaltyPoints: (points: number) => { success: boolean; discountAmount: number };
+  isCustomerDashboardOpen: boolean;
+  setIsCustomerDashboardOpen: (open: boolean) => void;
+
+  // Single Product Page View
+  selectedProductForPage: Product | null;
+  setSelectedProductForPage: (product: Product | null) => void;
 
   // Price Alerts
   priceAlerts: PriceAlert[];
@@ -591,7 +603,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return { date: today, count: 0, lastSpinTime: 0 };
   });
 
-  const remainingSpinsToday = Math.max(0, 1 - spinStats.count);
+  const spinsAllowed = settings.spinSettings?.spinsPerDay || 1;
+  const remainingSpinsToday = Math.max(0, spinsAllowed - spinStats.count);
   const nowMs = Date.now();
   const cooldownDiff = (spinStats.lastSpinTime + 10 * 60 * 1000) - nowMs;
   const spinCooldownMinutes = cooldownDiff > 0 ? Math.ceil(cooldownDiff / 60000) : 0;
@@ -670,10 +683,121 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
 
+  // Customer Profile & Rewards State
+  const [customerProfile, setCustomerProfile] = useState<CustomerProfile>(() => {
+    const defaultProfile: CustomerProfile = {
+      name: 'হোসেন আহমেদ',
+      phone: '01886289663',
+      email: 'customer@buyonebd.com',
+      address: 'বাড়ি ১২, রোড ৫, ধানমন্ডি',
+      district: 'Dhaka',
+      loyaltyPoints: 120,
+      walletBalance: 100,
+      checkIn: {
+        lastCheckInDate: '',
+        streak: 0,
+        claimedToday: false,
+        totalEarned: 0
+      }
+    };
+    try {
+      const saved = localStorage.getItem('buyonebd_customer_profile_v3');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return defaultProfile;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('buyonebd_customer_profile_v3', JSON.stringify(customerProfile));
+  }, [customerProfile]);
+
+  const updateCustomerProfile = (updates: Partial<CustomerProfile>) => {
+    setCustomerProfile((prev) => ({ ...prev, ...updates }));
+    addToast('success', t('প্রোফাইল আপডেট সম্পন্ন', 'Profile Updated'), t('আপনার তথ্য সফলভাবে সংরক্ষিত হয়েছে।', 'Changes saved successfully.'));
+  };
+
+  const claimDailyCheckIn = () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (customerProfile.checkIn.lastCheckInDate === todayStr) {
+      return {
+        success: false,
+        amount: 0,
+        message: lang === 'bn' ? 'আজকের ডেইলি চেক-ইন বোনাস ইতিমধ্যে গ্রহণ করেছেন!' : 'Already claimed today\'s check-in bonus!'
+      };
+    }
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    let newStreak = 1;
+    if (customerProfile.checkIn.lastCheckInDate === yesterdayStr) {
+      newStreak = (customerProfile.checkIn.streak % 7) + 1;
+    }
+
+    const bonusScale = [10, 15, 20, 25, 30, 40, 70];
+    const bonusAmount = bonusScale[newStreak - 1] || 15;
+
+    const newCheckIn = {
+      lastCheckInDate: todayStr,
+      streak: newStreak,
+      claimedToday: true,
+      totalEarned: (customerProfile.checkIn?.totalEarned || 0) + bonusAmount
+    };
+
+    const nextBal = customerWalletBalance + bonusAmount;
+    setCustomerWalletBalance(nextBal);
+    localStorage.setItem('buyonebd_customer_wallet_v3', nextBal.toString());
+
+    setCustomerProfile((cp) => ({
+      ...cp,
+      walletBalance: nextBal,
+      checkIn: newCheckIn
+    }));
+
+    addToast(
+      'success',
+      lang === 'bn' ? `দিন ${newStreak}: ৳${bonusAmount} বোনাস গৃহীত!` : `Day ${newStreak}: ৳${bonusAmount} Bonus Claimed!`,
+      lang === 'bn' ? `টানা ${newStreak} দিন চেক-ইন সম্পন্ন! বর্তমান ব্যালেন্স: ৳${nextBal}` : `${newStreak} day streak! Current balance: ৳${nextBal}`
+    );
+
+    return {
+      success: true,
+      amount: bonusAmount,
+      message: lang === 'bn' ? `অভিনন্দন! ৳${bonusAmount} আপনার অ্যাকাউন্টে যোগ হয়েছে।` : `Congratulations! ৳${bonusAmount} added to your account.`
+    };
+  };
+
+  const redeemLoyaltyPoints = (points: number) => {
+    if (customerProfile.loyaltyPoints < points) {
+      return { success: false, discountAmount: 0 };
+    }
+    const discountAmount = Math.floor(points); // 1 point = ৳1
+    const nextPoints = customerProfile.loyaltyPoints - points;
+    const nextBal = customerWalletBalance + discountAmount;
+    setCustomerWalletBalance(nextBal);
+    localStorage.setItem('buyonebd_customer_wallet_v3', nextBal.toString());
+    setCustomerProfile((cp) => ({
+      ...cp,
+      loyaltyPoints: nextPoints,
+      walletBalance: nextBal
+    }));
+    addToast(
+      'success',
+      lang === 'bn' ? `${points} পয়েন্ট রিডিম সম্পন্ন!` : `${points} Points Redeemed!`,
+      lang === 'bn' ? `৳${discountAmount} আপনার ব্যালেন্সে যোগ করা হয়েছে।` : `৳${discountAmount} converted to wallet balance.`
+    );
+    return { success: true, discountAmount };
+  };
+
+  const [isCustomerDashboardOpen, setIsCustomerDashboardOpen] = useState(false);
+  const [selectedProductForPage, setSelectedProductForPage] = useState<Product | null>(null);
+
   const addToWallet = (amount: number, reason?: string) => {
     setCustomerWalletBalance((prev) => {
       const next = prev + amount;
       localStorage.setItem('buyonebd_customer_wallet_v3', next.toString());
+      setCustomerProfile((cp) => ({ ...cp, walletBalance: next }));
       addToast(
         'success',
         lang === 'bn' ? `৳${amount} গিফট ব্যালেন্স যোগ হয়েছে!` : `৳${amount} Added to Gift Wallet!`,
@@ -688,6 +812,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCustomerWalletBalance((prev) => {
       const next = Math.max(0, prev - amount);
       localStorage.setItem('buyonebd_customer_wallet_v3', next.toString());
+      setCustomerProfile((cp) => ({ ...cp, walletBalance: next }));
       return next;
     });
     return true;
@@ -1361,6 +1486,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setActiveView,
         trackingSearchQuery,
         setTrackingSearchQuery,
+        customerProfile,
+        updateCustomerProfile,
+        claimDailyCheckIn,
+        redeemLoyaltyPoints,
+        isCustomerDashboardOpen,
+        setIsCustomerDashboardOpen,
+        selectedProductForPage,
+        setSelectedProductForPage,
         toasts,
         addToast,
         removeToast

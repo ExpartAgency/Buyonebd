@@ -90,10 +90,9 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
         <div className="absolute top-0 right-0 -mr-20 -mt-20 w-80 h-80 rounded-full bg-emerald-500/20 blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-80 h-80 rounded-full bg-teal-500/15 blur-3xl pointer-events-none" />
 
-        {/* Slide Content */}
-        <div className="relative w-full p-6 sm:p-10 lg:p-12 flex flex-col lg:flex-row items-center justify-between gap-8 z-10">
-          {/* Left copy */}
-          <div className="max-w-xl space-y-4 text-center lg:text-left">
+        {/* Slide Content - Full Width Slider Only (As annotated: "only slider show here") */}
+        <div className="relative w-full p-6 sm:p-10 lg:p-14 flex flex-col justify-center items-start z-10 max-w-4xl">
+          <div className="space-y-4 text-left">
             <div className="inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider backdrop-blur-md">
               <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
               <span>
@@ -116,7 +115,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
               )}
             </h1>
 
-            <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
+            <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl">
               {activeSlide
                 ? t(activeSlide.subtitleBn, activeSlide.subtitleEn)
                 : t(
@@ -149,7 +148,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
             )}
 
             {/* CTA Buttons */}
-            <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 pt-2">
+            <div className="flex flex-wrap items-center gap-3 pt-2">
               <button
                 onClick={() => {
                   if (activeSlide?.linkCategory && onCategoryFilter) {
@@ -175,53 +174,6 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
               </div>
             </div>
           </div>
-
-          {/* Right Product Spotlight card */}
-          {featuredProduct && (
-            <div className="relative w-full max-w-sm bg-gradient-to-b from-slate-800/90 to-slate-900/90 border border-slate-700/80 rounded-3xl p-5 shadow-2xl backdrop-blur-md">
-              <div className="relative aspect-square rounded-2xl overflow-hidden bg-slate-950 mb-4 border border-slate-700/60">
-                <img
-                  src={featuredProduct.images[0]}
-                  alt={featuredProduct.title}
-                  className="w-full h-full object-cover"
-                />
-                <span className="absolute top-3 left-3 bg-rose-600 text-white text-[11px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider shadow-lg">
-                  HOT DEAL
-                </span>
-                <span className="absolute bottom-3 right-3 bg-black/70 backdrop-blur-md text-emerald-400 text-xs font-bold px-2.5 py-1 rounded-lg">
-                  {t('স্টক সীমিত', 'In Stock')}
-                </span>
-              </div>
-
-              <div>
-                <span className="text-[10px] uppercase font-bold text-emerald-400">
-                  {t(featuredProduct.categoryBn, featuredProduct.category)}
-                </span>
-                <h3 className="font-bold text-sm text-white line-clamp-1 mt-0.5">
-                  {t(featuredProduct.titleBn, featuredProduct.title)}
-                </h3>
-
-                <div className="flex items-baseline gap-2 mt-2">
-                  <span className="text-xl font-black text-emerald-400">
-                    ৳ {featuredProduct.price.toLocaleString()}
-                  </span>
-                  {featuredProduct.originalPrice > featuredProduct.price && (
-                    <span className="text-xs text-slate-500 line-through">
-                      ৳ {featuredProduct.originalPrice.toLocaleString()}
-                    </span>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => openOneClickCheckout(featuredProduct)}
-                  className="w-full mt-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow cursor-pointer transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <Zap className="w-3.5 h-3.5 text-amber-300" />
-                  {t('অর্ডার করুন', 'Order Now')}
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Carousel Navigation Arrows & Indicators (for 5-6 slides) */}

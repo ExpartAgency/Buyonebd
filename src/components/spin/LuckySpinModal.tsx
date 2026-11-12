@@ -44,15 +44,19 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
   const [selectedReward, setSelectedReward] = useState<SpinReward | null>(null);
   const [hasCopied, setHasCopied] = useState(false);
 
-  const rewards = spinRewards && spinRewards.length >= 2 ? spinRewards : [
-    { id: '1', labelBn: '৳১৫০ উপহার ক্যাশ', labelEn: '৳150 Gift Cash', code: 'SPIN150', discountType: 'fixed' as const, value: 150, color: '#059669', isTryAgain: false },
-    { id: '2', labelBn: 'ফ্রি হোম ডেলিভারি', labelEn: 'Free Delivery', code: 'FREESHIP', discountType: 'free_shipping' as const, value: 60, color: '#0284c7', isTryAgain: false },
-    { id: '3', labelBn: '৳২৫০ উপহার ক্যাশ', labelEn: '৳250 Gift Cash', code: 'MEGA250', discountType: 'fixed' as const, value: 250, color: '#7c3aed', isTryAgain: false },
-    { id: '4', labelBn: '১৫% বিশেষ ছাড়', labelEn: '15% Discount', code: 'SUPER15', discountType: 'percent' as const, value: 15, color: '#d97706', isTryAgain: false },
-    { id: '5', labelBn: '৳১০০ উপহার ক্যাশ', labelEn: '৳100 Gift Cash', code: 'SPIN100', discountType: 'fixed' as const, value: 100, color: '#e11d48', isTryAgain: false },
-    { id: '6', labelBn: '৳৫০০ মেগা ক্যাশ', labelEn: '৳500 Mega Cash', code: 'LUCKY500', discountType: 'fixed' as const, value: 500, color: '#4f46e5', isTryAgain: false }
+  // 8 Clean Temu-Style Rewards - All Winning Coupons, Crisp Non-Truncated Labels
+  const defaultRewards: SpinReward[] = [
+    { id: '1', labelBn: '৳৫০০ ক্যাশ', labelEn: '৳500 Cash', code: 'TEMU500', discountType: 'fixed', value: 500, color: '#e11d48' },
+    { id: '2', labelBn: 'ফ্রি ডেলিভারি', labelEn: 'Free Delivery', code: 'FREESHIP', discountType: 'free_shipping', value: 60, color: '#0284c7' },
+    { id: '3', labelBn: '৳২৫০ মেগা', labelEn: '৳250 Mega', code: 'MEGA250', discountType: 'fixed', value: 250, color: '#7c3aed' },
+    { id: '4', labelBn: '৫০% বিশেষ ছাড়', labelEn: '50% Mega Off', code: 'HALF50', discountType: 'percent', value: 50, color: '#059669' },
+    { id: '5', labelBn: '৳১৫০ ক্যাশ', labelEn: '৳150 Cash', code: 'CASH150', discountType: 'fixed', value: 150, color: '#d97706' },
+    { id: '6', labelBn: '৳১০০ গিফট', labelEn: '৳100 Gift', code: 'GIFT100', discountType: 'fixed', value: 100, color: '#4f46e5' },
+    { id: '7', labelBn: '২০% ছাড়', labelEn: '20% Off', code: 'DEAL20', discountType: 'percent', value: 20, color: '#0d9488' },
+    { id: '8', labelBn: '৳৩০০ বোনাস', labelEn: '৳300 Bonus', code: 'BONUS300', discountType: 'fixed', value: 300, color: '#c026d3' }
   ];
 
+  const rewards = spinRewards && spinRewards.length >= 2 ? spinRewards : defaultRewards;
   const numSegments = rewards.length;
   const segmentAngle = 360 / numSegments;
 
@@ -104,7 +108,7 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
         origin: { y: 0.6 }
       });
 
-      // Req 4: Automatically credit gift money to customer wallet balance!
+      // Automatically credit gift money to customer wallet balance
       if (selected.value > 0) {
         addToWallet(selected.value, 'Lucky Spin Reward');
       }
@@ -168,16 +172,17 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
 
           <div className="flex items-center justify-center gap-2 pt-1 text-xs">
             <span className="px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-emerald-400 font-bold">
-              {t(`আজকের বাকি স্পিন: ${remainingSpinsToday}/১`, `Daily Spins Left: ${remainingSpinsToday}/1`)}
+              {t(`আজকের বাকি স্পিন: ${remainingSpinsToday}/${settings?.spinSettings?.spinsPerDay || 1}`, `Daily Spins Left: ${remainingSpinsToday}/${settings?.spinSettings?.spinsPerDay || 1}`)}
             </span>
           </div>
         </div>
 
-        {/* Responsive Wheel Container */}
+        {/* Responsive Wheel Container - Clean SVG, No Truncation (Req 12, 14 & Screenshot 3) */}
         <div className="relative my-3 flex items-center justify-center">
-          <div className="absolute -top-3 z-20 w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-t-[20px] border-t-amber-400 drop-shadow-md" />
+          {/* Top Indicator Pointer pointing to top slice */}
+          <div className="absolute -top-3 z-30 w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-t-[22px] border-t-amber-400 drop-shadow-[0_4px_6px_rgba(0,0,0,0.6)]" />
 
-          <div className="relative w-56 h-56 sm:w-68 sm:h-68 rounded-full p-2 bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-400 shadow-2xl ring-4 ring-emerald-400/30">
+          <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-full p-2.5 bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-400 shadow-2xl ring-4 ring-emerald-400/30">
             <div
               style={{
                 transform: `rotate(${rotation}deg)`,
@@ -185,55 +190,67 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
               }}
               className="w-full h-full rounded-full overflow-hidden relative shadow-inner"
             >
-              <svg viewBox="0 0 100 100" className="w-full h-full transform -rotate-90">
+              <svg viewBox="0 0 200 200" className="w-full h-full">
+                <defs>
+                  <filter id="svgTextGlow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="1" stdDeviation="1.5" floodColor="#000" floodOpacity="0.9" />
+                  </filter>
+                </defs>
+
                 {rewards.map((rew, i) => {
-                  const startAngle = (i * 360) / numSegments;
-                  const endAngle = ((i + 1) * 360) / numSegments;
+                  const startAngle = i * segmentAngle;
+                  const endAngle = (i + 1) * segmentAngle;
+                  const midAngle = startAngle + segmentAngle / 2;
 
-                  const x1 = 50 + 50 * Math.cos((Math.PI * startAngle) / 180);
-                  const y1 = 50 + 50 * Math.sin((Math.PI * startAngle) / 180);
-                  const x2 = 50 + 50 * Math.cos((Math.PI * endAngle) / 180);
-                  const y2 = 50 + 50 * Math.sin((Math.PI * endAngle) / 180);
+                  // Convert angles so 0deg is at 12 o'clock (top)
+                  const rad1 = ((startAngle - 90) * Math.PI) / 180;
+                  const rad2 = ((endAngle - 90) * Math.PI) / 180;
 
-                  const pathData = `M 50 50 L ${x1} ${y1} A 50 50 0 0 1 ${x2} ${y2} Z`;
+                  const x1 = 100 + 100 * Math.cos(rad1);
+                  const y1 = 100 + 100 * Math.sin(rad1);
+                  const x2 = 100 + 100 * Math.cos(rad2);
+                  const y2 = 100 + 100 * Math.sin(rad2);
+
+                  const pathData = `M 100 100 L ${x1} ${y1} A 100 100 0 0 1 ${x2} ${y2} Z`;
+                  const labelText = lang === 'bn' ? rew.labelBn : rew.labelEn;
 
                   return (
-                    <path
-                      key={rew.id || i}
-                      d={pathData}
-                      fill={rew.color}
-                      stroke="#0f172a"
-                      strokeWidth="0.8"
-                    />
+                    <g key={rew.id || i}>
+                      <path
+                        d={pathData}
+                        fill={rew.color}
+                        stroke="#0f172a"
+                        strokeWidth="1.2"
+                      />
+                      {/* Radial Text - Cleanly centered along slice radius, never truncated */}
+                      <g transform={`rotate(${midAngle - 90}, 100, 100)`}>
+                        <text
+                          x="156"
+                          y="103"
+                          fill="#ffffff"
+                          fontSize="9.5"
+                          fontWeight="900"
+                          textAnchor="middle"
+                          filter="url(#svgTextGlow)"
+                          style={{
+                            fontFamily: 'system-ui, -apple-system, sans-serif',
+                            letterSpacing: '-0.2px'
+                          }}
+                        >
+                          {labelText}
+                        </text>
+                      </g>
+                    </g>
                   );
                 })}
               </svg>
-
-              {/* Segment Labels Overlay */}
-              {rewards.map((rew, i) => {
-                const angle = i * segmentAngle + segmentAngle / 2;
-                return (
-                  <div
-                    key={rew.id || i}
-                    style={{
-                      transform: `rotate(${angle}deg)`,
-                      transformOrigin: '50% 50%'
-                    }}
-                    className="absolute inset-0 flex items-start justify-center pt-2.5 pointer-events-none"
-                  >
-                    <span className="text-[9px] sm:text-[10px] font-black text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] tracking-tight rotate-90 select-none max-w-[65px] truncate">
-                      {lang === 'bn' ? rew.labelBn : rew.labelEn}
-                    </span>
-                  </div>
-                );
-              })}
             </div>
 
             {/* Center Spin Action Button */}
             <button
               onClick={handleSpin}
               disabled={isSpinning || remainingSpinsToday <= 0}
-              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-b from-amber-400 via-emerald-600 to-teal-700 border-4 border-white shadow-2xl flex flex-col items-center justify-center cursor-pointer transition-transform active:scale-95 z-10 disabled:opacity-60 disabled:cursor-not-allowed group"
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-b from-amber-400 via-emerald-600 to-teal-700 border-4 border-white shadow-2xl flex flex-col items-center justify-center cursor-pointer transition-transform active:scale-95 z-20 disabled:opacity-60 disabled:cursor-not-allowed group"
             >
               <Zap className="w-4 h-4 text-amber-200 fill-amber-200 group-hover:scale-110 transition-transform" />
               <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-white">
@@ -243,64 +260,71 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
           </div>
         </div>
 
-        {/* Won Prize Celebration Card with Wallet Credit notice */}
+        {/* Action Button Below Wheel */}
+        <div className="mt-3">
+          <button
+            onClick={handleSpin}
+            disabled={isSpinning || remainingSpinsToday <= 0}
+            className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs sm:text-sm shadow-xl shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+          >
+            <Gift className="w-4 h-4 text-amber-300" />
+            <span>
+              {isSpinning
+                ? t('চাকা ঘুরছে...', 'Spinning...')
+                : remainingSpinsToday > 0
+                ? t('স্পিন করুন ও ক্যাশ উপহার জিতুন!', 'Spin Now & Win Cash Gift!')
+                : t('আজকের স্পিন কোটা শেষ (আগামীকাল আবার আসুন)', 'Daily limit reached (Return tomorrow)')}
+            </span>
+          </button>
+        </div>
+
+        {/* Won Prize Popup Card */}
         {selectedReward && (
-          <div className="mt-3 p-3 bg-gradient-to-r from-emerald-500/20 via-teal-500/20 to-cyan-500/20 border border-emerald-400/50 rounded-2xl animate-fade-in space-y-2">
-            <div className="flex items-center justify-center gap-1.5 text-emerald-300 font-bold text-xs">
-              <Trophy className="w-4 h-4 text-amber-400" />
-              <span>{t('অভিনন্দন! আপনি জিতেছেন:', 'Congratulations! You won:')}</span>
-            </div>
-            <p className="text-sm sm:text-base font-black text-white">
-              {lang === 'bn' ? selectedReward.labelBn : selectedReward.labelEn}
-            </p>
+          <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-emerald-950/80 via-slate-900 to-teal-950/80 border border-emerald-400/40 shadow-2xl animate-fade-in text-left">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
+                  <Trophy className="w-3.5 h-3.5" />
+                  {t('অভিনন্দন!', 'Congratulations!')}
+                </span>
+                <h4 className="text-base font-black text-white mt-0.5">
+                  {lang === 'bn' ? selectedReward.labelBn : selectedReward.labelEn}
+                </h4>
+                <p className="text-[11px] text-emerald-300 font-medium">
+                  {t(
+                    '৳' + selectedReward.value + ' উপহার ক্যাশ সরাসরি আপনার গিফট ওয়ালেটে যোগ হয়েছে!',
+                    '৳' + selectedReward.value + ' gift cash added directly to your gift wallet!'
+                  )}
+                </p>
+              </div>
 
-            {/* Wallet Credit Badge */}
-            <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/30 text-emerald-300 text-xs font-bold">
-              <Wallet className="w-3.5 h-3.5" />
-              <span>{t(`৳${selectedReward.value} আপনার গিফট ওয়ালেটে যোগ হয়েছে!`, `৳${selectedReward.value} added to your Gift Wallet!`)}</span>
+              <div className="text-right">
+                <span className="text-[9px] uppercase font-bold text-slate-400 block">
+                  {t('কুপন কোড', 'Coupon Code')}
+                </span>
+                <span className="font-mono font-black text-sm text-amber-300 bg-black/40 px-2 py-0.5 rounded border border-amber-500/30">
+                  {selectedReward.code}
+                </span>
+              </div>
             </div>
 
-            {/* Promo Code Box */}
-            <div className="flex items-center justify-between bg-black/60 px-3 py-1.5 rounded-xl border border-emerald-500/30">
-              <span className="font-mono font-black text-xs text-emerald-300 tracking-wider">
-                {selectedReward.code}
-              </span>
+            <div className="mt-3 flex items-center gap-2">
               <button
                 onClick={() => copyCoupon(selectedReward.code)}
-                className="flex items-center gap-1 text-[11px] bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-2 py-0.5 rounded-lg cursor-pointer transition-colors"
+                className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
               >
-                {hasCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{hasCopied ? t('কপি হয়েছে!', 'Copied!') : t('কপি', 'Copy')}</span>
+                {hasCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{hasCopied ? t('কপি হয়েছে', 'Copied') : t('কুপন কপি করুন', 'Copy Coupon')}</span>
+              </button>
+
+              <button
+                onClick={() => handleApplyToCheckout(selectedReward.code)}
+                className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-md transition-colors cursor-pointer"
+              >
+                <span>{t('এখনই ব্যবহার করুন', 'Use Now')}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
-
-            <button
-              onClick={() => handleApplyToCheckout(selectedReward.code)}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-3 rounded-xl shadow-lg flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95"
-            >
-              <span>{t('চেকআউটে অফারটি প্রয়োগ করুন', 'Apply to Checkout')}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Spin Instruction / Action button */}
-        {!selectedReward && (
-          <div className="mt-2">
-            <button
-              onClick={handleSpin}
-              disabled={isSpinning || remainingSpinsToday <= 0}
-              className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs sm:text-sm py-2.5 px-4 rounded-2xl shadow-xl flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Gift className="w-4 h-4" />
-              <span>
-                {isSpinning
-                  ? t('ঘুরছে...', 'Spinning...')
-                  : remainingSpinsToday <= 0
-                  ? t('আজকের স্পিন সম্পন্ন (আগামীকাল আবার)', 'Daily Spin Completed')
-                  : t('স্পিন করুন ও ক্যাশ উপহার জিতুন!', 'Spin Now to Win Cash Gift!')}
-              </span>
-            </button>
           </div>
         )}
       </div>
@@ -309,31 +333,27 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
 };
 
 export const LuckySpinLeftLauncher: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
-  const { remainingSpinsToday, settings, t } = useStore();
-
-  if (settings.spinSettings?.enabled === false) return null;
+  const { remainingSpinsToday, t } = useStore();
 
   return (
-    <div className="fixed left-3 sm:left-4 bottom-20 z-30 flex items-center">
+    <div className="fixed left-3 sm:left-4 bottom-20 md:bottom-8 z-30 animate-bounce">
       <button
         onClick={onOpen}
-        className="relative flex items-center gap-2 p-2 sm:px-3 sm:py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white shadow-xl shadow-emerald-600/30 border border-white/20 backdrop-blur-md active:scale-95 transition-all animate-bounce"
-        aria-label="Lucky Spin Wheel"
+        className="relative flex items-center gap-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white px-3.5 py-2.5 rounded-2xl shadow-2xl border border-emerald-400/50 cursor-pointer transition-all hover:scale-105 active:scale-95 group"
+        aria-label={t('লাকি স্পিন হুইল', 'Lucky Spin Wheel')}
       >
         <div className="relative">
-          <Gift className="w-5 h-5 text-amber-300" />
+          <Gift className="w-5 h-5 text-amber-300 animate-spin group-hover:rotate-180 transition-transform duration-700" />
           {remainingSpinsToday > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 bg-amber-400 text-slate-950 font-black text-[9px] w-4 h-4 rounded-full flex items-center justify-center">
-              {remainingSpinsToday}
-            </span>
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full animate-ping" />
           )}
         </div>
         <div className="text-left hidden sm:block">
-          <span className="block text-[11px] font-black leading-tight">
-            {t('লাকি স্পিন', 'Lucky Spin')}
+          <span className="text-[10px] uppercase font-bold text-emerald-200 block leading-tight">
+            {t('লাকি উপহার', 'Lucky Gift')}
           </span>
-          <span className="block text-[9px] text-emerald-200">
-            {t('উপহার ক্যাশ', 'Gift Cash')}
+          <span className="text-xs font-black text-white block leading-tight">
+            {t('স্পিন হুইল', 'Spin Wheel')}
           </span>
         </div>
       </button>

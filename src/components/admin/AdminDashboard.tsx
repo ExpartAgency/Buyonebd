@@ -106,7 +106,8 @@ export const AdminDashboard: React.FC = () => {
     toggleProductFlashSale,
     lang,
     t,
-    addToast
+    addToast,
+    priceAlerts
   } = useStore();
 
   // Pure language translation helper based on admin language preference
@@ -997,13 +998,61 @@ export const AdminDashboard: React.FC = () => {
                   <h3 className="text-xl font-black text-white">{at('পণ্য তালিকা', 'Product Catalog')}</h3>
                   <p className="text-xs text-slate-400">{at('পণ্য যোগ, এডিট, স্টক পরিচালনা ও সরাসরি ফ্ল্যাশ সেল নির্ধারণ', 'Add, edit, manage stock, and toggle flash sale status directly')}</p>
                 </div>
-                <button
-                  onClick={openNewProductModal}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>{at('নতুন পণ্য যোগ করুন', 'Add New Product')}</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => {
+                      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(products, null, 2));
+                      const downloadAnchor = document.createElement('a');
+                      downloadAnchor.setAttribute("href", dataStr);
+                      downloadAnchor.setAttribute("download", `buyonebd-products-${Date.now()}.json`);
+                      document.body.appendChild(downloadAnchor);
+                      downloadAnchor.click();
+                      downloadAnchor.remove();
+                      addToast('success', 'এক্সপোর্ট সফল!', `${products.length} টি পণ্যের ডেটা ডাউনলোড হয়েছে।`);
+                    }}
+                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer border border-slate-700 transition-colors"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{at('এক্সপোর্ট (JSON)', 'Export')}</span>
+                  </button>
+
+                  <label className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer border border-slate-700 transition-colors">
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>{at('ইমপোর্ট (JSON)', 'Import')}</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          try {
+                            const imported = JSON.parse(event.target?.result as string);
+                            if (Array.isArray(imported)) {
+                              imported.forEach((p) => {
+                                if (p.title && p.price) addProduct(p);
+                              });
+                              addToast('success', 'ইমপোর্ট সম্পন্ন!', `${imported.length} টি পণ্য যোগ হয়েছে।`);
+                            }
+                          } catch {
+                            addToast('error', 'ভুল ফাইল ফরম্যাট', 'সঠিক JSON ফাইল সিলেক্ট করুন।');
+                          }
+                        };
+                        reader.readAsText(file);
+                      }}
+                    />
+                  </label>
+
+                  <button
+                    onClick={openNewProductModal}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{at('নতুন পণ্য যোগ করুন', 'Add New Product')}</span>
+                  </button>
+                </div>
               </div>
 
               {/* Products Grid */}
@@ -1789,11 +1838,221 @@ export const AdminDashboard: React.FC = () => {
                     </label>
                   </div>
                 </div>
+
+                {/* TikTok Pixel */}
+                <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Radio className="w-4 h-4 text-rose-400" />
+                      <span>TikTok Pixel & Events API</span>
+                    </h4>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.marketingSettings?.tiktokPixel?.enabled ?? true}
+                        onChange={(e) => {
+                          updateSettings({
+                            marketingSettings: {
+                              ...settings.marketingSettings,
+                              tiktokPixel: {
+                                pixelId: settings.marketingSettings?.tiktokPixel?.pixelId || 'C789TTIKTOK990',
+                                enabled: e.target.checked
+                              }
+                            }
+                          });
+                        }}
+                        className="w-4 h-4 rounded text-rose-600 bg-slate-800 border-slate-700"
+                      />
+                      <span className="text-xs text-slate-300">সক্রিয়</span>
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">TikTok Pixel ID</label>
+                    <input
+                      type="text"
+                      value={settings.marketingSettings?.tiktokPixel?.pixelId || ''}
+                      onChange={(e) => {
+                        updateSettings({
+                          marketingSettings: {
+                            ...settings.marketingSettings,
+                            tiktokPixel: {
+                              enabled: settings.marketingSettings?.tiktokPixel?.enabled ?? true,
+                              pixelId: e.target.value
+                            }
+                          }
+                        });
+                      }}
+                      placeholder="C789TTIKTOK990"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Dedicated WhatsApp Message Templates Hub (Req 15, 1, 9) */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                  <div>
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <MessageCircle className="w-4 h-4 text-emerald-400" />
+                      <span>{t('হোয়াটসঅ্যাপ অটোমেশন মেসেজ টেমপ্লেট ও ওয়ান-ক্লিক ট্রিগার', 'WhatsApp Message Templates & Automation Triggers')}</span>
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      {t('অর্ডার কনফার্ম, কুরিয়ার শিপমেন্ট, হোল্ড এবং অর্ডার বাতিলকরণের জন্য মেসেজ কাস্টমাইজ করুন', 'Customize automated messages with dynamic variables: {order_id}, {customer_name}, {total}, {tracking_code}')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-1">
+                  {/* Template 1: Order Confirmation */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-emerald-400 block">
+                      ১. অর্ডার নিশ্চিতকরণ মেসেজ (Order Confirmation)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={settings.marketingTemplates?.orderConfirmation || ''}
+                      onChange={(e) => {
+                        updateSettings({
+                          marketingTemplates: {
+                            ...settings.marketingTemplates!,
+                            orderConfirmation: e.target.value
+                          }
+                        });
+                      }}
+                      className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-emerald-500 font-mono outline-none"
+                    />
+                  </div>
+
+                  {/* Template 2: Shipping Dispatched */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-teal-400 block">
+                      ২. পার্সেল কুরিয়ার হ্যান্ডওভার মেসেজ (Dispatched & In-Transit)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={settings.marketingTemplates?.shippingDispatched || ''}
+                      onChange={(e) => {
+                        updateSettings({
+                          marketingTemplates: {
+                            ...settings.marketingTemplates!,
+                            shippingDispatched: e.target.value
+                          }
+                        });
+                      }}
+                      className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-emerald-500 font-mono outline-none"
+                    />
+                  </div>
+
+                  {/* Template 3: Order Hold */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-amber-400 block">
+                      ৩. অর্ডার হোল্ড / ভেরিফিকেশন মেসেজ (Verification Required)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={settings.marketingTemplates?.orderHold || ''}
+                      onChange={(e) => {
+                        updateSettings({
+                          marketingTemplates: {
+                            ...settings.marketingTemplates!,
+                            orderHold: e.target.value
+                          }
+                        });
+                      }}
+                      className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-emerald-500 font-mono outline-none"
+                    />
+                  </div>
+
+                  {/* Template 4: Order Cancellation */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-rose-400 block">
+                      ৪. অর্ডার বাতিলকরণ মেসেজ (Order Cancellation)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={settings.marketingTemplates?.orderCancellation || ''}
+                      onChange={(e) => {
+                        updateSettings({
+                          marketingTemplates: {
+                            ...settings.marketingTemplates!,
+                            orderCancellation: e.target.value
+                          }
+                        });
+                      }}
+                      className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-emerald-500 font-mono outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Price Drop Alerts Watchlist & 1-Click WhatsApp Trigger (Req 11) */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-emerald-400" />
+                      <span>{t('গ্রাহকের মূল্য কমার নোটিফিকেশন রিকুয়েস্টসমূহ', 'Customer Price Drop Alert Requests')}</span>
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      {t('গ্রাহকরা যে পণ্যগুলোর দাম কমলে অ্যালার্ট চেয়েছেন তাদের তালিকা ও ১-ক্লিক হোয়াটসঅ্যাপ নোটিফিকেশন', 'Live list of price drop requests with 1-click WhatsApp messaging')}
+                    </p>
+                  </div>
+                  <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    {priceAlerts.length} {t('টি অ্যালার্ট', 'Alerts')}
+                  </span>
+                </div>
+
+                {priceAlerts.length === 0 ? (
+                  <div className="text-center py-6 border border-slate-800 rounded-xl text-slate-500 text-xs">
+                    {t('এখনও কোনো কাস্টমার প্রাইস অ্যালার্ট সেট করেননি।', 'No customer price drop alerts registered yet.')}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-950 text-slate-400 uppercase text-[10px]">
+                        <tr>
+                          <th className="p-2.5">{t('পণ্য', 'Product')}</th>
+                          <th className="p-2.5">{t('যোগাযোগ নম্বর', 'Contact')}</th>
+                          <th className="p-2.5">{t('বর্তমান মূল্য', 'Current Price')}</th>
+                          <th className="p-2.5">{t('টার্গেট মূল্য', 'Target Price')}</th>
+                          <th className="p-2.5 text-right">{t('১-ক্লিক নোটিফিকেশন', '1-Click Action')}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800 text-slate-300">
+                        {priceAlerts.map((alt) => (
+                          <tr key={alt.id} className="hover:bg-slate-800/40">
+                            <td className="p-2.5 font-bold text-white">{alt.productTitleBn || alt.productTitle}</td>
+                            <td className="p-2.5 font-mono text-emerald-400">{alt.contact}</td>
+                            <td className="p-2.5 font-mono">৳{alt.currentPrice}</td>
+                            <td className="p-2.5 font-mono font-bold text-amber-400">৳{alt.targetPrice}</td>
+                            <td className="p-2.5 text-right">
+                              <button
+                                onClick={() => {
+                                  const text = encodeURIComponent(
+                                    `আসসালামু আলাইকুম! আপনি ${alt.productTitleBn || alt.productTitle} এর জন্য প্রাইস অ্যালার্ট সেট করেছিলেন। পণ্যের দাম এখন ৳${alt.targetPrice} টাকায় অফার করা হচ্ছে! এখনই কিনুন BuyOne BD থেকে।`
+                                  );
+                                  window.open(`https://wa.me/${alt.contact.replace(/[^0-9]/g, '')}?text=${text}`, '_blank');
+                                  addToast('success', t('হোয়াটসঅ্যাপ ওপেন হয়েছে', 'WhatsApp Opened'), alt.contact);
+                                }}
+                                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <MessageCircle className="w-3 h-3" />
+                                <span>{t('হোয়াটসঅ্যাপ অ্যালার্ট পাঠান', 'Send Alert')}</span>
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               <button
                 onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('মার্কেটিং টুলস সেটিংস সফলভাবে আপডেট হয়েছে।', 'Marketing settings saved.'))}
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl"
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
               >
                 {t('মার্কেটিং সেটিংস সেভ করুন', 'Save Marketing Settings')}
               </button>
@@ -1967,6 +2226,37 @@ export const AdminDashboard: React.FC = () => {
                   <Plus className="w-4 h-4" />
                   <span>{t('নতুন কুপন অফার যোগ করুন', 'Add Prize')}</span>
                 </button>
+              </div>
+
+              {/* Daily Spin Limit Control */}
+              <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <span>{at('দৈনিক স্পিন সংখ্যা নির্ধারণ (Daily Spins per Customer)', 'Daily Spin Limit per Customer')}</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    {at('প্রতি গ্রাহক দিনে কতবার স্পিন করতে পারবে (১-১০ বার)', 'Allowable spins per customer each day')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={settings.spinSettings?.spinsPerDay || 1}
+                    onChange={(e) => {
+                      updateSettings({
+                        spinSettings: {
+                          ...settings.spinSettings,
+                          spinsPerDay: Math.max(1, Number(e.target.value))
+                        }
+                      });
+                    }}
+                    className="w-20 px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-white text-center font-mono outline-none focus:border-emerald-500"
+                  />
+                  <span className="text-xs text-slate-400 font-bold">{at('বার / দিন', 'times / day')}</span>
+                </div>
               </div>
 
               {/* Spin Rewards Table */}
@@ -2407,6 +2697,48 @@ export const AdminDashboard: React.FC = () => {
                 <p className="text-xs text-slate-400">{t('বিকাশ, নগদ, রকেট মার্চেন্ট নাম্বার ও বাংলাদেশের ৬৪ জেলার ডেলিভারি চার্জ নির্ধারণ', 'bKash/Nagad/Rocket merchants, advance fees and delivery rates')}</p>
               </div>
 
+              {/* Theme Switcher for Different Business Categories (Req 13) */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-emerald-400" />
+                      <span>{t('স্টোর বিজনেস থিম সিলেক্টর (Store Business Theme)', 'Store Business Theme')}</span>
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      {t('আপনার ব্যবসার ধরন অনুযায়ী এক ক্লিকে স্টোর থিম ও ক্যাটাগরি সেট করুন', 'Select theme optimized for your business category')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                  {[
+                    { id: 'gadgets', name: 'স্মার্ট গ্যাজেট', icon: '⚡', desc: 'Smart Gadgets' },
+                    { id: 'islamic', name: 'সুন্নাহ ও আতর', icon: '🌙', desc: 'Sunnah & Attar' },
+                    { id: 'organic', name: 'অর্গানিক ফুড', icon: '🍯', desc: 'Organic Food' },
+                    { id: 'medical', name: 'মেডিকেল ও ফার্মেসি', icon: '💊', desc: 'Pharmacy' },
+                    { id: 'fashion', name: 'ফ্যাশন ও লাইফস্টাইল', icon: '👔', desc: 'Fashion' }
+                  ].map((th) => (
+                    <button
+                      key={th.id}
+                      onClick={() => {
+                        updateSettings({ theme: th.id as any });
+                        addToast('success', t('থিম পরিবর্তন হয়েছে!', 'Theme Changed!'), th.name);
+                      }}
+                      className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+                        settings.theme === th.id
+                          ? 'bg-emerald-950/60 border-emerald-500 ring-2 ring-emerald-500/40 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <span className="text-2xl block mb-1">{th.icon}</span>
+                      <span className="font-bold text-xs text-white block">{th.name}</span>
+                      <span className="text-[10px] text-slate-500 block">{th.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Payment Numbers */}
                 <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
@@ -2735,9 +3067,37 @@ export const AdminDashboard: React.FC = () => {
               <X className="w-4 h-4" />
             </button>
 
-            <h3 className="text-lg font-black text-white mb-4">
-              {editingProductId ? t('পণ্য এডিট করুন', 'Edit Product') : t('নতুন পণ্য যোগ করুন', 'Add Product')}
-            </h3>
+            <div className="flex items-center justify-between mb-4 pr-8">
+              <h3 className="text-lg font-black text-white">
+                {editingProductId ? t('পণ্য এডিট করুন', 'Edit Product') : t('নতুন পণ্য যোগ করুন', 'Add Product')}
+              </h3>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const title = productForm.titleBn || productForm.title || 'প্রিমিয়াম পণ্য';
+                  const aiDescBn = `${title} - প্রিমিয়াম কোয়ালিটির আসল পণ্য। ১০০% জেনুইন ব্র্যান্ড কোয়ালিটি ও লং-লাস্টিং পারফরম্যান্স। সারা বাংলাদেশে দ্রুততম হোম ডেলিভারি ও ক্যাশ অন ডেলিভারি সুবিধা সহ পাচ্ছেন স্পেশাল ডিসকাউন্ট।`;
+                  const aiDescEn = `${productForm.title || 'Premium product'} - 100% authentic quality with fast nationwide cash on delivery.`;
+                  const aiFeatures = [
+                    '১০০% প্রিমিয়াম ও অরিজিনাল কোয়ালিটি নিশ্চিত',
+                    'সারাদেশে ক্যাশ অন ডেলিভারি সুবিধা',
+                    '৭ দিনের রিপ্লেসমেন্ট গ্যারান্টি',
+                    'স্মার্ট বিল্ড কোয়ালিটি ও দীর্ঘস্থায়ী কার্যক্ষমতা'
+                  ];
+                  setProductForm({
+                    ...productForm,
+                    descriptionBn: aiDescBn,
+                    description: aiDescEn,
+                    features: aiFeatures
+                  });
+                  addToast('success', 'এআই কপিরাইটার সক্রিয়!', 'পণ্যের আকর্ষণীয় বিবরণ ও ফিচার স্বয়ংক্রিয়ভাবে তৈরি হয়েছে।');
+                }}
+                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-md cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>{at('এআই দিয়ে বিবরণ তৈরি করুন', 'Generate with AI')}</span>
+              </button>
+            </div>
 
             <form onSubmit={handleSaveProduct} className="space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

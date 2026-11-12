@@ -12,6 +12,7 @@ export interface Category {
   icon?: string;
   isActive: boolean;
   order?: number;
+  subcategories?: { nameBn: string; nameEn: string; slug: string }[];
 }
 
 export interface HomeSlide {
@@ -288,10 +289,12 @@ export interface StoreSettings {
     textBn: string;
     textEn: string;
   };
+  theme?: StoreTheme;
   spinSettings: {
     enabled: boolean;
     headlineBn: string;
     headlineEn: string;
+    spinsPerDay?: number;
     rewards: SpinReward[];
   };
   whatsappTemplates: {
@@ -299,13 +302,56 @@ export interface StoreSettings {
     riderDispatchMsg: string;
     abandonedCartMsg?: string;
   };
+  marketingTemplates?: WhatsAppMarketingTemplates;
   categories: Category[];
   sliders: HomeSlide[];
   flashSale: FlashSaleSettings;
   courierSettings: CourierSettings;
-  marketingSettings: MarketingSettings;
+  marketingSettings: MarketingSettings & {
+    tiktokPixel?: {
+      enabled: boolean;
+      pixelId: string;
+    };
+  };
   aiSettings: AISettings;
   footerSettings: FooterSettings;
+  seoSettings?: {
+    metaTitle: string;
+    metaDescription: string;
+    keywords: string;
+    ogImage: string;
+  };
+}
+
+export type StoreTheme = 'gadgets' | 'islamic' | 'organic' | 'medical' | 'fashion';
+
+export interface DailyCheckInState {
+  lastCheckInDate: string; // YYYY-MM-DD
+  streak: number; // 1 to 7
+  claimedToday: boolean;
+  totalEarned: number;
+}
+
+export interface CustomerProfile {
+  name: string;
+  phone: string;
+  email: string;
+  address: string;
+  district: string;
+  loyaltyPoints: number;
+  walletBalance: number;
+  checkIn: DailyCheckInState;
+}
+
+export interface WhatsAppMarketingTemplates {
+  orderConfirmation: string;
+  shippingDispatched: string;
+  orderHold: string;
+  orderCancellation: string;
+  cartRecovery: string;
+  promotionalBroadcast: string;
+  autoTriggerOnOrder: boolean;
+  autoTriggerOnShipped: boolean;
 }
 
 export interface SpinReward {

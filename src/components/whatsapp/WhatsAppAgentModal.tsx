@@ -280,7 +280,7 @@ export const WhatsAppAgentModal: React.FC = () => {
       {!isWhatsAppOpen && (
         <button
           onClick={() => setIsWhatsAppOpen(true)}
-          className="fixed bottom-5 right-5 z-40 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white w-12 h-12 sm:w-14 sm:h-14 rounded-full shadow-2xl shadow-emerald-600/40 flex items-center justify-center group transition-all duration-300 cursor-pointer border border-emerald-400/40"
+          className="fixed bottom-20 md:bottom-6 right-3.5 sm:right-6 z-40 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white w-12 h-12 sm:w-14 sm:h-14 rounded-full shadow-2xl shadow-emerald-600/40 flex items-center justify-center group transition-all duration-300 cursor-pointer border border-emerald-400/40"
           title="BuyOne BD AI Support"
           aria-label="Open AI Support Chat"
         >
