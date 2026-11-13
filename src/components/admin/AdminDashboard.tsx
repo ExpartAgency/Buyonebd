@@ -51,7 +51,14 @@ import {
   Youtube,
   ImagePlus,
   CheckCheck,
-  PlusCircle
+  PlusCircle,
+  Headphones,
+  PhoneIncoming,
+  PhoneOff,
+  Activity,
+  History,
+  FileText,
+  Wand2
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BUSINESS_THEME_PRESETS } from '../../data/initialData';
@@ -122,7 +129,17 @@ export const AdminDashboard: React.FC = () => {
     priceAlerts,
     whatsappLogs,
     sendMetaWhatsAppMessage,
-    applyBusinessTheme
+    applyBusinessTheme,
+    serverPixelEvents,
+    customerBrowsingLogs,
+    supportChats,
+    sendAgentChatReply,
+    generateAgentAIReply,
+    markChatRead,
+    browserCalls,
+    answerBrowserCallFromBackend,
+    appendBrowserCallMessage,
+    endBrowserCallSession
   } = useStore();
 
   // Pure language translation helper based on admin language preference
@@ -144,9 +161,10 @@ export const AdminDashboard: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  // Active tab state (all 16 left-hand sidebar options)
+  // Active tab state (all 17 left-hand sidebar options)
   type AdminTab =
     | 'overview'
+    | 'support_desk'
     | 'orders'
     | 'products'
     | 'categories'
@@ -165,6 +183,20 @@ export const AdminDashboard: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
+
+  // Support Desk & Browser Call Console state
+  const [selectedChatId, setSelectedChatId] = useState<string>('');
+  const [chatReplyDraft, setChatReplyDraft] = useState<string>('');
+  const [isGeneratingAiReply, setIsGeneratingAiReply] = useState<boolean>(false);
+  const [selectedCallId, setSelectedCallId] = useState<string>('');
+  const [callReplyInput, setCallReplyInput] = useState<string>('');
+  const [isGeneratingCallDraft, setIsGeneratingCallDraft] = useState<boolean>(false);
+  const [browsingSearch, setBrowsingSearch] = useState<string>('');
+
+  // AI Keyword Rules form state
+  const [newRuleKeywords, setNewRuleKeywords] = useState('');
+  const [newRuleReplyBn, setNewRuleReplyBn] = useState('');
+  const [newRuleReplyEn, setNewRuleReplyEn] = useState('');
 
   // Orders filters and actions
   const [orderSearch, setOrderSearch] = useState('');
@@ -189,6 +221,7 @@ export const AdminDashboard: React.FC = () => {
     stock: 45,
     category: 'smart-gadgets',
     categoryBn: 'স্মার্ট গ্যাজেট',
+    subcategory: '',
     tags: ['Best Seller'],
     images: ['https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=800'],
     sku: `PROD-${Date.now().toString().slice(-4)}`,
@@ -201,7 +234,15 @@ export const AdminDashboard: React.FC = () => {
     featuresBn: ['১০০% আসল প্রোডাক্ট', 'দ্রুত ডেলিভারি ওয়ারেন্টি'],
     videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
     warrantyInfo: '7-day replacement guarantee',
-    warrantyInfoBn: '৭ দিনের সহজ রিপ্লেসমেন্ট ওয়ারেন্টি'
+    warrantyInfoBn: '৭ দিনের সহজ রিপ্লেসমেন্ট ওয়ারেন্টি',
+    seo: {
+      slug: '',
+      metaTitle: '',
+      metaDescription: '',
+      keywords: '',
+      robots: 'index, follow',
+      ogImage: ''
+    }
   });
 
   const [newGalleryUrl, setNewGalleryUrl] = useState('');
@@ -212,13 +253,16 @@ export const AdminDashboard: React.FC = () => {
   // Category Modal
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [newSubNameBn, setNewSubNameBn] = useState('');
+  const [newSubNameEn, setNewSubNameEn] = useState('');
   const [categoryForm, setCategoryForm] = useState<Omit<Category, 'id'>>({
     nameBn: '',
     nameEn: '',
     slug: '',
     icon: '',
     iconImage: '',
-    isActive: true
+    isActive: true,
+    subcategories: []
   });
 
   // Slider Modal
@@ -275,6 +319,7 @@ export const AdminDashboard: React.FC = () => {
       stock: 45,
       category: 'smart-gadgets',
       categoryBn: 'স্মার্ট গ্যাজেট',
+      subcategory: '',
       tags: ['Trending'],
       images: ['https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=800'],
       sku: `PROD-${Date.now().toString().slice(-4)}`,
@@ -287,7 +332,15 @@ export const AdminDashboard: React.FC = () => {
       featuresBn: ['১০০% অরিজিনাল পণ্য'],
       videoUrl: '',
       warrantyInfo: '7-day replacement warranty',
-      warrantyInfoBn: '৭ দিনের রিপ্লেসমেন্ট ওয়ারেন্টি'
+      warrantyInfoBn: '৭ দিনের রিপ্লেসমেন্ট ওয়ারেন্টি',
+      seo: {
+        slug: '',
+        metaTitle: '',
+        metaDescription: '',
+        keywords: '',
+        robots: 'index, follow',
+        ogImage: ''
+      }
     });
     setIsProductModalOpen(true);
   };
@@ -304,6 +357,7 @@ export const AdminDashboard: React.FC = () => {
       stock: prod.stock,
       category: prod.category,
       categoryBn: prod.categoryBn,
+      subcategory: prod.subcategory || '',
       tags: prod.tags || [],
       images: prod.images || [],
       sku: prod.sku,
@@ -316,17 +370,36 @@ export const AdminDashboard: React.FC = () => {
       featuresBn: prod.featuresBn || [],
       videoUrl: prod.videoUrl || '',
       warrantyInfo: prod.warrantyInfo || '',
-      warrantyInfoBn: prod.warrantyInfoBn || ''
+      warrantyInfoBn: prod.warrantyInfoBn || '',
+      seo: {
+        slug: prod.seo?.slug || '',
+        metaTitle: prod.seo?.metaTitle || '',
+        metaDescription: prod.seo?.metaDescription || '',
+        keywords: prod.seo?.keywords || '',
+        robots: prod.seo?.robots || 'index, follow',
+        ogImage: prod.seo?.ogImage || ''
+      }
     });
     setIsProductModalOpen(true);
   };
 
   const handleSaveProduct = (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanedSlug = (productForm.seo?.slug || productForm.title || productForm.titleBn)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+    const payload: Omit<Product, 'id'> = {
+      ...productForm,
+      seo: {
+        ...productForm.seo,
+        slug: cleanedSlug || `product-${Date.now().toString().slice(-4)}`
+      }
+    };
     if (editingProductId) {
-      updateProduct(editingProductId, productForm);
+      updateProduct(editingProductId, payload);
     } else {
-      addProduct(productForm);
+      addProduct(payload);
     }
     setIsProductModalOpen(false);
   };
@@ -334,26 +407,32 @@ export const AdminDashboard: React.FC = () => {
   // Handlers for Categories
   const openNewCategoryModal = () => {
     setEditingCategoryId(null);
+    setNewSubNameBn('');
+    setNewSubNameEn('');
     setCategoryForm({
       nameBn: '',
       nameEn: '',
       slug: '',
       icon: '',
       iconImage: '',
-      isActive: true
+      isActive: true,
+      subcategories: []
     });
     setIsCategoryModalOpen(true);
   };
 
   const openEditCategoryModal = (cat: Category) => {
     setEditingCategoryId(cat.id);
+    setNewSubNameBn('');
+    setNewSubNameEn('');
     setCategoryForm({
       nameBn: cat.nameBn,
       nameEn: cat.nameEn,
       slug: cat.slug,
       icon: cat.icon || '',
       iconImage: cat.iconImage || '',
-      isActive: cat.isActive
+      isActive: cat.isActive,
+      subcategories: cat.subcategories || []
     });
     setIsCategoryModalOpen(true);
   };
@@ -495,8 +574,56 @@ export const AdminDashboard: React.FC = () => {
   const aiSuccessRate = orders.length > 0 ? Math.round((confirmedOrders.length / orders.length) * 100) : 0;
   const deliveredCount = orders.filter((o) => o.status === 'delivered').length;
 
+  const ringingCalls = browserCalls.filter((c) => c.status === 'ringing_backend');
+  const unreadChatCount = supportChats.reduce((sum, c) => sum + (c.unreadByAdmin || 0), 0);
+  const supportDeskBadge = ringingCalls.length + unreadChatCount;
+
+  const activeChatObj =
+    supportChats.find((c) => c.id === selectedChatId) || supportChats[0] || null;
+  const activeCallObj =
+    browserCalls.find((c) => c.id === selectedCallId) ||
+    ringingCalls[0] ||
+    browserCalls.find((c) => c.status === 'connected') ||
+    browserCalls[0] ||
+    null;
+
+  const handleGenerateCallAiDraft = async () => {
+    if (!activeCallObj) return;
+    setIsGeneratingCallDraft(true);
+    try {
+      const lastCustomerLine =
+        [...activeCallObj.transcript].reverse().find((m) => m.speaker === 'customer')?.text ||
+        'কাস্টমারের সাথে অর্ডার বা পণ্য নিয়ে কথা বলুন';
+      const linkedOrd = activeCallObj.orderId
+        ? orders.find((o) => o.id === activeCallObj.orderId)
+        : undefined;
+      const contextPrompt = linkedOrd
+        ? `Customer ${activeCallObj.customerName} (Order ${linkedOrd.id}, Total ৳${linkedOrd.pricing.total}, Status: ${linkedOrd.status}). Customer said: "${lastCustomerLine}". Draft a helpful Bengali response for our support assistant.`
+        : `Customer ${activeCallObj.customerName} said: "${lastCustomerLine}". Draft a polite Bengali response for our support assistant.`;
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: contextPrompt,
+          lang: adminLang,
+          assistantDraft: true,
+          keywordRules: settings.aiKeywordRules || []
+        })
+      });
+      const data = await res.json();
+      if (data.reply) {
+        setCallReplyInput(data.reply);
+      }
+    } catch {
+      setCallReplyInput('আসসালামু আলাইকুম, BuyOne BD সাপোর্ট ডেস্ক থেকে বলছি। কীভাবে সাহায্য করতে পারি?');
+    } finally {
+      setIsGeneratingCallDraft(false);
+    }
+  };
+
   const sidebarItems: { id: AdminTab; labelBn: string; labelEn: string; icon: any; badge?: number }[] = [
     { id: 'overview', labelBn: 'ওভারভিউ ও অ্যানালিটিক্স', labelEn: 'Overview', icon: LayoutDashboard },
+    { id: 'support_desk', labelBn: 'লাইভ চ্যাট ও ব্রাউজার কল', labelEn: 'Live Chat & Calls', icon: Headphones, badge: supportDeskBadge },
     { id: 'orders', labelBn: 'অর্ডার ম্যানেজমেন্ট', labelEn: 'Orders', icon: ShoppingCart, badge: orders.length },
     { id: 'products', labelBn: 'পণ্য তালিকা ও প্রোডাক্ট যোগ', labelEn: 'Products', icon: Package, badge: products.length },
     { id: 'categories', labelBn: 'ক্যাটাগরি ম্যানেজমেন্ট', labelEn: 'Categories', icon: Grid, badge: categories.length },
@@ -653,6 +780,428 @@ export const AdminDashboard: React.FC = () => {
 
         {/* Content Area */}
         <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 bg-slate-950">
+          {/* LIVE INCOMING BROWSER CALL ALERT BANNER (Always visible across tabs) */}
+          {ringingCalls.length > 0 && (
+            <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-emerald-900/90 via-teal-900/90 to-slate-900 border border-emerald-500/60 shadow-xl shadow-emerald-950/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-500 flex items-center justify-center text-white shrink-0 shadow-lg shadow-emerald-500/30">
+                  <PhoneIncoming className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                      {at('ইনকামিং ব্রাউজার কল', 'Incoming Browser Call')}
+                    </span>
+                    {ringingCalls[0].orderId && (
+                      <span className="text-[11px] font-mono font-bold text-amber-300">
+                        Order #{ringingCalls[0].orderId}
+                      </span>
+                    )}
+                  </div>
+                  <h4 className="text-sm font-black text-white mt-0.5">
+                    {ringingCalls[0].customerName} • <span className="font-mono text-emerald-300">{ringingCalls[0].customerPhone}</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-300">
+                    {at('কাস্টমার ব্রাউজার থেকে কল করেছেন — রিসিভ করতে বাটনে ক্লিক করুন', 'Customer is calling via storefront browser — answer to start talking')}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => {
+                    const call = ringingCalls[0];
+                    answerBrowserCallFromBackend(call.id);
+                    setSelectedCallId(call.id);
+                    setActiveTab('support_desk');
+                  }}
+                  className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 shadow-lg cursor-pointer transition-colors"
+                >
+                  <PhoneCall className="w-4 h-4" />
+                  <span>{at('কল রিসিভ করুন', 'Receive Call')}</span>
+                </button>
+                <button
+                  onClick={() => endBrowserCallSession(ringingCalls[0].id, false)}
+                  className="px-3 py-2.5 bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-200 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <PhoneOff className="w-4 h-4" />
+                  <span>{at('কেটে দিন', 'Decline')}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: LIVE CHAT INBOX & BROWSER CALL DESK */}
+          {activeTab === 'support_desk' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xl font-black text-white flex items-center gap-2">
+                    <Headphones className="w-5 h-5 text-emerald-400" />
+                    <span>{at('লাইভ সাপোর্ট চ্যাট ও ব্রাউজার কল ডেস্ক', 'Backend Live Chat & Browser Call Desk')}</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    {at(
+                      'কাস্টমারের ব্রাউজার কল রিসিভ করুন, কথোপকথন ও কল হিস্ট্রি দেখুন এবং ম্যানুয়াল বা AI দিয়ে চ্যাটে রিপ্লাই দিন',
+                      'Receive customer browser calls, view live call talks & history, and reply to chats manually or via AI'
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* A. BROWSER CALL DESK & HISTORY */}
+              <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between">
+                  <h4 className="text-sm font-black text-white flex items-center gap-2">
+                    <PhoneCall className="w-4 h-4 text-emerald-400" />
+                    <span>{at('ব্রাউজার কল রিসিভার ও কল টক হিস্ট্রি', 'Browser Call Console & Calling Talk History')}</span>
+                  </h4>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    {at(`মোট কল: ${browserCalls.length}টি`, `Total Calls: ${browserCalls.length}`)}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-800">
+                  {/* Call Sessions List */}
+                  <div className="p-3 space-y-2 max-h-[420px] overflow-y-auto">
+                    {browserCalls.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-slate-500">
+                        {at('এখনও কোনো ব্রাউজার কল নেই। কাস্টমার স্টোর থেকে কল করলে এখানে আসবে।', 'No browser calls yet. Customer calls from storefront appear here.')}
+                      </div>
+                    ) : (
+                      browserCalls.map((call) => {
+                        const isSelected = activeCallObj?.id === call.id;
+                        return (
+                          <button
+                            key={call.id}
+                            onClick={() => setSelectedCallId(call.id)}
+                            className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-emerald-950/60 border-emerald-500/60'
+                                : 'bg-slate-950/50 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-bold text-white truncate">{call.customerName}</span>
+                              <span
+                                className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                                  call.status === 'ringing_backend'
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                    : call.status === 'connected'
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                    : 'bg-slate-800 text-slate-400'
+                                }`}
+                              >
+                                {call.status === 'ringing_backend'
+                                  ? at('রিং হচ্ছে', 'Ringing')
+                                  : call.status === 'connected'
+                                  ? at('যুক্ত', 'Live')
+                                  : at('সমাপ্ত', 'Ended')}
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-mono text-slate-400 mt-1 flex items-center justify-between">
+                              <span>{call.customerPhone}</span>
+                              <span>{call.transcript.length} msgs</span>
+                            </div>
+                            {call.orderId && (
+                              <div className="text-[10px] font-mono text-amber-400 mt-1">Order #{call.orderId}</div>
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Active Call Console & Transcript + Order Details */}
+                  <div className="lg:col-span-2 p-4 flex flex-col justify-between min-h-[360px]">
+                    {!activeCallObj ? (
+                      <div className="flex-1 flex items-center justify-center text-xs text-slate-500">
+                        {at('বিস্তারিত দেখতে বাম পাশ থেকে একটি কল নির্বাচন করুন', 'Select a call session to view transcript and controls')}
+                      </div>
+                    ) : (
+                      <>
+                        {/* Call Header & Linked Order Summary */}
+                        <div className="pb-3 border-b border-slate-800 space-y-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <h5 className="text-sm font-black text-white flex items-center gap-2">
+                                <span>{activeCallObj.customerName}</span>
+                                <span className="text-xs font-mono text-emerald-400">({activeCallObj.customerPhone})</span>
+                              </h5>
+                              <p className="text-[11px] text-slate-400">
+                                {new Date(activeCallObj.startedAt).toLocaleString()} • {activeCallObj.durationSeconds}s
+                                {activeCallObj.answeredBy ? ` • ${activeCallObj.answeredBy}` : ''}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {activeCallObj.status === 'ringing_backend' && (
+                                <button
+                                  onClick={() => answerBrowserCallFromBackend(activeCallObj.id)}
+                                  className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                                >
+                                  <PhoneCall className="w-3.5 h-3.5" />
+                                  <span>{at('কল রিসিভ করুন', 'Answer Call')}</span>
+                                </button>
+                              )}
+                              {activeCallObj.status !== 'ended' && (
+                                <>
+                                  <button
+                                    onClick={() => endBrowserCallSession(activeCallObj.id, true)}
+                                    className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl cursor-pointer"
+                                  >
+                                    {at('কনফার্ম ও শেষ', 'Confirm & End')}
+                                  </button>
+                                  <button
+                                    onClick={() => endBrowserCallSession(activeCallObj.id, false)}
+                                    className="px-3 py-2 bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-200 font-bold text-xs rounded-xl cursor-pointer"
+                                  >
+                                    {at('কল শেষ', 'End Call')}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Linked Order Full Details when calling customer */}
+                          {activeCallObj.orderId && (() => {
+                            const ord = orders.find((o) => o.id === activeCallObj.orderId);
+                            if (!ord) return null;
+                            return (
+                              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                  <span className="font-bold text-amber-400">#{ord.id}</span>
+                                  <span className="text-slate-400 mx-1.5">•</span>
+                                  <span className="text-slate-200">
+                                    {ord.items.map((i) => `${i.productTitleBn} x${i.quantity}`).join(', ')}
+                                  </span>
+                                  <span className="text-slate-400 mx-1.5">•</span>
+                                  <span className="text-slate-400">{ord.customer.address}, {ord.customer.district}</span>
+                                </div>
+                                <span className="font-black text-emerald-400 tabular-nums">৳ {ord.pricing.total.toLocaleString()}</span>
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        {/* Calling Talk Transcript */}
+                        <div className="flex-1 overflow-y-auto py-3 space-y-2.5 max-h-56">
+                          {activeCallObj.transcript.map((item) => (
+                            <div
+                              key={item.id}
+                              className={`flex ${item.speaker === 'customer' ? 'justify-start' : 'justify-end'}`}
+                            >
+                              <div
+                                className={`max-w-[82%] px-3.5 py-2 rounded-2xl text-xs ${
+                                  item.speaker === 'customer'
+                                    ? 'bg-slate-800 text-slate-100 rounded-tl-sm'
+                                    : item.speaker === 'assistant'
+                                    ? 'bg-emerald-600 text-white rounded-tr-sm'
+                                    : 'bg-sky-700 text-white rounded-tr-sm'
+                                }`}
+                              >
+                                <div className="text-[10px] opacity-75 font-bold mb-0.5 flex items-center justify-between gap-3">
+                                  <span>
+                                    {item.speaker === 'customer'
+                                      ? activeCallObj.customerName
+                                      : item.speaker === 'assistant'
+                                      ? at('অ্যাসিস্ট্যান্ট (আপনি)', 'Backend Assistant')
+                                      : 'AI Auto'}
+                                  </span>
+                                  <span>{item.time}</span>
+                                </div>
+                                <p>{item.textBn || item.text}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Speak / Send Message During Call */}
+                        {activeCallObj.status !== 'ended' && (
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              if (!callReplyInput.trim()) return;
+                              appendBrowserCallMessage(activeCallObj.id, 'assistant', callReplyInput.trim(), callReplyInput.trim());
+                              setCallReplyInput('');
+                            }}
+                            className="pt-3 border-t border-slate-800 flex flex-wrap gap-2"
+                          >
+                            <input
+                              type="text"
+                              value={callReplyInput}
+                              onChange={(e) => setCallReplyInput(e.target.value)}
+                              placeholder={at('কলে কাস্টমারকে বলার মেসেজ লিখুন...', 'Type reply to speak/send in live browser call...')}
+                              className="flex-1 min-w-[200px] px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleGenerateCallAiDraft}
+                              disabled={isGeneratingCallDraft}
+                              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Wand2 className="w-3.5 h-3.5" />
+                              <span>{isGeneratingCallDraft ? '...' : at('AI ড্রাফট', 'AI Draft')}</span>
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              <span>{at('পাঠান', 'Send')}</span>
+                            </button>
+                          </form>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* B. FULL CHAT HISTORY & MANUAL / AI REPLY INBOX */}
+              <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between">
+                  <h4 className="text-sm font-black text-white flex items-center gap-2">
+                    <MessageCircle className="w-4 h-4 text-sky-400" />
+                    <span>{at('কাস্টমার লাইভ চ্যাট হিস্ট্রি ও ম্যানুয়াল / AI রিপ্লাই', 'Customer Live Chat History & Assistant Reply')}</span>
+                  </h4>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    {at(`${supportChats.length}টি থ্রেড`, `${supportChats.length} threads`)}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-800">
+                  {/* Threads Column */}
+                  <div className="p-3 space-y-2 max-h-[460px] overflow-y-auto">
+                    {supportChats.map((chat) => {
+                      const isSelected = activeChatObj?.id === chat.id;
+                      const lastMsg = chat.messages[chat.messages.length - 1];
+                      return (
+                        <button
+                          key={chat.id}
+                          onClick={() => {
+                            setSelectedChatId(chat.id);
+                            markChatRead(chat.id);
+                          }}
+                          className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-sky-950/50 border-sky-500/60'
+                              : 'bg-slate-950/50 border-slate-800 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-white truncate">{chat.customerName}</span>
+                            {chat.unreadByAdmin > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold">
+                                {chat.unreadByAdmin}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400 line-clamp-1 mt-1">
+                            {lastMsg?.text || '...'}
+                          </p>
+                          <div className="text-[10px] text-slate-500 font-mono mt-1">
+                            {chat.customerPhone || 'Guest'} • {new Date(chat.lastUpdated).toLocaleTimeString()}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Selected Thread + Reply Composer */}
+                  <div className="lg:col-span-2 p-4 flex flex-col justify-between min-h-[420px]">
+                    {!activeChatObj ? (
+                      <div className="flex-1 flex items-center justify-center text-xs text-slate-500">
+                        {at('চ্যাট দেখতে একটি থ্রেড নির্বাচন করুন', 'Select a chat thread to inspect & reply')}
+                      </div>
+                    ) : (
+                      <>
+                        <div className="pb-3 border-b border-slate-800 flex items-center justify-between">
+                          <div>
+                            <h5 className="text-sm font-black text-white">{activeChatObj.customerName}</h5>
+                            <p className="text-[11px] text-slate-400 font-mono">
+                              {activeChatObj.customerPhone || 'Visitor'} • {activeChatObj.messages.length} messages
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto py-3 space-y-2.5 max-h-72">
+                          {activeChatObj.messages.map((m) => (
+                            <div
+                              key={m.id}
+                              className={`flex ${m.sender === 'customer' ? 'justify-start' : 'justify-end'}`}
+                            >
+                              <div
+                                className={`max-w-[82%] px-3.5 py-2 rounded-2xl text-xs whitespace-pre-wrap ${
+                                  m.sender === 'customer'
+                                    ? 'bg-slate-800 text-slate-100 rounded-tl-sm'
+                                    : m.sender === 'assistant'
+                                    ? 'bg-emerald-600 text-white rounded-tr-sm'
+                                    : 'bg-sky-700 text-white rounded-tr-sm'
+                                }`}
+                              >
+                                <div className="text-[10px] opacity-75 font-bold mb-0.5 flex items-center justify-between gap-3">
+                                  <span>
+                                    {m.sender === 'customer'
+                                      ? activeChatObj.customerName
+                                      : m.sender === 'assistant'
+                                      ? at('অ্যাসিস্ট্যান্ট (ম্যানুয়াল)', 'Support Assistant')
+                                      : at('AI অটো উত্তর', 'AI Auto-Reply')}
+                                  </span>
+                                  <span>{m.time}</span>
+                                </div>
+                                <p>{m.text}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (!chatReplyDraft.trim()) return;
+                            sendAgentChatReply(activeChatObj.id, chatReplyDraft.trim());
+                            setChatReplyDraft('');
+                          }}
+                          className="pt-3 border-t border-slate-800 space-y-2"
+                        >
+                          <div className="flex flex-wrap gap-2">
+                            <input
+                              type="text"
+                              value={chatReplyDraft}
+                              onChange={(e) => setChatReplyDraft(e.target.value)}
+                              placeholder={at('ম্যানুয়ালি উত্তর লিখুন অথবা "Generate AI" চাপুন...', 'Type manual reply or click "Generate AI"...')}
+                              className="flex-1 min-w-[200px] px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                            />
+                            <button
+                              type="button"
+                              disabled={isGeneratingAiReply}
+                              onClick={async () => {
+                                setIsGeneratingAiReply(true);
+                                const draft = await generateAgentAIReply(activeChatObj.id);
+                                if (draft) setChatReplyDraft(draft);
+                                setIsGeneratingAiReply(false);
+                              }}
+                              className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span>{isGeneratingAiReply ? at('তৈরি হচ্ছে...', 'Generating...') : 'Generate AI'}</span>
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              <span>{at('রিপ্লাই পাঠান', 'Send Reply')}</span>
+                            </button>
+                          </div>
+                        </form>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6 animate-fade-in">
@@ -1133,14 +1682,20 @@ export const AdminDashboard: React.FC = () => {
                         <img src={prod.images[0]} alt="" className="w-full h-full object-cover" />
                       </div>
                       <div className="overflow-hidden flex-1 min-w-0">
-                        <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">{at(prod.categoryBn, prod.category)}</span>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">{at(prod.categoryBn, prod.category)}</span>
+                          {prod.subcategory && (
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">{prod.subcategory}</span>
+                          )}
+                        </div>
                         <h4 className="font-bold text-sm text-white line-clamp-1">{at(prod.titleBn, prod.title)}</h4>
                         <div className="flex items-baseline gap-2 mt-1">
                           <span className="font-black text-sm text-emerald-400">৳ {prod.price.toLocaleString()}</span>
                           <span className="text-xs text-slate-500 line-through">৳ {prod.originalPrice.toLocaleString()}</span>
                         </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
+                        <div className="text-[11px] text-slate-400 mt-0.5 truncate">
                           {at(`স্টক: ${prod.stock} টি • SKU: ${prod.sku}`, `Stock: ${prod.stock} • SKU: ${prod.sku}`)}
+                          {prod.seo?.slug && ` • /product/${prod.seo.slug}`}
                         </div>
                       </div>
                     </div>
@@ -2892,6 +3447,155 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* AI Support Auto-Answer Keyword Rules */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                  <div>
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span>{at('AI সাপোর্ট অটো-উত্তর কিওয়ার্ড সেটআপ', 'AI Support Auto-Answer Keyword Rules')}</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      {at(
+                        'কাস্টমার চ্যাটে নিচের কোনো কীওয়ার্ড লিখলে সাথে সাথেই নির্ধারিত উত্তর স্বয়ংক্রিয়ভাবে চলে যাবে।',
+                        'Instant automatic replies triggered when customers mention matching keywords in chat.'
+                      )}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    {(settings.aiKeywordRules || []).filter((r) => r.enabled).length} Active Rules
+                  </span>
+                </div>
+
+                {/* Add New Keyword Rule */}
+                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">
+                      {at('কীওয়ার্ড (কমা দিয়ে আলাদা)', 'Keywords (comma separated)')}
+                    </label>
+                    <input
+                      type="text"
+                      value={newRuleKeywords}
+                      onChange={(e) => setNewRuleKeywords(e.target.value)}
+                      placeholder="warranty, ওয়ারেন্টি, return, রিটার্ন"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">
+                      {at('অটো উত্তর (বাংলা)', 'Auto Reply (BN)')}
+                    </label>
+                    <input
+                      type="text"
+                      value={newRuleReplyBn}
+                      onChange={(e) => setNewRuleReplyBn(e.target.value)}
+                      placeholder="৭ দিনের সহজ রিপ্লেসমেন্ট ওয়ারেন্টি রয়েছে!"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+                  <div className="flex flex-col justify-between gap-2">
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">
+                        {at('অটো উত্তর (ইংরেজি)', 'Auto Reply (EN)')}
+                      </label>
+                      <input
+                        type="text"
+                        value={newRuleReplyEn}
+                        onChange={(e) => setNewRuleReplyEn(e.target.value)}
+                        placeholder="7-day easy replacement warranty included."
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                  </div>
+                  <div className="md:col-span-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const kwList = newRuleKeywords
+                          .split(',')
+                          .map((k) => k.trim())
+                          .filter(Boolean);
+                        if (kwList.length === 0 || (!newRuleReplyBn.trim() && !newRuleReplyEn.trim())) {
+                          addToast('error', at('তথ্য দিন', 'Missing fields'), at('কীওয়ার্ড এবং উত্তর লিখুন।', 'Enter keywords and reply text.'));
+                          return;
+                        }
+                        const nextRules = [
+                          ...(settings.aiKeywordRules || []),
+                          {
+                            id: `kw-${Date.now()}`,
+                            keywords: kwList,
+                            replyBn: newRuleReplyBn.trim() || newRuleReplyEn.trim(),
+                            replyEn: newRuleReplyEn.trim() || newRuleReplyBn.trim(),
+                            enabled: true
+                          }
+                        ];
+                        updateSettings({ aiKeywordRules: nextRules });
+                        setNewRuleKeywords('');
+                        setNewRuleReplyBn('');
+                        setNewRuleReplyEn('');
+                        addToast('success', at('কীওয়ার্ড রুল যোগ হয়েছে', 'Keyword rule added'), kwList.join(', '));
+                      }}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{at('নতুন কীওয়ার্ড রুল যোগ করুন', 'Add Keyword Rule')}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Rules List */}
+                <div className="space-y-2.5">
+                  {(settings.aiKeywordRules || []).map((rule) => (
+                    <div
+                      key={rule.id}
+                      className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {rule.keywords.map((kw, kIdx) => (
+                            <span
+                              key={kIdx}
+                              className="px-2 py-0.5 rounded-md bg-slate-800 text-emerald-300 font-mono text-[11px] font-bold"
+                            >
+                              {kw}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="text-xs text-slate-200">{at(rule.replyBn, rule.replyEn)}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = (settings.aiKeywordRules || []).map((r) =>
+                              r.id === rule.id ? { ...r, enabled: !r.enabled } : r
+                            );
+                            updateSettings({ aiKeywordRules: updated });
+                          }}
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold cursor-pointer border ${
+                            rule.enabled
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                              : 'bg-slate-800 text-slate-400 border-slate-700'
+                          }`}
+                        >
+                          {rule.enabled ? at('সক্রিয়', 'Active') : at('বন্ধ', 'Paused')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const filtered = (settings.aiKeywordRules || []).filter((r) => r.id !== rule.id);
+                            updateSettings({ aiKeywordRules: filtered });
+                          }}
+                          className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
@@ -3109,6 +3813,133 @@ export const AdminDashboard: React.FC = () => {
                       <div className="h-full bg-amber-500 rounded-full" style={{ width: '62%' }} />
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* CUSTOMER FULL BROWSER HISTORY */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <History className="w-4 h-4 text-emerald-400" />
+                      <span>{at('কাস্টমার সম্পূর্ণ ব্রাউজিং হিস্ট্রি (Customer Browser History)', 'Customer Full Browsing History')}</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      {at(
+                        'ক্রেতারা কোন কোন SEO URL, প্রোডাক্ট ও ক্যাটাগরি ভিজিট করেছেন তার লাইভ রেকর্ড',
+                        'Live audit log of every customer visited URL path, product, category & device'
+                      )}
+                    </p>
+                  </div>
+                  <input
+                    type="text"
+                    value={browsingSearch}
+                    onChange={(e) => setBrowsingSearch(e.target.value)}
+                    placeholder={at('কাস্টমার বা URL খুঁজুন...', 'Search visitor or URL...')}
+                    className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white w-full sm:w-64"
+                  />
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-800">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
+                      <tr>
+                        <th className="py-2.5 px-3">{at('গ্রাহক / ভিজিটর', 'Customer')}</th>
+                        <th className="py-2.5 px-3">{at('ভিজিট করা URL', 'Visited URL Path')}</th>
+                        <th className="py-2.5 px-3">{at('পেইজ / পণ্যের নাম', 'Page / Product')}</th>
+                        <th className="py-2.5 px-3">{at('ডিভাইস', 'Device')}</th>
+                        <th className="py-2.5 px-3">{at('সময়', 'Time')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {customerBrowsingLogs
+                        .filter(
+                          (log) =>
+                            !browsingSearch.trim() ||
+                            log.customerName.toLowerCase().includes(browsingSearch.toLowerCase()) ||
+                            log.urlPath.toLowerCase().includes(browsingSearch.toLowerCase()) ||
+                            log.pageTitle.toLowerCase().includes(browsingSearch.toLowerCase())
+                        )
+                        .slice(0, 40)
+                        .map((log) => (
+                          <tr key={log.id} className="hover:bg-slate-800/40">
+                            <td className="py-2.5 px-3 font-bold text-white">
+                              {log.customerName}
+                              {log.customerPhone && (
+                                <span className="block text-[10px] font-mono text-slate-400">{log.customerPhone}</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono text-emerald-400">{log.urlPath}</td>
+                            <td className="py-2.5 px-3">{log.productTitle || log.pageTitle}</td>
+                            <td className="py-2.5 px-3 text-slate-400">{log.device}</td>
+                            <td className="py-2.5 px-3 font-mono text-[11px] text-slate-400">
+                              {new Date(log.timestamp).toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* SERVER-SIDE META PIXEL CAPI TRACKING EVENTS */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Activity className="w-4 h-4 text-sky-400" />
+                      <span>{at('সার্ভার-সাইড পিক্সেল ট্র্যাকিং লগ (Server-Side Pixel Events)', 'Server-Side Pixel CAPI Events')}</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      {at(
+                        'সার্ভার `/api/tracking/pixel` এর মাধ্যমে পাঠানো রিয়েল-টাইম ইভেন্টসমূহ',
+                        'Real-time server-side events dispatched via /api/tracking/pixel for each SEO URL'
+                      )}
+                    </p>
+                  </div>
+                  <span className="text-[11px] font-mono font-bold text-sky-300 bg-sky-500/10 px-2.5 py-1 rounded-full border border-sky-500/30">
+                    {serverPixelEvents.length} Events
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-800">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
+                      <tr>
+                        <th className="py-2.5 px-3">Event</th>
+                        <th className="py-2.5 px-3">URL Path</th>
+                        <th className="py-2.5 px-3">Content / Value</th>
+                        <th className="py-2.5 px-3">CAPI Status</th>
+                        <th className="py-2.5 px-3">Time</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {serverPixelEvents.slice(0, 30).map((ev) => (
+                        <tr key={ev.id} className="hover:bg-slate-800/40">
+                          <td className="py-2.5 px-3 font-bold text-white">{ev.eventName}</td>
+                          <td className="py-2.5 px-3 font-mono text-sky-400">{ev.urlPath}</td>
+                          <td className="py-2.5 px-3">
+                            {ev.contentName || '—'}{' '}
+                            {ev.value ? <span className="font-bold text-emerald-400">(৳{ev.value})</span> : ''}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                ev.status === 'sent_capi'
+                                  ? 'bg-emerald-500/20 text-emerald-300'
+                                  : 'bg-slate-800 text-slate-300'
+                              }`}
+                            >
+                              {ev.status === 'sent_capi' ? 'Meta CAPI Sent' : 'Server Logged'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 font-mono text-[11px] text-slate-400">
+                            {new Date(ev.timestamp).toLocaleTimeString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -3657,6 +4488,80 @@ export const AdminDashboard: React.FC = () => {
                       }
                       placeholder="@buyonebd"
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Technical SEO: robots.txt & sitemap.xml */}
+                <div className="pt-3 border-t border-slate-800 space-y-3 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <label className="flex items-center gap-2 font-bold text-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.seoSettings?.sitemapEnabled ?? true}
+                        onChange={(e) =>
+                          updateSettings({
+                            seoSettings: { ...settings.seoSettings!, sitemapEnabled: e.target.checked }
+                          })
+                        }
+                        className="w-4 h-4 rounded text-emerald-500 bg-slate-950 border-slate-700"
+                      />
+                      <span>{at('অটোমেটিক XML সাইটম্যাপ চালু রাখুন (/sitemap.xml)', 'Enable Automatic XML Sitemap (/sitemap.xml)')}</span>
+                    </label>
+
+                    <div className="flex items-center gap-2">
+                      <a
+                        href="/robots.txt"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 font-mono text-[11px] flex items-center gap-1"
+                      >
+                        <FileText className="w-3 h-3" />
+                        <span>/robots.txt</span>
+                      </a>
+                      <a
+                        href="/sitemap.xml"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 font-mono text-[11px] flex items-center gap-1"
+                      >
+                        <Globe className="w-3 h-3" />
+                        <span>/sitemap.xml</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-slate-300 font-bold">robots.txt Content (Server Live Sync)</label>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateSettings({
+                            seoSettings: {
+                              ...settings.seoSettings!,
+                              robotsTxt:
+                                'User-agent: *\nAllow: /\nDisallow: /hossain\nSitemap: https://buyonebd.com/sitemap.xml'
+                            }
+                          })
+                        }
+                        className="text-[11px] text-emerald-400 hover:underline cursor-pointer"
+                      >
+                        {at('ডিফল্ট লোড করুন', 'Reset Default')}
+                      </button>
+                    </div>
+                    <textarea
+                      rows={4}
+                      value={
+                        settings.seoSettings?.robotsTxt ||
+                        'User-agent: *\nAllow: /\nDisallow: /hossain\nSitemap: https://buyonebd.com/sitemap.xml'
+                      }
+                      onChange={(e) =>
+                        updateSettings({
+                          seoSettings: { ...settings.seoSettings!, robotsTxt: e.target.value }
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-emerald-300 font-mono text-xs"
                     />
                   </div>
                 </div>
@@ -4441,24 +5346,43 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">ক্যাটাগরি</label>
-                <select
-                  value={productForm.category}
-                  onChange={(e) => {
-                    const sel = categories.find((c) => c.slug === e.target.value);
-                    setProductForm({
-                      ...productForm,
-                      category: e.target.value,
-                      categoryBn: sel ? sel.nameBn : productForm.categoryBn
-                    });
-                  }}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
-                >
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.slug}>{c.nameBn} ({c.nameEn})</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">ক্যাটাগরি</label>
+                  <select
+                    value={productForm.category}
+                    onChange={(e) => {
+                      const sel = categories.find((c) => c.slug === e.target.value);
+                      setProductForm({
+                        ...productForm,
+                        category: e.target.value,
+                        categoryBn: sel ? sel.nameBn : productForm.categoryBn,
+                        subcategory: ''
+                      });
+                    }}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  >
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.slug}>{c.nameBn} ({c.nameEn})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('সাব-ক্যাটাগরি (Subcategory)', 'Subcategory')}</label>
+                  <select
+                    value={productForm.subcategory || ''}
+                    onChange={(e) => setProductForm({ ...productForm, subcategory: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  >
+                    <option value="">{at('নির্বাচন করুন (ঐচ্ছিক)', 'None / Optional')}</option>
+                    {(categories.find((c) => c.slug === productForm.category)?.subcategories || []).map((sub) => (
+                      <option key={sub.slug} value={sub.slug}>
+                        {sub.nameBn} ({sub.nameEn})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {/* Product Main & Gallery Media Manager (Recommended 600x600px) */}
@@ -4619,6 +5543,102 @@ export const AdminDashboard: React.FC = () => {
                 />
               </div>
 
+              {/* Per-Product SEO & Robots Settings */}
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-sky-400 flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>{at('প্রোডাক্ট SEO ও Robots সেটআপ', 'Product SEO & Robots Meta')}</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    /product/{productForm.seo?.slug || 'auto-slug'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1">URL Slug</label>
+                    <input
+                      type="text"
+                      value={productForm.seo?.slug || ''}
+                      onChange={(e) =>
+                        setProductForm({
+                          ...productForm,
+                          seo: { ...productForm.seo, slug: e.target.value }
+                        })
+                      }
+                      placeholder="ultra-watch-9-pro-amoled"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1">Robots Meta</label>
+                    <select
+                      value={productForm.seo?.robots || 'index, follow'}
+                      onChange={(e) =>
+                        setProductForm({
+                          ...productForm,
+                          seo: { ...productForm.seo, robots: e.target.value }
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                    >
+                      <option value="index, follow">index, follow</option>
+                      <option value="noindex, follow">noindex, follow</option>
+                      <option value="noindex, nofollow">noindex, nofollow</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-bold mb-1">SEO Meta Title</label>
+                  <input
+                    type="text"
+                    value={productForm.seo?.metaTitle || ''}
+                    onChange={(e) =>
+                      setProductForm({
+                        ...productForm,
+                        seo: { ...productForm.seo, metaTitle: e.target.value }
+                      })
+                    }
+                    placeholder={productForm.title || 'Product Meta Title'}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-bold mb-1">SEO Meta Description</label>
+                  <textarea
+                    rows={2}
+                    value={productForm.seo?.metaDescription || ''}
+                    onChange={(e) =>
+                      setProductForm({
+                        ...productForm,
+                        seo: { ...productForm.seo, metaDescription: e.target.value }
+                      })
+                    }
+                    placeholder="Concise search snippet for Google..."
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-bold mb-1">SEO Keywords</label>
+                  <input
+                    type="text"
+                    value={productForm.seo?.keywords || ''}
+                    onChange={(e) =>
+                      setProductForm({
+                        ...productForm,
+                        seo: { ...productForm.seo, keywords: e.target.value }
+                      })
+                    }
+                    placeholder="smart watch, buyone bd, gadget price bd"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+              </div>
+
               <div className="flex items-center justify-between pt-2">
                 <label className="flex items-center gap-2 cursor-pointer text-slate-300">
                   <input
@@ -4738,6 +5758,80 @@ export const AdminDashboard: React.FC = () => {
                     </button>
                   )}
                 </div>
+              </div>
+
+              {/* Subcategories Manager */}
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                <span className="font-bold text-slate-300 block">
+                  {at('সাব-ক্যাটাগরি (Subcategories Menu)', 'Subcategories (Nested Menu)')}
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={newSubNameBn}
+                    onChange={(e) => setNewSubNameBn(e.target.value)}
+                    placeholder={at('বাংলা নাম', 'Bangla Name')}
+                    className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white"
+                  />
+                  <input
+                    type="text"
+                    value={newSubNameEn}
+                    onChange={(e) => setNewSubNameEn(e.target.value)}
+                    placeholder={at('ইংরেজি নাম', 'English Name')}
+                    className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!newSubNameBn.trim() && !newSubNameEn.trim()) return;
+                    const subSlug = (newSubNameEn || newSubNameBn)
+                      .toLowerCase()
+                      .replace(/[^a-z0-9]+/g, '-')
+                      .replace(/(^-|-$)/g, '') || `sub-${Date.now().toString().slice(-4)}`;
+                    setCategoryForm({
+                      ...categoryForm,
+                      subcategories: [
+                        ...(categoryForm.subcategories || []),
+                        {
+                          nameBn: newSubNameBn.trim() || newSubNameEn.trim(),
+                          nameEn: newSubNameEn.trim() || newSubNameBn.trim(),
+                          slug: subSlug
+                        }
+                      ]
+                    });
+                    setNewSubNameBn('');
+                    setNewSubNameEn('');
+                  }}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold rounded-lg cursor-pointer"
+                >
+                  + {at('সাব-ক্যাটাগরি যোগ করুন', 'Add Subcategory')}
+                </button>
+
+                {(categoryForm.subcategories || []).length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {(categoryForm.subcategories || []).map((sub, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-200"
+                      >
+                        <span>{at(sub.nameBn, sub.nameEn)}</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCategoryForm({
+                              ...categoryForm,
+                              subcategories: (categoryForm.subcategories || []).filter((_, i) => i !== idx)
+                            })
+                          }
+                          className="text-rose-400 hover:text-rose-300 font-bold cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-2">

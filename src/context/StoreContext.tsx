@@ -16,10 +16,15 @@ import {
   CourierProvider,
   PriceAlert,
   CustomerProfile,
-  DailyCheckInState,
   CustomerCoupon,
   WhatsAppCloudLog,
-  StoreTheme
+  StoreTheme,
+  CustomerBrowsingEvent,
+  SupportChatSession,
+  SupportChatMessage,
+  BrowserCallSession,
+  BrowserCallTranscriptItem,
+  ServerPixelEvent
 } from '../types';
 import {
   INITIAL_PRODUCTS,
@@ -30,7 +35,6 @@ import {
   INITIAL_ABANDONED_CARTS,
   INITIAL_USERS,
   INITIAL_REVIEWS,
-  BD_DISTRICTS,
   BUSINESS_THEME_PRESETS
 } from '../data/initialData';
 
@@ -55,6 +59,21 @@ interface StoreContextType {
   adminLang: 'bn' | 'en';
   setAdminLang: (lang: 'bn' | 'en') => void;
   t: (bn: string, en: string) => string;
+
+  // Storefront Catalog Filters & SEO URL Routing
+  selectedCategory: string;
+  setSelectedCategory: (cat: string) => void;
+  selectedSubcategory: string | null;
+  setSelectedSubcategory: (sub: string | null) => void;
+  searchQuery: string;
+  setSearchQuery: (q: string) => void;
+  storeSubView: 'home' | 'products';
+  setStoreSubView: (view: 'home' | 'products') => void;
+  goHome: () => void;
+  openAllProductsPage: () => void;
+  selectCategoryFilter: (catSlug: string, subSlug?: string | null) => void;
+  openProductPage: (product: Product) => void;
+  navigateToPath: (path: string, replace?: boolean) => void;
 
   // Products
   products: Product[];
@@ -132,6 +151,26 @@ interface StoreContextType {
   whatsappLogs: WhatsAppCloudLog[];
   sendMetaWhatsAppMessage: (payload: { to: string; message?: string; templateName?: string }) => Promise<{ success: boolean; mode?: string; error?: string }>;
   applyBusinessTheme: (themeId: StoreTheme, includeCategories?: boolean) => void;
+
+  // Server-Side Pixel CAPI & Customer Browsing Logs
+  serverPixelEvents: ServerPixelEvent[];
+  customerBrowsingLogs: CustomerBrowsingEvent[];
+  trackPixelEvent: (eventName: string, extras?: { urlPath?: string; value?: number; contentName?: string }) => void;
+  recordPageVisit: (urlPath: string, pageTitle: string, product?: Product | null, categorySlug?: string) => void;
+
+  // Live Support Chats & Backend Browser Call Desk
+  supportChats: SupportChatSession[];
+  activeChatSessionId: string;
+  sendCustomerChatMessage: (text: string) => Promise<void>;
+  sendAgentChatReply: (sessionId: string, text: string) => void;
+  generateAgentAIReply: (sessionId: string) => Promise<string>;
+  markChatRead: (sessionId: string) => void;
+  browserCalls: BrowserCallSession[];
+  activeBrowserCall: BrowserCallSession | null;
+  initiateCustomerBrowserCall: (order?: Order | null) => void;
+  answerBrowserCallFromBackend: (callId: string) => void;
+  appendBrowserCallMessage: (callId: string, speaker: 'customer' | 'assistant' | 'ai', text: string, textBn?: string) => void;
+  endBrowserCallSession: (callId: string, confirmed?: boolean) => void;
 
   // Abandoned Carts
   abandonedCarts: AbandonedCart[];
@@ -291,6 +330,10 @@ function mergeSettings(raw: any): StoreSettings {
       socialLinks: { ...INITIAL_SETTINGS.marketingSettings.socialLinks!, ...(raw.marketingSettings?.socialLinks || {}) }
     },
     aiSettings: { ...INITIAL_SETTINGS.aiSettings, ...(raw.aiSettings || {}) },
+    aiKeywordRules:
+      Array.isArray(raw.aiKeywordRules) && raw.aiKeywordRules.length > 0
+        ? raw.aiKeywordRules
+        : INITIAL_SETTINGS.aiKeywordRules,
     footerSettings: {
       ...INITIAL_SETTINGS.footerSettings,
       ...(raw.footerSettings || {}),
@@ -338,11 +381,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem(LOCAL_STORAGE_SETTINGS, JSON.stringify(settings));
   }, [settings]);
 
-  // Categories
+  // Categories (ensure upgraded subcategory slugs for legacy localStorage)
   const [categories, setCategories] = useState<Category[]>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_CATEGORIES);
-      return saved ? JSON.parse(saved) : (settings.categories || INITIAL_CATEGORIES);
+      if (saved) {
+        const parsed: Category[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((cat) => {
+            const initMatch = INITIAL_CATEGORIES.find((ic) => ic.slug === cat.slug);
+            const hasBrokenSubSlugs =
+              cat.subcategories &&
+              cat.subcategories.some((s) => s.slug === cat.slug);
+            if (hasBrokenSubSlugs && initMatch?.subcategories) {
+              return { ...cat, subcategories: initMatch.subcategories };
+            }
+            return cat;
+          });
+        }
+      }
+      return settings.categories || INITIAL_CATEGORIES;
     } catch {
       return INITIAL_CATEGORIES;
     }
@@ -418,11 +476,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   };
 
-  // Products
+  // Products (merge seo/subcategory defaults for legacy localStorage items)
   const [products, setProducts] = useState<Product[]>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_PRODUCTS);
-      return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
+      if (saved) {
+        const parsed: Product[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((p) => {
+            const initMatch = INITIAL_PRODUCTS.find((ip) => ip.id === p.id);
+            if (!initMatch) return p;
+            return {
+              ...initMatch,
+              ...p,
+              subcategory: p.subcategory || initMatch.subcategory,
+              seo: p.seo || initMatch.seo
+            };
+          });
+        }
+      }
+      return INITIAL_PRODUCTS;
     } catch {
       return INITIAL_PRODUCTS;
     }
@@ -613,6 +686,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       localStorage.setItem(LOCAL_STORAGE_ADMIN_AUTH, 'true');
       setIsAdminLoginOpen(false);
       setActiveView('admin');
+      if (window.location.pathname !== '/hossain') {
+        window.history.pushState({}, '', '/hossain');
+      }
       addToast('success', t('অ্যাডমিন লগইন সফল!', 'Admin Logged In!'), t('স্বাগতম হোসেন ভাই, ড্যাশবোর্ডে প্রবেশের অনুমতি দেওয়া হয়েছে।', 'Welcome Hossain, dashboard unlocked.'));
       return true;
     }
@@ -624,6 +700,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setIsAdminLoggedIn(false);
     localStorage.removeItem(LOCAL_STORAGE_ADMIN_AUTH);
     setActiveView('store');
+    window.history.pushState({}, '', '/');
     addToast('info', t('লগআউট সম্পন্ন', 'Logged Out'), t('অ্যাডমিন প্যানেল সুরক্ষিত রাখা হয়েছে।', 'Session terminated.'));
   };
 
@@ -1040,15 +1117,83 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem(LOCAL_STORAGE_CART, JSON.stringify(cart));
   }, [cart]);
 
-  // UI state
-  const [isCartOpen, setIsCartOpen] = useState(false);
+  // UI & Catalog Routing state
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [storeSubView, setStoreSubView] = useState<'home' | 'products'>('home');
+
+  const [isCartOpen, setIsCartOpenState] = useState(false);
   const [checkoutProduct, setCheckoutProduct] = useState<Product | null>(null);
   const [isOneClickOpen, setIsOneClickOpen] = useState(false);
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
   const [isSpinOpen, setIsSpinOpen] = useState(false);
   const [isMobileCategoryDrawerOpen, setIsMobileCategoryDrawerOpen] = useState(false);
-  const [activeView, setActiveView] = useState<'store' | 'admin' | 'tracking'>('store');
+  const [activeView, setActiveViewState] = useState<'store' | 'admin' | 'tracking'>('store');
   const [trackingSearchQuery, setTrackingSearchQuery] = useState('');
+
+  // Server-Side Pixel CAPI & Customer Browsing Logs
+  const [serverPixelEvents, setServerPixelEvents] = useState<ServerPixelEvent[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_pixel_events_v3');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [customerBrowsingLogs, setCustomerBrowsingLogs] = useState<CustomerBrowsingEvent[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_browsing_logs_v3');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Bidirectional Live Support Chats & Browser Calls
+  const [supportChats, setSupportChats] = useState<SupportChatSession[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_support_chats_v3');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [
+      {
+        id: 'chat-default-1',
+        customerName: 'সম্মানিত গ্রাহক',
+        customerPhone: '01886289663',
+        status: 'open',
+        lastUpdated: new Date().toISOString(),
+        unreadByAdmin: 0,
+        messages: [
+          {
+            id: 'welcome-1',
+            sender: 'bot',
+            text: 'Assalamu Alaikum! Welcome to BuyOne BD AI Support. How can I help you today?',
+            textBn: 'আসসালামু আলাইকুম 👋 BuyOne BD-এর এআই সাপোর্ট সেন্টারে স্বাগতম। কীভাবে সাহায্য করতে পারি?',
+            time: 'Just now',
+            quickActions: [
+              { label: '📦 ট্র্যাক অর্ডার', action: 'track' },
+              { label: '🔥 ফ্ল্যাশ ডিলস', action: 'deals' },
+              { label: '🚚 ডেলিভারি চার্জ', action: 'delivery' },
+              { label: '🎡 স্পিন অফার', action: 'open_spin' }
+            ]
+          }
+        ]
+      }
+    ];
+  });
+  const [activeChatSessionId, setActiveChatSessionId] = useState<string>('chat-default-1');
+
+  const [browserCalls, setBrowserCalls] = useState<BrowserCallSession[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_browser_calls_v3');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [activeBrowserCallId, setActiveBrowserCallId] = useState<string | null>(null);
+  const activeBrowserCall = browserCalls.find((c) => c.id === activeBrowserCallId) || null;
 
   // AI Call Engine state
   const [activeCallOrder, setActiveCallOrder] = useState<Order | null>(null);
@@ -1070,6 +1215,711 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  // Server-Side Meta Pixel + Google Analytics 4 Dispatcher
+  const trackPixelEvent = (
+    eventName: string,
+    extras?: { urlPath?: string; value?: number; contentName?: string }
+  ) => {
+    const urlPath = extras?.urlPath || window.location.pathname || '/';
+    const sourceUrl = window.location.href;
+    const pixelCfg = settings.marketingSettings?.facebookPixel;
+    const gaCfg = settings.marketingSettings?.googleAnalytics;
+
+    // Client-side gtag / fbq hooks if present on window
+    try {
+      const w = window as any;
+      if (pixelCfg?.enabled && typeof w.fbq === 'function') {
+        w.fbq('track', eventName, {
+          ...(extras?.value !== undefined ? { value: extras.value, currency: 'BDT' } : {}),
+          ...(extras?.contentName ? { content_name: extras.contentName } : {}),
+          page_path: urlPath
+        });
+      }
+      if (gaCfg?.enabled && typeof w.gtag === 'function') {
+        w.gtag('event', eventName, {
+          page_path: urlPath,
+          value: extras?.value,
+          currency: 'BDT',
+          content_name: extras?.contentName
+        });
+      }
+    } catch {}
+
+    // Server-side Pixel Conversions API dispatch & logging
+    fetch('/api/tracking/pixel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventName,
+        urlPath,
+        sourceUrl,
+        value: extras?.value,
+        currency: 'BDT',
+        contentName: extras?.contentName,
+        pixelId: pixelCfg?.enabled ? pixelCfg.pixelId : undefined,
+        accessToken: pixelCfg?.enabled ? pixelCfg.accessToken : undefined,
+        testEventCode: pixelCfg?.testEventCode
+      })
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res?.event) {
+          setServerPixelEvents((prev) => {
+            const next = [res.event, ...prev].slice(0, 100);
+            localStorage.setItem('buyonebd_pixel_events_v3', JSON.stringify(next));
+            return next;
+          });
+        }
+      })
+      .catch(() => {});
+  };
+
+  // Customer Browsing History Recorder (visible on backend)
+  const recordPageVisit = (
+    urlPath: string,
+    pageTitle: string,
+    product?: Product | null,
+    categorySlug?: string
+  ) => {
+    if (urlPath.startsWith('/hossain')) return;
+    const isMobile = typeof navigator !== 'undefined' && /Mobi|Android|iPhone/i.test(navigator.userAgent);
+    const ev: CustomerBrowsingEvent = {
+      id: `brw-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      customerName: customerProfile?.name || t('অতিথি ভিজিটর', 'Guest Visitor'),
+      customerPhone: customerProfile?.phone,
+      urlPath,
+      pageTitle,
+      productId: product?.id,
+      productTitle: product ? (lang === 'bn' ? product.titleBn : product.title) : undefined,
+      categorySlug,
+      device: isMobile ? 'Mobile' : 'Desktop',
+      timestamp: new Date().toISOString()
+    };
+
+    setCustomerBrowsingLogs((prev) => {
+      if (prev[0]?.urlPath === ev.urlPath && Date.now() - new Date(prev[0].timestamp).getTime() < 2500) {
+        return prev;
+      }
+      const next = [ev, ...prev].slice(0, 120);
+      localStorage.setItem('buyonebd_browsing_logs_v3', JSON.stringify(next));
+      return next;
+    });
+
+    fetch('/api/support/browsing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ev)
+    }).catch(() => {});
+  };
+
+  // SEO-friendly URL Navigation Helpers
+  const navigateToPath = (path: string, replace = false) => {
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    if (window.location.pathname !== normalized) {
+      if (replace) {
+        window.history.replaceState({}, '', normalized);
+      } else {
+        window.history.pushState({}, '', normalized);
+      }
+    }
+    trackPixelEvent('PageView', { urlPath: normalized });
+  };
+
+  const setActiveView = (view: 'store' | 'admin' | 'tracking') => {
+    setActiveViewState(view);
+    if (view === 'tracking') {
+      navigateToPath('/tracking');
+      recordPageVisit('/tracking', t('অর্ডার ট্র্যাকিং', 'Order Tracking'));
+    } else if (view === 'admin') {
+      navigateToPath('/hossain');
+    } else if (view === 'store' && window.location.pathname === '/tracking') {
+      navigateToPath(storeSubView === 'products' ? '/products' : '/');
+    }
+  };
+
+  const setIsCartOpen = (open: boolean) => {
+    setIsCartOpenState(open);
+    if (open) {
+      navigateToPath('/cart');
+      recordPageVisit('/cart', t('শপিং কার্ট', 'Shopping Cart'));
+    } else if (window.location.pathname === '/cart') {
+      const target = selectedProductForPage
+        ? `/product/${selectedProductForPage.seo?.slug || selectedProductForPage.id}`
+        : storeSubView === 'products'
+        ? '/products'
+        : '/';
+      navigateToPath(target, true);
+    }
+  };
+
+  const goHome = () => {
+    setActiveViewState('store');
+    setStoreSubView('home');
+    setSelectedProductForPage(null);
+    setSelectedCategory('all');
+    setSelectedSubcategory(null);
+    setSearchQuery('');
+    setIsCartOpenState(false);
+    setIsOneClickOpen(false);
+    setCheckoutProduct(null);
+    navigateToPath('/');
+    recordPageVisit('/', `${settings.storeName} - Home`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openAllProductsPage = () => {
+    setActiveViewState('store');
+    setStoreSubView('products');
+    setSelectedProductForPage(null);
+    setSelectedCategory('all');
+    setSelectedSubcategory(null);
+    navigateToPath('/products');
+    recordPageVisit('/products', t('সকল পণ্য', 'All Products'));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const selectCategoryFilter = (catSlug: string, subSlug: string | null = null) => {
+    setActiveViewState('store');
+    setStoreSubView('home');
+    setSelectedProductForPage(null);
+    setSelectedCategory(catSlug);
+    setSelectedSubcategory(subSlug || null);
+
+    let targetPath = '/';
+    if (catSlug === 'flash-sale') {
+      targetPath = '/category/flash-sale';
+    } else if (catSlug !== 'all') {
+      targetPath = subSlug ? `/category/${catSlug}/${subSlug}` : `/category/${catSlug}`;
+    }
+    navigateToPath(targetPath);
+    recordPageVisit(targetPath, `Category: ${catSlug}${subSlug ? ` / ${subSlug}` : ''}`, null, catSlug);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openProductPage = (product: Product) => {
+    setActiveViewState('store');
+    setIsCartOpenState(false);
+    setSelectedProductForPage(product);
+    recordProductView(product.id);
+    const slug = product.seo?.slug || product.id;
+    const prodPath = `/product/${slug}`;
+    navigateToPath(prodPath);
+    const title = lang === 'bn' ? product.titleBn : product.title;
+    recordPageVisit(prodPath, title, product, product.category);
+    trackPixelEvent('ViewContent', { urlPath: prodPath, value: product.price, contentName: product.title });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Sync URL on initial load & browser back/forward (popstate)
+  useEffect(() => {
+    const applyRouteFromUrl = () => {
+      const p = window.location.pathname.replace(/\/+$/, '') || '/';
+      if (p === '/hossain') {
+        if (isAdminLoggedIn) {
+          setActiveViewState('admin');
+        } else {
+          setIsAdminLoginOpen(true);
+        }
+        return;
+      }
+      if (p === '/tracking') {
+        setActiveViewState('tracking');
+        setSelectedProductForPage(null);
+        return;
+      }
+      if (p === '/cart') {
+        setActiveViewState('store');
+        setIsCartOpenState(true);
+        return;
+      }
+      if (p === '/checkout') {
+        setActiveViewState('store');
+        setIsOneClickOpen(true);
+        return;
+      }
+      if (p === '/products') {
+        setActiveViewState('store');
+        setStoreSubView('products');
+        setSelectedProductForPage(null);
+        setSelectedCategory('all');
+        setSelectedSubcategory(null);
+        return;
+      }
+      if (p.startsWith('/product/')) {
+        const slugOrId = decodeURIComponent(p.replace('/product/', ''));
+        const matched = products.find((item) => item.id === slugOrId || item.seo?.slug === slugOrId);
+        if (matched) {
+          setActiveViewState('store');
+          setSelectedProductForPage(matched);
+          return;
+        }
+      }
+      if (p.startsWith('/category/')) {
+        const parts = p.replace('/category/', '').split('/').filter(Boolean);
+        setActiveViewState('store');
+        setStoreSubView('home');
+        setSelectedProductForPage(null);
+        setSelectedCategory(parts[0] || 'all');
+        setSelectedSubcategory(parts[1] || null);
+        return;
+      }
+      // Root /
+      setActiveViewState('store');
+      setStoreSubView('home');
+      setSelectedProductForPage(null);
+      setIsCartOpenState(false);
+      setIsOneClickOpen(false);
+    };
+
+    applyRouteFromUrl();
+    recordPageVisit(window.location.pathname || '/', document.title);
+    trackPixelEvent('PageView', { urlPath: window.location.pathname || '/' });
+
+    window.addEventListener('popstate', applyRouteFromUrl);
+    return () => window.removeEventListener('popstate', applyRouteFromUrl);
+  }, []);
+
+  // Sync key store settings/catalog to backend server (for /robots.txt & /sitemap.xml & support desk)
+  useEffect(() => {
+    const syncTimer = setTimeout(() => {
+      fetch('/api/store/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ products, orders, settings, spinRewards, categories })
+      }).catch(() => {});
+    }, 600);
+    return () => clearTimeout(syncTimer);
+  }, [products, orders, settings, categories]);
+
+  // Fetch initial support state on mount + poll every 2.5s when Support Desk / Chat / Admin is open
+  const fetchSupportStateFromServer = () => {
+    fetch('/api/support/state')
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data?.success) return;
+        if (Array.isArray(data.browsingHistory) && data.browsingHistory.length > 0) {
+          setCustomerBrowsingLogs(data.browsingHistory);
+        }
+        if (Array.isArray(data.pixelEvents) && data.pixelEvents.length > 0) {
+          setServerPixelEvents(data.pixelEvents);
+        }
+        if (Array.isArray(data.supportChats) && data.supportChats.length > 0) {
+          setSupportChats(data.supportChats);
+        }
+        if (Array.isArray(data.browserCalls) && data.browserCalls.length > 0) {
+          setBrowserCalls(data.browserCalls);
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchSupportStateFromServer();
+  }, []);
+
+  useEffect(() => {
+    if (!isWhatsAppOpen && activeView !== 'admin' && !activeBrowserCallId && !isCallRinging && !isCallActive) {
+      return;
+    }
+    const poll = setInterval(fetchSupportStateFromServer, 2500);
+    return () => clearInterval(poll);
+  }, [isWhatsAppOpen, activeView, activeBrowserCallId, isCallRinging, isCallActive]);
+
+  const syncChatsToServer = (nextChats: SupportChatSession[]) => {
+    localStorage.setItem('buyonebd_support_chats_v3', JSON.stringify(nextChats));
+    fetch('/api/support/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessions: nextChats })
+    }).catch(() => {});
+  };
+
+  const syncCallsToServer = (nextCalls: BrowserCallSession[]) => {
+    localStorage.setItem('buyonebd_browser_calls_v3', JSON.stringify(nextCalls));
+    fetch('/api/support/call', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ calls: nextCalls })
+    }).catch(() => {});
+  };
+
+  // Bidirectional Chat Actions (Customer + Backend Assistant + Auto Keyword/AI)
+  const sendCustomerChatMessage = async (rawText: string) => {
+    const query = rawText.trim();
+    if (!query) return;
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const customerMsg: SupportChatMessage = {
+      id: `msg-${Date.now()}`,
+      sender: 'customer',
+      text: query,
+      textBn: query,
+      time
+    };
+
+    const sessId = activeChatSessionId || supportChats[0]?.id || 'chat-default-1';
+    let sessionHistory: SupportChatMessage[] = [];
+
+    setSupportChats((prev) => {
+      const exists = prev.some((s) => s.id === sessId);
+      const next = exists
+        ? prev.map((s) => {
+            if (s.id === sessId) {
+              sessionHistory = [...s.messages, customerMsg];
+              return {
+                ...s,
+                customerName: customerProfile.name || s.customerName,
+                customerPhone: customerProfile.phone || s.customerPhone,
+                lastUpdated: new Date().toISOString(),
+                unreadByAdmin: (s.unreadByAdmin || 0) + 1,
+                messages: sessionHistory
+              };
+            }
+            return s;
+          })
+        : [
+            {
+              id: sessId,
+              customerName: customerProfile.name || 'সম্মানিত গ্রাহক',
+              customerPhone: customerProfile.phone,
+              status: 'open' as const,
+              lastUpdated: new Date().toISOString(),
+              unreadByAdmin: 1,
+              messages: [customerMsg]
+            },
+            ...prev
+          ];
+      syncChatsToServer(next);
+      return next;
+    });
+
+    const appendBotMsg = (replyMsg: SupportChatMessage) => {
+      setSupportChats((prev) => {
+        const next = prev.map((s) =>
+          s.id === sessId
+            ? { ...s, lastUpdated: new Date().toISOString(), messages: [...s.messages, replyMsg] }
+            : s
+        );
+        syncChatsToServer(next);
+        return next;
+      });
+    };
+
+    const q = query.toLowerCase();
+    const orderMatch = query.match(/BD-\d{5}/i);
+    const phoneMatch = query.match(/01[3-9]\d{8}/);
+
+    // 1. Order Lookup Match
+    if (orderMatch || phoneMatch || q.includes('track') || q.includes('ট্র্যাক') || q.includes('অর্ডার') || q.includes('parcel')) {
+      const searchTarget = orderMatch ? orderMatch[0].toUpperCase() : phoneMatch ? phoneMatch[0] : '';
+      const matchedOrder = orders.find(
+        (o) =>
+          o.id.toUpperCase() === searchTarget ||
+          (phoneMatch && o.customer.phone.includes(phoneMatch[0]))
+      );
+      if (matchedOrder) {
+        appendBotMsg({
+          id: `bot-${Date.now()}`,
+          sender: 'bot',
+          text: `Order #${matchedOrder.id} found!\nStatus: ${matchedOrder.status.toUpperCase()}\nCourier: ${matchedOrder.courier.provider} (${matchedOrder.courier.trackingCode})\nLocation: ${matchedOrder.courier.currentLocation}`,
+          textBn: `অর্ডার #${matchedOrder.id} পাওয়া গেছে!\nস্ট্যাটাস: ${matchedOrder.status}\nকুরিয়ার: ${matchedOrder.courier.provider} (${matchedOrder.courier.trackingCode})\nঅবস্থান: ${matchedOrder.courier.currentLocation}`,
+          time,
+          quickActions: [
+            { label: '📍 লাইভ ট্র্যাকিং দেখুন', action: `view_track_${matchedOrder.id}` },
+            { label: '📞 ব্রাউজার কল করুন', action: `call_order_${matchedOrder.id}` }
+          ]
+        });
+        return;
+      }
+    }
+
+    // 2. Backend Configurable Auto-Answer Keyword Rules
+    const rules = settings.aiKeywordRules || [];
+    const matchedRule = rules.find(
+      (r) =>
+        r.enabled &&
+        r.keywords.some((kw) => kw.trim().length > 0 && q.includes(kw.trim().toLowerCase()))
+    );
+    if (matchedRule) {
+      appendBotMsg({
+        id: `bot-${Date.now()}`,
+        sender: 'bot',
+        text: matchedRule.replyEn || matchedRule.replyBn,
+        textBn: matchedRule.replyBn || matchedRule.replyEn,
+        time
+      });
+      return;
+    }
+
+    // 3. Hot Deals Shortcut
+    if (q.includes('deal') || q.includes('offer') || q.includes('অফার') || q.includes('হট ডিল')) {
+      const topProducts = products.slice(0, 3);
+      appendBotMsg({
+        id: `bot-${Date.now()}`,
+        sender: 'bot',
+        text: `Today's Top Deals:\n${topProducts.map((p, i) => `${i + 1}. ${p.title} - ৳${p.price}`).join('\n')}`,
+        textBn: `আজকের সেরা অফারসমূহ:\n${topProducts.map((p, i) => `${i + 1}. ${p.titleBn} - ৳${p.price}`).join('\n')}`,
+        time,
+        quickActions: topProducts.map((p) => ({
+          label: `🛒 ${p.titleBn.slice(0, 14)}...`,
+          action: `buy_${p.id}`
+        }))
+      });
+      return;
+    }
+
+    // 4. Live Gemini AI Endpoint (with backend keyword fallback)
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: query,
+          history: sessionHistory.slice(-6),
+          keywordRules: rules,
+          lang
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.reply) {
+          appendBotMsg({
+            id: `bot-${Date.now()}`,
+            sender: 'bot',
+            text: data.reply,
+            textBn: data.reply,
+            time
+          });
+          return;
+        }
+      }
+    } catch {}
+
+    appendBotMsg({
+      id: `bot-${Date.now()}`,
+      sender: 'bot',
+      text: `Thank you for messaging ${settings.storeName}! A support agent from our backend desk has received your chat and will assist shortly.`,
+      textBn: `ধন্যবাদ! আপনার মেসেজটি আমাদের ব্যাকএন্ড সাপোর্ট ডেস্কে পৌঁছেছে। সাপোর্ট এজেন্ট অথবা এআই থেকে দ্রুত উত্তর দেওয়া হচ্ছে।`,
+      time,
+      quickActions: [
+        { label: '📞 ব্রাউজার কল করুন', action: 'tab_call' },
+        { label: '🔥 ফ্ল্যাশ সেল', action: 'tab_flash' }
+      ]
+    });
+  };
+
+  const sendAgentChatReply = (sessionId: string, text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    const replyMsg: SupportChatMessage = {
+      id: `agent-${Date.now()}`,
+      sender: 'assistant',
+      text: clean,
+      textBn: clean,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setSupportChats((prev) => {
+      const next = prev.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              unreadByAdmin: 0,
+              lastUpdated: new Date().toISOString(),
+              messages: [...s.messages, replyMsg]
+            }
+          : s
+      );
+      syncChatsToServer(next);
+      return next;
+    });
+    addToast('success', t('রিপ্লাই পাঠানো হয়েছে', 'Reply Sent'), t('কাস্টমারের চ্যাটে উত্তর যুক্ত হয়েছে।', 'Delivered to customer chat window.'));
+  };
+
+  const generateAgentAIReply = async (sessionId: string): Promise<string> => {
+    const session = supportChats.find((s) => s.id === sessionId);
+    if (!session || session.messages.length === 0) return '';
+    const lastCustomerMsg = [...session.messages].reverse().find((m) => m.sender === 'customer') || session.messages[session.messages.length - 1];
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: lastCustomerMsg.textBn || lastCustomerMsg.text,
+          history: session.messages.slice(-6),
+          lang: adminLang,
+          assistantDraft: true
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.reply) return String(data.reply);
+      }
+    } catch {}
+    return adminLang === 'en'
+      ? `Assalamu Alaikum ${session.customerName}, thank you for contacting ${settings.storeName}! Your inquiry has been received and we are checking it right now. Delivery takes 24-48h inside Dhaka (৳${settings.deliveryFees.dhakaInside}) and 48-72h nationwide (৳${settings.deliveryFees.dhakaOutside}).`
+      : `আসসালামু আলাইকুম ${session.customerName}, ${settings.storeNameBn || settings.storeName}-এ যোগাযোগ করার জন্য ধন্যবাদ! আমরা বিষয়টি এখনই দেখছি। ঢাকা সিটিতে ডেলিভারি ২৪-৪৮ ঘণ্টা (৳${settings.deliveryFees.dhakaInside}) এবং সারাদেশে ৪৮-৭২ ঘণ্টা (৳${settings.deliveryFees.dhakaOutside})।`;
+  };
+
+  const markChatRead = (sessionId: string) => {
+    setSupportChats((prev) => {
+      const next = prev.map((s) => (s.id === sessionId ? { ...s, unreadByAdmin: 0 } : s));
+      syncChatsToServer(next);
+      return next;
+    });
+  };
+
+  // Bidirectional Browser Call Engine (Customer -> Backend Assistant Desk)
+  const initiateCustomerBrowserCall = (order?: Order | null) => {
+    const callId = `CALL-${Math.floor(10000 + Math.random() * 90000)}`;
+    const targetOrder: Order = order || {
+      id: `SUP-${Math.floor(10000 + Math.random() * 90000)}`,
+      customer: {
+        name: customerProfile.name || t('সম্মানিত গ্রাহক', 'Valued Customer'),
+        phone: customerProfile.phone || settings.hotline,
+        address: customerProfile.address || 'Dhaka, Bangladesh',
+        district: customerProfile.district || 'Dhaka - Inside City',
+        thana: 'Customer Care Desk'
+      },
+      items: products[0]
+        ? [
+            {
+              productId: products[0].id,
+              productTitle: products[0].title,
+              productTitleBn: products[0].titleBn,
+              price: products[0].price,
+              quantity: 1,
+              image: products[0].images[0]
+            }
+          ]
+        : [],
+      pricing: { subtotal: 0, deliveryFee: 0, discount: 0, total: 0 },
+      payment: { method: 'cod', status: 'pending' },
+      deliveryZone: 'dhaka_inside',
+      status: 'pending',
+      aiCallStatus: { called: false },
+      courier: {
+        provider: 'Steadfast',
+        trackingCode: 'BROWSER-CALL',
+        status: 'booked',
+        currentLocation: 'Support Desk',
+        estimatedDelivery: 'Live Call',
+        history: []
+      },
+      createdAt: new Date().toISOString()
+    };
+
+    const session: BrowserCallSession = {
+      id: callId,
+      orderId: order?.id,
+      callType: order ? 'order_verification' : 'support',
+      customerName: targetOrder.customer.name,
+      customerPhone: targetOrder.customer.phone,
+      status: 'ringing_backend',
+      startedAt: new Date().toISOString(),
+      durationSeconds: 0,
+      transcript: [
+        {
+          id: `t-${Date.now()}`,
+          speaker: 'customer',
+          text: `Customer initiated a browser support call (${targetOrder.customer.name}).`,
+          textBn: `গ্রাহক (${targetOrder.customer.name}) ব্রাউজার থেকে কল করেছেন — ব্যাকএন্ড অ্যাসিস্ট্যান্টের রিসিভের জন্য রিং হচ্ছে...`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]
+    };
+
+    setBrowserCalls((prev) => {
+      const next = [session, ...prev];
+      syncCallsToServer(next);
+      return next;
+    });
+    setActiveBrowserCallId(callId);
+    setActiveCallOrder(targetOrder);
+    setIsCallRinging(true);
+    setIsCallActive(false);
+  };
+
+  const answerBrowserCallFromBackend = (callId: string) => {
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const greetBn = `আসসালামু আলাইকুম! ${settings.storeNameBn || settings.storeName} সাপোর্ট ডেস্ক থেকে আমি অ্যাসিস্ট্যান্ট বলছি। বলুন, কীভাবে সাহায্য করতে পারি?`;
+    const greetEn = `Assalamu Alaikum! Backend support assistant connected. How can I help you today?`;
+
+    setBrowserCalls((prev) => {
+      const next = prev.map((c) =>
+        c.id === callId
+          ? {
+              ...c,
+              status: 'connected' as const,
+              answeredBy: 'backend_assistant' as const,
+              transcript: [
+                ...c.transcript,
+                { id: `t-${Date.now()}`, speaker: 'assistant' as const, text: greetEn, textBn: greetBn, time }
+              ]
+            }
+          : c
+      );
+      syncCallsToServer(next);
+      return next;
+    });
+
+    if (activeBrowserCallId === callId) {
+      setIsCallRinging(false);
+      setIsCallActive(true);
+    }
+    addToast('success', t('কল কানেক্ট হয়েছে!', 'Browser Call Answered!'), t('গ্রাহকের সাথে লাইভ কথা বলুন।', 'Connected live to customer browser call.'));
+  };
+
+  const appendBrowserCallMessage = (
+    callId: string,
+    speaker: 'customer' | 'assistant' | 'ai',
+    text: string,
+    textBn?: string
+  ) => {
+    const clean = text.trim();
+    if (!clean) return;
+    const item: BrowserCallTranscriptItem = {
+      id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      speaker,
+      text: clean,
+      textBn: textBn || clean,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setBrowserCalls((prev) => {
+      const next = prev.map((c) =>
+        c.id === callId ? { ...c, transcript: [...c.transcript, item] } : c
+      );
+      syncCallsToServer(next);
+      return next;
+    });
+  };
+
+  const endBrowserCallSession = (callId: string, confirmed?: boolean) => {
+    setBrowserCalls((prev) => {
+      const next = prev.map((c) =>
+        c.id === callId
+          ? {
+              ...c,
+              status: 'ended' as const,
+              endedAt: new Date().toISOString(),
+              durationSeconds: Math.max(1, Math.round((Date.now() - new Date(c.startedAt).getTime()) / 1000))
+            }
+          : c
+      );
+      syncCallsToServer(next);
+      return next;
+    });
+
+    if (activeBrowserCallId === callId) {
+      setActiveBrowserCallId(null);
+      if (confirmed !== undefined && activeCallOrder && !activeCallOrder.id.startsWith('SUP-')) {
+        finishAICall(confirmed);
+      } else {
+        setIsCallRinging(false);
+        setIsCallActive(false);
+        setActiveCallOrder(null);
+      }
+    }
   };
 
   // Multi-Courier 1-Click Booking (Steadfast, Pathao, RedX, Paperfly, Sundarban)
@@ -1245,21 +2095,48 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [settings.themeColors]);
 
-  // Dynamic SEO Head Tags + Schema.org JSON-LD Updater (A-to-Z SEO)
+  // Dynamic SEO Head Tags + Schema.org JSON-LD Updater (Global + Per-Product SEO)
   useEffect(() => {
     const seo = settings.seoSettings;
     const storeName = settings.storeName || 'BuyOne BD';
     let pageTitle = seo?.metaTitle || `${storeName} - Online Shopping Bangladesh`;
     let pageDesc = seo?.metaDescription || settings.tagline;
+    let pageKeywords = seo?.keywords || '';
+    let pageRobots = seo?.robots || 'index, follow';
 
     if (activeView === 'admin') {
       pageTitle = `Admin Portal - ${storeName}`;
+      pageRobots = 'noindex, nofollow';
     } else if (activeView === 'tracking') {
       pageTitle = `${t('রিয়েল-টাইম অর্ডার ট্র্যাকিং', 'Real-Time Order Tracking')} - ${storeName}`;
+    } else if (isOneClickOpen) {
+      pageTitle = `${t('১-ক্লিক চেকআউট', '1-Click Checkout')} - ${storeName}`;
+    } else if (isCartOpen) {
+      pageTitle = `${t('শপিং কার্ট', 'Shopping Cart')} - ${storeName}`;
     } else if (selectedProductForPage) {
+      const pSeo = selectedProductForPage.seo;
       const prodTitle = lang === 'bn' ? selectedProductForPage.titleBn : selectedProductForPage.title;
-      pageTitle = `${prodTitle} | ৳${selectedProductForPage.price} - ${storeName}`;
-      pageDesc = (lang === 'bn' ? selectedProductForPage.descriptionBn : selectedProductForPage.description).slice(0, 158);
+      pageTitle = pSeo?.metaTitle || `${prodTitle} | ৳${selectedProductForPage.price} - ${storeName}`;
+      pageDesc =
+        pSeo?.metaDescription ||
+        (lang === 'bn' ? selectedProductForPage.descriptionBn : selectedProductForPage.description).slice(0, 158);
+      if (pSeo?.keywords) pageKeywords = pSeo.keywords;
+      if (pSeo?.robots) pageRobots = pSeo.robots;
+    } else if (storeSubView === 'products') {
+      pageTitle = `${t('সকল পণ্য সমূহ', 'All Products Catalog')} - ${storeName}`;
+    } else if (selectedCategory && selectedCategory !== 'all') {
+      const catObj = categories.find((c) => c.slug === selectedCategory);
+      const subObj = catObj?.subcategories?.find((s) => s.slug === selectedSubcategory);
+      const catName = subObj
+        ? lang === 'bn'
+          ? subObj.nameBn
+          : subObj.nameEn
+        : catObj
+        ? lang === 'bn'
+          ? catObj.nameBn
+          : catObj.nameEn
+        : selectedCategory;
+      pageTitle = `${catName} - ${storeName}`;
     }
 
     document.title = pageTitle;
@@ -1276,8 +2153,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     setMeta('meta[name="description"]', 'name', 'description', pageDesc);
-    setMeta('meta[name="keywords"]', 'name', 'keywords', seo?.keywords || '');
-    setMeta('meta[name="robots"]', 'name', 'robots', seo?.robots || 'index, follow');
+    setMeta('meta[name="keywords"]', 'name', 'keywords', pageKeywords);
+    setMeta('meta[name="robots"]', 'name', 'robots', pageRobots);
     setMeta('meta[property="og:title"]', 'property', 'og:title', pageTitle);
     setMeta('meta[property="og:description"]', 'property', 'og:description', pageDesc);
     setMeta('meta[property="og:site_name"]', 'property', 'og:site_name', storeName);
@@ -1286,7 +2163,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       'meta[property="og:image"]',
       'property',
       'og:image',
-      selectedProductForPage?.images?.[0] || seo?.ogImage || ''
+      selectedProductForPage?.seo?.ogImage || selectedProductForPage?.images?.[0] || seo?.ogImage || ''
     );
     setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', pageTitle);
     setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', pageDesc);
@@ -1294,7 +2171,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setMeta('meta[name="twitter:site"]', 'name', 'twitter:site', seo.twitterHandle);
     }
 
-    const canonicalHref = seo?.canonicalUrl || window.location.origin + window.location.pathname;
+    const baseCanonical = (seo?.canonicalUrl || window.location.origin).replace(/\/+$/, '');
+    const canonicalHref = `${baseCanonical}${window.location.pathname === '/' ? '' : window.location.pathname}`;
     let linkCanonical = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
     if (!linkCanonical) {
       linkCanonical = document.createElement('link');
@@ -1318,7 +2196,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           '@type': 'Product',
           name: selectedProductForPage.title,
           image: selectedProductForPage.images,
-          description: selectedProductForPage.description,
+          description: pageDesc,
           sku: selectedProductForPage.sku,
           offers: {
             '@type': 'Offer',
@@ -1347,7 +2225,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
 
     jsonLdScript.textContent = JSON.stringify(schemaData);
-  }, [activeView, selectedProductForPage, settings.seoSettings, settings.storeName, settings.tagline, settings.hotline, settings.address, lang]);
+  }, [
+    activeView,
+    storeSubView,
+    selectedCategory,
+    selectedSubcategory,
+    isCartOpen,
+    isOneClickOpen,
+    selectedProductForPage,
+    settings.seoSettings,
+    settings.storeName,
+    settings.tagline,
+    settings.hotline,
+    settings.address,
+    categories,
+    lang
+  ]);
 
   // Check Customer Fraud Risk / Steadfast Delivery Success Ratio
   const checkCustomerFraudRisk = async (phone: string): Promise<OrderFraudCheck> => {
@@ -1475,6 +2368,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     setOrders((prev) => [newOrder, ...prev]);
+
+    trackPixelEvent('Purchase', {
+      urlPath: '/checkout',
+      value: total,
+      contentName: orderData.items.map((i) => i.product.title).join(', ')
+    });
 
     // If cart was checked out, clear cart
     if (!checkoutProduct) {
@@ -1687,6 +2586,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       return [...prev, { product, quantity, selectedColor: color, selectedSize: size }];
     });
+    trackPixelEvent('AddToCart', {
+      urlPath: window.location.pathname || '/',
+      value: product.price * quantity,
+      contentName: product.title
+    });
     addToast(
       'success',
       t('কার্টে যোগ হয়েছে', 'Added to Cart'),
@@ -1744,11 +2648,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const openOneClickCheckout = (product: Product | null = null) => {
     setCheckoutProduct(product);
     setIsOneClickOpen(true);
+    navigateToPath('/checkout');
+    recordPageVisit('/checkout', t('১-ক্লিক চেকআউট', '1-Click Checkout'), product);
+    trackPixelEvent('InitiateCheckout', {
+      urlPath: '/checkout',
+      value: product ? product.price : cartTotal,
+      contentName: product ? product.title : 'Cart Checkout'
+    });
   };
 
   const closeOneClickCheckout = () => {
     setIsOneClickOpen(false);
     setCheckoutProduct(null);
+    if (window.location.pathname === '/checkout') {
+      const fallbackPath = selectedProductForPage
+        ? `/product/${selectedProductForPage.seo?.slug || selectedProductForPage.id}`
+        : storeSubView === 'products'
+        ? '/products'
+        : '/';
+      navigateToPath(fallbackPath, true);
+    }
   };
 
   return (
@@ -1759,6 +2678,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         adminLang,
         setAdminLang,
         t,
+        selectedCategory,
+        setSelectedCategory,
+        selectedSubcategory,
+        setSelectedSubcategory,
+        searchQuery,
+        setSearchQuery,
+        storeSubView,
+        setStoreSubView,
+        goHome,
+        openAllProductsPage,
+        selectCategoryFilter,
+        openProductPage,
+        navigateToPath,
         products,
         addProduct,
         updateProduct,
@@ -1798,6 +2730,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         whatsappLogs,
         sendMetaWhatsAppMessage,
         applyBusinessTheme,
+        serverPixelEvents,
+        customerBrowsingLogs,
+        trackPixelEvent,
+        recordPageVisit,
+        supportChats,
+        activeChatSessionId,
+        sendCustomerChatMessage,
+        sendAgentChatReply,
+        generateAgentAIReply,
+        markChatRead,
+        browserCalls,
+        activeBrowserCall,
+        initiateCustomerBrowserCall,
+        answerBrowserCallFromBackend,
+        appendBrowserCallMessage,
+        endBrowserCallSession,
         abandonedCarts,
         markAbandonedCartWhatsAppSent,
         recoverAbandonedCart,

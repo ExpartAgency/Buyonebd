@@ -1,1 +1,14 @@
-{}
+{
+  "pixelEvents": [
+    {
+      "id": "px-1794568879417-3n6f",
+      "eventName": "PageView",
+      "urlPath": "/products",
+      "sourceUrl": "http://127.0.0.1:3000/products",
+      "currency": "BDT",
+      "contentName": "All Products",
+      "status": "logged_server",
+      "timestamp": "2026-11-13T11:21:19.417Z"
+    }
+  ]
+}

@@ -35,7 +35,9 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
     addPriceAlert,
     recordProductView,
     products,
-    setSelectedProductForPage,
+    openProductPage,
+    selectCategoryFilter,
+    goHome,
     lang,
     t,
     addToast
@@ -111,11 +113,17 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
         </button>
 
         <div className="hidden sm:flex items-center gap-1.5 text-slate-400 text-xs">
-          <span>{t('হোম', 'Home')}</span>
+          <button type="button" onClick={goHome} className="hover:text-emerald-600 cursor-pointer">
+            {t('হোম', 'Home')}
+          </button>
           <span>/</span>
-          <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+          <button
+            type="button"
+            onClick={() => selectCategoryFilter(product.category)}
+            className="text-emerald-600 dark:text-emerald-400 font-bold hover:underline cursor-pointer"
+          >
             {lang === 'bn' ? product.categoryBn : product.category}
-          </span>
+          </button>
           <span>/</span>
           <span className="text-slate-600 dark:text-slate-300 font-bold line-clamp-1 max-w-[200px]">
             {lang === 'bn' ? product.titleBn : product.title}
@@ -469,10 +477,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
               <ProductCard
                 key={p.id}
                 product={p}
-                onViewDetails={(rel) => {
-                  setSelectedProductForPage(rel);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
+                onViewDetails={(rel) => openProductPage(rel)}
               />
             ))}
           </div>

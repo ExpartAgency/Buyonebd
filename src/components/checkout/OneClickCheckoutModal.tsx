@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Copy, ShieldCheck, Truck, Sparkles, ShoppingBag, Tag, MessageCircle, ArrowRight, PhoneCall, ExternalLink } from 'lucide-react';
+import { X, Check, Copy, ShieldCheck, Truck, Sparkles, ShoppingBag, Tag, MessageCircle, ArrowRight, PhoneCall, Wallet } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BD_DISTRICTS } from '../../data/initialData';
 import { PaymentMethod, DeliveryZone, Order } from '../../types';
@@ -212,8 +212,8 @@ export const OneClickCheckoutModal: React.FC = () => {
   if (!isOneClickOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/65 backdrop-blur-sm overflow-y-auto animate-in fade-in">
-      <div className="relative w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden my-auto max-h-[94vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/65 backdrop-blur-sm overflow-y-auto overflow-x-hidden animate-in fade-in">
+      <div className="relative w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden my-auto max-h-[94vh] flex flex-col min-w-0">
         {/* Top Header */}
         <div className="bg-slate-900 px-4 py-3.5 sm:px-6 sm:py-4 text-white flex items-center justify-between shrink-0 border-b border-slate-800">
           <div>
@@ -258,10 +258,10 @@ export const OneClickCheckoutModal: React.FC = () => {
             <div className="bg-slate-900 text-white rounded-2xl p-3.5 text-left border border-slate-800 space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                  <PhoneCall className="w-3.5 h-3.5 animate-pulse" />
+                  <PhoneCall className="w-3.5 h-3.5" />
                   {t('এআই কল আসছে...', 'AI Call Initiating...')}
                 </span>
-                <span className="text-[10px] bg-emerald-500 text-slate-950 font-bold px-1.5 py-0.2 rounded-full">
+                <span className="text-[10px] bg-emerald-500 text-slate-950 font-bold px-2 py-0.5 rounded-full">
                   LIVE
                 </span>
               </div>
@@ -622,25 +622,26 @@ export const OneClickCheckoutModal: React.FC = () => {
 
             {/* Gift Wallet deduction toggle */}
             {customerWalletBalance > 0 && (
-              <label className="flex items-center justify-between p-2.5 rounded-2xl border border-amber-300 bg-amber-50/80 cursor-pointer transition-colors hover:bg-amber-100/70">
-                <div className="flex items-center gap-2">
+              <label className="flex items-center justify-between gap-2 p-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 cursor-pointer transition-colors hover:bg-emerald-50 min-w-0">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <input
                     type="checkbox"
                     checked={useWallet}
                     onChange={(e) => setUseWallet(e.target.checked)}
-                    className="w-4 h-4 text-emerald-600 rounded cursor-pointer"
+                    className="w-4 h-4 text-emerald-600 rounded cursor-pointer shrink-0"
                   />
-                  <div>
-                    <span className="font-bold text-slate-900 text-xs flex items-center gap-1">
-                      <span>🎁</span> {t('গিফট ওয়ালেট ব্যালেন্স ব্যবহার করুন', 'Use Gift Wallet Balance')}
+                  <div className="min-w-0">
+                    <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                      <Wallet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>{t('গিফট ওয়ালেট ব্যালেন্স ব্যবহার করুন', 'Use Gift Wallet Balance')}</span>
                     </span>
-                    <p className="text-[10px] text-slate-500">
+                    <p className="text-[10px] text-slate-600 tabular-nums mt-0.5">
                       {t(`বর্তমান ব্যালেন্স: ৳ ${customerWalletBalance.toLocaleString()}`, `Available Balance: ৳ ${customerWalletBalance.toLocaleString()}`)}
                     </p>
                   </div>
                 </div>
                 {useWallet && (
-                  <span className="font-mono font-bold text-xs text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
+                  <span className="font-mono tabular-nums font-bold text-xs text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded shrink-0">
                     - ৳ {walletDeduction.toLocaleString()}
                   </span>
                 )}
@@ -648,7 +649,7 @@ export const OneClickCheckoutModal: React.FC = () => {
             )}
 
             {/* Price Breakdown */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1.5 text-xs">
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1.5 text-xs tabular-nums">
               <div className="flex justify-between text-slate-600">
                 <span>{t('পণ্যের মূল্য:', 'Subtotal:')}</span>
                 <span className="font-semibold text-slate-900">৳ {subtotal.toLocaleString()}</span>
@@ -661,7 +662,7 @@ export const OneClickCheckoutModal: React.FC = () => {
               </div>
 
               {discountAmount > 0 && (
-                <div className="flex justify-between text-rose-600 font-bold">
+                <div className="flex justify-between text-emerald-600 font-bold">
                   <span>{t('কুপন ডিসকাউন্ট:', 'Coupon Discount:')}</span>
                   <span>- ৳ {discountAmount.toLocaleString()}</span>
                 </div>
@@ -676,7 +677,7 @@ export const OneClickCheckoutModal: React.FC = () => {
 
               <div className="border-t border-slate-300 pt-1.5 flex justify-between items-baseline font-bold">
                 <span className="text-slate-900 text-xs sm:text-sm">{t('সর্বমোট প্রদেয় বিল:', 'Grand Total:')}</span>
-                <span className="text-base sm:text-lg font-black text-rose-600">
+                <span className="text-base sm:text-lg font-black text-emerald-600 tabular-nums">
                   ৳ {grandTotal.toLocaleString()}
                 </span>
               </div>
@@ -686,10 +687,10 @@ export const OneClickCheckoutModal: React.FC = () => {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 active:scale-98 text-white font-black py-3 px-4 rounded-2xl shadow-xl shadow-rose-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+              className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-black py-3.5 px-4 rounded-2xl shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
             >
-              <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
-              <span className="text-xs sm:text-sm">
+              <Check className="w-4 h-4 text-emerald-100 shrink-0" />
+              <span className="text-xs sm:text-sm tabular-nums">
                 {isSubmitting ? t('অর্ডার গ্রহণ করা হচ্ছে...', 'Processing Order...') : t(`অর্ডার কনফার্ম করুন (৳ ${grandTotal.toLocaleString()})`, `Confirm Order (৳ ${grandTotal.toLocaleString()})`)}
               </span>
             </button>

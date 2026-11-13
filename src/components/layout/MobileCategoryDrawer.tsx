@@ -15,7 +15,7 @@ interface MobileCategoryDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   selectedCategory: string;
-  onSelectCategory: (categoryId: string) => void;
+  onSelectCategory: (categoryId: string, subSlug?: string | null) => void;
 }
 
 export const MobileCategoryDrawer: React.FC<MobileCategoryDrawerProps> = ({
@@ -28,7 +28,7 @@ export const MobileCategoryDrawer: React.FC<MobileCategoryDrawerProps> = ({
     categories,
     products,
     settings,
-    setSelectedProductForPage,
+    openProductPage,
     openOneClickCheckout,
     lang,
     t
@@ -49,8 +49,8 @@ export const MobileCategoryDrawer: React.FC<MobileCategoryDrawerProps> = ({
       ? products.filter((p) => p.isFlashSale).slice(0, 6)
       : products.filter((p) => p.category === focusedSlug).slice(0, 6);
 
-  const handlePickCategory = (slug: string) => {
-    onSelectCategory(slug);
+  const handlePickCategory = (slug: string, subSlug: string | null = null) => {
+    onSelectCategory(slug, subSlug);
     onClose();
   };
 
@@ -125,7 +125,7 @@ export const MobileCategoryDrawer: React.FC<MobileCategoryDrawerProps> = ({
                   <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-rose-600" />
                 )}
                 <div className="w-9 h-9 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-600">
-                  <Flame className="w-4 h-4 animate-bounce" />
+                  <Flame className="w-4 h-4" />
                 </div>
                 <span className="text-[10px] leading-tight line-clamp-2">{t('ফ্ল্যাশ সেল', 'Flash Sale')}</span>
               </button>
@@ -207,7 +207,7 @@ export const MobileCategoryDrawer: React.FC<MobileCategoryDrawerProps> = ({
                   {focusedCategoryObj.subcategories.map((sub) => (
                     <button
                       key={sub.slug}
-                      onClick={() => handlePickCategory(focusedCategoryObj.slug)}
+                      onClick={() => handlePickCategory(focusedCategoryObj.slug, sub.slug)}
                       className="flex flex-col items-center text-center p-1.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 hover:border-emerald-400 transition-colors cursor-pointer"
                     >
                       <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-800 mb-1 flex items-center justify-center">
@@ -215,6 +215,7 @@ export const MobileCategoryDrawer: React.FC<MobileCategoryDrawerProps> = ({
                           <img
                             src={sub.image || focusedCategoryObj.iconImage}
                             alt={sub.nameEn}
+                            referrerPolicy="no-referrer"
                             className="w-full h-full object-cover"
                           />
                         ) : (
@@ -248,12 +249,12 @@ export const MobileCategoryDrawer: React.FC<MobileCategoryDrawerProps> = ({
                     >
                       <div
                         onClick={() => {
-                          setSelectedProductForPage(p);
+                          openProductPage(p);
                           onClose();
                         }}
                         className="cursor-pointer space-y-1"
                       >
-                        <img src={p.images[0]} alt={p.title} className="w-full h-20 object-cover rounded-xl" />
+                        <img src={p.images[0]} alt={p.title} referrerPolicy="no-referrer" className="w-full h-20 object-cover rounded-xl" />
                         <p className="text-[11px] font-bold text-slate-900 dark:text-white line-clamp-1">
                           {lang === 'bn' ? p.titleBn : p.title}
                         </p>

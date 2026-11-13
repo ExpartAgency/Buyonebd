@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Sparkles,
   Zap,
   ShieldCheck,
   Truck,
@@ -20,10 +19,8 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
   const { settings, openOneClickCheckout, products, t } = useStore();
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
 
-  // Active sliders from store settings
   const slides = settings?.sliders?.filter((s) => s.isActive) || [];
 
-  // Auto carousel effect
   useEffect(() => {
     if (slides.length <= 1) return;
     const timer = setInterval(() => {
@@ -32,7 +29,6 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
     return () => clearInterval(timer);
   }, [slides.length]);
 
-  // Flash sale countdown timer state
   const [timeLeft, setTimeLeft] = useState({
     hours: 5,
     minutes: 42,
@@ -72,89 +68,59 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
   };
 
   return (
-    <div className="space-y-5 sm:space-y-6 w-full max-w-full overflow-hidden">
-      {/* Dynamic 5-6 Slider Showcase */}
+    <div className="space-y-5 w-full max-w-full overflow-hidden">
+      {/* Clean Editorial Split Slider Showcase */}
       <div
-        className="relative rounded-3xl overflow-hidden text-white border border-slate-800 shadow-2xl min-h-[360px] sm:min-h-[420px] flex items-center"
+        className="relative rounded-3xl overflow-hidden text-white border border-slate-800/80 shadow-xl"
         style={{
           background: `linear-gradient(135deg, ${settings.themeColors?.heroFrom || '#020617'}, ${settings.themeColors?.heroTo || '#064e3b'})`
         }}
       >
-        {/* Slide Background Image overlay if available */}
-        {activeSlide?.image && (
-          <div className="absolute inset-0 opacity-20 pointer-events-none mix-blend-overlay">
-            <img
-              src={activeSlide.image}
-              alt=""
-              className="w-full h-full object-cover object-center filter blur-[1px]"
-            />
-          </div>
-        )}
+        <div className="grid grid-cols-1 lg:grid-cols-12 items-stretch min-h-[340px] sm:min-h-[400px]">
+          {/* Left Content Column */}
+          <div className="lg:col-span-7 p-6 sm:p-10 lg:p-14 flex flex-col justify-center items-start z-10 space-y-4">
+            <span className="text-[11px] sm:text-xs font-bold tracking-wider uppercase text-emerald-300">
+              {activeSlide
+                ? t(activeSlide.discountBadgeBn || 'স্পেশাল অফার', activeSlide.discountBadgeEn || 'Special Offer')
+                : t('সেরা কোয়ালিটি ও দ্রুত ডেলিভারি', 'Premium Quality · Fast Delivery')}
+            </span>
 
-        {/* Ambient glow backgrounds */}
-        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-72 h-72 rounded-full bg-emerald-500/20 blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-72 h-72 rounded-full bg-teal-500/15 blur-3xl pointer-events-none" />
-
-        {/* Slide Content */}
-        <div className="relative w-full p-5 sm:p-10 lg:p-14 flex flex-col justify-center items-start z-10 max-w-4xl">
-          <div className="space-y-3 sm:space-y-4 text-left w-full">
-            <div className="inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] sm:text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider backdrop-blur-md">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span>
-                {activeSlide
-                  ? t(activeSlide.discountBadgeBn || 'স্পেশাল অফার', activeSlide.discountBadgeEn || 'Special Offer')
-                  : t('সেরা কোয়ালিটি ও দ্রুত ডেলিভারি', 'Premium Quality & Fast Delivery')}
-              </span>
-            </div>
-
-            <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
-              {activeSlide ? (
-                t(activeSlide.titleBn, activeSlide.titleEn)
-              ) : (
-                <>
-                  {t('পছন্দের পণ্যটি বেছে নিন,', 'Choose Your Favorite Item,')}{' '}
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-300">
-                    {t('সহজে অর্ডার করুন!', 'Order Effortlessly!')}
-                  </span>
-                </>
-              )}
+            <h1 className="font-display text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight leading-[1.15] text-balance max-w-2xl">
+              {activeSlide
+                ? t(activeSlide.titleBn, activeSlide.titleEn)
+                : t('পছন্দের পণ্যটি বেছে নিন, সহজে অর্ডার করুন', 'Curated Essentials Delivered Across Bangladesh')}
             </h1>
 
-            <p className="text-xs sm:text-base text-slate-300 leading-relaxed max-w-2xl">
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-xl">
               {activeSlide
                 ? t(activeSlide.subtitleBn, activeSlide.subtitleEn)
                 : t(
-                    'রেজিস্ট্রেশন ছাড়াই দ্রুততম সময়ে ক্যাশ অন ডেলিভারি অর্ডার। অর্ডার সম্পন্ন হওয়া মাত্র স্মার্ট এআই প্রতিনিধি ফোন কলে নিশ্চিত করবে।',
-                    'No registration needed. Fast Cash on Delivery with automated AI voice call verification & real-time courier tracking.'
+                    'দ্রুততম সময়ে ক্যাশ অন ডেলিভারি ও স্মার্ট এআই কল ভেরিফিকেশনে নিশ্চিন্ত শপিং।',
+                    'Effortless Cash on Delivery across 64 districts with automated verification and live parcel tracking.'
                   )}
             </p>
 
-            {/* Flash Sale Strip */}
+            {/* Flash Countdown Strip */}
             {settings?.flashSale?.enabled && (
-              <div className="bg-black/50 border border-slate-800/80 rounded-2xl p-2.5 sm:p-3 inline-flex flex-wrap items-center gap-2 sm:gap-3 max-w-full">
-                <span className="text-[11px] sm:text-xs font-bold text-amber-400 flex items-center gap-1.5 uppercase tracking-wider">
-                  <Flame className="w-4 h-4 text-rose-500 animate-bounce shrink-0" />
-                  <span className="line-clamp-1">{t(settings.flashSale.headlineBn || 'ফ্ল্যাশ সেল বাকি:', 'Flash Sale Ends In:')}</span>
+              <div className="bg-black/35 border border-white/10 rounded-xl px-3 py-2 inline-flex flex-wrap items-center gap-2.5 text-xs tabular-nums">
+                <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                  <Flame className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                  <span>{t(settings.flashSale.headlineBn || 'ফ্ল্যাশ সেল বাকি:', 'Flash Sale Ends:')}</span>
                 </span>
-                <div className="flex items-center gap-1 font-mono text-xs sm:text-sm font-bold text-white">
-                  <span className="bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-700">
-                    {timeLeft.hours.toString().padStart(2, '0')}h
-                  </span>
+                <div className="flex items-center gap-1 font-mono font-bold text-white">
+                  <span className="bg-white/10 px-2 py-0.5 rounded">{timeLeft.hours.toString().padStart(2, '0')}h</span>
                   <span>:</span>
-                  <span className="bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-700">
-                    {timeLeft.minutes.toString().padStart(2, '0')}m
-                  </span>
+                  <span className="bg-white/10 px-2 py-0.5 rounded">{timeLeft.minutes.toString().padStart(2, '0')}m</span>
                   <span>:</span>
-                  <span className="bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-700 text-rose-400">
-                    {timeLeft.seconds.toString().padStart(2, '0')}s
-                  </span>
+                  <span className="bg-white/10 px-2 py-0.5 rounded text-emerald-300">{timeLeft.seconds.toString().padStart(2, '0')}s</span>
                 </div>
               </div>
             )}
 
-            {/* CTA Buttons */}
-            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 pt-1">
+            {/* Primary Action */}
+            <div className="flex flex-wrap items-center gap-3 pt-1">
               <button
+                type="button"
                 onClick={() => {
                   if (activeSlide?.linkCategory && onCategoryFilter) {
                     onCategoryFilter(activeSlide.linkCategory);
@@ -163,55 +129,64 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
                   }
                 }}
                 style={{ backgroundColor: settings.themeColors?.primary || '#059669' }}
-                className="hover:opacity-95 text-white font-black text-xs sm:text-sm px-5 sm:px-6 py-3 sm:py-3.5 rounded-2xl shadow-xl flex items-center gap-2 group transition-all cursor-pointer active:scale-95"
+                className="hover:opacity-95 text-white font-bold text-xs sm:text-sm px-6 py-3 rounded-xl shadow-lg flex items-center gap-2 group transition-all cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
               >
-                <Zap className="w-4 h-4 text-amber-300 shrink-0" />
                 <span>
                   {activeSlide
                     ? t(activeSlide.buttonTextBn, activeSlide.buttonTextEn)
-                    : t('এখনই কিনুন', 'Buy Now')}
+                    : t('এখনই কিনুন', 'Shop Collection')}
                 </span>
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform shrink-0" />
               </button>
-
-              <div className="flex items-center gap-2 text-xs text-slate-300 bg-white/10 px-3.5 py-3 rounded-2xl border border-white/10 backdrop-blur-sm">
-                <PhoneCall className="w-4 h-4 text-emerald-400 animate-pulse" />
-                <span>{t('অর্ডার করলেই সরাসরি এআই কল!', 'Instant AI Voice Call Confirmation')}</span>
-              </div>
             </div>
+          </div>
+
+          {/* Right Slide Media Showcase */}
+          <div className="lg:col-span-5 relative min-h-[200px] lg:min-h-full overflow-hidden">
+            {activeSlide?.image ? (
+              <img
+                src={activeSlide.image}
+                alt={langTitle(activeSlide.titleEn, activeSlide.titleBn)}
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover object-center"
+              />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-emerald-900/40 to-slate-900" />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t lg:bg-gradient-to-r from-slate-950/90 via-slate-950/30 to-transparent pointer-events-none" />
           </div>
         </div>
 
-        {/* Carousel Navigation Arrows & Indicators (for 5-6 slides) */}
+        {/* Carousel Navigation Arrows & Indicators */}
         {slides.length > 1 && (
           <>
             <button
+              type="button"
               onClick={handlePrev}
-              className="absolute left-3 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/40 hover:bg-black/70 text-white/80 hover:text-white flex items-center justify-center backdrop-blur-sm transition-all"
+              className="absolute left-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/45 hover:bg-black/75 text-white flex items-center justify-center backdrop-blur-sm transition-colors cursor-pointer"
               aria-label="Previous Slide"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
             <button
+              type="button"
               onClick={handleNext}
-              className="absolute right-3 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/40 hover:bg-black/70 text-white/80 hover:text-white flex items-center justify-center backdrop-blur-sm transition-all"
+              className="absolute right-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/45 hover:bg-black/75 text-white flex items-center justify-center backdrop-blur-sm transition-colors cursor-pointer"
               aria-label="Next Slide"
             >
               <ChevronRight className="w-5 h-5" />
             </button>
 
-            {/* Dots */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
+            <div className="absolute bottom-3.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
               {slides.map((_, idx) => (
                 <button
                   key={idx}
+                  type="button"
                   onClick={() => setCurrentSlideIndex(idx)}
-                  className={`h-2 rounded-full transition-all ${
-                    idx === currentSlideIndex
-                      ? 'w-7 bg-emerald-400'
-                      : 'w-2 bg-white/40 hover:bg-white/70'
+                  className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                    idx === currentSlideIndex ? 'w-7 bg-emerald-400' : 'w-2 bg-white/40 hover:bg-white/70'
                   }`}
-                  aria-label={`Go to slide ${idx + 1}`}
+                  aria-label={`Slide ${idx + 1}`}
                 />
               ))}
             </div>
@@ -219,48 +194,52 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
         )}
       </div>
 
-      {/* 4 Trust Badges */}
+      {/* 4-Column Store Assurance Strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold shrink-0">
-            <Zap className="w-5 h-5" />
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <Zap className="w-4 h-4" />
           </div>
-          <div>
-            <h4 className="text-xs font-bold text-slate-900 dark:text-white">{t('এক্সপ্রেস সহজ চেকআউট', 'Express Fast Checkout')}</h4>
-            <p className="text-[11px] text-slate-500">{t('১০ সেকেন্ডে অর্ডার নিশ্চিত', 'Fast 10s checkout')}</p>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-teal-50 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold shrink-0">
-            <PhoneCall className="w-5 h-5" />
-          </div>
-          <div>
-            <h4 className="text-xs font-bold text-slate-900 dark:text-white">{t('এআই অটো-কল সাপোর্ট', 'AI Voice Call Agent')}</h4>
-            <p className="text-[11px] text-slate-500">{t('অটোমেটেড ভয়েস ভেরিফিকেশন', 'Live order verification')}</p>
+          <div className="min-w-0">
+            <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">{t('এক্সপ্রেস চেকআউট', 'Express Checkout')}</h4>
+            <p className="text-[11px] text-slate-500 truncate">{t('১০ সেকেন্ডে অর্ডার', 'Fast 10s order')}</p>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold shrink-0">
-            <ShieldCheck className="w-5 h-5" />
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+            <PhoneCall className="w-4 h-4" />
           </div>
-          <div>
-            <h4 className="text-xs font-bold text-slate-900 dark:text-white">{t('ক্যাশ অন ডেলিভারি', 'Cash on Delivery')}</h4>
-            <p className="text-[11px] text-slate-500">{t('পণ্য দেখে টাকা পরিশোধ', 'Pay after unboxing')}</p>
+          <div className="min-w-0">
+            <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">{t('কল কনফার্মেশন', 'Voice Confirmation')}</h4>
+            <p className="text-[11px] text-slate-500 truncate">{t('লাইভ অর্ডার যাচাই', 'Live verification')}</p>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold shrink-0">
-            <Truck className="w-5 h-5" />
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-4 h-4" />
           </div>
-          <div>
-            <h4 className="text-xs font-bold text-slate-900 dark:text-white">{t('সারাদেশে হোম ডেলিভারি', 'Nationwide Delivery')}</h4>
-            <p className="text-[11px] text-slate-500">{t('Steadfast ও Pathao কুরিয়ার', 'All 64 districts coverage')}</p>
+          <div className="min-w-0">
+            <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">{t('ক্যাশ অন ডেলিভারি', 'Cash on Delivery')}</h4>
+            <p className="text-[11px] text-slate-500 truncate">{t('পণ্য দেখে পেমেন্ট', 'Pay on parcel receipt')}</p>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+            <Truck className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">{t('সারাদেশে ডেলিভারি', 'Nationwide Courier')}</h4>
+            <p className="text-[11px] text-slate-500 truncate">{t('৬৪ জেলা কভারেজ', 'All 64 districts')}</p>
           </div>
         </div>
       </div>
     </div>
   );
 };
+
+function langTitle(en?: string, bn?: string) {
+  return en || bn || 'Featured Offer';
+}

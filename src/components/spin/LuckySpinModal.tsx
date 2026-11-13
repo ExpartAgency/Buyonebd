@@ -186,7 +186,7 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
           {/* Top Indicator Pointer pointing to top slice */}
           <div className="absolute -top-3 z-30 w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-t-[22px] border-t-amber-400 drop-shadow-[0_4px_6px_rgba(0,0,0,0.6)]" />
 
-          <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-full p-2.5 bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-400 shadow-2xl ring-4 ring-emerald-400/30">
+          <div className="relative w-[min(78vw,296px)] h-[min(78vw,296px)] sm:w-80 sm:h-80 rounded-full p-2.5 bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-400 shadow-2xl ring-4 ring-emerald-400/30">
             <div
               style={{
                 transform: `rotate(${rotation}deg)`,
@@ -194,10 +194,10 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
               }}
               className="w-full h-full rounded-full overflow-hidden relative shadow-inner"
             >
-              <svg viewBox="0 0 200 200" className="w-full h-full">
+              <svg viewBox="0 0 240 240" className="w-full h-full">
                 <defs>
                   <filter id="svgTextGlow" x="-20%" y="-20%" width="140%" height="140%">
-                    <feDropShadow dx="0" dy="1" stdDeviation="1.5" floodColor="#000" floodOpacity="0.9" />
+                    <feDropShadow dx="0" dy="1" stdDeviation="1.4" floodColor="#000" floodOpacity="0.95" />
                   </filter>
                 </defs>
 
@@ -206,17 +206,17 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
                   const endAngle = (i + 1) * segmentAngle;
                   const midAngle = startAngle + segmentAngle / 2;
 
-                  // Convert angles so 0deg is at 12 o'clock (top)
                   const rad1 = ((startAngle - 90) * Math.PI) / 180;
                   const rad2 = ((endAngle - 90) * Math.PI) / 180;
 
-                  const x1 = 100 + 100 * Math.cos(rad1);
-                  const y1 = 100 + 100 * Math.sin(rad1);
-                  const x2 = 100 + 100 * Math.cos(rad2);
-                  const y2 = 100 + 100 * Math.sin(rad2);
+                  const x1 = 120 + 120 * Math.cos(rad1);
+                  const y1 = 120 + 120 * Math.sin(rad1);
+                  const x2 = 120 + 120 * Math.cos(rad2);
+                  const y2 = 120 + 120 * Math.sin(rad2);
 
-                  const pathData = `M 100 100 L ${x1} ${y1} A 100 100 0 0 1 ${x2} ${y2} Z`;
+                  const pathData = `M 120 120 L ${x1} ${y1} A 120 120 0 0 1 ${x2} ${y2} Z`;
                   const labelText = lang === 'bn' ? rew.labelBn : rew.labelEn;
+                  const fSize = labelText.length > 13 ? 7.8 : labelText.length > 10 ? 8.6 : 9.6;
 
                   return (
                     <g key={rew.id || i}>
@@ -224,21 +224,20 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
                         d={pathData}
                         fill={rew.color}
                         stroke="#0f172a"
-                        strokeWidth="1.2"
+                        strokeWidth="1.4"
                       />
-                      {/* Radial Text - Cleanly centered along slice radius, never truncated */}
-                      <g transform={`rotate(${midAngle - 90}, 100, 100)`}>
+                      <g transform={`rotate(${midAngle - 90}, 120, 120)`}>
                         <text
-                          x="156"
-                          y="103"
+                          x="224"
+                          y="123"
                           fill="#ffffff"
-                          fontSize="9.5"
-                          fontWeight="900"
-                          textAnchor="middle"
+                          fontSize={fSize}
+                          fontWeight="800"
+                          textAnchor="end"
                           filter="url(#svgTextGlow)"
                           style={{
-                            fontFamily: 'system-ui, -apple-system, sans-serif',
-                            letterSpacing: '-0.2px'
+                            fontFamily: "'Plus Jakarta Sans', 'Hind Siliguri', system-ui, sans-serif",
+                            letterSpacing: '-0.15px'
                           }}
                         >
                           {labelText}
@@ -340,20 +339,20 @@ export const LuckySpinLeftLauncher: React.FC<{ onOpen: () => void }> = ({ onOpen
   const { remainingSpinsToday, t } = useStore();
 
   return (
-    <div className="fixed left-3 sm:left-4 bottom-20 md:bottom-8 z-30 animate-bounce">
+    <div className="fixed left-3 sm:left-5 bottom-20 md:bottom-6 z-30">
       <button
         onClick={onOpen}
-        className="relative flex items-center gap-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white px-3.5 py-2.5 rounded-2xl shadow-2xl border border-emerald-400/50 cursor-pointer transition-all hover:scale-105 active:scale-95 group"
+        className="relative flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2.5 rounded-2xl shadow-lg border border-emerald-400/40 cursor-pointer transition-all hover:-translate-y-0.5 active:scale-95 group"
         aria-label={t('লাকি স্পিন হুইল', 'Lucky Spin Wheel')}
       >
         <div className="relative">
-          <Gift className="w-5 h-5 text-amber-300 animate-spin group-hover:rotate-180 transition-transform duration-700" />
+          <Gift className="w-5 h-5 text-amber-300 transition-transform duration-300 group-hover:rotate-12" />
           {remainingSpinsToday > 0 && (
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full animate-ping" />
+            <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-300 rounded-full" />
           )}
         </div>
         <div className="text-left hidden sm:block">
-          <span className="text-[10px] uppercase font-bold text-emerald-200 block leading-tight">
+          <span className="text-[10px] uppercase font-bold text-emerald-100 block leading-tight">
             {t('লাকি উপহার', 'Lucky Gift')}
           </span>
           <span className="text-xs font-black text-white block leading-tight">

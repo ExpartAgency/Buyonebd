@@ -41,6 +41,15 @@ export interface ProductReview {
   verifiedPurchase: boolean;
 }
 
+export interface ProductSEO {
+  slug?: string;
+  metaTitle?: string;
+  metaDescription?: string;
+  keywords?: string;
+  robots?: string;
+  ogImage?: string;
+}
+
 export interface Product {
   id: string;
   title: string;
@@ -52,6 +61,7 @@ export interface Product {
   stock: number;
   category: string;
   categoryBn: string;
+  subcategory?: string;
   tags: string[];
   images: string[];
   sku: string;
@@ -65,6 +75,7 @@ export interface Product {
   videoUrl?: string;
   warrantyInfo?: string;
   warrantyInfoBn?: string;
+  seo?: ProductSEO;
 }
 
 export interface OrderItem {
@@ -333,6 +344,83 @@ export interface SEOSettings {
   twitterHandle?: string;
   googleSiteVerification?: string;
   schemaType?: 'Store' | 'OnlineStore' | 'LocalBusiness';
+  robotsTxt?: string;
+  sitemapEnabled?: boolean;
+}
+
+export interface AIKeywordRule {
+  id: string;
+  keywords: string[];
+  replyBn: string;
+  replyEn: string;
+  enabled: boolean;
+}
+
+export interface CustomerBrowsingEvent {
+  id: string;
+  customerName: string;
+  customerPhone?: string;
+  urlPath: string;
+  pageTitle: string;
+  productId?: string;
+  productTitle?: string;
+  categorySlug?: string;
+  device: string;
+  timestamp: string;
+}
+
+export interface SupportChatMessage {
+  id: string;
+  sender: 'customer' | 'bot' | 'assistant';
+  text: string;
+  textBn?: string;
+  time: string;
+  quickActions?: { label: string; action: string }[];
+}
+
+export interface SupportChatSession {
+  id: string;
+  customerName: string;
+  customerPhone?: string;
+  status: 'open' | 'resolved';
+  lastUpdated: string;
+  unreadByAdmin: number;
+  messages: SupportChatMessage[];
+}
+
+export interface BrowserCallTranscriptItem {
+  id: string;
+  speaker: 'customer' | 'assistant' | 'ai';
+  text: string;
+  textBn: string;
+  time: string;
+}
+
+export interface BrowserCallSession {
+  id: string;
+  orderId?: string;
+  callType: 'support' | 'order_verification';
+  customerName: string;
+  customerPhone: string;
+  status: 'ringing_backend' | 'connected' | 'ended';
+  answeredBy?: 'backend_assistant' | 'ai_auto';
+  startedAt: string;
+  endedAt?: string;
+  durationSeconds: number;
+  transcript: BrowserCallTranscriptItem[];
+}
+
+export interface ServerPixelEvent {
+  id: string;
+  eventName: string;
+  urlPath: string;
+  sourceUrl: string;
+  pixelId?: string;
+  value?: number;
+  currency?: string;
+  contentName?: string;
+  status: 'sent_capi' | 'logged_server';
+  timestamp: string;
 }
 
 export interface StoreSettings {
@@ -396,6 +484,7 @@ export interface StoreSettings {
   courierSettings: CourierSettings;
   marketingSettings: MarketingSettings;
   aiSettings: AISettings;
+  aiKeywordRules?: AIKeywordRule[];
   footerSettings: FooterSettings;
   seoSettings?: SEOSettings;
 }

@@ -127,10 +127,10 @@ export const INITIAL_CATEGORIES: Category[] = [
     isActive: true,
     order: 1,
     subcategories: [
-      { nameBn: 'স্মার্ট ওয়াচ', nameEn: 'Smart Watches', slug: 'smart-gadgets', image: 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=200' },
-      { nameBn: 'ব্লুটুথ ইয়ারবাডস', nameEn: 'TWS Earbuds', slug: 'smart-gadgets', image: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=200' },
-      { nameBn: 'পাওয়ার ব্যাংক', nameEn: 'Power Banks', slug: 'smart-gadgets', image: 'https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=200' },
-      { nameBn: 'ট্রিমার ও শেভার', nameEn: 'Trimmers & Shavers', slug: 'smart-gadgets', image: 'https://images.unsplash.com/photo-1621607512214-68297480165e?w=200' }
+      { nameBn: 'স্মার্ট ওয়াচ', nameEn: 'Smart Watches', slug: 'smart-watches', image: 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=200' },
+      { nameBn: 'ব্লুটুথ ইয়ারবাডস', nameEn: 'TWS Earbuds', slug: 'tws-earbuds', image: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=200' },
+      { nameBn: 'পাওয়ার ব্যাংক', nameEn: 'Power Banks', slug: 'power-banks', image: 'https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=200' },
+      { nameBn: 'ট্রিমার ও শেভার', nameEn: 'Trimmers & Shavers', slug: 'trimmers-shavers', image: 'https://images.unsplash.com/photo-1621607512214-68297480165e?w=200' }
     ]
   },
   {
@@ -143,10 +143,10 @@ export const INITIAL_CATEGORIES: Category[] = [
     isActive: true,
     order: 2,
     subcategories: [
-      { nameBn: 'প্রিমিয়াম টি-শার্ট', nameEn: 'Polo & T-Shirts', slug: 'fashion', image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=200' },
-      { nameBn: 'পাঞ্জাবি ও কাবলি', nameEn: 'Panjabi & Kabli', slug: 'fashion', image: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=200' },
-      { nameBn: 'লেদার ওয়ালেট', nameEn: 'Leather Wallets', slug: 'fashion', image: 'https://images.unsplash.com/photo-1627123424574-724758594e93?w=200' },
-      { nameBn: 'সানগ্লাস', nameEn: 'Sunglasses', slug: 'fashion', image: 'https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=200' }
+      { nameBn: 'প্রিমিয়াম টি-শার্ট', nameEn: 'Polo & T-Shirts', slug: 'polo-tshirts', image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=200' },
+      { nameBn: 'পাঞ্জাবি ও কাবলি', nameEn: 'Panjabi & Kabli', slug: 'panjabi-kabli', image: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=200' },
+      { nameBn: 'লেদার ওয়ালেট', nameEn: 'Leather Wallets', slug: 'leather-wallets', image: 'https://images.unsplash.com/photo-1627123424574-724758594e93?w=200' },
+      { nameBn: 'সানগ্লাস', nameEn: 'Sunglasses', slug: 'sunglasses', image: 'https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=200' }
     ]
   },
   {
@@ -159,10 +159,10 @@ export const INITIAL_CATEGORIES: Category[] = [
     isActive: true,
     order: 3,
     subcategories: [
-      { nameBn: 'সুন্দরবনের খাঁটি মধু', nameEn: 'Wild Raw Honey', slug: 'organic-food', image: 'https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=200' },
-      { nameBn: 'ঘানির সরিষার তেল', nameEn: 'Cold Pressed Mustard Oil', slug: 'organic-food', image: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=200' },
-      { nameBn: 'খাঁটি গাওয়া ঘি', nameEn: 'Pure Desi Ghee', slug: 'organic-food', image: 'https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=200' },
-      { nameBn: 'ড্রাই ফ্রুটস ও বাদাম', nameEn: 'Dry Fruits & Nuts', slug: 'organic-food', image: 'https://images.unsplash.com/photo-1536591375315-1988d696054a?w=200' }
+      { nameBn: 'সুন্দরবনের খাঁটি মধু', nameEn: 'Wild Raw Honey', slug: 'wild-raw-honey', image: 'https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=200' },
+      { nameBn: 'ঘানির সরিষার তেল', nameEn: 'Cold Pressed Mustard Oil', slug: 'mustard-oil', image: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=200' },
+      { nameBn: 'খাঁটি গাওয়া ঘি', nameEn: 'Pure Desi Ghee', slug: 'pure-ghee', image: 'https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=200' },
+      { nameBn: 'ড্রাই ফ্রুটস ও বাদাম', nameEn: 'Dry Fruits & Nuts', slug: 'dry-fruits', image: 'https://images.unsplash.com/photo-1536591375315-1988d696054a?w=200' }
     ]
   },
   {
@@ -175,10 +175,10 @@ export const INITIAL_CATEGORIES: Category[] = [
     isActive: true,
     order: 4,
     subcategories: [
-      { nameBn: 'জান্নাতুল ফেরদৌস আতর', nameEn: 'Premium Roll-on Attar', slug: 'islamic-lifestyle', image: 'https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=200' },
-      { nameBn: 'ডিজিটাল তসবিহ', nameEn: 'Digital Tasbih Counter', slug: 'islamic-lifestyle', image: 'https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=200' },
-      { nameBn: 'জায়নামাজ', nameEn: 'Luxury Prayer Mat', slug: 'islamic-lifestyle', image: 'https://images.unsplash.com/photo-1609599006353-e629aaabfeae?w=200' },
-      { nameBn: 'কুরআন স্ট্যান্ড', nameEn: 'Rehal & Stands', slug: 'islamic-lifestyle', image: 'https://images.unsplash.com/photo-1585036156171-384164a8c675?w=200' }
+      { nameBn: 'জান্নাতুল ফেরদৌস আতর', nameEn: 'Premium Roll-on Attar', slug: 'roll-on-attar', image: 'https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=200' },
+      { nameBn: 'ডিজিটাল তসবিহ', nameEn: 'Digital Tasbih Counter', slug: 'digital-tasbih', image: 'https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=200' },
+      { nameBn: 'জায়নামাজ', nameEn: 'Luxury Prayer Mat', slug: 'prayer-mats', image: 'https://images.unsplash.com/photo-1609599006353-e629aaabfeae?w=200' },
+      { nameBn: 'কুরআন স্ট্যান্ড', nameEn: 'Rehal & Stands', slug: 'rehal-stands', image: 'https://images.unsplash.com/photo-1585036156171-384164a8c675?w=200' }
     ]
   },
   {
@@ -191,9 +191,9 @@ export const INITIAL_CATEGORIES: Category[] = [
     isActive: true,
     order: 5,
     subcategories: [
-      { nameBn: 'পোর্টেবল ব্লেন্ডার', nameEn: 'Juicer & Blenders', slug: 'home-kitchen', image: 'https://images.unsplash.com/photo-1570222094114-d054a817e56b?w=200' },
-      { nameBn: 'কিচেন গ্যাজেটস', nameEn: 'Kitchen Accessories', slug: 'home-kitchen', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=200' },
-      { nameBn: 'স্মার্ট ক্লক ও লাইট', nameEn: 'Night Lamps & Clocks', slug: 'home-kitchen', image: 'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=200' }
+      { nameBn: 'পোর্টেবল ব্লেন্ডার', nameEn: 'Juicer & Blenders', slug: 'juicer-blenders', image: 'https://images.unsplash.com/photo-1570222094114-d054a817e56b?w=200' },
+      { nameBn: 'কিচেন কাটার ও চপার', nameEn: 'Kitchen Cutters & Accessories', slug: 'kitchen-cutters', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=200' },
+      { nameBn: 'স্মার্ট ক্লক ও লাইট', nameEn: 'Night Lamps & Clocks', slug: 'lamps-clocks', image: 'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=200' }
     ]
   },
   {
@@ -206,9 +206,9 @@ export const INITIAL_CATEGORIES: Category[] = [
     isActive: true,
     order: 6,
     subcategories: [
-      { nameBn: 'হেয়ার ট্রিমার ও গ্রুমিং', nameEn: 'Hair Grooming Kits', slug: 'beauty-care', image: 'https://images.unsplash.com/photo-1621607512214-68297480165e?w=200' },
-      { nameBn: 'অর্গানিক স্কিনকেয়ার', nameEn: 'Herbal Skincare', slug: 'beauty-care', image: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?w=200' },
-      { nameBn: 'বডি ম্যাসেজার', nameEn: 'Body Massagers', slug: 'beauty-care', image: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=200' }
+      { nameBn: 'হেয়ার ট্রিমার ও গ্রুমিং', nameEn: 'Hair Grooming Kits', slug: 'hair-grooming', image: 'https://images.unsplash.com/photo-1621607512214-68297480165e?w=200' },
+      { nameBn: 'অর্গানিক স্কিনকেয়ার', nameEn: 'Herbal Skincare', slug: 'herbal-skincare', image: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?w=200' },
+      { nameBn: 'বডি ম্যাসেজার', nameEn: 'Body Massagers', slug: 'body-massagers', image: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=200' }
     ]
   }
 ];
@@ -298,6 +298,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 35,
     category: 'smart-gadgets',
     categoryBn: 'স্মার্ট গ্যাজেট',
+    subcategory: 'smart-watches',
     tags: ['Best Seller', 'Hot Deal', 'Free Delivery'],
     images: [
       'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=80',
@@ -314,7 +315,14 @@ export const INITIAL_PRODUCTS: Product[] = [
     featuresBn: ['২.১ ইঞ্চি এইচডি ক্রিস্টাল এমোলেড স্ক্রিন', 'সরাসরি ব্লুটুথ কলিং ও লাউডস্পিকার', 'ম্যাগনেটিক ফাস্ট চার্জার', 'আইপি৬৮ ওয়াটারপ্রুফ বডি', 'এক চার্জে ৫-৭ দিন দীর্ঘস্থায়ী ব্যাটারি'],
     videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
     warrantyInfo: '1 Year Brand Warranty & 7 Days Replacement',
-    warrantyInfoBn: '১ বছরের ব্র্যান্ড সার্ভিস ও ৭ দিনের রিপ্লেসমেন্ট গ্যারান্টি'
+    warrantyInfoBn: '১ বছরের ব্র্যান্ড সার্ভিস ও ৭ দিনের রিপ্লেসমেন্ট গ্যারান্টি',
+    seo: {
+      slug: 'ultra-watch-9-pro-amoled-smartwatch',
+      metaTitle: 'Ultra Watch 9 Pro AMOLED Smartwatch Price in Bangladesh | BuyOne BD',
+      metaDescription: 'Buy Ultra Watch 9 Pro AMOLED Calling Smartwatch at ৳1,850 with Cash on Delivery across Bangladesh.',
+      keywords: 'ultra watch 9 pro, smartwatch price bangladesh, amoled calling watch',
+      robots: 'index, follow'
+    }
   },
   {
     id: 'prod-002',
@@ -327,6 +335,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 62,
     category: 'smart-gadgets',
     categoryBn: 'স্মার্ট গ্যাজেট',
+    subcategory: 'trimmers-shavers',
     tags: ['Mega Offer', 'Trending'],
     images: [
       'https://images.unsplash.com/photo-1621607512214-68297480165e?w=800&auto=format&fit=crop&q=80',
@@ -339,7 +348,14 @@ export const INITIAL_PRODUCTS: Product[] = [
     colors: ['Vintage Golden (স্বর্ণালী)', 'Classic Bronze (ব্রোঞ্জ)', 'Silver Metallic (রুপালি)'],
     sizes: ['Standard'],
     features: ['Zero Gapped T-Blade', 'Full Heavy Metal Body', '1200mAh Rechargeable Battery', '4 Guide Combs Included'],
-    featuresBn: ['জিরো ট্রিম শার্প টি-ব্লেড', 'সম্পূর্ণ মেটাল ড্রাগন বডি', '১২০০ এমএএইচ রিচার্জেবল ব্যাটারি', '৪টি কাটিং কম্ব (১.৫মিমি, ২মিমি, ৩মিমি, ৪মিমি)']
+    featuresBn: ['জিরো ট্রিম শার্প টি-ব্লেড', 'সম্পূর্ণ মেটাল ড্রাগন বডি', '১২০০ এমএএইচ রিচার্জেবল ব্যাটারি', '৪টি কাটিং কম্ব (১.৫মিমি, ২মিমি, ৩মিমি, ৪মিমি)'],
+    seo: {
+      slug: 't9-vintage-professional-hair-trimmer',
+      metaTitle: 'T9 Vintage Metal Hair & Beard Trimmer | BuyOne BD',
+      metaDescription: 'Original T9 Vintage Metal Rechargeable Hair & Beard Trimmer with zero-gap blade at best price in BD.',
+      keywords: 't9 trimmer, vintage hair trimmer bangladesh, beard clipper',
+      robots: 'index, follow'
+    }
   },
   {
     id: 'prod-003',
@@ -352,6 +368,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 28,
     category: 'fashion',
     categoryBn: 'ফ্যাশন ও লাইফস্টাইল',
+    subcategory: 'panjabi-kabli',
     tags: ['Exclusive', 'Eid Special'],
     images: [
       'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&auto=format&fit=crop&q=80',
@@ -364,7 +381,14 @@ export const INITIAL_PRODUCTS: Product[] = [
     colors: ['Navy Blue (নেভি ব্লু)', 'Snow White (সাদা)', 'Olive Green (অলিভ গ্রিন)', 'Jet Black (কালো)'],
     sizes: ['40 (M)', '42 (L)', '44 (XL)', '46 (XXL)'],
     features: ['100% Breathable Fine Cotton', 'High-Grade Thread Embroidery', 'Snap Metal Buttons', 'Color Fade Resistant'],
-    featuresBn: ['১০০% নরম ফাইন সুতি কাপড়', 'নিখুঁত সুতার এমব্রয়ডারি কাজ', 'ম্যাচিং স্ন্যাপ বাটন', 'রং ওঠার ভয় নেই']
+    featuresBn: ['১০০% নরম ফাইন সুতি কাপড়', 'নিখুঁত সুতার এমব্রয়ডারি কাজ', 'ম্যাচিং স্ন্যাপ বাটন', 'রং ওঠার ভয় নেই'],
+    seo: {
+      slug: 'royal-handcrafted-cotton-panjabi-set',
+      metaTitle: 'Royal Cotton Embroidered Panjabi Set | BuyOne BD',
+      metaDescription: 'Fine cotton embroidered Panjabi set with fast home delivery all over Bangladesh.',
+      keywords: 'cotton panjabi, eid panjabi bangladesh, mens fashion dhaka',
+      robots: 'index, follow'
+    }
   },
   {
     id: 'prod-004',
@@ -377,6 +401,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 90,
     category: 'smart-gadgets',
     categoryBn: 'স্মার্ট গ্যাজেট',
+    subcategory: 'tws-earbuds',
     tags: ['Super Deal', 'Power Bank Case'],
     images: [
       'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=800&auto=format&fit=crop&q=80'
@@ -388,7 +413,14 @@ export const INITIAL_PRODUCTS: Product[] = [
     colors: ['Glossy Black (কালো)'],
     sizes: ['Standard'],
     features: ['9D Hi-Fi Sound', 'Digital Battery Level Indicator', 'Touch Controls', 'Can Charge Mobile Device'],
-    featuresBn: ['হাই-ফাই ৯ডি স্টেরিও বেইস', 'ডিজিটাল চার্জিং পার্সেন্টেজ', 'ফিঙ্গারপ্রিন্ট টাচ কন্ট্রোল', 'জরুরি প্রয়োজনে মোবাইল চার্জ সুবিধা']
+    featuresBn: ['হাই-ফাই ৯ডি স্টেরিও বেইস', 'ডিজিটাল চার্জিং পার্সেন্টেজ', 'ফিঙ্গারপ্রিন্ট টাচ কন্ট্রোল', 'জরুরি প্রয়োজনে মোবাইল চার্জ সুবিধা'],
+    seo: {
+      slug: 'm10-tws-wireless-earbuds-powerbank',
+      metaTitle: 'M10 TWS Bluetooth 5.1 Earbuds | BuyOne BD',
+      metaDescription: 'Shop M10 TWS Wireless Earbuds with 2000mAh emergency powerbank case at ৳690 in Bangladesh.',
+      keywords: 'm10 earbuds, tws bluetooth bd, wireless earbuds price',
+      robots: 'index, follow'
+    }
   },
   {
     id: 'prod-005',
@@ -401,6 +433,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 24,
     category: 'organic-food',
     categoryBn: 'অর্গানিক ফুড ও মধু',
+    subcategory: 'wild-raw-honey',
     tags: ['100% Pure', 'Lab Tested'],
     images: [
       'https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=800&auto=format&fit=crop&q=80'
@@ -412,7 +445,14 @@ export const INITIAL_PRODUCTS: Product[] = [
     colors: ['Pure Golden Amber'],
     sizes: ['1 Kg Glass Jar (১ কেজি)', '500g Glass Jar (৫০০ গ্রাম)'],
     features: ['Directly From Sundarban', 'No Added Sugar Or Glucose', 'Rich In Natural Enzymes', 'Heavy Glass Jar Packaging'],
-    featuresBn: ['সরাসরি সুন্দরবন থেকে সংগৃহীত', 'চিনি বা গ্লুকোজ মুক্ত শতভাগ খাঁটি', 'প্রাকৃতিক এনজাইম ও অ্যান্টিঅক্সিডেন্ট', 'সুরক্ষিত প্রিমিয়াম কাঁচের জার']
+    featuresBn: ['সরাসরি সুন্দরবন থেকে সংগৃহীত', 'চিনি বা গ্লুকোজ মুক্ত শতভাগ খাঁটি', 'প্রাকৃতিক এনজাইম ও অ্যান্টিঅক্সিডেন্ট', 'সুরক্ষিত প্রিমিয়াম কাঁচের জার'],
+    seo: {
+      slug: 'sundarban-khalisha-pure-honey-1kg',
+      metaTitle: 'Sundarban Pure Khalisha Honey 1Kg | BuyOne BD',
+      metaDescription: '100% pure lab-tested Sundarban Khalisha flower honey delivered fresh in glass jar.',
+      keywords: 'sundarban honey, pure honey bangladesh, khalisha honey',
+      robots: 'index, follow'
+    }
   },
   {
     id: 'prod-006',
@@ -425,6 +465,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 55,
     category: 'home-kitchen',
     categoryBn: 'হোম ও কিচেন',
+    subcategory: 'kitchen-cutters',
     tags: ['Kitchen Must Have'],
     images: [
       'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=800&auto=format&fit=crop&q=80'
@@ -436,7 +477,14 @@ export const INITIAL_PRODUCTS: Product[] = [
     colors: ['Emerald Green & Grey'],
     sizes: ['Standard Set'],
     features: ['14 Interchangeable Blades', 'Large Catch Tray with Drain Basket', 'Food Grade BPA-Free Plastic', 'Hand Safety Guard Included'],
-    featuresBn: ['১৪ রকমের স্টেইনলেস স্টিল ব্লেড', 'ড্রেনেজ বাস্কেট সহ ১.৫ লিটার কন্টেইনার', 'বিপিএ-ফ্রি ফুড গ্রেড প্লাস্টিক', 'হাত কাটার ভয়হীন হ্যান্ডগার্ড']
+    featuresBn: ['১৪ রকমের স্টেইনলেস স্টিল ব্লেড', 'ড্রেনেজ বাস্কেট সহ ১.৫ লিটার কন্টেইনার', 'বিপিএ-ফ্রি ফুড গ্রেড প্লাস্টিক', 'হাত কাটার ভয়হীন হ্যান্ডগার্ড'],
+    seo: {
+      slug: '14-in-1-vegetable-cutter-chopper',
+      metaTitle: '14-in-1 Smart Vegetable Cutter & Chopper | BuyOne BD',
+      metaDescription: 'Cut cooking prep time in half with the 14-in-1 stainless blade kitchen food chopper.',
+      keywords: 'vegetable cutter, kitchen chopper bd, 14 in 1 cutter',
+      robots: 'index, follow'
+    }
   },
   {
     id: 'prod-007',
@@ -449,6 +497,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 80,
     category: 'islamic-lifestyle',
     categoryBn: 'ইসলামিক ও আতর',
+    subcategory: 'roll-on-attar',
     tags: ['Halal', 'Long Lasting'],
     images: [
       'https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=800&auto=format&fit=crop&q=80'
@@ -460,7 +509,14 @@ export const INITIAL_PRODUCTS: Product[] = [
     colors: ['Amber Crystal Glass Bottle'],
     sizes: ['12ml Roll-On (১২ মিলি)', '6ml Pocket (৬ মিলি)'],
     features: ['100% Alcohol Free Pure Concentrated Oil', '48+ Hours Lasting Scent', 'Luxurious Crystal Roll-on Bottle', 'Made from Natural Floral Extracts'],
-    featuresBn: ['শতভাগ অ্যালকোহল ও কেমিক্যাল মুক্ত', '৪৮+ ঘণ্টা দীর্ঘস্থায়ী সুবাস', 'প্রিমিয়াম ক্রিস্টাল কাঁচের শিশি', 'প্রাকৃতিক ফুলের নির্যাস থেকে প্রস্তুত']
+    featuresBn: ['শতভাগ অ্যালকোহল ও কেমিক্যাল মুক্ত', '৪৮+ ঘণ্টা দীর্ঘস্থায়ী সুবাস', 'প্রিমিয়াম ক্রিস্টাল কাঁচের শিশি', 'প্রাকৃতিক ফুলের নির্যাস থেকে প্রস্তুত'],
+    seo: {
+      slug: 'madina-jannatul-ferdous-pure-attar-12ml',
+      metaTitle: 'Jannatul Ferdous Pure Roll-On Attar 12ml | BuyOne BD',
+      metaDescription: 'Alcohol-free authentic Jannatul Ferdous concentrated attar oil with 48+ hours fragrance.',
+      keywords: 'jannatul ferdous attar, halal perfume bangladesh, attar 12ml',
+      robots: 'index, follow'
+    }
   },
   {
     id: 'prod-008',
@@ -473,6 +529,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 40,
     category: 'beauty-care',
     categoryBn: 'বিউটি ও পার্সোনাল কেয়ার',
+    subcategory: 'herbal-skincare',
     tags: ['Natural Glow', 'Korean Formula'],
     images: [
       'https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&auto=format&fit=crop&q=80'
@@ -484,7 +541,14 @@ export const INITIAL_PRODUCTS: Product[] = [
     colors: ['Milky White'],
     sizes: ['150ml'],
     features: ['Infused with Rice Water and Moringa Oil', 'For All Skin Types', 'Sulfate and Paraben Free', 'Gentle Daily Use'],
-    featuresBn: ['চালের খাঁটি নির্যাস ও ভিটামিন সমৃদ্ধ', 'সব ধরনের ত্বকের জন্য উপযোগী', 'প্যারাবেন ও ক্ষতিকর কেমিক্যাল মুক্ত', 'নরম ও উজ্জ্বল ত্বকের নিশ্চয়তা']
+    featuresBn: ['চালের খাঁটি নির্যাস ও ভিটামিন সমৃদ্ধ', 'সব ধরনের ত্বকের জন্য উপযোগী', 'প্যারাবেন ও ক্ষতিকর কেমিক্যাল মুক্ত', 'নরম ও উজ্জ্বল ত্বকের নিশ্চয়তা'],
+    seo: {
+      slug: 'rice-water-brightening-foaming-cleanser',
+      metaTitle: 'Rice Water Brightening Foaming Cleanser 150ml | BuyOne BD',
+      metaDescription: 'Korean formula Rice Water & Moringa deep pore brightening cleanser in Bangladesh.',
+      keywords: 'rice water cleanser, skincare bangladesh, brightening facewash',
+      robots: 'index, follow'
+    }
   }
 ];
 
@@ -887,6 +951,57 @@ export const INITIAL_SETTINGS: StoreSettings = {
     autoRestockAlert: true,
     autoFraudDetection: true
   },
+  aiKeywordRules: [
+    {
+      id: 'kw-delivery',
+      keywords: ['ডেলিভারি', 'চার্জ', 'কুরিয়ার', 'কতদিন', 'delivery', 'shipping', 'charge', 'courier'],
+      replyBn: 'সারা বাংলাদেশে দ্রুত হোম ডেলিভারি চলছে! ঢাকা সিটি: ৳৭০ (২৪-৪৮ ঘণ্টা), ঢাকা উপশহর: ৳১০০, ঢাকার বাইরে: ৳১৩০ (৪৮-৭২ ঘণ্টা)। Steadfast ও Pathao-তে ক্যাশ অন ডেলিভারি সুবিধা রয়েছে।',
+      replyEn: 'Nationwide delivery across all 64 districts: Inside Dhaka ৳70 (24-48h), Sub-Dhaka ৳100, Outside Dhaka ৳130 (48-72h) via Steadfast & Pathao with Cash on Delivery.',
+      enabled: true
+    },
+    {
+      id: 'kw-payment',
+      keywords: ['বিকাশ', 'নগদ', 'রকেট', 'পেমেন্ট', 'ক্যাশ', 'bkash', 'nagad', 'rocket', 'payment', 'cod'],
+      replyBn: 'আপনি পণ্য হাতে পেয়ে সম্পূর্ণ টাকা পরিশোধ (Cash on Delivery) করতে পারবেন! এছাড়া বিকাশ/নগদ/রকেট নম্বর: 01886289663।',
+      replyEn: 'Cash on Delivery (pay after checking parcel) is available everywhere. Mobile payments: bKash / Nagad / Rocket Merchant: 01886289663.',
+      enabled: true
+    },
+    {
+      id: 'kw-return',
+      keywords: ['রিটার্ন', 'রিফান্ড', 'ওয়ারেন্টি', 'চেঞ্জ', 'ফেরত', 'return', 'refund', 'warranty', 'exchange'],
+      replyBn: 'প্রতিটি পণ্যে ৭ দিনের সহজ রিপ্লেসমেন্ট ও রিটার্ন গ্যারান্টি রয়েছে! পণ্য দেখে পছন্দ না হলে ডেলিভারি ম্যানের সামনেই রিটার্ন করতে পারবেন।',
+      replyEn: 'Every product comes with our 7-day easy replacement & return guarantee. You can inspect the parcel upon delivery.',
+      enabled: true
+    },
+    {
+      id: 'kw-discount',
+      keywords: ['ডিসকাউন্ট', 'ছাড়', 'কুপন', 'স্পিন', 'ফ্রি', 'discount', 'coupon', 'offer', 'spin', 'voucher'],
+      replyBn: 'আমাদের লাকি স্পিন হুইল ঘুরিয়ে প্রতিদিন ৳৫০০ পর্যন্ত গিফট ওয়ালেট ক্যাশ এবং ফ্রি ডেলিভারি কুপন জিতে নিতে পারেন! ফ্ল্যাশ সেলে ৫০% পর্যন্ত ছাড় চলছে।',
+      replyEn: 'Spin our Lucky Spin Wheel to win up to ৳500 Gift Wallet cash or free delivery coupons! Also check Flash Sale for up to 50% off.',
+      enabled: true
+    },
+    {
+      id: 'kw-authentic',
+      keywords: ['অরিজিনাল', 'আসল', 'মান', 'কোয়ালিটি', 'original', 'authentic', 'fake', 'quality'],
+      replyBn: 'BuyOne BD শতভাগ অরিজিনাল ও যাচাইকৃত পণ্য সরবরাহ করে। মধু ও অর্গানিক ফুড ল্যাব টেস্টে উত্তীর্ণ এবং গ্যাজেটে অফিশিয়াল ওয়ারেন্টি থাকে।',
+      replyEn: 'All BuyOne BD products are 100% authentic and quality checked before dispatch with official brand warranty.',
+      enabled: true
+    },
+    {
+      id: 'kw-contact',
+      keywords: ['ঠিকানা', 'অফিস', 'শোরুম', 'হেল্পলাইন', 'ফোন', 'নম্বর', 'address', 'office', 'contact', 'phone', 'hotline'],
+      replyBn: 'আমাদের অফিস: লেভেল ৪, হাউস ১৮, রোড ১১, বনানী, ঢাকা-১২১৩। হটলাইন ও হোয়াটসঅ্যাপ: 01886-289663 (সকাল ৯টা – রাত ১১টা)।',
+      replyEn: 'Our office: Level 4, House 18, Road 11, Banani, Dhaka-1213. Hotline & WhatsApp: 01886-289663.',
+      enabled: true
+    },
+    {
+      id: 'kw-wholesale',
+      keywords: ['পাইকারি', 'হোলসেল', 'বেশি নিলে', 'wholesale', 'bulk', 'reseller'],
+      replyBn: 'জ্বী! পাইকারি বা কর্পোরেট বাল্ক অর্ডারে বিশেষ ছাড় পাওয়া যায়। সরাসরি আমাদের হোয়াটসঅ্যাপে (01886289663) পণ্যের নাম ও পরিমাণ জানান।',
+      replyEn: 'Yes! We offer special wholesale and bulk pricing. Contact our WhatsApp desk (01886289663) with your required quantity.',
+      enabled: true
+    }
+  ],
   seoSettings: {
     metaTitle: 'BuyOne BD - বাংলাদেশের বিশ্বস্ত অনলাইন শপিং | Smart E-Commerce',
     metaDescription: 'স্মার্ট গ্যাজেট, প্রিমিয়াম আতর, অর্গানিক ফুড ও লাইফস্টাইল পণ্য সারাদেশে ক্যাশ অন ডেলিভারিতে কিনুন BuyOne BD-তে। এআই কল কনফার্মেশন ও দ্রুত কুরিয়ার ডেলিভারি।',
@@ -896,7 +1011,9 @@ export const INITIAL_SETTINGS: StoreSettings = {
     robots: 'index, follow',
     twitterHandle: '@buyonebd',
     googleSiteVerification: '',
-    schemaType: 'Store'
+    schemaType: 'Store',
+    sitemapEnabled: true,
+    robotsTxt: `User-agent: *\nAllow: /\nAllow: /products\nAllow: /product/\nAllow: /category/\nAllow: /tracking\nDisallow: /hossain\nDisallow: /api/\n\nSitemap: https://buyonebd.com/sitemap.xml`
   },
   footerSettings: {
     aboutTextBn: 'BuyOne BD হলো বাংলাদেশের বিশ্বস্ত অনলাইন শপিং প্ল্যাটফর্ম। সারাদেশে ক্যাশ অন ডেলিভারি, এআই অটোমেটেড ভয়েস কল কনফার্মেশন ও স্টিডফাস্ট কুরিয়ারের মাধ্যমে দ্রুততম সময়ে আসল পণ্য পৌঁছে দিতে আমরা প্রতিশ্রুতিবদ্ধ।',

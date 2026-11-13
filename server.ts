@@ -212,30 +212,54 @@ app.get('/api/tts/sample', async (_req, res) => {
 // WhatsApp AI Chat Endpoint
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message, history = [] } = req.body;
+    const { message, history = [], keywordRules = [], lang = 'bn', assistantDraft = false } = req.body || {};
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
+    }
+
+    // 1. Check backend auto-answer keyword rules first for customer queries
+    if (!assistantDraft && Array.isArray(keywordRules) && keywordRules.length > 0) {
+      const lowerMsg = String(message).toLowerCase();
+      const matchedRule = keywordRules.find(
+        (rule: any) =>
+          rule &&
+          rule.enabled !== false &&
+          Array.isArray(rule.keywords) &&
+          rule.keywords.some((kw: string) => kw && lowerMsg.includes(String(kw).trim().toLowerCase()))
+      );
+      if (matchedRule) {
+        const matchedReply = lang === 'en' ? matchedRule.replyEn || matchedRule.replyBn : matchedRule.replyBn || matchedRule.replyEn;
+        if (matchedReply) {
+          return res.json({ reply: matchedReply, matchedKeyword: true });
+        }
+      }
     }
 
     if (!process.env.GEMINI_API_KEY) {
       return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
     }
 
-    const systemInstruction = `You are Sumana, a warm, polite, and enthusiastic customer care executive for "BuyOne BD", Bangladesh's premier e-commerce store with 1-click checkout and AI auto-call order verification.
-You communicate warmly in Bengali (বাংলা) or friendly Banglish/English depending on what the user speaks.
+    const saved = loadStoreData();
+    const storeName = saved?.settings?.storeName || 'BuyOne BD';
+    const hotline = saved?.settings?.hotline || '01886-289663';
+
+    const systemInstruction = assistantDraft
+      ? `You are drafting a helpful, concise customer care reply on behalf of a live support executive at "${storeName}" in Bangladesh. Reply in ${lang === 'en' ? 'English' : 'polite Bengali (বাংলা)'} matching the customer's question. Be polite, accurate about Cash on Delivery across 64 districts, and concise.`
+      : `You are Sumana, a warm, polite, and enthusiastic customer care executive for "${storeName}", Bangladesh's premier e-commerce store with 1-click checkout and AI auto-call order verification.
+You communicate warmly in Bengali (বাংলা) or English matching the customer's language.
 Store policies:
 - Nationwide delivery across all 64 districts in Bangladesh via Steadfast and Pathao Courier.
 - Delivery Fee: Dhaka City ৳70 (24-48 hours), Sub-Dhaka (Gazipur, Savar, Narayanganj) ৳100, Outside Dhaka ৳130 (48-72 hours).
-- Payment methods: Cash on Delivery (পণ্য হাতে পেয়ে টাকা), bKash (01886289663), Nagad (01886289663), Rocket.
+- Payment methods: Cash on Delivery (পণ্য হাতে পেয়ে টাকা), bKash (${hotline}), Nagad (${hotline}), Rocket.
 - Every order is confirmed via instant automated phone call.
-- Hotline: 01886-BUYONE (01886-289663), Support email: buyonebd@gmail.com.
-Keep responses concise, cheerful, helpful and formatted with appropriate emojis.`;
+- Hotline: ${hotline}.
+Keep responses concise, helpful, and direct.`;
 
     const contents = [
       ...history.map((h: any) => ({
-        role: h.sender === 'user' ? 'user' : 'model',
-        parts: [{ text: h.text }]
+        role: h.sender === 'user' || h.sender === 'customer' ? 'user' : 'model',
+        parts: [{ text: h.textBn || h.text }]
       })),
       {
         role: 'user',
@@ -259,14 +283,13 @@ Keep responses concise, cheerful, helpful and formatted with appropriate emojis.
 });
 
 // Full E-commerce Persistence REST Endpoints
-// Initial state fallback if no file exists
 app.get('/api/store/sync', (_req, res) => {
   const data = loadStoreData();
   return res.json({ success: true, data });
 });
 
 app.post('/api/store/sync', (req, res) => {
-  const { products, orders, settings, spinRewards } = req.body;
+  const { products, orders, settings, spinRewards, categories } = req.body || {};
   const current = loadStoreData() || {};
   const updated = {
     ...current,
@@ -274,10 +297,184 @@ app.post('/api/store/sync', (req, res) => {
     orders: orders || current.orders,
     settings: settings || current.settings,
     spinRewards: spinRewards || current.spinRewards,
+    categories: categories || current.categories,
     lastUpdated: new Date().toISOString()
   };
   saveStoreData(updated);
   return res.json({ success: true, message: 'Store synchronized' });
+});
+
+// Dynamic robots.txt served from backend SEO settings
+app.get('/robots.txt', (req, res) => {
+  const saved = loadStoreData();
+  const host = `${req.protocol}://${req.get('host')}`;
+  const customRobots = saved?.settings?.seoSettings?.robotsTxt;
+  const fallbackRobots = `User-agent: *\nAllow: /\nDisallow: /hossain\n\nSitemap: ${host}/sitemap.xml\n`;
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  return res.send(customRobots && customRobots.trim().length > 0 ? customRobots : fallbackRobots);
+});
+
+// Dynamic XML sitemap served from current catalog & categories
+app.get('/sitemap.xml', (req, res) => {
+  const saved = loadStoreData();
+  const sitemapEnabled = saved?.settings?.seoSettings?.sitemapEnabled !== false;
+  if (!sitemapEnabled) {
+    return res.status(404).send('Sitemap disabled');
+  }
+  const baseUrl = (saved?.settings?.seoSettings?.canonicalUrl || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+  const now = new Date().toISOString().split('T')[0];
+
+  const staticPaths = ['/', '/products', '/tracking'];
+  const cats: any[] = saved?.categories || saved?.settings?.categories || [];
+  const catPaths = cats.filter((c) => c?.isActive !== false && c?.slug).map((c) => `/category/${c.slug}`);
+  const prods: any[] = saved?.products || [];
+  const prodPaths = prods.map((p) => `/product/${p?.seo?.slug || p?.id}`);
+
+  const allPaths = Array.from(new Set([...staticPaths, ...catPaths, ...prodPaths]));
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${allPaths
+    .map(
+      (p) =>
+        `  <url>\n    <loc>${baseUrl}${p}</loc>\n    <lastmod>${now}</lastmod>\n    <changefreq>${p === '/' ? 'daily' : 'weekly'}</changefreq>\n    <priority>${p === '/' ? '1.0' : p.startsWith('/product/') ? '0.9' : '0.8'}</priority>\n  </url>`
+    )
+    .join('\n')}\n</urlset>`;
+
+  res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+  return res.send(xml);
+});
+
+// Server-Side Meta Pixel / Conversions API (CAPI) Endpoint
+app.post('/api/tracking/pixel', async (req, res) => {
+  try {
+    const {
+      eventName = 'PageView',
+      urlPath = '/',
+      sourceUrl = '',
+      value,
+      currency = 'BDT',
+      contentName,
+      pixelId: bodyPixelId,
+      accessToken: bodyAccessToken,
+      testEventCode
+    } = req.body || {};
+
+    const saved = loadStoreData() || {};
+    const fbCfg = saved?.settings?.marketingSettings?.facebookPixel || {};
+    const pixelId = bodyPixelId || fbCfg.pixelId || '';
+    const accessToken = bodyAccessToken || fbCfg.accessToken || '';
+
+    let status: 'sent_capi' | 'logged_server' = 'logged_server';
+    let capiResponse: any = null;
+
+    if (pixelId && accessToken) {
+      try {
+        const capiPayload: any = {
+          data: [
+            {
+              event_name: eventName,
+              event_time: Math.floor(Date.now() / 1000),
+              action_source: 'website',
+              event_source_url: sourceUrl || urlPath,
+              user_data: {
+                client_ip_address: req.ip,
+                client_user_agent: req.get('user-agent') || 'BuyOneBD'
+              },
+              custom_data: {
+                currency,
+                ...(value !== undefined ? { value: Number(value) } : {}),
+                ...(contentName ? { content_name: contentName } : {}),
+                url_path: urlPath
+              }
+            }
+          ],
+          ...(testEventCode || fbCfg.testEventCode ? { test_event_code: testEventCode || fbCfg.testEventCode } : {})
+        };
+
+        const fbRes = await fetch(`https://graph.facebook.com/v21.0/${pixelId}/events?access_token=${encodeURIComponent(accessToken)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(capiPayload)
+        });
+        capiResponse = await fbRes.json().catch(() => null);
+        if (fbRes.ok) {
+          status = 'sent_capi';
+        }
+      } catch {
+        status = 'logged_server';
+      }
+    }
+
+    const eventRecord = {
+      id: `px-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      eventName,
+      urlPath,
+      sourceUrl: sourceUrl || urlPath,
+      pixelId: pixelId || undefined,
+      value,
+      currency,
+      contentName,
+      status,
+      timestamp: new Date().toISOString()
+    };
+
+    const existingEvents = Array.isArray(saved.pixelEvents) ? saved.pixelEvents : [];
+    saved.pixelEvents = [eventRecord, ...existingEvents].slice(0, 120);
+    saveStoreData(saved);
+
+    return res.json({ success: true, event: eventRecord, capiResponse });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Pixel log failed' });
+  }
+});
+
+app.get('/api/tracking/events', (_req, res) => {
+  const saved = loadStoreData() || {};
+  return res.json({ success: true, events: saved.pixelEvents || [] });
+});
+
+// Bidirectional Support Desk API (Customer Browsing Logs, Live Support Chats, Backend Browser Calls)
+app.get('/api/support/state', (_req, res) => {
+  const saved = loadStoreData() || {};
+  return res.json({
+    success: true,
+    browsingHistory: saved.browsingHistory || [],
+    supportChats: saved.supportChats || [],
+    browserCalls: saved.browserCalls || [],
+    pixelEvents: saved.pixelEvents || []
+  });
+});
+
+app.post('/api/support/browsing', (req, res) => {
+  const event = req.body;
+  if (!event || !event.urlPath) {
+    return res.status(400).json({ success: false, error: 'Missing urlPath' });
+  }
+  const saved = loadStoreData() || {};
+  const existing = Array.isArray(saved.browsingHistory) ? saved.browsingHistory : [];
+  saved.browsingHistory = [event, ...existing].slice(0, 150);
+  saveStoreData(saved);
+  return res.json({ success: true });
+});
+
+app.post('/api/support/chat', (req, res) => {
+  const { sessions } = req.body || {};
+  if (!Array.isArray(sessions)) {
+    return res.status(400).json({ success: false, error: 'sessions array required' });
+  }
+  const saved = loadStoreData() || {};
+  saved.supportChats = sessions.slice(0, 60);
+  saveStoreData(saved);
+  return res.json({ success: true });
+});
+
+app.post('/api/support/call', (req, res) => {
+  const { calls } = req.body || {};
+  if (!Array.isArray(calls)) {
+    return res.status(400).json({ success: false, error: 'calls array required' });
+  }
+  const saved = loadStoreData() || {};
+  saved.browserCalls = calls.slice(0, 60);
+  saveStoreData(saved);
+  return res.json({ success: true });
 });
 
 // Meta WhatsApp Cloud API Webhook Verification

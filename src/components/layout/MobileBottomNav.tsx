@@ -10,6 +10,9 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onOpenCategori
   const {
     activeView,
     setActiveView,
+    goHome,
+    navigateToPath,
+    recordPageVisit,
     cartCount,
     setIsCartOpen,
     openCustomerPortal,
@@ -21,7 +24,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onOpenCategori
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800 px-1.5 py-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
       <div className="flex items-center justify-around text-[10px] font-bold">
         <button
-          onClick={() => setActiveView('store')}
+          onClick={goHome}
           className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition-colors cursor-pointer ${
             activeView === 'store' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 hover:text-slate-800'
           }`}
@@ -39,7 +42,12 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onOpenCategori
         </button>
 
         <button
-          onClick={() => setActiveView('tracking')}
+          onClick={() => {
+            setActiveView('tracking');
+            navigateToPath('/tracking');
+            recordPageVisit('/tracking', t('পার্সেল ট্র্যাকিং', 'Order Tracking'));
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
           className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition-colors cursor-pointer ${
             activeView === 'tracking' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 hover:text-slate-800'
           }`}

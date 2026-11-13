@@ -3,17 +3,34 @@ import { Phone, Mail, MapPin, ShieldCheck, MessageCircle, Globe, Sparkles } from
 import { useStore } from '../../context/StoreContext';
 
 export const Footer: React.FC = () => {
-  const { settings, categories, setActiveView, t, lang } = useStore();
+  const {
+    settings,
+    categories,
+    goHome,
+    openAllProductsPage,
+    selectCategoryFilter,
+    setActiveView,
+    navigateToPath,
+    recordPageVisit,
+    t,
+    lang
+  } = useStore();
   const footer = settings.footerSettings;
   const activeCategories = categories.filter((c) => c.isActive).slice(0, 6);
+  const logoMode = settings.logoMode || (settings.logoUrl ? 'both' : 'text');
 
   const handleQuickLink = (actionType: string, url?: string) => {
     if (actionType === 'tracking') {
       setActiveView('tracking');
+      navigateToPath('/tracking');
+      recordPageVisit('/tracking', t('পার্সেল ট্র্যাকিং', 'Order Tracking'));
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else if (actionType === 'flash_sale' || actionType === 'store') {
-      setActiveView('store');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (actionType === 'products') {
+      openAllProductsPage();
+    } else if (actionType === 'flash_sale') {
+      selectCategoryFilter('flash-sale');
+    } else if (actionType === 'store') {
+      goHome();
     } else if (url) {
       window.open(url, '_blank', 'noopener,noreferrer');
     }
@@ -26,24 +43,28 @@ export const Footer: React.FC = () => {
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-10 pb-24 md:pb-12">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-          {/* Col 1: Dynamic Backend Brand & About */}
+          {/* Col 1: Dynamic Backend Brand & About (Clickable Home Link) */}
           <div className="space-y-3 min-w-0">
-            <div className="flex items-center gap-2.5">
-              {settings.logoUrl ? (
+            <button
+              type="button"
+              onClick={goHome}
+              className="flex items-center gap-2.5 cursor-pointer text-left group"
+              aria-label={t('হোম পেজে ফিরে যান', 'Return to Home Page')}
+            >
+              {settings.logoUrl && (logoMode === 'image' || logoMode === 'both') && (
                 <img
                   src={settings.logoUrl}
                   alt={settings.storeName}
+                  referrerPolicy="no-referrer"
                   className="h-9 max-w-[140px] object-contain rounded-lg bg-white/5 p-1"
                 />
-              ) : (
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-600 flex items-center justify-center text-white font-black text-sm shadow-md shadow-emerald-600/30 shrink-0">
-                  {settings.storeName?.slice(0, 1) || 'B'}
-                </div>
               )}
-              <span className="text-xl font-black text-white tracking-tight truncate">
-                {lang === 'bn' ? (settings.storeNameBn || settings.storeName) : settings.storeName}
-              </span>
-            </div>
+              {(logoMode === 'text' || logoMode === 'both' || !settings.logoUrl) && (
+                <span className="font-display text-xl font-black text-white tracking-tight truncate group-hover:text-emerald-400 transition-colors">
+                  {lang === 'bn' ? (settings.storeNameBn || settings.storeName) : settings.storeName}
+                </span>
+              )}
+            </button>
 
             <p className="text-slate-400 leading-relaxed text-xs">
               {footer
@@ -166,11 +187,8 @@ export const Footer: React.FC = () => {
                   {activeCategories.map((cat) => (
                     <button
                       key={cat.id}
-                      onClick={() => {
-                        setActiveView('store');
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                      }}
-                      className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-emerald-500 text-[11px] text-slate-300 hover:text-emerald-400 cursor-pointer transition-colors"
+                      onClick={() => selectCategoryFilter(cat.slug)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-emerald-500 text-[11px] text-slate-300 hover:text-emerald-400 cursor-pointer transition-colors"
                     >
                       {lang === 'bn' ? cat.nameBn : cat.nameEn}
                     </button>
