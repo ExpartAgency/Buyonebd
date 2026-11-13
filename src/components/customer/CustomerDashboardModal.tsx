@@ -22,10 +22,14 @@ import {
   Check,
   ShieldCheck,
   Eye,
-  CheckCircle2
+  CheckCircle2,
+  PlusCircle,
+  AlertTriangle,
+  Send
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BD_DISTRICTS } from '../../data/initialData';
+import { WalletTopUpMethod } from '../../types';
 import { audioEngine } from '../../utils/soundEffects';
 import confetti from 'canvas-confetti';
 
@@ -36,6 +40,10 @@ export const CustomerDashboardModal: React.FC = () => {
     customerProfile,
     updateCustomerProfile,
     customerWalletBalance,
+    walletDaysRemaining,
+    walletTopUps,
+    requestWalletTopUp,
+    settings,
     redeemLoyaltyPoints,
     logoutCustomer,
     setIsSpinOpen,
@@ -44,6 +52,7 @@ export const CustomerDashboardModal: React.FC = () => {
     wishlist,
     priceAlerts,
     setActiveView,
+    goHome,
     setTrackingSearchQuery,
     setSelectedProductForPage,
     openOneClickCheckout,
@@ -55,6 +64,11 @@ export const CustomerDashboardModal: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'wallet' | 'orders' | 'history' | 'alerts' | 'profile'>('wallet');
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [isAddBalanceOpen, setIsAddBalanceOpen] = useState(false);
+  const [topUpMethod, setTopUpMethod] = useState<WalletTopUpMethod>('bkash');
+  const [topUpAmount, setTopUpAmount] = useState<string>('500');
+  const [topUpSender, setTopUpSender] = useState<string>(customerProfile.phone || '');
+  const [topUpTrxId, setTopUpTrxId] = useState<string>('');
   const [profileForm, setProfileForm] = useState({
     name: customerProfile.name,
     username: customerProfile.username || '',
@@ -295,32 +309,301 @@ export const CustomerDashboardModal: React.FC = () => {
           {/* TAB 1: Spin-Only Gift Wallet, Saved Coupons & Loyalty Points */}
           {activeTab === 'wallet' && (
             <div className="space-y-5">
-              {/* Spin-Only Cash Wallet Banner */}
-              <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 rounded-3xl p-5 text-white shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider bg-black/20 px-2.5 py-0.5 rounded-full text-amber-300">
-                    <Sparkles className="w-3 h-3" />
-                    {t('স্পিন এক্সক্লুসিভ গিফট ব্যালেন্স', 'Lucky Spin Cash Rewards')}
-                  </span>
-                  <h3 className="text-2xl sm:text-3xl font-black font-mono">
-                    ৳{customerWalletBalance.toLocaleString()}
-                  </h3>
-                  <p className="text-xs text-emerald-100 leading-relaxed max-w-md">
-                    {t(
-                      'শুধুমাত্র লাকি স্পিন হুইল ঘুরিয়ে ও পয়েন্ট রিডিম করে ফ্রি ক্যাশ ব্যালেন্স জিতুন এবং যেকোনো অর্ডারে ডিসকাউন্ট হিসেবে ব্যবহার করুন।',
-                      'Earn free cash rewards exclusively from the Lucky Spin Wheel & Points redemption. Apply directly at checkout!'
+              {/* Spin & MFS Wallet Banner with 30-Day Activity Expiry Tracker */}
+              <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 rounded-3xl p-5 text-white shadow-lg space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider bg-black/20 px-2.5 py-0.5 rounded-full text-amber-300">
+                      <Sparkles className="w-3 h-3" />
+                      {t('ওয়ালেট ও গিফট ব্যালেন্স', 'Customer Cash & Gift Wallet')}
+                    </span>
+                    <h3 className="text-2xl sm:text-3xl font-black font-mono tabular-nums">
+                      ৳{customerWalletBalance.toLocaleString()}
+                    </h3>
+                    <p className="text-xs text-emerald-100 leading-relaxed max-w-md">
+                      {t(
+                        'বিকাশ/নগদ দিয়ে ব্যালেন্স অ্যাড করুন অথবা লাকি স্পিন ও পয়েন্ট রিডিম করে যেকোনো পণ্যে ব্যবহার করুন।',
+                        'Add balance via bKash/Nagad or win Spin cash & redeem points to spend on any product.'
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap sm:flex-col gap-2 shrink-0">
+                    {settings.walletSettings?.enabled !== false && (
+                      <button
+                        type="button"
+                        onClick={() => setIsAddBalanceOpen((prev) => !prev)}
+                        className="px-4 py-2.5 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-800 font-black text-xs shadow-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                      >
+                        <PlusCircle className="w-4 h-4 text-emerald-600" />
+                        <span>{t('+ ব্যালেন্স অ্যাড (bKash/Nagad)', '+ Add Balance')}</span>
+                      </button>
                     )}
-                  </p>
+                    <button
+                      onClick={handleLaunchSpinWheel}
+                      className="px-4 py-2.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                    >
+                      <Gift className="w-4 h-4" />
+                      <span>{t('স্পিন করে জিতুন', 'Spin & Win')}</span>
+                    </button>
+                  </div>
                 </div>
 
-                <button
-                  onClick={handleLaunchSpinWheel}
-                  className="px-5 py-3 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow-xl flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 shrink-0"
-                >
-                  <Gift className="w-4 h-4" />
-                  <span>{t('🎡 স্পিন ঘুরিয়ে ক্যাশ জিতুন', 'Spin & Win Cash')}</span>
-                </button>
+                {/* 30-Day Inactivity Balance Expiry Policy Bar */}
+                <div className="p-3 rounded-2xl bg-slate-950/35 border border-white/15 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px]">
+                  <div className="flex items-start sm:items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5 sm:mt-0" />
+                    <span className="text-emerald-50 font-semibold">
+                      {t(
+                        `নোট: ${settings.walletSettings?.expiryDays ?? 30} দিনের মধ্যে কোনো পণ্য না কিনলে অব্যবহৃত ব্যালেন্স শূন্য (৳০) হয়ে যাবে। বাকি আছে: ${walletDaysRemaining} দিন।`,
+                        `Policy: Wallet resets to ৳0 if no product is purchased within ${settings.walletSettings?.expiryDays ?? 30} days. Remaining validity: ${walletDaysRemaining} day(s).`
+                      )}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCustomerDashboardOpen(false);
+                      goHome();
+                    }}
+                    className="px-3 py-1 rounded-xl bg-amber-400/90 hover:bg-amber-300 text-slate-950 font-black text-[10px] shrink-0 cursor-pointer self-start sm:self-auto"
+                  >
+                    {t('পণ্য কিনুন →', 'Shop Now →')}
+                  </button>
+                </div>
               </div>
+
+              {/* Add Balance Form (bKash, Nagad, Rocket, Upay - Controlled from Backend Admin) */}
+              {isAddBalanceOpen && settings.walletSettings?.enabled !== false && (() => {
+                const wCfg = settings.walletSettings;
+                const methodsMap = wCfg?.methods || {
+                  bkash: { enabled: true, label: 'bKash', accountNumber: '01886289663', accountType: 'Personal' },
+                  nagad: { enabled: true, label: 'Nagad', accountNumber: '01886289663', accountType: 'Personal' },
+                  rocket: { enabled: true, label: 'Rocket', accountNumber: '018862896630', accountType: 'Personal' },
+                  upay: { enabled: true, label: 'Upay', accountNumber: '01886289663', accountType: 'Personal' }
+                };
+                const enabledMethods = (Object.keys(methodsMap) as WalletTopUpMethod[]).filter(
+                  (m) => methodsMap[m]?.enabled !== false
+                );
+                const activeMethodKey: WalletTopUpMethod = enabledMethods.includes(topUpMethod)
+                  ? topUpMethod
+                  : enabledMethods[0] || 'bkash';
+                const activeAccount = methodsMap[activeMethodKey];
+
+                const handleTopUpSubmit = (e: React.FormEvent) => {
+                  e.preventDefault();
+                  const amt = Number(topUpAmount);
+                  if (!amt || amt <= 0 || !topUpSender.trim() || !topUpTrxId.trim()) {
+                    addToast(
+                      'warning',
+                      t('সঠিক তথ্য দিন', 'Missing Information'),
+                      t('টাকার পরিমাণ, প্রেরক নম্বর ও TrxID দিন।', 'Please provide amount, sender phone and TrxID.')
+                    );
+                    return;
+                  }
+                  const res = requestWalletTopUp({
+                    method: activeMethodKey,
+                    amount: amt,
+                    senderNumber: topUpSender,
+                    trxId: topUpTrxId
+                  });
+                  if (res.success) {
+                    setTopUpTrxId('');
+                    if (res.status === 'approved') {
+                      audioEngine.playSuccessChime();
+                    }
+                  }
+                };
+
+                return (
+                  <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border-2 border-emerald-500/40 shadow-md space-y-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <h4 className="font-black text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                          <PlusCircle className="w-4 h-4 text-emerald-600" />
+                          <span>{t('বিকাশ / নগদ / রকেট দিয়ে ব্যালেন্স অ্যাড করুন', 'Add Wallet Balance via MFS')}</span>
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          {t(
+                            `সর্বনিম্ন ৳${wCfg?.minTopUp ?? 50} - সর্বোচ্চ ৳${(wCfg?.maxTopUp ?? 50000).toLocaleString()} | ব্যাকএন্ড অনুমোদনের সাথে সাথে ব্যালেন্স যুক্ত হবে`,
+                            `Min ৳${wCfg?.minTopUp ?? 50} - Max ৳${(wCfg?.maxTopUp ?? 50000).toLocaleString()} | Controlled & verified by Admin Desk`
+                          )}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsAddBalanceOpen(false)}
+                        className="text-xs font-bold text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {enabledMethods.length === 0 ? (
+                      <p className="text-xs text-rose-500 font-bold">
+                        {t('বর্তমানে কোনো পেমেন্ট মাধ্যম সক্রিয় নেই।', 'No MFS top-up methods enabled currently.')}
+                      </p>
+                    ) : (
+                      <form onSubmit={handleTopUpSubmit} className="space-y-3.5">
+                        {/* Method Selector */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {enabledMethods.map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => setTopUpMethod(m)}
+                              className={`py-2.5 px-3 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                                activeMethodKey === m
+                                  ? m === 'bkash'
+                                    ? 'bg-pink-600 text-white border-pink-500 shadow'
+                                    : m === 'nagad'
+                                    ? 'bg-orange-600 text-white border-orange-500 shadow'
+                                    : m === 'rocket'
+                                    ? 'bg-purple-600 text-white border-purple-500 shadow'
+                                    : 'bg-sky-600 text-white border-sky-500 shadow'
+                                  : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                              }`}
+                            >
+                              {methodsMap[m].label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Payment Number Display */}
+                        <div className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <div>
+                            <span className="text-slate-500 block text-[11px]">
+                              {t(
+                                `নিচের ${activeAccount.label} (${activeAccount.accountType}) নম্বরে Send Money / Payment করুন:`,
+                                `Send Money / Payment to ${activeAccount.label} (${activeAccount.accountType}):`
+                              )}
+                            </span>
+                            <span className="font-mono font-black text-base text-emerald-700 dark:text-emerald-400">
+                              {activeAccount.accountNumber}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => copyCoupon(activeAccount.accountNumber)}
+                            className="px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Copy className="w-3 h-3" />
+                            <span>{t('নম্বর কপি', 'Copy Number')}</span>
+                          </button>
+                        </div>
+
+                        {/* Quick Amount Chips + Inputs */}
+                        <div className="flex flex-wrap gap-1.5">
+                          {[200, 500, 1000, 2000, 5000].map((amt) => (
+                            <button
+                              key={amt}
+                              type="button"
+                              onClick={() => setTopUpAmount(amt.toString())}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold border cursor-pointer ${
+                                topUpAmount === amt.toString()
+                                  ? 'bg-emerald-600 text-white border-emerald-500'
+                                  : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                              }`}
+                            >
+                              ৳{amt}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                              {t('পরিমাণ (৳)', 'Amount (৳)')}
+                            </label>
+                            <input
+                              type="number"
+                              required
+                              min={wCfg?.minTopUp ?? 50}
+                              max={wCfg?.maxTopUp ?? 50000}
+                              value={topUpAmount}
+                              onChange={(e) => setTopUpAmount(e.target.value)}
+                              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-mono font-bold text-slate-900 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                              {t('যে নম্বর থেকে পাঠিয়েছেন', 'Sender Mobile Number')}
+                            </label>
+                            <input
+                              type="tel"
+                              required
+                              placeholder="01XXXXXXXXX"
+                              value={topUpSender}
+                              onChange={(e) => setTopUpSender(e.target.value)}
+                              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-mono font-bold text-slate-900 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                              {t('ট্রানজেকশন আইডি (TrxID)', 'Transaction ID (TrxID)')}
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. BKS889012"
+                              value={topUpTrxId}
+                              onChange={(e) => setTopUpTrxId(e.target.value)}
+                              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-mono font-bold uppercase text-slate-900 dark:text-white"
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="submit"
+                          className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>{t('ব্যালেন্স অ্যাড রিকোয়েস্ট পাঠান', 'Submit Add Balance Request')}</span>
+                        </button>
+                      </form>
+                    )}
+
+                    {/* Recent Customer Top-Up Requests */}
+                    {walletTopUps.length > 0 && (
+                      <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                        <span className="text-[11px] font-bold text-slate-500 block">
+                          {t('সাম্প্রতিক ব্যালেন্স রিকোয়েস্ট:', 'Recent Add Balance History:')}
+                        </span>
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                          {walletTopUps.slice(0, 5).map((req) => (
+                            <div
+                              key={req.id}
+                              className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs"
+                            >
+                              <div>
+                                <span className="font-bold uppercase text-slate-900 dark:text-white">{req.method}</span>
+                                <span className="mx-1.5 text-slate-400">•</span>
+                                <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">৳{req.amount.toLocaleString()}</span>
+                                <span className="ml-2 text-[10px] font-mono text-slate-400">TrxID: {req.trxId}</span>
+                              </div>
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                                  req.status === 'approved'
+                                    ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300'
+                                    : req.status === 'rejected'
+                                    ? 'bg-rose-500/20 text-rose-500'
+                                    : 'bg-amber-500/20 text-amber-600 dark:text-amber-300'
+                                }`}
+                              >
+                                {req.status === 'approved'
+                                  ? t('অনুমোদিত', 'Approved')
+                                  : req.status === 'rejected'
+                                  ? t('বাতিল', 'Rejected')
+                                  : t('অপেক্ষমাণ', 'Pending')}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Saved Spin Coupons */}
               <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">

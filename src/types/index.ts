@@ -487,6 +487,7 @@ export interface StoreSettings {
   aiKeywordRules?: AIKeywordRule[];
   footerSettings: FooterSettings;
   seoSettings?: SEOSettings;
+  walletSettings?: WalletControlSettings;
 }
 
 export type StoreTheme =
@@ -528,6 +529,8 @@ export interface CustomerProfile {
   password?: string;
   loyaltyPoints: number;
   walletBalance: number;
+  lastPurchaseAt?: string;
+  lastWalletCreditAt?: string;
   browsingHistory?: string[];
   savedCoupons?: CustomerCoupon[];
   checkIn?: DailyCheckInState;
@@ -574,4 +577,46 @@ export interface PriceAlert {
   status: 'active' | 'notified';
 }
 
+export type WalletTopUpMethod = 'bkash' | 'nagad' | 'rocket' | 'upay';
 
+export interface WalletMethodConfig {
+  enabled: boolean;
+  label: string;
+  accountNumber: string;
+  accountType: 'Personal' | 'Merchant' | 'Agent';
+}
+
+export interface WalletControlSettings {
+  enabled: boolean;
+  autoApprove: boolean;
+  expiryDays: number;
+  minTopUp: number;
+  maxTopUp: number;
+  methods: Record<WalletTopUpMethod, WalletMethodConfig>;
+}
+
+export interface WalletTopUpRequest {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  method: WalletTopUpMethod;
+  amount: number;
+  senderNumber: string;
+  trxId: string;
+  status: 'pending' | 'approved' | 'rejected';
+  adminNote?: string;
+  createdAt: string;
+  processedAt?: string;
+}
+
+export interface MediaItem {
+  id: string;
+  name: string;
+  url: string;
+  source: 'product' | 'slider' | 'logo' | 'category' | 'seo' | 'upload';
+  width: number;
+  height: number;
+  sizeKb: number;
+  mimeType: string;
+  createdAt: string;
+}

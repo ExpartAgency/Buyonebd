@@ -62,7 +62,12 @@ import {
   Mic,
   Volume2,
   VolumeX,
-  PhoneOutgoing
+  PhoneOutgoing,
+  Wallet,
+  Maximize2,
+  CheckSquare,
+  Square,
+  RefreshCw
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BUSINESS_THEME_PRESETS } from '../../data/initialData';
@@ -145,13 +150,30 @@ export const AdminDashboard: React.FC = () => {
     initiateCustomerBrowserCall,
     answerBrowserCallFromBackend,
     appendBrowserCallMessage,
-    endBrowserCallSession
+    endBrowserCallSession,
+    customerWalletBalance,
+    walletLastPurchaseAt,
+    walletDaysRemaining,
+    walletTopUps,
+    approveWalletTopUp,
+    rejectWalletTopUp,
+    adjustCustomerWalletByAdmin,
+    runWalletExpirySweep,
+    mediaLibrary,
+    registerMediaItem,
+    deleteMediaItems,
+    resizeMediaItems,
+    syncStoreMediaLibrary
   } = useStore();
 
   // Pure language translation helper based on admin language preference
   const at = (bnText: string, enText: string) => (adminLang === 'en' ? enText : bnText);
 
-  const handleImageFileUpload = (file: File | undefined, onLoaded: (dataUrl: string) => void) => {
+  const handleImageFileUpload = (
+    file: File | undefined,
+    onLoaded: (dataUrl: string) => void,
+    sourceTag: 'product' | 'slider' | 'logo' | 'category' | 'seo' | 'upload' = 'upload'
+  ) => {
     if (!file) return;
     if (file.size > 4 * 1024 * 1024) {
       addToast('error', at('ফাইল অনেক বড়', 'File too large'), at('সর্বোচ্চ ৪MB ছবি আপলোড করুন।', 'Please choose an image under 4MB.'));
@@ -161,23 +183,49 @@ export const AdminDashboard: React.FC = () => {
     reader.onload = (ev) => {
       const result = ev.target?.result;
       if (typeof result === 'string') {
+        const probe = new Image();
+        probe.onload = () => {
+          registerMediaItem({
+            name: file.name,
+            url: result,
+            source: sourceTag,
+            width: probe.naturalWidth || 600,
+            height: probe.naturalHeight || 600,
+            sizeKb: Math.max(1, Math.round(file.size / 1024)),
+            mimeType: file.type || 'image/jpeg'
+          });
+        };
+        probe.onerror = () => {
+          registerMediaItem({
+            name: file.name,
+            url: result,
+            source: sourceTag,
+            width: 600,
+            height: 600,
+            sizeKb: Math.max(1, Math.round(file.size / 1024)),
+            mimeType: file.type || 'image/jpeg'
+          });
+        };
+        probe.src = result;
         onLoaded(result);
       }
     };
     reader.readAsDataURL(file);
   };
 
-  // Active tab state (all 17 left-hand sidebar options)
+  // Active tab state (all left-hand sidebar options)
   type AdminTab =
     | 'overview'
     | 'support_desk'
     | 'orders'
     | 'products'
+    | 'media_gallery'
     | 'categories'
     | 'abandoned_carts'
     | 'courier_hub'
     | 'flash_sale'
     | 'sliders'
+    | 'wallet_control'
     | 'marketing'
     | 'ai_hub'
     | 'spin_wheel'
@@ -189,6 +237,22 @@ export const AdminDashboard: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
+
+  // Media / Gallery state (bulk select, delete, canvas resize)
+  const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
+  const [mediaSourceFilter, setMediaSourceFilter] = useState<'all' | 'product' | 'slider' | 'logo' | 'category' | 'seo' | 'upload'>('all');
+  const [mediaSearch, setMediaSearch] = useState('');
+  const [resizeWidth, setResizeWidth] = useState<number>(600);
+  const [resizeHeight, setResizeHeight] = useState<number>(600);
+  const [resizeQuality, setResizeQuality] = useState<number>(88);
+  const [resizeKeepAspect, setResizeKeepAspect] = useState<boolean>(false);
+  const [isResizingMedia, setIsResizingMedia] = useState<boolean>(false);
+  const [isProductGalleryPickerOpen, setIsProductGalleryPickerOpen] = useState<boolean>(false);
+
+  // Wallet MFS Top-Up & Adjustment state
+  const [walletStatusFilter, setWalletStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [adminAdjustAmount, setAdminAdjustAmount] = useState<string>('200');
+  const [adminAdjustNote, setAdminAdjustNote] = useState<string>('');
 
   // Support Desk & Browser Call Console state
   const [selectedChatId, setSelectedChatId] = useState<string>('');
@@ -873,16 +937,20 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  const pendingWalletCount = walletTopUps.filter((w) => w.status === 'pending').length;
+
   const sidebarItems: { id: AdminTab; labelBn: string; labelEn: string; icon: any; badge?: number }[] = [
     { id: 'overview', labelBn: 'ওভারভিউ ও অ্যানালিটিক্স', labelEn: 'Overview', icon: LayoutDashboard },
     { id: 'support_desk', labelBn: 'লাইভ চ্যাট ও ব্রাউজার কল', labelEn: 'Live Chat & Calls', icon: Headphones, badge: supportDeskBadge },
     { id: 'orders', labelBn: 'অর্ডার ম্যানেজমেন্ট', labelEn: 'Orders', icon: ShoppingCart, badge: orders.length },
     { id: 'products', labelBn: 'পণ্য তালিকা ও প্রোডাক্ট যোগ', labelEn: 'Products', icon: Package, badge: products.length },
+    { id: 'media_gallery', labelBn: 'মিডিয়া ও গ্যালারি', labelEn: 'Media / Gallery', icon: ImagePlus, badge: mediaLibrary.length },
     { id: 'categories', labelBn: 'ক্যাটাগরি ম্যানেজমেন্ট', labelEn: 'Categories', icon: Grid, badge: categories.length },
     { id: 'abandoned_carts', labelBn: 'কার্ট রিকভারি (ড্রপ-অফ)', labelEn: 'Cart Recovery', icon: ShoppingCart, badge: abandonedCarts.filter(c => !c.recovered).length },
     { id: 'courier_hub', labelBn: 'কুরিয়ার ইন্টিগ্রেশন হাব', labelEn: 'Steadfast Hub', icon: Truck },
     { id: 'flash_sale', labelBn: 'ফ্ল্যাশ সেল ম্যানেজার', labelEn: 'Flash Sale', icon: Flame },
     { id: 'sliders', labelBn: 'স্টোর স্লাইডার (৫-৬ ব্যানার)', labelEn: 'Store Sliders', icon: ImageIcon, badge: sliders.length },
+    { id: 'wallet_control', labelBn: 'ওয়ালেট ও MFS রিচার্জ', labelEn: 'Wallet & MFS Top-Up', icon: Wallet, badge: pendingWalletCount },
     { id: 'marketing', labelBn: 'মার্কেটিং ও পিক্সেল হাব', labelEn: 'Marketing & Pixel', icon: BarChart3 },
     { id: 'ai_hub', labelBn: 'এআই ও ভয়েস কল সেটআপ', labelEn: 'AI Voice Hub', icon: Bot },
     { id: 'spin_wheel', labelBn: 'লাকি স্পিন কুপন ম্যানেজার', labelEn: 'Spin Rewards', icon: Gift, badge: spinRewards.length },
@@ -5667,6 +5735,690 @@ export const AdminDashboard: React.FC = () => {
               </button>
             </div>
           )}
+
+          {/* TAB 17: MEDIA & GALLERY (ALL UPLOADS, BULK SELECT, BULK DELETE, IMAGE RESIZE) */}
+          {activeTab === 'media_gallery' && (() => {
+            const filteredMedia = mediaLibrary.filter((item) => {
+              const matchesSource = mediaSourceFilter === 'all' || item.source === mediaSourceFilter;
+              const q = mediaSearch.trim().toLowerCase();
+              const matchesSearch = !q || item.name.toLowerCase().includes(q) || item.source.toLowerCase().includes(q);
+              return matchesSource && matchesSearch;
+            });
+
+            const allFilteredSelected =
+              filteredMedia.length > 0 && filteredMedia.every((m) => selectedMediaIds.includes(m.id));
+
+            const toggleSelectMedia = (id: string) => {
+              setSelectedMediaIds((prev) =>
+                prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+              );
+            };
+
+            const handleToggleSelectAll = () => {
+              if (allFilteredSelected) {
+                const filteredSet = new Set(filteredMedia.map((m) => m.id));
+                setSelectedMediaIds((prev) => prev.filter((id) => !filteredSet.has(id)));
+              } else {
+                const merged = new Set([...selectedMediaIds, ...filteredMedia.map((m) => m.id)]);
+                setSelectedMediaIds(Array.from(merged));
+              }
+            };
+
+            const handleBulkDelete = () => {
+              if (selectedMediaIds.length === 0) return;
+              deleteMediaItems(selectedMediaIds);
+              setSelectedMediaIds([]);
+            };
+
+            const handleResizeAction = async (targetIds: string[]) => {
+              if (targetIds.length === 0) return;
+              setIsResizingMedia(true);
+              try {
+                await resizeMediaItems(targetIds, resizeWidth, resizeHeight, resizeQuality / 100, resizeKeepAspect);
+              } finally {
+                setIsResizingMedia(false);
+              }
+            };
+
+            return (
+              <div className="space-y-6 animate-fade-in">
+                {/* Header + Multi-Upload */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-xl font-black text-white flex items-center gap-2">
+                      <ImagePlus className="w-5 h-5 text-emerald-400" />
+                      <span>{at('সকল মিডিয়া ও গ্যালারি ম্যানেজার', 'All Media & Gallery Manager')}</span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      {at(
+                        'স্টোরের সকল আপলোডকৃত ছবি দেখুন, একসাথে একাধিক সিলেক্ট করে ডিলিট বা নির্দিষ্ট পিক্সেলে রিসাইজ করুন',
+                        'All uploaded store media in one gallery — bulk select, bulk delete, and live canvas resize'
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const added = syncStoreMediaLibrary();
+                        addToast(
+                          'info',
+                          at('মিডিয়া সিঙ্ক সম্পন্ন', 'Media Synced'),
+                          at(`${added}টি নতুন ছবি গ্যালারিতে যুক্ত হয়েছে`, `Added ${added} store media item(s)`)
+                        );
+                      }}
+                      className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{at('স্টোর ছবি সিঙ্ক', 'Sync Store Media')}</span>
+                    </button>
+
+                    <label className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-lg cursor-pointer">
+                      <Upload className="w-4 h-4" />
+                      <span>{at('বাল্ক ছবি আপলোড (+)', 'Bulk Upload Media')}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          files.forEach((f) => handleImageFileUpload(f, () => {}, 'upload'));
+                          if (files.length > 0) {
+                            addToast(
+                              'success',
+                              at(`${files.length}টি ছবি আপলোড হচ্ছে`, `Uploading ${files.length} image(s)`),
+                              at('গ্যালারিতে যুক্ত হয়েছে।', 'Added to Media Gallery.')
+                            );
+                          }
+                          e.currentTarget.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Resize Tool + Bulk Selection Toolbar */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleToggleSelectAll}
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {allFilteredSelected ? (
+                          <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <Square className="w-3.5 h-3.5 text-slate-400" />
+                        )}
+                        <span>
+                          {allFilteredSelected
+                            ? at('সিলেকশন বাতিল', 'Deselect All')
+                            : at(`সব সিলেক্ট (${filteredMedia.length})`, `Select All (${filteredMedia.length})`)}
+                        </span>
+                      </button>
+
+                      <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono text-emerald-400">
+                        {at(`সিলেক্টেড: ${selectedMediaIds.length}টি`, `Selected: ${selectedMediaIds.length}`)}
+                      </span>
+
+                      <button
+                        type="button"
+                        disabled={selectedMediaIds.length === 0}
+                        onClick={handleBulkDelete}
+                        className="px-3 py-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 disabled:opacity-40 disabled:cursor-not-allowed border border-rose-700 text-rose-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{at(`সিলেক্টেড মুছুন (${selectedMediaIds.length})`, `Bulk Delete (${selectedMediaIds.length})`)}</span>
+                      </button>
+                    </div>
+
+                    <div className="relative min-w-[200px]">
+                      <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={mediaSearch}
+                        onChange={(e) => setMediaSearch(e.target.value)}
+                        placeholder={at('ছবির নাম খুঁজুন...', 'Search media name...')}
+                        className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Interactive Image Resizer Controls */}
+                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-black text-white flex items-center gap-1.5">
+                        <Maximize2 className="w-4 h-4 text-amber-400" />
+                        <span>{at('বাল্ক / একক ছবি রিসাইজার (Canvas Resize)', 'Bulk / Single Image Resizer')}</span>
+                      </span>
+                      <div className="flex flex-wrap gap-1.5 text-[10px] font-bold">
+                        {[
+                          { label: '600×600 (Product)', w: 600, h: 600 },
+                          { label: '800×800 (HD)', w: 800, h: 800 },
+                          { label: '1200×525 (Slider)', w: 1200, h: 525 },
+                          { label: '1200×630 (SEO OG)', w: 1200, h: 630 },
+                          { label: '400×400 (Icon)', w: 400, h: 400 }
+                        ].map((pre) => (
+                          <button
+                            key={pre.label}
+                            type="button"
+                            onClick={() => {
+                              setResizeWidth(pre.w);
+                              setResizeHeight(pre.h);
+                            }}
+                            className={`px-2 py-1 rounded-lg border cursor-pointer ${
+                              resizeWidth === pre.w && resizeHeight === pre.h
+                                ? 'bg-emerald-600 text-white border-emerald-500'
+                                : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-slate-500'
+                            }`}
+                          >
+                            {pre.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 items-end text-xs">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block mb-1">{at('প্রস্থ (Width px)', 'Width (px)')}</label>
+                        <input
+                          type="number"
+                          min={50}
+                          max={2400}
+                          value={resizeWidth}
+                          onChange={(e) => setResizeWidth(Number(e.target.value) || 600)}
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block mb-1">{at('উচ্চতা (Height px)', 'Height (px)')}</label>
+                        <input
+                          type="number"
+                          min={50}
+                          max={2400}
+                          disabled={resizeKeepAspect}
+                          value={resizeHeight}
+                          onChange={(e) => setResizeHeight(Number(e.target.value) || 600)}
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono disabled:opacity-50"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block mb-1">{at(`কোয়ালিটি: ${resizeQuality}%`, `Quality: ${resizeQuality}%`)}</label>
+                        <input
+                          type="range"
+                          min={40}
+                          max={100}
+                          value={resizeQuality}
+                          onChange={(e) => setResizeQuality(Number(e.target.value))}
+                          className="w-full accent-emerald-500"
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer text-[11px] text-slate-300 py-1.5">
+                        <input
+                          type="checkbox"
+                          checked={resizeKeepAspect}
+                          onChange={(e) => setResizeKeepAspect(e.target.checked)}
+                          className="w-4 h-4 rounded accent-emerald-500"
+                        />
+                        <span>{at('অনুপাত ঠিক রাখুন', 'Keep Aspect')}</span>
+                      </label>
+                      <button
+                        type="button"
+                        disabled={selectedMediaIds.length === 0 || isResizingMedia}
+                        onClick={() => handleResizeAction(selectedMediaIds)}
+                        className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span>
+                          {isResizingMedia
+                            ? at('রিসাইজ হচ্ছে...', 'Resizing...')
+                            : at(`রিসাইজ (${selectedMediaIds.length})`, `Resize Selected (${selectedMediaIds.length})`)}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Source Filter Pills */}
+                  <div className="flex flex-wrap gap-1.5 text-[11px] font-bold">
+                    {(['all', 'product', 'slider', 'logo', 'category', 'seo', 'upload'] as const).map((src) => (
+                      <button
+                        key={src}
+                        type="button"
+                        onClick={() => setMediaSourceFilter(src)}
+                        className={`px-3 py-1 rounded-full border cursor-pointer ${
+                          mediaSourceFilter === src
+                            ? 'bg-emerald-600 text-white border-emerald-500'
+                            : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                        }`}
+                      >
+                        {src === 'all'
+                          ? at(`সকল (${mediaLibrary.length})`, `All (${mediaLibrary.length})`)
+                          : src.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Gallery Grid */}
+                {filteredMedia.length === 0 ? (
+                  <div className="p-10 text-center rounded-2xl bg-slate-900 border border-slate-800 text-xs text-slate-500">
+                    {at('কোনো মিডিয়া পাওয়া যায়নি। নতুন ছবি আপলোড করুন।', 'No media found. Upload images above.')}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
+                    {filteredMedia.map((item) => {
+                      const isSelected = selectedMediaIds.includes(item.id);
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => toggleSelectMedia(item.id)}
+                          className={`rounded-2xl overflow-hidden border bg-slate-900 transition-all cursor-pointer flex flex-col justify-between ${
+                            isSelected
+                              ? 'border-emerald-500 ring-2 ring-emerald-500/40'
+                              : 'border-slate-800 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="aspect-square bg-slate-950 relative overflow-hidden">
+                            <img src={item.url} alt={item.name} className="w-full h-full object-cover" />
+                            <div className="absolute top-2 left-2">
+                              <span
+                                className={`w-6 h-6 rounded-lg flex items-center justify-center border ${
+                                  isSelected
+                                    ? 'bg-emerald-600 border-emerald-400 text-white'
+                                    : 'bg-slate-950/80 border-slate-700 text-slate-300'
+                                }`}
+                              >
+                                {isSelected ? <Check className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+                              </span>
+                            </div>
+                            <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-black/75 text-white text-[9px] font-bold uppercase">
+                              {item.source}
+                            </span>
+                            <span className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded bg-black/75 text-emerald-300 text-[9px] font-mono font-bold">
+                              {item.width}×{item.height} • {item.sizeKb}KB
+                            </span>
+                          </div>
+
+                          <div className="p-2.5 space-y-2" onClick={(e) => e.stopPropagation()}>
+                            <p className="text-[11px] font-bold text-white truncate" title={item.name}>
+                              {item.name}
+                            </p>
+                            <div className="flex items-center justify-between gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleResizeAction([item.id])}
+                                className="flex-1 py-1 px-2 rounded-lg bg-slate-800 hover:bg-amber-400 hover:text-slate-950 text-amber-300 text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer"
+                                title={at(`${resizeWidth}×${resizeHeight}-এ রিসাইজ`, `Resize to ${resizeWidth}×${resizeHeight}`)}
+                              >
+                                <Maximize2 className="w-3 h-3" />
+                                <span>{resizeWidth}×{resizeHeight}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(item.url);
+                                  addToast('success', at('URL কপি হয়েছে', 'URL Copied'), item.name);
+                                }}
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                                title="Copy URL"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteMediaItems([item.id])}
+                                className="p-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
+                                title={at('মুছুন', 'Delete')}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* TAB 18: WALLET TOP-UP & 30-DAY EXPIRY CONTROL (bKash, Nagad, Rocket, Upay) */}
+          {activeTab === 'wallet_control' && (() => {
+            const wCfg = settings.walletSettings || {
+              enabled: true,
+              autoApprove: false,
+              expiryDays: 30,
+              minTopUp: 50,
+              maxTopUp: 50000,
+              methods: {
+                bkash: { enabled: true, label: 'bKash', accountNumber: '01886289663', accountType: 'Personal' as const },
+                nagad: { enabled: true, label: 'Nagad', accountNumber: '01886289663', accountType: 'Personal' as const },
+                rocket: { enabled: true, label: 'Rocket', accountNumber: '018862896630', accountType: 'Personal' as const },
+                upay: { enabled: true, label: 'Upay', accountNumber: '01886289663', accountType: 'Personal' as const }
+              }
+            };
+
+            const updateWalletCfg = (patch: Partial<typeof wCfg>) => {
+              updateSettings({
+                walletSettings: {
+                  ...wCfg,
+                  ...patch
+                }
+              });
+            };
+
+            const filteredTopUps = walletTopUps.filter(
+              (r) => walletStatusFilter === 'all' || r.status === walletStatusFilter
+            );
+
+            return (
+              <div className="space-y-6 animate-fade-in">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-xl font-black text-white flex items-center gap-2">
+                      <Wallet className="w-5 h-5 text-emerald-400" />
+                      <span>{at('কাস্টমার ওয়ালেট, MFS অ্যাড ব্যালেন্স ও ৩০-দিন মেয়াদ কন্ট্রোল', 'Wallet Top-Up & 30-Day Expiry Control')}</span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      {at(
+                        'বিকাশ/নগদ/রকেট/উপায় দিয়ে কাস্টমার ব্যালেন্স অ্যাড নিয়ন্ত্রণ, অনুমোদন এবং ৩০ দিন না কিনলে ব্যালেন্স শূন্য নীতি পরিচালনা করুন',
+                        'Control customer Add Balance (bKash/Nagad/Rocket/Upay), approve TrxIDs, and enforce 30-day inactivity expiry'
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-mono text-emerald-400">
+                      {at(`সক্রিয় ওয়ালেট: ৳${customerWalletBalance.toLocaleString()}`, `Active Wallet: ৳${customerWalletBalance.toLocaleString()}`)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Top Controls: Policy + MFS Gateways */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Expiry & Master Rules */}
+                  <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                    <h4 className="font-bold text-sm text-white flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-amber-400" />
+                      <span>{at('৩০-দিন না কিনলে ব্যালেন্স শূন্য নীতি ও মাস্টার সেটিংস', '30-Day Inactivity Zero-Out & Master Control')}</span>
+                    </h4>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <label className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between cursor-pointer">
+                        <span className="font-bold text-slate-200">{at('ব্যালেন্স অ্যাড চালু', 'Allow Customer Top-Up')}</span>
+                        <input
+                          type="checkbox"
+                          checked={wCfg.enabled}
+                          onChange={(e) => updateWalletCfg({ enabled: e.target.checked })}
+                          className="w-4 h-4 accent-emerald-500"
+                        />
+                      </label>
+                      <label className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between cursor-pointer">
+                        <span className="font-bold text-slate-200">{at('অটো-অ্যাপ্রুভ', 'Auto-Approve Top-Ups')}</span>
+                        <input
+                          type="checkbox"
+                          checked={wCfg.autoApprove}
+                          onChange={(e) => updateWalletCfg({ autoApprove: e.target.checked })}
+                          className="w-4 h-4 accent-emerald-500"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2.5 text-xs">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 mb-1">{at('মেয়াদ (দিন)', 'Expiry Days')}</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={365}
+                          value={wCfg.expiryDays}
+                          onChange={(e) => updateWalletCfg({ expiryDays: Math.max(1, Number(e.target.value) || 30) })}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 mb-1">{at('সর্বনিম্ন ৳', 'Min Top-Up')}</label>
+                        <input
+                          type="number"
+                          min={10}
+                          value={wCfg.minTopUp}
+                          onChange={(e) => updateWalletCfg({ minTopUp: Math.max(10, Number(e.target.value) || 50) })}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 mb-1">{at('সর্বোচ্চ ৳', 'Max Top-Up')}</label>
+                        <input
+                          type="number"
+                          min={100}
+                          value={wCfg.maxTopUp}
+                          onChange={(e) => updateWalletCfg({ maxTopUp: Math.max(100, Number(e.target.value) || 50000) })}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-800/40 text-xs space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-amber-200">
+                        <span>
+                          {at(
+                            `শেষ অর্ডার: ${walletLastPurchaseAt ? new Date(walletLastPurchaseAt).toLocaleDateString() : 'এখনো কিনেনি'} • বাকি: ${walletDaysRemaining} দিন`,
+                            `Last Purchase: ${walletLastPurchaseAt ? new Date(walletLastPurchaseAt).toLocaleDateString() : 'None yet'} • Remaining: ${walletDaysRemaining}d`
+                          )}
+                        </span>
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const count = runWalletExpirySweep(false);
+                              if (count === 0) {
+                                addToast('info', at('কোনো মেয়াদোত্তীর্ণ ব্যালেন্স নেই', 'No Expired Wallets'), at(`${walletDaysRemaining} দিন বাকি আছে।`, `${walletDaysRemaining} days remaining.`));
+                              }
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold cursor-pointer"
+                          >
+                            {at('মেয়াদ চেক করুন', 'Check Expiry')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => runWalletExpirySweep(true)}
+                            className="px-2.5 py-1 rounded-lg bg-rose-900 hover:bg-rose-800 text-rose-100 text-[10px] font-bold cursor-pointer"
+                          >
+                            {at('৩০ দিন পর শূন্য টেস্ট', 'Simulate 30-Day Zero')}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Direct Admin Wallet Adjust */}
+                    <div className="pt-2 border-t border-slate-800 flex flex-wrap gap-2 items-end text-xs">
+                      <div className="w-28">
+                        <label className="block text-[10px] font-bold text-slate-400 mb-1">{at('পরিমাণ (৳)', 'Amount (৳)')}</label>
+                        <input
+                          type="number"
+                          value={adminAdjustAmount}
+                          onChange={(e) => setAdminAdjustAmount(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-[140px]">
+                        <label className="block text-[10px] font-bold text-slate-400 mb-1">{at('নোট', 'Reason')}</label>
+                        <input
+                          type="text"
+                          value={adminAdjustNote}
+                          onChange={(e) => setAdminAdjustNote(e.target.value)}
+                          placeholder={at('ম্যানুয়াল বোনাস/সমন্বয়', 'Manual adjustment note')}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => adjustCustomerWalletByAdmin(Math.abs(Number(adminAdjustAmount) || 0), adminAdjustNote)}
+                        className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                      >
+                        + {at('যোগ', 'Credit')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => adjustCustomerWalletByAdmin(-Math.abs(Number(adminAdjustAmount) || 0), adminAdjustNote)}
+                        className="px-3 py-2 rounded-xl bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-200 font-bold cursor-pointer"
+                      >
+                        - {at('কাটুন', 'Deduct')}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* MFS Payment Gateways Setup for Wallet Top-Up */}
+                  <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                    <h4 className="font-bold text-sm text-white">
+                      {at('MFS রিচার্জ একাউন্ট (bKash, Nagad, Rocket, Upay)', 'Editable MFS Top-Up Gateways')}
+                    </h4>
+                    <div className="space-y-2.5">
+                      {(['bkash', 'nagad', 'rocket', 'upay'] as const).map((key) => {
+                        const cfg = wCfg.methods[key];
+                        return (
+                          <div key={key} className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-wrap items-center gap-2 text-xs">
+                            <label className="flex items-center gap-2 min-w-[90px] cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={cfg.enabled}
+                                onChange={(e) =>
+                                  updateWalletCfg({
+                                    methods: {
+                                      ...wCfg.methods,
+                                      [key]: { ...cfg, enabled: e.target.checked }
+                                    }
+                                  })
+                                }
+                                className="w-4 h-4 accent-emerald-500"
+                              />
+                              <span className="font-black text-white">{cfg.label}</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={cfg.accountNumber}
+                              onChange={(e) =>
+                                updateWalletCfg({
+                                  methods: {
+                                    ...wCfg.methods,
+                                    [key]: { ...cfg, accountNumber: e.target.value }
+                                  }
+                                })
+                              }
+                              className="flex-1 min-w-[130px] px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono"
+                            />
+                            <select
+                              value={cfg.accountType}
+                              onChange={(e) =>
+                                updateWalletCfg({
+                                  methods: {
+                                    ...wCfg.methods,
+                                    [key]: { ...cfg, accountType: e.target.value as 'Personal' | 'Merchant' | 'Agent' }
+                                  }
+                                })
+                              }
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-200 font-bold"
+                            >
+                              <option value="Personal">Personal</option>
+                              <option value="Merchant">Merchant</option>
+                              <option value="Agent">Agent</option>
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Top-Up Requests Queue */}
+                <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-slate-950/60">
+                    <h4 className="text-sm font-black text-white">
+                      {at(`কাস্টমার অ্যাড ব্যালেন্স রিকোয়েস্ট (${walletTopUps.length})`, `Customer Add Balance Requests (${walletTopUps.length})`)}
+                    </h4>
+                    <div className="flex gap-1.5 text-[11px] font-bold">
+                      {(['all', 'pending', 'approved', 'rejected'] as const).map((st) => (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => setWalletStatusFilter(st)}
+                          className={`px-2.5 py-1 rounded-lg border cursor-pointer ${
+                            walletStatusFilter === st
+                              ? 'bg-emerald-600 text-white border-emerald-500'
+                              : 'bg-slate-950 text-slate-400 border-slate-800'
+                          }`}
+                        >
+                          {st.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {filteredTopUps.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-slate-500">
+                      {at('কোনো ব্যালেন্স রিকোয়েস্ট নেই', 'No top-up requests match this filter')}
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-800">
+                      {filteredTopUps.map((req) => (
+                        <div key={req.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-xs font-bold text-slate-400">{req.id}</span>
+                              <span className="text-xs font-black text-white">{req.customerName}</span>
+                              <span className="text-xs font-mono text-emerald-400">({req.customerPhone})</span>
+                              <span className="px-2 py-0.5 rounded bg-slate-800 text-[10px] font-black uppercase text-amber-300">
+                                {req.method}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-300 font-mono">
+                              Amount: <span className="font-black text-emerald-400">৳{req.amount.toLocaleString()}</span> • Sender: {req.senderNumber} • TrxID: <span className="text-white font-bold">{req.trxId}</span>
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            {req.status === 'pending' ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => approveWalletTopUp(req.id)}
+                                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>{at('অনুমোদন ও যোগ করুন', 'Approve & Credit')}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => rejectWalletTopUp(req.id)}
+                                  className="px-3 py-1.5 rounded-xl bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-200 font-bold text-xs cursor-pointer"
+                                >
+                                  {at('বাতিল', 'Reject')}
+                                </button>
+                              </>
+                            ) : (
+                              <span
+                                className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
+                                  req.status === 'approved'
+                                    ? 'bg-emerald-500/20 text-emerald-300'
+                                    : 'bg-rose-500/20 text-rose-300'
+                                }`}
+                              >
+                                {req.status}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </main>
       </div>
 
@@ -5981,7 +6733,7 @@ export const AdminDashboard: React.FC = () => {
                       {at('প্রস্তাবিত সাইজ: 600×600 পিক্সেল (স্কয়ার HD ফরম্যাট)', 'Recommended Size: 600×600 px (Square HD)')}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <label className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer">
                       <Upload className="w-3.5 h-3.5" />
                       <span>{at('মেইন ছবি আপলোড', 'Main Photo')}</span>
@@ -5990,11 +6742,14 @@ export const AdminDashboard: React.FC = () => {
                         accept="image/*"
                         className="hidden"
                         onChange={(e) =>
-                          handleImageFileUpload(e.target.files?.[0], (url) =>
-                            setProductForm((prev) => ({
-                              ...prev,
-                              images: [url, ...prev.images.slice(1)]
-                            }))
+                          handleImageFileUpload(
+                            e.target.files?.[0],
+                            (url) =>
+                              setProductForm((prev) => ({
+                                ...prev,
+                                images: [url, ...prev.images.slice(1)]
+                              })),
+                            'product'
                           )
                         }
                       />
@@ -6010,18 +6765,54 @@ export const AdminDashboard: React.FC = () => {
                         onChange={(e) => {
                           const files = Array.from(e.target.files || []);
                           files.forEach((f) =>
-                            handleImageFileUpload(f, (url) =>
-                              setProductForm((prev) => ({
-                                ...prev,
-                                images: [...prev.images, url]
-                              }))
+                            handleImageFileUpload(
+                              f,
+                              (url) =>
+                                setProductForm((prev) => ({
+                                  ...prev,
+                                  images: [...prev.images, url]
+                                })),
+                              'product'
                             )
                           );
                         }}
                       />
                     </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsProductGalleryPickerOpen((prev) => !prev)}
+                      className="px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      <span>{at('মিডিয়া গ্যালারি থেকে নিন', 'Pick from Media')}</span>
+                    </button>
                   </div>
                 </div>
+
+                {isProductGalleryPickerOpen && mediaLibrary.length > 0 && (
+                  <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 space-y-2">
+                    <span className="text-[10px] font-bold text-slate-400 block">
+                      {at('গ্যালারি থেকে ছবিতে ক্লিক করে যোগ করুন:', 'Click any media item to add to product gallery:')}
+                    </span>
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-36 overflow-y-auto">
+                      {mediaLibrary.slice(0, 18).map((med) => (
+                        <button
+                          key={med.id}
+                          type="button"
+                          onClick={() => {
+                            setProductForm((prev) => ({
+                              ...prev,
+                              images: prev.images.includes(med.url) ? prev.images : [...prev.images, med.url]
+                            }));
+                          }}
+                          className="aspect-square rounded-lg overflow-hidden border border-slate-700 hover:border-emerald-400 cursor-pointer"
+                        >
+                          <img src={med.url} alt={med.name} className="w-full h-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Add Gallery URL input */}
                 <div className="flex gap-2">

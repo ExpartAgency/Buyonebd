@@ -1036,6 +1036,39 @@ export const INITIAL_SETTINGS: StoreSettings = {
       { id: 'ql-3', labelBn: '৭ দিনের রিটার্ন ও রিফান্ড নীতি', labelEn: '7 Days Return & Refund Policy', actionType: 'store' },
       { id: 'ql-4', labelBn: 'গোপনীয়তা ও শর্তাবলী', labelEn: 'Terms & Privacy Policy', actionType: 'store' }
     ]
+  },
+  walletSettings: {
+    enabled: true,
+    autoApprove: false,
+    expiryDays: 30,
+    minTopUp: 50,
+    maxTopUp: 50000,
+    methods: {
+      bkash: {
+        enabled: true,
+        label: 'bKash',
+        accountNumber: '01886289663',
+        accountType: 'Personal'
+      },
+      nagad: {
+        enabled: true,
+        label: 'Nagad',
+        accountNumber: '01886289663',
+        accountType: 'Personal'
+      },
+      rocket: {
+        enabled: true,
+        label: 'Rocket',
+        accountNumber: '018862896630',
+        accountType: 'Personal'
+      },
+      upay: {
+        enabled: true,
+        label: 'Upay',
+        accountNumber: '01886289663',
+        accountType: 'Personal'
+      }
+    }
   }
 };
 

@@ -24,7 +24,10 @@ import {
   SupportChatMessage,
   BrowserCallSession,
   BrowserCallTranscriptItem,
-  ServerPixelEvent
+  ServerPixelEvent,
+  WalletTopUpMethod,
+  WalletTopUpRequest,
+  MediaItem
 } from '../types';
 import {
   INITIAL_PRODUCTS,
@@ -125,6 +128,31 @@ interface StoreContextType {
   customerWalletBalance: number;
   addToWallet: (amount: number, reason?: string) => void;
   deductWallet: (amount: number) => boolean;
+  walletLastPurchaseAt: string | null;
+  walletLastCreditAt: string | null;
+  walletDaysRemaining: number;
+  walletTopUps: WalletTopUpRequest[];
+  requestWalletTopUp: (payload: {
+    method: WalletTopUpMethod;
+    amount: number;
+    senderNumber: string;
+    trxId: string;
+  }) => { success: boolean; status: 'pending' | 'approved' };
+  approveWalletTopUp: (requestId: string) => void;
+  rejectWalletTopUp: (requestId: string, note?: string) => void;
+  adjustCustomerWalletByAdmin: (delta: number, reason?: string) => void;
+  runWalletExpirySweep: (forceExpireDemo?: boolean) => number;
+  mediaLibrary: MediaItem[];
+  registerMediaItem: (item: Omit<MediaItem, 'id' | 'createdAt'>) => MediaItem;
+  deleteMediaItems: (ids: string[]) => void;
+  resizeMediaItems: (
+    ids: string[],
+    targetWidth: number,
+    targetHeight: number,
+    quality?: number,
+    maintainAspect?: boolean
+  ) => Promise<number>;
+  syncStoreMediaLibrary: () => number;
   customerProfile: CustomerProfile;
   updateCustomerProfile: (updates: Partial<CustomerProfile>) => void;
   saveSpinCoupon: (reward: SpinReward) => void;
@@ -993,6 +1021,111 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   };
 
+  const [walletLastPurchaseAt, setWalletLastPurchaseAt] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('buyonebd_wallet_last_purchase_v1') || customerProfile.lastPurchaseAt || null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [walletLastCreditAt, setWalletLastCreditAt] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('buyonebd_wallet_last_credit_v1') || customerProfile.lastWalletCreditAt || null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [walletTopUps, setWalletTopUps] = useState<WalletTopUpRequest[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_wallet_topups_v1');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [
+      {
+        id: 'TOPUP-9012',
+        customerName: 'হোসেন আহমেদ',
+        customerPhone: '01886289663',
+        method: 'bkash',
+        amount: 500,
+        senderNumber: '01886289663',
+        trxId: 'BKS8890124',
+        status: 'pending',
+        createdAt: new Date(Date.now() - 1800000).toISOString()
+      }
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('buyonebd_wallet_topups_v1', JSON.stringify(walletTopUps));
+  }, [walletTopUps]);
+
+  const expiryDaysSetting = Math.max(1, settings.walletSettings?.expiryDays ?? 30);
+
+  const walletDaysRemaining = React.useMemo(() => {
+    if (customerWalletBalance <= 0) return expiryDaysSetting;
+    const anchor = walletLastPurchaseAt || walletLastCreditAt;
+    if (!anchor) return expiryDaysSetting;
+    const elapsedDays = Math.floor((Date.now() - new Date(anchor).getTime()) / 86400000);
+    return Math.max(0, expiryDaysSetting - elapsedDays);
+  }, [customerWalletBalance, walletLastPurchaseAt, walletLastCreditAt, expiryDaysSetting]);
+
+  const runWalletExpirySweep = (forceExpireDemo = false): number => {
+    const expiryMs = expiryDaysSetting * 86400000;
+    let expiredCount = 0;
+    const anchor = walletLastPurchaseAt || walletLastCreditAt;
+    const isExpired =
+      forceExpireDemo ||
+      (anchor ? Date.now() - new Date(anchor).getTime() >= expiryMs : false);
+
+    if (customerWalletBalance > 0 && isExpired) {
+      setCustomerWalletBalance(0);
+      localStorage.setItem('buyonebd_customer_wallet_v3', '0');
+      setCustomerProfile((cp) => ({ ...cp, walletBalance: 0 }));
+      expiredCount += 1;
+      addToast(
+        'warning',
+        t(`৩০ দিন অতিক্রান্ত — ব্যালেন্স ৳০ হয়েছে`, `Balance Reset to ৳0 (${expiryDaysSetting}-Day Expiry)`),
+        t(
+          `গত ${expiryDaysSetting} দিনে কোনো পণ্য না কেনায় গিফট/ওয়ালেট ব্যালেন্স শূন্য (৳০) হয়ে গেছে।`,
+          `No product was purchased in ${expiryDaysSetting} days, so wallet balance expired to ৳0.`
+        )
+      );
+    }
+
+    // Also sweep stored customerAccounts whose lastPurchaseAt/lastWalletCreditAt > expiryDays
+    setCustomerAccounts((prev) =>
+      prev.map((acc) => {
+        if (acc.walletBalance <= 0) return acc;
+        const accAnchor = acc.lastPurchaseAt || acc.lastWalletCreditAt;
+        if (forceExpireDemo || (accAnchor && Date.now() - new Date(accAnchor).getTime() >= expiryMs)) {
+          expiredCount += 1;
+          return { ...acc, walletBalance: 0 };
+        }
+        return acc;
+      })
+    );
+
+    return expiredCount;
+  };
+
+  // Enforce 30-day no-purchase balance expiry automatically on load & when settings change
+  useEffect(() => {
+    if (customerWalletBalance <= 0) return;
+    const anchor = walletLastPurchaseAt || walletLastCreditAt;
+    if (!anchor) {
+      const nowIso = new Date().toISOString();
+      setWalletLastCreditAt(nowIso);
+      localStorage.setItem('buyonebd_wallet_last_credit_v1', nowIso);
+      return;
+    }
+    const expiryMs = expiryDaysSetting * 86400000;
+    if (Date.now() - new Date(anchor).getTime() >= expiryMs) {
+      runWalletExpirySweep(false);
+    }
+  }, [customerWalletBalance, walletLastPurchaseAt, walletLastCreditAt, expiryDaysSetting]);
+
   const redeemLoyaltyPoints = (points: number) => {
     if (customerProfile.loyaltyPoints < points) {
       return { success: false, discountAmount: 0 };
@@ -1000,12 +1133,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const discountAmount = Math.floor(points);
     const nextPoints = customerProfile.loyaltyPoints - points;
     const nextBal = customerWalletBalance + discountAmount;
+    const nowIso = new Date().toISOString();
     setCustomerWalletBalance(nextBal);
     localStorage.setItem('buyonebd_customer_wallet_v3', nextBal.toString());
+    if (!walletLastCreditAt) {
+      setWalletLastCreditAt(nowIso);
+      localStorage.setItem('buyonebd_wallet_last_credit_v1', nowIso);
+    }
     setCustomerProfile((cp) => ({
       ...cp,
       loyaltyPoints: nextPoints,
-      walletBalance: nextBal
+      walletBalance: nextBal,
+      lastWalletCreditAt: cp.lastWalletCreditAt || nowIso
     }));
     addToast(
       'success',
@@ -1015,14 +1154,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return { success: true, discountAmount };
   };
 
-  const addToWallet = (amount: number, _reason?: string) => {
+  const addToWallet = (amount: number, reason?: string) => {
+    const nowIso = new Date().toISOString();
     setCustomerWalletBalance((prev) => {
       const next = prev + amount;
       localStorage.setItem('buyonebd_customer_wallet_v3', next.toString());
-      setCustomerProfile((cp) => ({ ...cp, walletBalance: next }));
+      if (prev <= 0 || !walletLastCreditAt) {
+        setWalletLastCreditAt(nowIso);
+        localStorage.setItem('buyonebd_wallet_last_credit_v1', nowIso);
+      }
+      setCustomerProfile((cp) => ({
+        ...cp,
+        walletBalance: next,
+        lastWalletCreditAt: cp.lastWalletCreditAt || nowIso
+      }));
       addToast(
         'success',
-        lang === 'bn' ? `৳${amount} স্পিন গিফট ব্যালেন্স যোগ হয়েছে!` : `৳${amount} Spin Gift Added!`,
+        reason || (lang === 'bn' ? `৳${amount} ওয়ালেট ব্যালেন্স যোগ হয়েছে!` : `৳${amount} Added to Wallet!`),
         lang === 'bn' ? `বর্তমান ব্যালেন্স: ৳${next}` : `Current Balance: ৳${next}`
       );
       return next;
@@ -1038,6 +1186,366 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return next;
     });
     return true;
+  };
+
+  const requestWalletTopUp = (payload: {
+    method: WalletTopUpMethod;
+    amount: number;
+    senderNumber: string;
+    trxId: string;
+  }): { success: boolean; status: 'pending' | 'approved' } => {
+    const wCfg = settings.walletSettings;
+    if (wCfg && !wCfg.enabled) {
+      addToast('error', t('ওয়ালেট রিচার্জ বন্ধ আছে', 'Top-Up Disabled'), t('অ্যাডমিন প্যানেল থেকে ব্যালেন্স অ্যাড অপশন বন্ধ রয়েছে।', 'Balance top-up is currently disabled by admin.'));
+      return { success: false, status: 'pending' };
+    }
+    const minAmt = wCfg?.minTopUp ?? 50;
+    const maxAmt = wCfg?.maxTopUp ?? 50000;
+    if (payload.amount < minAmt || payload.amount > maxAmt) {
+      addToast(
+        'warning',
+        t('অবৈধ পরিমাণ', 'Invalid Amount'),
+        t(`৳${minAmt} থেকে ৳${maxAmt}-এর মধ্যে পরিমাণ দিন।`, `Enter an amount between ৳${minAmt} and ৳${maxAmt}.`)
+      );
+      return { success: false, status: 'pending' };
+    }
+
+    const isAutoApprove = Boolean(wCfg?.autoApprove);
+    const nowIso = new Date().toISOString();
+    const newReq: WalletTopUpRequest = {
+      id: `TOPUP-${Math.floor(1000 + Math.random() * 9000)}`,
+      customerName: customerProfile.name || t('গ্রাহক', 'Customer'),
+      customerPhone: customerProfile.phone || payload.senderNumber,
+      method: payload.method,
+      amount: payload.amount,
+      senderNumber: payload.senderNumber.trim(),
+      trxId: payload.trxId.trim(),
+      status: isAutoApprove ? 'approved' : 'pending',
+      createdAt: nowIso,
+      processedAt: isAutoApprove ? nowIso : undefined
+    };
+
+    setWalletTopUps((prev) => [newReq, ...prev]);
+
+    if (isAutoApprove) {
+      addToWallet(
+        payload.amount,
+        t(`${payload.method.toUpperCase()} ৳${payload.amount} অটো-অ্যাপ্রুভড!`, `${payload.method.toUpperCase()} ৳${payload.amount} Auto-Credited!`)
+      );
+      return { success: true, status: 'approved' };
+    }
+
+    addToast(
+      'info',
+      t('ব্যালেন্স রিকোয়েস্ট জমা হয়েছে!', 'Top-Up Request Submitted!'),
+      t(
+        `TrxID: ${newReq.trxId} যাচাইয়ের পর অ্যাডমিন ড্যাশবোর্ড থেকে ৳${payload.amount} অনুমোদন করা হবে।`,
+        `Your ৳${payload.amount} (${newReq.trxId}) request is awaiting backend admin approval.`
+      )
+    );
+    return { success: true, status: 'pending' };
+  };
+
+  const approveWalletTopUp = (requestId: string) => {
+    const req = walletTopUps.find((r) => r.id === requestId);
+    if (!req || req.status === 'approved') return;
+    const nowIso = new Date().toISOString();
+
+    setWalletTopUps((prev) =>
+      prev.map((r) => (r.id === requestId ? { ...r, status: 'approved', processedAt: nowIso } : r))
+    );
+
+    const reqPhone = req.customerPhone.replace(/[^0-9]/g, '');
+    const currPhone = (customerProfile.phone || '').replace(/[^0-9]/g, '');
+
+    if (!currPhone || reqPhone === currPhone || customerAccounts.length <= 1) {
+      addToWallet(
+        req.amount,
+        t(`${req.method.toUpperCase()} রিচার্জ অনুমোদিত (+৳${req.amount})`, `Top-Up Approved (+৳${req.amount})`)
+      );
+    } else {
+      setCustomerAccounts((prev) =>
+        prev.map((acc) =>
+          acc.phone.replace(/[^0-9]/g, '') === reqPhone
+            ? {
+                ...acc,
+                walletBalance: (acc.walletBalance || 0) + req.amount,
+                lastWalletCreditAt: acc.lastWalletCreditAt || nowIso
+              }
+            : acc
+        )
+      );
+      addToast(
+        'success',
+        t('রিচার্জ অনুমোদিত!', 'Top-Up Approved!'),
+        t(`${req.customerName}-এর অ্যাকাউন্টে ৳${req.amount} যোগ হয়েছে।`, `৳${req.amount} credited to ${req.customerName}.`)
+      );
+    }
+  };
+
+  const rejectWalletTopUp = (requestId: string, note?: string) => {
+    setWalletTopUps((prev) =>
+      prev.map((r) =>
+        r.id === requestId
+          ? { ...r, status: 'rejected', adminNote: note || 'Invalid TrxID', processedAt: new Date().toISOString() }
+          : r
+      )
+    );
+    addToast('info', t('রিচার্জ রিকোয়েস্ট বাতিল হয়েছে', 'Top-Up Request Rejected'), '');
+  };
+
+  const adjustCustomerWalletByAdmin = (delta: number, reason?: string) => {
+    if (delta === 0) return;
+    const nowIso = new Date().toISOString();
+    setCustomerWalletBalance((prev) => {
+      const next = Math.max(0, prev + delta);
+      localStorage.setItem('buyonebd_customer_wallet_v3', next.toString());
+      if (delta > 0 && (prev <= 0 || !walletLastCreditAt)) {
+        setWalletLastCreditAt(nowIso);
+        localStorage.setItem('buyonebd_wallet_last_credit_v1', nowIso);
+      }
+      setCustomerProfile((cp) => ({
+        ...cp,
+        walletBalance: next,
+        lastWalletCreditAt: delta > 0 ? cp.lastWalletCreditAt || nowIso : cp.lastWalletCreditAt
+      }));
+      addToast(
+        delta > 0 ? 'success' : 'info',
+        t(`অ্যাডমিন ব্যালেন্স আপডেট (${delta > 0 ? '+' : ''}৳${delta})`, `Wallet Adjusted (${delta > 0 ? '+' : ''}৳${delta})`),
+        reason || t(`নতুন ব্যালেন্স: ৳${next}`, `New Balance: ৳${next}`)
+      );
+      return next;
+    });
+  };
+
+  // Media Library (All uploaded & store media: bulk select, bulk delete, resize)
+  const buildInitialMediaFromStore = (
+    prods: Product[],
+    slids: HomeSlide[],
+    cats: Category[],
+    sets: StoreSettings
+  ): MediaItem[] => {
+    const seen = new Set<string>();
+    const list: MediaItem[] = [];
+    const pushUrl = (url: string | undefined, name: string, source: MediaItem['source'], w = 600, h = 600) => {
+      if (!url || !url.trim() || seen.has(url)) return;
+      seen.add(url);
+      list.push({
+        id: `med-${list.length + 1}-${Math.abs(url.split('').reduce((a, b) => a + b.charCodeAt(0), 0))}`,
+        name,
+        url,
+        source,
+        width: w,
+        height: h,
+        sizeKb: url.startsWith('data:') ? Math.round((url.length * 0.75) / 1024) : 120,
+        mimeType: 'image/jpeg',
+        createdAt: new Date().toISOString()
+      });
+    };
+    if (sets.logoUrl) pushUrl(sets.logoUrl, 'Store Logo', 'logo', 400, 120);
+    if (sets.seoSettings?.ogImage) pushUrl(sets.seoSettings.ogImage, 'SEO OG Banner', 'seo', 1200, 630);
+    slids.forEach((s, i) => pushUrl(s.image, s.titleEn || `Slider Banner #${i + 1}`, 'slider', 1200, 525));
+    cats.forEach((c) => {
+      if (c.iconImage) pushUrl(c.iconImage, c.nameEn || c.nameBn, 'category', 400, 400);
+    });
+    prods.forEach((p) => {
+      p.images.forEach((img, idx) => pushUrl(img, `${p.title} (${idx === 0 ? 'Main' : `#${idx + 1}`})`, 'product', 600, 600));
+    });
+    return list;
+  };
+
+  const [mediaLibrary, setMediaLibrary] = useState<MediaItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_media_library_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return buildInitialMediaFromStore(products, sliders, categories, settings);
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_media_library_v1', JSON.stringify(mediaLibrary));
+    } catch {}
+  }, [mediaLibrary]);
+
+  const registerMediaItem = (item: Omit<MediaItem, 'id' | 'createdAt'>): MediaItem => {
+    const created: MediaItem = {
+      ...item,
+      id: `med-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      createdAt: new Date().toISOString()
+    };
+    setMediaLibrary((prev) => {
+      const existing = prev.find((m) => m.url === item.url);
+      if (existing) return prev;
+      return [created, ...prev];
+    });
+    return created;
+  };
+
+  const syncStoreMediaLibrary = (): number => {
+    const discovered = buildInitialMediaFromStore(products, sliders, categories, settings);
+    let added = 0;
+    setMediaLibrary((prev) => {
+      const existingUrls = new Set(prev.map((m) => m.url));
+      const newOnes = discovered.filter((d) => !existingUrls.has(d.url));
+      added = newOnes.length;
+      return newOnes.length > 0 ? [...newOnes, ...prev] : prev;
+    });
+    return added;
+  };
+
+  const deleteMediaItems = (ids: string[]) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const urlsToRemove = new Set(mediaLibrary.filter((m) => idSet.has(m.id)).map((m) => m.url));
+    setMediaLibrary((prev) => prev.filter((m) => !idSet.has(m.id)));
+
+    // Cleanly remove deleted media URLs from products/categories/logo if referenced
+    if (urlsToRemove.size > 0) {
+      setProducts((prev) =>
+        prev.map((p) => {
+          const remaining = p.images.filter((img) => !urlsToRemove.has(img));
+          return remaining.length !== p.images.length
+            ? { ...p, images: remaining.length > 0 ? remaining : p.images.slice(0, 1) }
+            : p;
+        })
+      );
+      if (settings.logoUrl && urlsToRemove.has(settings.logoUrl)) {
+        setSettings((prev) => ({ ...prev, logoUrl: '' }));
+      }
+    }
+    addToast(
+      'info',
+      t(`${ids.length}টি মিডিয়া মুছে ফেলা হয়েছে`, `Deleted ${ids.length} Media Item(s)`),
+      ''
+    );
+  };
+
+  const resizeSingleImageUrl = (
+    url: string,
+    targetWidth: number,
+    targetHeight: number,
+    quality = 0.88,
+    maintainAspect = false
+  ): Promise<{ newUrl: string; width: number; height: number; sizeKb: number }> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      if (!url.startsWith('data:')) {
+        img.crossOrigin = 'anonymous';
+      }
+      img.onload = () => {
+        try {
+          let outW = Math.max(32, Math.round(targetWidth));
+          let outH = Math.max(32, Math.round(targetHeight));
+          if (maintainAspect && img.naturalWidth > 0 && img.naturalHeight > 0) {
+            const ratio = img.naturalHeight / img.naturalWidth;
+            outH = Math.max(32, Math.round(outW * ratio));
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = outW;
+          canvas.height = outH;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Canvas unavailable'));
+            return;
+          }
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, outW, outH);
+          const outDataUrl = canvas.toDataURL('image/jpeg', Math.min(1, Math.max(0.2, quality)));
+          const sizeKb = Math.max(1, Math.round((outDataUrl.length * 0.75) / 1024));
+          resolve({ newUrl: outDataUrl, width: outW, height: outH, sizeKb });
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.onerror = () => reject(new Error('Image load failed'));
+      img.src = url;
+    });
+  };
+
+  const resizeMediaItems = async (
+    ids: string[],
+    targetWidth: number,
+    targetHeight: number,
+    quality = 0.88,
+    maintainAspect = false
+  ): Promise<number> => {
+    if (ids.length === 0) return 0;
+    const urlMap = new Map<string, string>();
+    const updatedMap = new Map<string, { url: string; width: number; height: number; sizeKb: number }>();
+
+    for (const id of ids) {
+      const item = mediaLibrary.find((m) => m.id === id);
+      if (!item) continue;
+      try {
+        const res = await resizeSingleImageUrl(item.url, targetWidth, targetHeight, quality, maintainAspect);
+        urlMap.set(item.url, res.newUrl);
+        updatedMap.set(id, { url: res.newUrl, width: res.width, height: res.height, sizeKb: res.sizeKb });
+      } catch {
+        // Fallback: if external CORS prevents canvas read, update dimensions metadata safely
+        const fallbackUrl =
+          item.url.includes('images.unsplash.com')
+            ? `${item.url.split('?')[0]}?w=${Math.round(targetWidth)}&h=${Math.round(targetHeight)}&fit=crop`
+            : item.url;
+        urlMap.set(item.url, fallbackUrl);
+        updatedMap.set(id, {
+          url: fallbackUrl,
+          width: Math.round(targetWidth),
+          height: Math.round(targetHeight),
+          sizeKb: item.sizeKb
+        });
+      }
+    }
+
+    if (updatedMap.size === 0) return 0;
+
+    setMediaLibrary((prev) =>
+      prev.map((m) => {
+        const upd = updatedMap.get(m.id);
+        return upd ? { ...m, url: upd.url, width: upd.width, height: upd.height, sizeKb: upd.sizeKb } : m;
+      })
+    );
+
+    // Sync resized URLs wherever used across products, sliders, categories, logo & OG image
+    setProducts((prev) =>
+      prev.map((p) => ({
+        ...p,
+        images: p.images.map((img) => urlMap.get(img) || img)
+      }))
+    );
+    setSliders((prev) =>
+      prev.map((s) => ({
+        ...s,
+        image: urlMap.get(s.image) || s.image
+      }))
+    );
+    setCategories((prev) =>
+      prev.map((c) => ({
+        ...c,
+        iconImage: c.iconImage ? urlMap.get(c.iconImage) || c.iconImage : c.iconImage
+      }))
+    );
+    setSettings((prev) => ({
+      ...prev,
+      logoUrl: prev.logoUrl ? urlMap.get(prev.logoUrl) || prev.logoUrl : prev.logoUrl,
+      seoSettings: prev.seoSettings
+        ? {
+            ...prev.seoSettings,
+            ogImage: prev.seoSettings.ogImage ? urlMap.get(prev.seoSettings.ogImage) || prev.seoSettings.ogImage : prev.seoSettings.ogImage
+          }
+        : prev.seoSettings
+    }));
+
+    addToast(
+      'success',
+      t(`${updatedMap.size}টি ছবি রিসাইজ সম্পন্ন!`, `Resized ${updatedMap.size} Image(s)!`),
+      t(`নতুন সাইজ: ${Math.round(targetWidth)}×${Math.round(targetHeight)} px`, `Applied ${Math.round(targetWidth)}×${Math.round(targetHeight)} px`)
+    );
+    return updatedMap.size;
   };
 
   // Price Alerts
@@ -2417,6 +2925,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setOrders((prev) => [newOrder, ...prev]);
 
+    // Reset 30-day wallet inactivity clock when customer purchases a product
+    const purchaseIso = new Date().toISOString();
+    setWalletLastPurchaseAt(purchaseIso);
+    localStorage.setItem('buyonebd_wallet_last_purchase_v1', purchaseIso);
+    setCustomerProfile((cp) => ({
+      ...cp,
+      lastPurchaseAt: purchaseIso,
+      loyaltyPoints: (cp.loyaltyPoints || 0) + Math.max(5, Math.floor(total / 100))
+    }));
+
     trackPixelEvent('Purchase', {
       urlPath: '/checkout',
       value: total,
@@ -2754,6 +3272,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         customerWalletBalance,
         addToWallet,
         deductWallet,
+        walletLastPurchaseAt,
+        walletLastCreditAt,
+        walletDaysRemaining,
+        walletTopUps,
+        requestWalletTopUp,
+        approveWalletTopUp,
+        rejectWalletTopUp,
+        adjustCustomerWalletByAdmin,
+        runWalletExpirySweep,
+        mediaLibrary,
+        registerMediaItem,
+        deleteMediaItems,
+        resizeMediaItems,
+        syncStoreMediaLibrary,
         priceAlerts,
         addPriceAlert,
         categories,
