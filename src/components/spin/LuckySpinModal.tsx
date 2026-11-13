@@ -36,7 +36,8 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
     addToast,
     remainingSpinsToday,
     recordSpinUsed,
-    addToWallet
+    addToWallet,
+    saveSpinCoupon
   } = useStore();
 
   const [isSpinning, setIsSpinning] = useState(false);
@@ -108,8 +109,11 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
         origin: { y: 0.6 }
       });
 
-      // Automatically credit gift money to customer wallet balance
-      if (selected.value > 0) {
+      // Automatically credit gift money & save coupon to customer profile
+      if (!selected.isTryAgain) {
+        saveSpinCoupon(selected);
+      }
+      if (selected.value > 0 && !selected.isTryAgain) {
         addToWallet(selected.value, 'Lucky Spin Reward');
       }
 

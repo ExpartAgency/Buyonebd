@@ -14,6 +14,7 @@ import { WhatsAppAgentModal } from './components/whatsapp/WhatsAppAgentModal';
 import { OrderTrackerView } from './components/tracking/OrderTrackerView';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AdminLoginModal } from './components/auth/AdminLoginModal';
+import { CustomerLoginModal } from './components/auth/CustomerLoginModal';
 import { ToastContainer } from './components/common/ToastContainer';
 import { LuckySpinModal, LuckySpinLeftLauncher } from './components/spin/LuckySpinModal';
 import { SingleProductView } from './components/home/SingleProductView';
@@ -33,17 +34,19 @@ function StoreMainContent() {
     setIsAdminLoginOpen,
     isAdminLoggedIn,
     selectedProductForPage,
-    setSelectedProductForPage
+    setSelectedProductForPage,
+    isSpinOpen,
+    setIsSpinOpen,
+    isMobileCategoryDrawerOpen,
+    setIsMobileCategoryDrawerOpen
   } = useStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [sortBy, setSortBy] = useState<'default' | 'price_asc' | 'price_desc' | 'rating' | 'discount'>('default');
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
-  const [isSpinOpen, setIsSpinOpen] = useState(false);
-  const [isMobileCategoryDrawerOpen, setIsMobileCategoryDrawerOpen] = useState(false);
 
-  // Requirement 4: Detect URL "/hossain" or "#hossain" or typed keyword to pop up admin login
+  // Detect URL "/hossain" or "#hossain" or typed keyword to pop up admin login
   useEffect(() => {
     const checkHossainRoute = () => {
       const path = window.location.pathname.toLowerCase();
@@ -63,10 +66,8 @@ function StoreMainContent() {
     window.addEventListener('popstate', checkHossainRoute);
     window.addEventListener('hashchange', checkHossainRoute);
 
-    // Keystroke listener for typing "hossain"
     let typedBuffer = '';
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore inputs and textareas
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
 
@@ -88,17 +89,6 @@ function StoreMainContent() {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isAdminLoggedIn, setIsAdminLoginOpen, setActiveView]);
-
-  // Dynamic SEO Title
-  useEffect(() => {
-    if (activeView === 'admin') {
-      document.title = `Admin Portal (/hossain) - ${settings.storeName}`;
-    } else if (activeView === 'tracking') {
-      document.title = `রিয়েল-টাইম অর্ডার ট্র্যাকিং - ${settings.storeName}`;
-    } else {
-      document.title = `${settings.storeName} - ১ ক্লিকে অর্ডার ও ক্যাশ অন ডেলিভারি`;
-    }
-  }, [activeView, settings.storeName]);
 
   // Filtered & sorted products
   const filteredProducts = useMemo(() => {
@@ -137,7 +127,7 @@ function StoreMainContent() {
   // View: Admin Dashboard
   if (activeView === 'admin') {
     return (
-      <div className="min-h-screen bg-slate-950 pb-16 md:pb-0">
+      <div className="min-h-screen bg-slate-950 pb-16 md:pb-0 overflow-x-clip w-full max-w-full">
         <AdminDashboard />
         <AIVoiceCallModal />
         <ToastContainer />
@@ -149,9 +139,15 @@ function StoreMainContent() {
   // View: Order Tracking
   if (activeView === 'tracking') {
     return (
-      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 pb-16 md:pb-0">
-        <Navbar onOpenMobileCategories={() => setIsMobileCategoryDrawerOpen(true)} />
-        <main className="flex-1">
+      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 pb-16 md:pb-0 overflow-x-clip w-full max-w-full">
+        <Navbar
+          onOpenMobileCategories={() => setIsMobileCategoryDrawerOpen(true)}
+          onSelectCategory={(cat) => {
+            setSelectedCategory(cat);
+            setActiveView('store');
+          }}
+        />
+        <main className="flex-1 w-full max-w-full overflow-x-clip">
           <OrderTrackerView />
         </main>
         <Footer />
@@ -162,12 +158,16 @@ function StoreMainContent() {
         <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
         <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
         <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
+        <CustomerLoginModal />
         <CustomerDashboardModal />
         <MobileCategoryDrawer
           isOpen={isMobileCategoryDrawerOpen}
           onClose={() => setIsMobileCategoryDrawerOpen(false)}
           selectedCategory={selectedCategory}
-          onSelectCategory={(cat) => setSelectedCategory(cat)}
+          onSelectCategory={(cat) => {
+            setSelectedCategory(cat);
+            setActiveView('store');
+          }}
         />
         <ToastContainer />
         <MobileBottomNav onOpenCategories={() => setIsMobileCategoryDrawerOpen(true)} />
@@ -175,10 +175,10 @@ function StoreMainContent() {
     );
   }
 
-  // View: Single Product Page View (Req 10: "click one products open single product show all not popup view")
+  // View: Single Product Page View
   if (selectedProductForPage) {
     return (
-      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 pb-16 md:pb-0">
+      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 pb-16 md:pb-0 overflow-x-clip w-full max-w-full">
         <Navbar
           onOpenMobileCategories={() => setIsMobileCategoryDrawerOpen(true)}
           onSelectCategory={(cat) => {
@@ -186,7 +186,7 @@ function StoreMainContent() {
             setSelectedCategory(cat);
           }}
         />
-        <main className="flex-1">
+        <main className="flex-1 w-full max-w-full overflow-x-clip">
           <SingleProductView
             product={selectedProductForPage}
             onBack={() => setSelectedProductForPage(null)}
@@ -198,7 +198,18 @@ function StoreMainContent() {
         <AIVoiceCallModal />
         <WhatsAppAgentModal />
         <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
+        <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
+        <CustomerLoginModal />
         <CustomerDashboardModal />
+        <MobileCategoryDrawer
+          isOpen={isMobileCategoryDrawerOpen}
+          onClose={() => setIsMobileCategoryDrawerOpen(false)}
+          selectedCategory={selectedCategory}
+          onSelectCategory={(cat) => {
+            setSelectedProductForPage(null);
+            setSelectedCategory(cat);
+          }}
+        />
         <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
         <ToastContainer />
         <MobileBottomNav onOpenCategories={() => setIsMobileCategoryDrawerOpen(true)} />
@@ -208,14 +219,14 @@ function StoreMainContent() {
 
   // View: Main Storefront
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 pb-16 md:pb-0">
+    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 pb-16 md:pb-0 overflow-x-clip w-full max-w-full">
       <Navbar
         onOpenMobileCategories={() => setIsMobileCategoryDrawerOpen(true)}
         onSelectCategory={(cat) => setSelectedCategory(cat)}
       />
 
-      <main className="flex-1 max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-6 sm:space-y-8 w-full">
-        {/* Dynamic 5-6 Slider Hero Carousel if not searching */}
+      <main className="flex-1 max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-6 sm:space-y-8 w-full overflow-x-clip">
+        {/* Dynamic Slider Hero Carousel */}
         {searchQuery.trim() === '' && selectedCategory === 'all' && (
           <HeroBanner onCategoryFilter={(cat) => setSelectedCategory(cat)} />
         )}
@@ -224,18 +235,26 @@ function StoreMainContent() {
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none pt-1">
           <button
             onClick={() => setSelectedCategory('all')}
-            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            style={selectedCategory === 'all' ? { backgroundColor: settings.themeColors?.primary || '#059669' } : undefined}
+            className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
               selectedCategory === 'all'
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                ? 'text-white shadow-md'
                 : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
             }`}
           >
-            <span>✨ {t('সকল পণ্য', 'All Products')}</span>
+            <span>
+              ✨{' '}
+              {t(
+                settings.cmsTexts?.allCategoriesLabelBn || 'সকল পণ্য',
+                settings.cmsTexts?.allCategoriesLabelEn || 'All Products'
+              )}
+            </span>
           </button>
+
           {settings?.flashSale?.enabled !== false && (
             <button
               onClick={() => setSelectedCategory('flash-sale')}
-              className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
                 selectedCategory === 'flash-sale'
                   ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
                   : 'bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30'
@@ -245,32 +264,40 @@ function StoreMainContent() {
               <span>{t('ফ্ল্যাশ সেল', 'Flash Sale')}</span>
             </button>
           )}
+
           {categories.filter((c) => c.isActive).map((cat) => (
             <button
               key={cat.id}
               onClick={() => setSelectedCategory(cat.slug)}
-              className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+              style={selectedCategory === cat.slug ? { backgroundColor: settings.themeColors?.primary || '#059669' } : undefined}
+              className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-2 ${
                 selectedCategory === cat.slug
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                  ? 'text-white shadow-md'
                   : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
               }`}
             >
-              <span>{cat.icon || '🛍️'}</span>
+              {cat.iconImage && (
+                <img
+                  src={cat.iconImage}
+                  alt={cat.nameEn}
+                  className="w-4 h-4 rounded-full object-cover shrink-0"
+                />
+              )}
               <span>{lang === 'bn' ? cat.nameBn : cat.nameEn}</span>
             </button>
           ))}
         </div>
 
-        {/* Curated Flash Sale Section (if enabled and showing home view) */}
+        {/* Curated Flash Sale Section */}
         {searchQuery.trim() === '' && selectedCategory === 'all' && settings?.flashSale?.enabled !== false && (
           <div className="p-4 sm:p-6 rounded-3xl bg-gradient-to-r from-rose-950/40 via-slate-900 to-amber-950/30 border border-rose-900/40 shadow-xl space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-rose-600/20 text-rose-500 border border-rose-500/30 flex items-center justify-center font-bold">
+                <div className="w-10 h-10 rounded-2xl bg-rose-600/20 text-rose-500 border border-rose-500/30 flex items-center justify-center font-bold shrink-0">
                   <Flame className="w-6 h-6 animate-bounce" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-xl font-black text-white flex items-center gap-2">
+                  <h3 className="text-base sm:text-xl font-black text-white flex flex-wrap items-center gap-2">
                     <span>{lang === 'bn' ? settings.flashSale?.headlineBn : settings.flashSale?.headlineEn}</span>
                     <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
                       {settings.flashSale?.discountPercentage || 40}% OFF
@@ -312,7 +339,10 @@ function StoreMainContent() {
               <Flame className="w-5 h-5 text-rose-500 shrink-0" />
               <span>
                 {selectedCategory === 'all'
-                  ? t('হট ও ট্রেন্ডিং কালেকশন', 'Hot & Trending Collection')
+                  ? t(
+                      settings.cmsTexts?.trendingTitleBn || 'হট ও ট্রেন্ডিং কালেকশন',
+                      settings.cmsTexts?.trendingTitleEn || 'Hot & Trending Collection'
+                    )
                   : selectedCategory === 'flash-sale'
                   ? t('ধামাকা ফ্ল্যাশ সেল অফার', 'Mega Flash Sale Offers')
                   : t(
@@ -344,7 +374,6 @@ function StoreMainContent() {
               </div>
             )}
 
-            {/* Sort Dropdown */}
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
@@ -400,10 +429,10 @@ function StoreMainContent() {
 
       <Footer />
 
-      {/* Floating Lucky Spin Launcher on Left Side */}
       <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
 
       {/* Global Modals & Drawers */}
+      <CustomerLoginModal />
       <CustomerDashboardModal />
       <ProductDetailModal
         product={detailProduct}
@@ -426,7 +455,6 @@ function StoreMainContent() {
       <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
       <ToastContainer />
 
-      {/* Sticky Mobile Bottom Navigation */}
       <MobileBottomNav onOpenCategories={() => setIsMobileCategoryDrawerOpen(true)} />
     </div>
   );

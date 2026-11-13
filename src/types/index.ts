@@ -1,7 +1,7 @@
 export type PaymentMethod = 'cod' | 'bkash' | 'nagad' | 'rocket' | 'sslcommerz';
 export type PaymentStatus = 'pending' | 'paid' | 'advance_paid';
 export type OrderStatus = 'pending' | 'ai_confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
-export type CourierProvider = 'Steadfast' | 'Pathao' | 'RedX' | 'Paperfly';
+export type CourierProvider = 'Steadfast' | 'Pathao' | 'RedX' | 'Paperfly' | 'Sundarban';
 export type DeliveryZone = 'dhaka_inside' | 'dhaka_sub' | 'dhaka_outside';
 
 export interface Category {
@@ -10,9 +10,10 @@ export interface Category {
   nameEn: string;
   slug: string;
   icon?: string;
+  iconImage?: string;
   isActive: boolean;
   order?: number;
-  subcategories?: { nameBn: string; nameEn: string; slug: string }[];
+  subcategories?: { nameBn: string; nameEn: string; slug: string; image?: string }[];
 }
 
 export interface HomeSlide {
@@ -61,7 +62,7 @@ export interface Product {
   sizes?: string[];
   features?: string[];
   featuresBn?: string[];
-  videoUrl?: string; // YouTube or custom demonstration video
+  videoUrl?: string;
   warrantyInfo?: string;
   warrantyInfoBn?: string;
 }
@@ -119,7 +120,7 @@ export interface CourierTracking {
 
 export interface OrderFraudCheck {
   checked: boolean;
-  successRate: number; // e.g. 95 means 95% delivery success
+  successRate: number;
   totalOrders: number;
   deliveredCount: number;
   cancelledCount: number;
@@ -198,6 +199,25 @@ export interface CourierSettings {
     enabled: boolean;
     token: string;
   };
+  paperfly?: {
+    enabled: boolean;
+    username: string;
+    apiKey: string;
+  };
+  sundarban?: {
+    enabled: boolean;
+    branchCode: string;
+    apiKey: string;
+  };
+}
+
+export interface WhatsAppCloudLog {
+  id: string;
+  phone: string;
+  template: string;
+  status: 'sent' | 'delivered' | 'simulated' | 'failed';
+  time: string;
+  messagePreview: string;
 }
 
 export interface MarketingSettings {
@@ -216,6 +236,26 @@ export interface MarketingSettings {
     autoFollowupAbandoned: boolean;
     followupDelayMinutes: number;
   };
+  tiktokPixel?: {
+    enabled: boolean;
+    pixelId: string;
+  };
+  whatsappCloudApi?: {
+    enabled: boolean;
+    phoneNumberId: string;
+    wabaId: string;
+    accessToken: string;
+    verifyToken: string;
+    apiVersion: string;
+    defaultTemplate: string;
+  };
+  socialLinks?: {
+    facebookPageId: string;
+    facebookUrl: string;
+    instagramHandle: string;
+    tiktokHandle: string;
+    youtubeUrl: string;
+  };
 }
 
 export interface AISettings {
@@ -233,8 +273,16 @@ export interface FlashSaleSettings {
   enabled: boolean;
   headlineBn: string;
   headlineEn: string;
-  endsAt: string; // ISO date string
+  endsAt: string;
   discountPercentage: number;
+}
+
+export interface FooterLinkItem {
+  id: string;
+  labelBn: string;
+  labelEn: string;
+  actionType: 'tracking' | 'flash_sale' | 'store' | 'url';
+  url?: string;
 }
 
 export interface FooterSettings {
@@ -247,14 +295,51 @@ export interface FooterSettings {
   facebookUrl: string;
   youtubeUrl: string;
   instagramUrl: string;
+  tiktokUrl?: string;
   copyrightBn: string;
   copyrightEn: string;
   showPaymentBadges: boolean;
+  showCategoriesInFooter?: boolean;
+  quickLinks?: FooterLinkItem[];
+}
+
+export interface StoreThemeColors {
+  primary: string;
+  secondary: string;
+  headerBg: string;
+  footerBg: string;
+  heroFrom: string;
+  heroTo: string;
+}
+
+export interface StoreCMSTexts {
+  trendingTitleBn: string;
+  trendingTitleEn: string;
+  orderNowBtnBn: string;
+  orderNowBtnEn: string;
+  addToCartBtnBn: string;
+  addToCartBtnEn: string;
+  allCategoriesLabelBn: string;
+  allCategoriesLabelEn: string;
+}
+
+export interface SEOSettings {
+  metaTitle: string;
+  metaDescription: string;
+  keywords: string;
+  ogImage: string;
+  canonicalUrl?: string;
+  robots?: string;
+  twitterHandle?: string;
+  googleSiteVerification?: string;
+  schemaType?: 'Store' | 'OnlineStore' | 'LocalBusiness';
 }
 
 export interface StoreSettings {
   storeName: string;
   storeNameBn: string;
+  logoUrl?: string;
+  logoMode?: 'text' | 'image' | 'both';
   tagline: string;
   taglineBn: string;
   hotline: string;
@@ -290,6 +375,8 @@ export interface StoreSettings {
     textEn: string;
   };
   theme?: StoreTheme;
+  themeColors?: StoreThemeColors;
+  cmsTexts?: StoreCMSTexts;
   spinSettings: {
     enabled: boolean;
     headlineBn: string;
@@ -307,40 +394,54 @@ export interface StoreSettings {
   sliders: HomeSlide[];
   flashSale: FlashSaleSettings;
   courierSettings: CourierSettings;
-  marketingSettings: MarketingSettings & {
-    tiktokPixel?: {
-      enabled: boolean;
-      pixelId: string;
-    };
-  };
+  marketingSettings: MarketingSettings;
   aiSettings: AISettings;
   footerSettings: FooterSettings;
-  seoSettings?: {
-    metaTitle: string;
-    metaDescription: string;
-    keywords: string;
-    ogImage: string;
-  };
+  seoSettings?: SEOSettings;
 }
 
-export type StoreTheme = 'gadgets' | 'islamic' | 'organic' | 'medical' | 'fashion';
+export type StoreTheme =
+  | 'gadgets'
+  | 'islamic'
+  | 'organic'
+  | 'medical'
+  | 'fashion'
+  | 'beauty'
+  | 'grocery'
+  | 'electronics'
+  | 'kids'
+  | 'books';
 
 export interface DailyCheckInState {
-  lastCheckInDate: string; // YYYY-MM-DD
-  streak: number; // 1 to 7
+  lastCheckInDate: string;
+  streak: number;
   claimedToday: boolean;
   totalEarned: number;
 }
 
+export interface CustomerCoupon {
+  id: string;
+  code: string;
+  labelBn: string;
+  labelEn: string;
+  value: number;
+  discountType: 'fixed' | 'percent' | 'free_shipping';
+  expiresAt: string;
+}
+
 export interface CustomerProfile {
   name: string;
+  username?: string;
   phone: string;
   email: string;
   address: string;
   district: string;
+  password?: string;
   loyaltyPoints: number;
   walletBalance: number;
-  checkIn: DailyCheckInState;
+  browsingHistory?: string[];
+  savedCoupons?: CustomerCoupon[];
+  checkIn?: DailyCheckInState;
 }
 
 export interface WhatsAppMarketingTemplates {
@@ -377,10 +478,11 @@ export interface PriceAlert {
   productId: string;
   productTitle: string;
   productTitleBn: string;
-  contact: string; // phone or email
+  contact: string;
   currentPrice: number;
   targetPrice: number;
   createdAt: string;
   status: 'active' | 'notified';
 }
+
 

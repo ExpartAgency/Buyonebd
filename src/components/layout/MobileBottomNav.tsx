@@ -12,17 +12,17 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onOpenCategori
     setActiveView,
     cartCount,
     setIsCartOpen,
-    setIsCustomerDashboardOpen,
+    openCustomerPortal,
+    isCustomerLoggedIn,
     t
   } = useStore();
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800 px-2 py-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800 px-1.5 py-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
       <div className="flex items-center justify-around text-[10px] font-bold">
-        {/* 1. Home */}
         <button
           onClick={() => setActiveView('store')}
-          className={`flex flex-col items-center py-1 px-3 rounded-xl transition-colors cursor-pointer ${
+          className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition-colors cursor-pointer ${
             activeView === 'store' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 hover:text-slate-800'
           }`}
         >
@@ -30,19 +30,17 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onOpenCategori
           <span>{t('হোম', 'Home')}</span>
         </button>
 
-        {/* 2. All Categories */}
         <button
           onClick={onOpenCategories}
-          className="flex flex-col items-center py-1 px-3 text-slate-500 hover:text-emerald-600 rounded-xl transition-colors cursor-pointer"
+          className="flex flex-col items-center py-1 px-2.5 text-slate-500 hover:text-emerald-600 rounded-xl transition-colors cursor-pointer"
         >
           <Grid className="w-5 h-5 mb-0.5" />
           <span>{t('ক্যাটাগরি', 'Categories')}</span>
         </button>
 
-        {/* 3. Track Order */}
         <button
           onClick={() => setActiveView('tracking')}
-          className={`flex flex-col items-center py-1 px-3 rounded-xl transition-colors cursor-pointer ${
+          className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition-colors cursor-pointer ${
             activeView === 'tracking' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 hover:text-slate-800'
           }`}
         >
@@ -50,19 +48,22 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onOpenCategori
           <span>{t('ট্র্যাকিং', 'Track')}</span>
         </button>
 
-        {/* 4. Customer Profile (Replaced ৳100 tab as annotated: remove ৳100, open customer profile) */}
         <button
-          onClick={() => setIsCustomerDashboardOpen(true)}
-          className="flex flex-col items-center py-1 px-3 text-slate-500 hover:text-emerald-600 rounded-xl transition-colors cursor-pointer"
+          onClick={openCustomerPortal}
+          className="relative flex flex-col items-center py-1 px-2.5 text-slate-500 hover:text-emerald-600 rounded-xl transition-colors cursor-pointer"
         >
-          <User className="w-5 h-5 mb-0.5 text-emerald-600 dark:text-emerald-400" />
+          <div className="relative">
+            <User className="w-5 h-5 mb-0.5 text-emerald-600 dark:text-emerald-400" />
+            {isCustomerLoggedIn && (
+              <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-emerald-500" />
+            )}
+          </div>
           <span>{t('প্রোফাইল', 'Profile')}</span>
         </button>
 
-        {/* 5. Cart */}
         <button
           onClick={() => setIsCartOpen(true)}
-          className="relative flex flex-col items-center py-1 px-3 text-slate-500 hover:text-slate-800 rounded-xl transition-colors cursor-pointer"
+          className="relative flex flex-col items-center py-1 px-2.5 text-slate-500 hover:text-slate-800 rounded-xl transition-colors cursor-pointer"
         >
           <div className="relative">
             <ShoppingBag className="w-5 h-5 mb-0.5" />

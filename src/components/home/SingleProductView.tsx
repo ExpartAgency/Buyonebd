@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Star,
@@ -33,12 +33,17 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
     toggleWishlist,
     isWishlisted,
     addPriceAlert,
+    recordProductView,
     products,
     setSelectedProductForPage,
     lang,
     t,
     addToast
   } = useStore();
+
+  useEffect(() => {
+    recordProductView(product.id);
+  }, [product.id]);
 
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [selectedColor, setSelectedColor] = useState(product.colors?.[0] || '');

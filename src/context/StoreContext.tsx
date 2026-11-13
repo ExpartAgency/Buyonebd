@@ -16,7 +16,10 @@ import {
   CourierProvider,
   PriceAlert,
   CustomerProfile,
-  DailyCheckInState
+  DailyCheckInState,
+  CustomerCoupon,
+  WhatsAppCloudLog,
+  StoreTheme
 } from '../types';
 import {
   INITIAL_PRODUCTS,
@@ -27,7 +30,8 @@ import {
   INITIAL_ABANDONED_CARTS,
   INITIAL_USERS,
   INITIAL_REVIEWS,
-  BD_DISTRICTS
+  BD_DISTRICTS,
+  BUSINESS_THEME_PRESETS
 } from '../data/initialData';
 
 interface CartItem {
@@ -91,12 +95,21 @@ interface StoreContextType {
   updateOrderDetails: (orderId: string, updates: Partial<Order>) => void;
   deleteOrder: (orderId: string) => void;
 
-  // Customer Wallet & Profile
+  // Customer Auth, Wallet & Profile
+  isCustomerLoggedIn: boolean;
+  isCustomerLoginOpen: boolean;
+  setIsCustomerLoginOpen: (open: boolean) => void;
+  loginCustomer: (identifier: string, password: string) => boolean;
+  registerCustomer: (data: { name: string; username: string; phone: string; email?: string; password: string }) => boolean;
+  logoutCustomer: () => void;
+  openCustomerPortal: () => void;
   customerWalletBalance: number;
   addToWallet: (amount: number, reason?: string) => void;
   deductWallet: (amount: number) => boolean;
   customerProfile: CustomerProfile;
   updateCustomerProfile: (updates: Partial<CustomerProfile>) => void;
+  saveSpinCoupon: (reward: SpinReward) => void;
+  recordProductView: (productId: string) => void;
   claimDailyCheckIn: () => { success: boolean; amount: number; message: string };
   redeemLoyaltyPoints: (points: number) => { success: boolean; discountAmount: number };
   isCustomerDashboardOpen: boolean;
@@ -110,10 +123,15 @@ interface StoreContextType {
   priceAlerts: PriceAlert[];
   addPriceAlert: (alertData: { productId: string; contact: string; targetPrice: number }) => void;
 
-
-  // Steadfast & Courier Hub
+  // Steadfast & Multi-Courier Hub
+  bookOrderCourier: (orderId: string, provider: CourierProvider) => Promise<{ success: boolean; trackingCode?: string; consignmentId?: string }>;
   sendOrderToSteadfast: (orderId: string) => Promise<{ success: boolean; trackingCode?: string; consignmentId?: string }>;
   checkCustomerFraudRisk: (phone: string) => Promise<OrderFraudCheck>;
+
+  // Meta WhatsApp Cloud API CRM & Business Theme Presets
+  whatsappLogs: WhatsAppCloudLog[];
+  sendMetaWhatsAppMessage: (payload: { to: string; message?: string; templateName?: string }) => Promise<{ success: boolean; mode?: string; error?: string }>;
+  applyBusinessTheme: (themeId: StoreTheme, includeCategories?: boolean) => void;
 
   // Abandoned Carts
   abandonedCarts: AbandonedCart[];
@@ -195,6 +213,8 @@ interface StoreContextType {
   closeOneClickCheckout: () => void;
   isWhatsAppOpen: boolean;
   setIsWhatsAppOpen: (open: boolean) => void;
+  isSpinOpen: boolean;
+  setIsSpinOpen: (open: boolean) => void;
   isMobileCategoryDrawerOpen: boolean;
   setIsMobileCategoryDrawerOpen: (open: boolean) => void;
   activeView: 'store' | 'admin' | 'tracking';
@@ -236,6 +256,9 @@ function mergeSettings(raw: any): StoreSettings {
     paymentSettings: { ...INITIAL_SETTINGS.paymentSettings, ...(raw.paymentSettings || {}) },
     aiCallSettings: { ...INITIAL_SETTINGS.aiCallSettings, ...(raw.aiCallSettings || {}) },
     announcementBar: { ...INITIAL_SETTINGS.announcementBar, ...(raw.announcementBar || {}) },
+    themeColors: { ...INITIAL_SETTINGS.themeColors!, ...(raw.themeColors || {}) },
+    cmsTexts: { ...INITIAL_SETTINGS.cmsTexts!, ...(raw.cmsTexts || {}) },
+    seoSettings: { ...INITIAL_SETTINGS.seoSettings!, ...(raw.seoSettings || {}) },
     spinSettings: {
       ...INITIAL_SETTINGS.spinSettings,
       ...(raw.spinSettings || {}),
@@ -244,23 +267,37 @@ function mergeSettings(raw: any): StoreSettings {
         : INITIAL_SETTINGS.spinSettings.rewards
     },
     whatsappTemplates: { ...INITIAL_SETTINGS.whatsappTemplates, ...(raw.whatsappTemplates || {}) },
+    marketingTemplates: { ...INITIAL_SETTINGS.marketingTemplates!, ...(raw.marketingTemplates || {}) },
     categories: Array.isArray(raw.categories) && raw.categories.length > 0 ? raw.categories : INITIAL_CATEGORIES,
     sliders: Array.isArray(raw.sliders) && raw.sliders.length > 0 ? raw.sliders : INITIAL_SLIDERS,
     flashSale: { ...INITIAL_SETTINGS.flashSale, ...(raw.flashSale || {}) },
     courierSettings: {
       ...INITIAL_SETTINGS.courierSettings,
       ...(raw.courierSettings || {}),
-      steadfast: { ...INITIAL_SETTINGS.courierSettings.steadfast, ...(raw.courierSettings?.steadfast || {}) }
+      steadfast: { ...INITIAL_SETTINGS.courierSettings.steadfast, ...(raw.courierSettings?.steadfast || {}) },
+      pathao: { ...INITIAL_SETTINGS.courierSettings.pathao, ...(raw.courierSettings?.pathao || {}) },
+      redx: { ...INITIAL_SETTINGS.courierSettings.redx, ...(raw.courierSettings?.redx || {}) },
+      paperfly: { ...INITIAL_SETTINGS.courierSettings.paperfly!, ...(raw.courierSettings?.paperfly || {}) },
+      sundarban: { ...INITIAL_SETTINGS.courierSettings.sundarban!, ...(raw.courierSettings?.sundarban || {}) }
     },
     marketingSettings: {
       ...INITIAL_SETTINGS.marketingSettings,
       ...(raw.marketingSettings || {}),
       facebookPixel: { ...INITIAL_SETTINGS.marketingSettings.facebookPixel, ...(raw.marketingSettings?.facebookPixel || {}) },
       googleAnalytics: { ...INITIAL_SETTINGS.marketingSettings.googleAnalytics, ...(raw.marketingSettings?.googleAnalytics || {}) },
-      whatsappCRM: { ...INITIAL_SETTINGS.marketingSettings.whatsappCRM, ...(raw.marketingSettings?.whatsappCRM || {}) }
+      whatsappCRM: { ...INITIAL_SETTINGS.marketingSettings.whatsappCRM, ...(raw.marketingSettings?.whatsappCRM || {}) },
+      tiktokPixel: { ...INITIAL_SETTINGS.marketingSettings.tiktokPixel!, ...(raw.marketingSettings?.tiktokPixel || {}) },
+      whatsappCloudApi: { ...INITIAL_SETTINGS.marketingSettings.whatsappCloudApi!, ...(raw.marketingSettings?.whatsappCloudApi || {}) },
+      socialLinks: { ...INITIAL_SETTINGS.marketingSettings.socialLinks!, ...(raw.marketingSettings?.socialLinks || {}) }
     },
     aiSettings: { ...INITIAL_SETTINGS.aiSettings, ...(raw.aiSettings || {}) },
-    footerSettings: { ...INITIAL_SETTINGS.footerSettings, ...(raw.footerSettings || {}) }
+    footerSettings: {
+      ...INITIAL_SETTINGS.footerSettings,
+      ...(raw.footerSettings || {}),
+      quickLinks: Array.isArray(raw.footerSettings?.quickLinks) && raw.footerSettings.quickLinks.length > 0
+        ? raw.footerSettings.quickLinks
+        : INITIAL_SETTINGS.footerSettings.quickLinks
+    }
   };
 }
 
@@ -673,32 +710,62 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     addToast('info', lang === 'bn' ? 'স্পিন অফার মোছা হয়েছে' : 'Spin Offer Deleted', '');
   };
 
-  // Customer Gift Wallet Balance (earned from lucky spin & bonuses)
+  // Customer Gift Wallet Balance (earned strictly from Lucky Spin wheel rewards)
   const [customerWalletBalance, setCustomerWalletBalance] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('buyonebd_customer_wallet_v3');
-      return saved ? Number(saved) : 100; // ৳100 initial welcome gift
+      return saved ? Number(saved) : 0;
     } catch {
-      return 100;
+      return 0;
     }
   });
+
+  // Customer Auth & Account Registry
+  const [isCustomerLoggedIn, setIsCustomerLoggedIn] = useState<boolean>(() => {
+    return localStorage.getItem('buyonebd_customer_auth_v3') === 'true';
+  });
+  const [isCustomerLoginOpen, setIsCustomerLoginOpen] = useState(false);
+
+  const [customerAccounts, setCustomerAccounts] = useState<CustomerProfile[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_customer_accounts_v3');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [
+      {
+        name: 'হোসেন আহমেদ',
+        username: 'hossain',
+        phone: '01886289663',
+        email: 'customer@buyonebd.com',
+        address: 'বাড়ি ১২, রোড ৫, ধানমন্ডি',
+        district: 'Dhaka - Inside City',
+        password: '123456',
+        loyaltyPoints: 120,
+        walletBalance: 0,
+        browsingHistory: [],
+        savedCoupons: []
+      }
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('buyonebd_customer_accounts_v3', JSON.stringify(customerAccounts));
+  }, [customerAccounts]);
 
   // Customer Profile & Rewards State
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile>(() => {
     const defaultProfile: CustomerProfile = {
       name: 'হোসেন আহমেদ',
+      username: 'hossain',
       phone: '01886289663',
       email: 'customer@buyonebd.com',
       address: 'বাড়ি ১২, রোড ৫, ধানমন্ডি',
-      district: 'Dhaka',
+      district: 'Dhaka - Inside City',
+      password: '123456',
       loyaltyPoints: 120,
-      walletBalance: 100,
-      checkIn: {
-        lastCheckInDate: '',
-        streak: 0,
-        claimedToday: false,
-        totalEarned: 0
-      }
+      walletBalance: 0,
+      browsingHistory: [],
+      savedCoupons: []
     };
     try {
       const saved = localStorage.getItem('buyonebd_customer_profile_v3');
@@ -711,60 +778,138 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem('buyonebd_customer_profile_v3', JSON.stringify(customerProfile));
   }, [customerProfile]);
 
+  const [isCustomerDashboardOpen, setIsCustomerDashboardOpen] = useState(false);
+  const [selectedProductForPage, setSelectedProductForPage] = useState<Product | null>(null);
+
+  const loginCustomer = (identifier: string, password: string): boolean => {
+    const cleanId = identifier.trim().toLowerCase();
+    const matched = customerAccounts.find(
+      (acc) =>
+        (acc.username?.toLowerCase() === cleanId ||
+          acc.phone.replace(/[^0-9]/g, '') === identifier.replace(/[^0-9]/g, '') ||
+          acc.email.toLowerCase() === cleanId) &&
+        (acc.password || '123456') === password
+    );
+
+    if (matched) {
+      setCustomerProfile(matched);
+      setIsCustomerLoggedIn(true);
+      localStorage.setItem('buyonebd_customer_auth_v3', 'true');
+      setIsCustomerLoginOpen(false);
+      setIsCustomerDashboardOpen(true);
+      addToast('success', t('লগইন সফল হয়েছে!', 'Welcome Back!'), matched.name);
+      return true;
+    }
+
+    addToast(
+      'error',
+      t('ভুল ইউজারনেম বা পাসওয়ার্ড', 'Invalid Credentials'),
+      t('দয়া করে সঠিক ইউজারনেম/ফোন ও পাসওয়ার্ড দিন।', 'Please check your username/phone and password.')
+    );
+    return false;
+  };
+
+  const registerCustomer = (data: {
+    name: string;
+    username: string;
+    phone: string;
+    email?: string;
+    password: string;
+  }): boolean => {
+    const cleanUser = data.username.trim().toLowerCase();
+    const exists = customerAccounts.some(
+      (a) => a.username?.toLowerCase() === cleanUser || a.phone === data.phone.trim()
+    );
+    if (exists) {
+      addToast(
+        'warning',
+        t('অ্যাকাউন্ট ইতিমধ্যে রয়েছে', 'Account Already Exists'),
+        t('অনুগ্রহ করে লগইন করুন বা অন্য ইউজারনেম দিন।', 'Please sign in or use a different username/phone.')
+      );
+      return false;
+    }
+
+    const newAcc: CustomerProfile = {
+      name: data.name.trim(),
+      username: cleanUser,
+      phone: data.phone.trim(),
+      email: data.email?.trim() || `${cleanUser}@buyonebd.com`,
+      address: '',
+      district: 'Dhaka - Inside City',
+      password: data.password,
+      loyaltyPoints: 0,
+      walletBalance: customerWalletBalance,
+      browsingHistory: customerProfile.browsingHistory || [],
+      savedCoupons: customerProfile.savedCoupons || []
+    };
+
+    setCustomerAccounts((prev) => [...prev, newAcc]);
+    setCustomerProfile(newAcc);
+    setIsCustomerLoggedIn(true);
+    localStorage.setItem('buyonebd_customer_auth_v3', 'true');
+    setIsCustomerLoginOpen(false);
+    setIsCustomerDashboardOpen(true);
+    addToast('success', t('রেজিস্ট্রেশন সম্পন্ন!', 'Account Created!'), newAcc.name);
+    return true;
+  };
+
+  const logoutCustomer = () => {
+    setIsCustomerLoggedIn(false);
+    localStorage.removeItem('buyonebd_customer_auth_v3');
+    setIsCustomerDashboardOpen(false);
+    addToast('info', t('সাইন আউট সম্পন্ন', 'Signed Out'), '');
+  };
+
+  const openCustomerPortal = () => {
+    if (isCustomerLoggedIn) {
+      setIsCustomerDashboardOpen(true);
+    } else {
+      setIsCustomerLoginOpen(true);
+    }
+  };
+
   const updateCustomerProfile = (updates: Partial<CustomerProfile>) => {
-    setCustomerProfile((prev) => ({ ...prev, ...updates }));
+    setCustomerProfile((prev) => {
+      const next = { ...prev, ...updates };
+      setCustomerAccounts((accs) =>
+        accs.map((a) => (a.phone === prev.phone || a.username === prev.username ? next : a))
+      );
+      return next;
+    });
     addToast('success', t('প্রোফাইল আপডেট সম্পন্ন', 'Profile Updated'), t('আপনার তথ্য সফলভাবে সংরক্ষিত হয়েছে।', 'Changes saved successfully.'));
   };
 
-  const claimDailyCheckIn = () => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    if (customerProfile.checkIn.lastCheckInDate === todayStr) {
-      return {
-        success: false,
-        amount: 0,
-        message: lang === 'bn' ? 'আজকের ডেইলি চেক-ইন বোনাস ইতিমধ্যে গ্রহণ করেছেন!' : 'Already claimed today\'s check-in bonus!'
-      };
-    }
-
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
-
-    let newStreak = 1;
-    if (customerProfile.checkIn.lastCheckInDate === yesterdayStr) {
-      newStreak = (customerProfile.checkIn.streak % 7) + 1;
-    }
-
-    const bonusScale = [10, 15, 20, 25, 30, 40, 70];
-    const bonusAmount = bonusScale[newStreak - 1] || 15;
-
-    const newCheckIn = {
-      lastCheckInDate: todayStr,
-      streak: newStreak,
-      claimedToday: true,
-      totalEarned: (customerProfile.checkIn?.totalEarned || 0) + bonusAmount
+  const saveSpinCoupon = (reward: SpinReward) => {
+    const newCoupon: CustomerCoupon = {
+      id: `cpn-${Date.now()}`,
+      code: reward.code,
+      labelBn: reward.labelBn,
+      labelEn: reward.labelEn,
+      value: reward.value,
+      discountType: reward.discountType === 'try_again' ? 'fixed' : reward.discountType,
+      expiresAt: new Date(Date.now() + 7 * 86400000).toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US')
     };
+    setCustomerProfile((prev) => {
+      const existing = prev.savedCoupons || [];
+      const filtered = existing.filter((c) => c.code !== reward.code);
+      return { ...prev, savedCoupons: [newCoupon, ...filtered].slice(0, 15) };
+    });
+  };
 
-    const nextBal = customerWalletBalance + bonusAmount;
-    setCustomerWalletBalance(nextBal);
-    localStorage.setItem('buyonebd_customer_wallet_v3', nextBal.toString());
+  const recordProductView = (productId: string) => {
+    setCustomerProfile((prev) => {
+      const history = prev.browsingHistory || [];
+      if (history[0] === productId) return prev;
+      const nextHistory = [productId, ...history.filter((id) => id !== productId)].slice(0, 12);
+      return { ...prev, browsingHistory: nextHistory };
+    });
+  };
 
-    setCustomerProfile((cp) => ({
-      ...cp,
-      walletBalance: nextBal,
-      checkIn: newCheckIn
-    }));
-
-    addToast(
-      'success',
-      lang === 'bn' ? `দিন ${newStreak}: ৳${bonusAmount} বোনাস গৃহীত!` : `Day ${newStreak}: ৳${bonusAmount} Bonus Claimed!`,
-      lang === 'bn' ? `টানা ${newStreak} দিন চেক-ইন সম্পন্ন! বর্তমান ব্যালেন্স: ৳${nextBal}` : `${newStreak} day streak! Current balance: ৳${nextBal}`
-    );
-
+  const claimDailyCheckIn = () => {
     return {
-      success: true,
-      amount: bonusAmount,
-      message: lang === 'bn' ? `অভিনন্দন! ৳${bonusAmount} আপনার অ্যাকাউন্টে যোগ হয়েছে।` : `Congratulations! ৳${bonusAmount} added to your account.`
+      success: false,
+      amount: 0,
+      message: t('ক্যাশ বোনাস শুধুমাত্র লাকি স্পিন হুইল থেকে পাওয়া যায়।', 'Cash bonuses are awarded via the Lucky Spin Wheel only.')
     };
   };
 
@@ -772,7 +917,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (customerProfile.loyaltyPoints < points) {
       return { success: false, discountAmount: 0 };
     }
-    const discountAmount = Math.floor(points); // 1 point = ৳1
+    const discountAmount = Math.floor(points);
     const nextPoints = customerProfile.loyaltyPoints - points;
     const nextBal = customerWalletBalance + discountAmount;
     setCustomerWalletBalance(nextBal);
@@ -790,17 +935,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return { success: true, discountAmount };
   };
 
-  const [isCustomerDashboardOpen, setIsCustomerDashboardOpen] = useState(false);
-  const [selectedProductForPage, setSelectedProductForPage] = useState<Product | null>(null);
-
-  const addToWallet = (amount: number, reason?: string) => {
+  const addToWallet = (amount: number, _reason?: string) => {
     setCustomerWalletBalance((prev) => {
       const next = prev + amount;
       localStorage.setItem('buyonebd_customer_wallet_v3', next.toString());
       setCustomerProfile((cp) => ({ ...cp, walletBalance: next }));
       addToast(
         'success',
-        lang === 'bn' ? `৳${amount} গিফট ব্যালেন্স যোগ হয়েছে!` : `৳${amount} Added to Gift Wallet!`,
+        lang === 'bn' ? `৳${amount} স্পিন গিফট ব্যালেন্স যোগ হয়েছে!` : `৳${amount} Spin Gift Added!`,
         lang === 'bn' ? `বর্তমান ব্যালেন্স: ৳${next}` : `Current Balance: ৳${next}`
       );
       return next;
@@ -903,6 +1045,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [checkoutProduct, setCheckoutProduct] = useState<Product | null>(null);
   const [isOneClickOpen, setIsOneClickOpen] = useState(false);
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
+  const [isSpinOpen, setIsSpinOpen] = useState(false);
   const [isMobileCategoryDrawerOpen, setIsMobileCategoryDrawerOpen] = useState(false);
   const [activeView, setActiveView] = useState<'store' | 'admin' | 'tracking'>('store');
   const [trackingSearchQuery, setTrackingSearchQuery] = useState('');
@@ -929,19 +1072,35 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Steadfast 1-Click Order Entry
-  const sendOrderToSteadfast = async (orderId: string): Promise<{ success: boolean; trackingCode?: string; consignmentId?: string }> => {
+  // Multi-Courier 1-Click Booking (Steadfast, Pathao, RedX, Paperfly, Sundarban)
+  const bookOrderCourier = async (
+    orderId: string,
+    provider: CourierProvider
+  ): Promise<{ success: boolean; trackingCode?: string; consignmentId?: string }> => {
     const targetOrder = orders.find((o) => o.id === orderId);
     if (!targetOrder) return { success: false };
 
-    addToast('info', t('স্টিডফাস্টে বুকিং হচ্ছে...', 'Booking Steadfast Courier...'), t(`অর্ডার #${orderId} স্টিডফাস্ট এপিআই-এ পাঠানো হচ্ছে।`, 'Calling Steadfast API.'));
+    const prefixMap: Record<CourierProvider, string> = {
+      Steadfast: 'STDF',
+      Pathao: 'PTHO',
+      RedX: 'REDX',
+      Paperfly: 'PPFL',
+      Sundarban: 'SNDR'
+    };
+    const prefix = prefixMap[provider] || 'COUR';
+
+    addToast(
+      'info',
+      t(`${provider} কুরিয়ারে বুকিং হচ্ছে...`, `Booking ${provider} Courier...`),
+      t(`অর্ডার #${orderId} পাঠানো হচ্ছে।`, `Sending order #${orderId} to ${provider}.`)
+    );
 
     try {
-      const consignmentId = `STDF-${Math.floor(100000 + Math.random() * 900000)}`;
-      const trackingCode = `STDF-BD-${orderId.replace(/[^0-9]/g, '')}`;
+      const randomDigits = Math.floor(100000 + Math.random() * 900000);
+      const consignmentId = `${prefix}-${randomDigits}`;
+      const trackingCode = `${prefix}-BD-${orderId.replace(/[^0-9]/g, '') || randomDigits}`;
 
-      // Simulate network request to Steadfast portal
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 700));
 
       setOrders((prev) =>
         prev.map((ord) => {
@@ -951,17 +1110,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               status: 'shipped',
               courier: {
                 ...ord.courier,
-                provider: 'Steadfast',
+                provider,
                 consignmentId,
                 trackingCode,
                 status: 'in_transit',
                 history: [
                   ...ord.courier.history,
                   {
-                    status: 'Steadfast Booked',
+                    status: `${provider} Booked`,
                     time: 'Just now',
-                    location: 'Tejgaon Central Hub',
-                    note: `Consignment created with ID: ${consignmentId}`
+                    location: 'Dhaka Central Dispatch Hub',
+                    note: `1-Click booking confirmed via ${provider} (ID: ${consignmentId})`
                   }
                 ]
               }
@@ -973,15 +1132,222 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       addToast(
         'success',
-        t('স্টিডফাস্ট বুকিং সফল! 🎉', 'Steadfast Booking Created! 🎉'),
-        t(`কনসাইনমেন্ট আইডি: ${consignmentId}। ট্র্যাকিং কোড: ${trackingCode}`, `Consignment: ${consignmentId}`)
+        t(`${provider} বুকিং সফল! 🎉`, `${provider} Booking Created! 🎉`),
+        t(`ট্র্যাকিং: ${trackingCode}`, `Tracking Code: ${trackingCode}`)
       );
       return { success: true, trackingCode, consignmentId };
     } catch {
-      addToast('error', t('বুকিং ব্যর্থ হয়েছে', 'Booking Failed'), t('স্টিডফাস্ট এপিআই রেসপন্স করেনি।', 'Courier API failure.'));
+      addToast('error', t('বুকিং ব্যর্থ হয়েছে', 'Booking Failed'), t(`${provider} এপিআই সংযোগ ব্যর্থ।`, `${provider} API connection error.`));
       return { success: false };
     }
   };
+
+  // Steadfast 1-Click Order Entry (compat wrapper)
+  const sendOrderToSteadfast = async (orderId: string) => bookOrderCourier(orderId, 'Steadfast');
+
+  // Meta WhatsApp Cloud API Logs & Dispatcher
+  const [whatsappLogs, setWhatsappLogs] = useState<WhatsAppCloudLog[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_wa_logs_v3');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const sendMetaWhatsAppMessage = async (payload: {
+    to: string;
+    message?: string;
+    templateName?: string;
+  }): Promise<{ success: boolean; mode?: string; error?: string }> => {
+    const cloudCfg = settings.marketingSettings?.whatsappCloudApi;
+    try {
+      const res = await fetch('/api/whatsapp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: payload.to,
+          message: payload.message,
+          templateName: payload.templateName || cloudCfg?.defaultTemplate,
+          phoneNumberId: cloudCfg?.enabled ? cloudCfg.phoneNumberId : '',
+          accessToken: cloudCfg?.enabled ? cloudCfg.accessToken : '',
+          apiVersion: cloudCfg?.apiVersion || 'v21.0'
+        })
+      });
+      const data = await res.json();
+      const logItem: WhatsAppCloudLog = {
+        id: `walog-${Date.now()}`,
+        phone: payload.to,
+        template: payload.templateName || 'custom_text',
+        status: data.success ? (data.mode === 'live' ? 'sent' : 'simulated') : 'failed',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        messagePreview: (payload.message || payload.templateName || '').slice(0, 90)
+      };
+      setWhatsappLogs((prev) => {
+        const next = [logItem, ...prev].slice(0, 40);
+        localStorage.setItem('buyonebd_wa_logs_v3', JSON.stringify(next));
+        return next;
+      });
+      if (data.success) {
+        addToast(
+          'success',
+          t('হোয়াটসঅ্যাপ মেসেজ পাঠানো হয়েছে!', 'WhatsApp Message Sent!'),
+          data.mode === 'live'
+            ? t(`Meta Cloud API দিয়ে ${payload.to}-এ পাঠানো হয়েছে`, `Sent via Meta Graph API to ${payload.to}`)
+            : t(`সিমুলেটেড ডেলিভারি সফল (${payload.to})`, `Sandbox simulation logged for ${payload.to}`)
+        );
+      } else {
+        addToast('error', t('মেসেজ পাঠানো যায়নি', 'WhatsApp Send Failed'), data.error || 'Unknown error');
+      }
+      return data;
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error' };
+    }
+  };
+
+  // Apply 1 of 10 Business Themes (Colors + optional curated Categories)
+  const applyBusinessTheme = (themeId: StoreTheme, includeCategories = false) => {
+    const preset = BUSINESS_THEME_PRESETS.find((p) => p.id === themeId);
+    if (!preset) return;
+
+    updateSettings({
+      theme: themeId,
+      themeColors: { ...preset.colors }
+    });
+
+    if (includeCategories && preset.suggestedCategories.length > 0) {
+      const mappedCats: Category[] = preset.suggestedCategories.map((c, idx) => ({
+        ...c,
+        id: `${themeId}-cat-${idx + 1}`,
+        isActive: true,
+        order: idx + 1
+      }));
+      setCategories(mappedCats);
+    }
+
+    addToast(
+      'success',
+      t(`${preset.nameBn} থিম প্রয়োগ হয়েছে!`, `${preset.nameEn} Applied!`),
+      includeCategories
+        ? t('কালার প্যালেট ও ব্যবসার ক্যাটাগরি আপডেট করা হয়েছে।', 'Color palette and curated categories updated.')
+        : t('স্টোরের কালার থিম পরিবর্তন করা হয়েছে।', 'Store colors updated.')
+    );
+  };
+
+  // Apply dynamic CSS theme variables whenever themeColors changes
+  useEffect(() => {
+    const colors = settings.themeColors;
+    if (colors) {
+      document.documentElement.style.setProperty('--brand-primary', colors.primary || '#059669');
+      document.documentElement.style.setProperty('--brand-secondary', colors.secondary || '#0d9488');
+      const themeMeta = document.querySelector('meta[name="theme-color"]');
+      if (themeMeta) themeMeta.setAttribute('content', colors.primary || '#059669');
+    }
+  }, [settings.themeColors]);
+
+  // Dynamic SEO Head Tags + Schema.org JSON-LD Updater (A-to-Z SEO)
+  useEffect(() => {
+    const seo = settings.seoSettings;
+    const storeName = settings.storeName || 'BuyOne BD';
+    let pageTitle = seo?.metaTitle || `${storeName} - Online Shopping Bangladesh`;
+    let pageDesc = seo?.metaDescription || settings.tagline;
+
+    if (activeView === 'admin') {
+      pageTitle = `Admin Portal - ${storeName}`;
+    } else if (activeView === 'tracking') {
+      pageTitle = `${t('রিয়েল-টাইম অর্ডার ট্র্যাকিং', 'Real-Time Order Tracking')} - ${storeName}`;
+    } else if (selectedProductForPage) {
+      const prodTitle = lang === 'bn' ? selectedProductForPage.titleBn : selectedProductForPage.title;
+      pageTitle = `${prodTitle} | ৳${selectedProductForPage.price} - ${storeName}`;
+      pageDesc = (lang === 'bn' ? selectedProductForPage.descriptionBn : selectedProductForPage.description).slice(0, 158);
+    }
+
+    document.title = pageTitle;
+
+    const setMeta = (selector: string, attrName: string, attrVal: string, content: string) => {
+      if (!content) return;
+      let el = document.querySelector(selector) as HTMLMetaElement | null;
+      if (!el) {
+        el = document.createElement('meta');
+        el.setAttribute(attrName, attrVal);
+        document.head.appendChild(el);
+      }
+      el.setAttribute('content', content);
+    };
+
+    setMeta('meta[name="description"]', 'name', 'description', pageDesc);
+    setMeta('meta[name="keywords"]', 'name', 'keywords', seo?.keywords || '');
+    setMeta('meta[name="robots"]', 'name', 'robots', seo?.robots || 'index, follow');
+    setMeta('meta[property="og:title"]', 'property', 'og:title', pageTitle);
+    setMeta('meta[property="og:description"]', 'property', 'og:description', pageDesc);
+    setMeta('meta[property="og:site_name"]', 'property', 'og:site_name', storeName);
+    setMeta('meta[property="og:url"]', 'property', 'og:url', window.location.origin + window.location.pathname);
+    setMeta(
+      'meta[property="og:image"]',
+      'property',
+      'og:image',
+      selectedProductForPage?.images?.[0] || seo?.ogImage || ''
+    );
+    setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', pageTitle);
+    setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', pageDesc);
+    if (seo?.twitterHandle) {
+      setMeta('meta[name="twitter:site"]', 'name', 'twitter:site', seo.twitterHandle);
+    }
+
+    const canonicalHref = seo?.canonicalUrl || window.location.origin + window.location.pathname;
+    let linkCanonical = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+    if (!linkCanonical) {
+      linkCanonical = document.createElement('link');
+      linkCanonical.rel = 'canonical';
+      document.head.appendChild(linkCanonical);
+    }
+    linkCanonical.href = canonicalHref;
+
+    // Update Schema.org JSON-LD (Product when viewing single product, Store otherwise)
+    let jsonLdScript = document.getElementById('dynamic-jsonld') as HTMLScriptElement | null;
+    if (!jsonLdScript) {
+      jsonLdScript = document.createElement('script');
+      jsonLdScript.id = 'dynamic-jsonld';
+      jsonLdScript.type = 'application/ld+json';
+      document.head.appendChild(jsonLdScript);
+    }
+
+    const schemaData = selectedProductForPage
+      ? {
+          '@context': 'https://schema.org',
+          '@type': 'Product',
+          name: selectedProductForPage.title,
+          image: selectedProductForPage.images,
+          description: selectedProductForPage.description,
+          sku: selectedProductForPage.sku,
+          offers: {
+            '@type': 'Offer',
+            priceCurrency: 'BDT',
+            price: selectedProductForPage.price,
+            availability: selectedProductForPage.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock'
+          },
+          aggregateRating: {
+            '@type': 'AggregateRating',
+            ratingValue: selectedProductForPage.rating || 4.9,
+            reviewCount: selectedProductForPage.reviewsCount || 45
+          }
+        }
+      : {
+          '@context': 'https://schema.org',
+          '@type': seo?.schemaType || 'Store',
+          name: storeName,
+          description: pageDesc,
+          url: canonicalHref,
+          telephone: settings.hotline,
+          address: {
+            '@type': 'PostalAddress',
+            streetAddress: settings.address,
+            addressCountry: 'BD'
+          }
+        };
+
+    jsonLdScript.textContent = JSON.stringify(schemaData);
+  }, [activeView, selectedProductForPage, settings.seoSettings, settings.storeName, settings.tagline, settings.hotline, settings.address, lang]);
 
   // Check Customer Fraud Risk / Steadfast Delivery Success Ratio
   const checkCustomerFraudRisk = async (phone: string): Promise<OrderFraudCheck> => {
@@ -1398,6 +1764,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateProduct,
         deleteProduct,
         toggleProductFlashSale,
+        isCustomerLoggedIn,
+        isCustomerLoginOpen,
+        setIsCustomerLoginOpen,
+        loginCustomer,
+        registerCustomer,
+        logoutCustomer,
+        openCustomerPortal,
         customerWalletBalance,
         addToWallet,
         deductWallet,
@@ -1419,8 +1792,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateOrderCourier,
         updateOrderDetails,
         deleteOrder,
+        bookOrderCourier,
         sendOrderToSteadfast,
         checkCustomerFraudRisk,
+        whatsappLogs,
+        sendMetaWhatsAppMessage,
+        applyBusinessTheme,
         abandonedCarts,
         markAbandonedCartWhatsAppSent,
         recoverAbandonedCart,
@@ -1480,6 +1857,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         closeOneClickCheckout,
         isWhatsAppOpen,
         setIsWhatsAppOpen,
+        isSpinOpen,
+        setIsSpinOpen,
         isMobileCategoryDrawerOpen,
         setIsMobileCategoryDrawerOpen,
         activeView,
@@ -1488,6 +1867,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setTrackingSearchQuery,
         customerProfile,
         updateCustomerProfile,
+        saveSpinCoupon,
+        recordProductView,
         claimDailyCheckIn,
         redeemLoyaltyPoints,
         isCustomerDashboardOpen,

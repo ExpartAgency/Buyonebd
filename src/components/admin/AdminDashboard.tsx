@@ -41,9 +41,20 @@ import {
   Sliders,
   Copy,
   PhoneForwarded,
-  Radio
+  Radio,
+  Upload,
+  Download,
+  Globe,
+  Palette,
+  Facebook,
+  Instagram,
+  Youtube,
+  ImagePlus,
+  CheckCheck,
+  PlusCircle
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
+import { BUSINESS_THEME_PRESETS } from '../../data/initialData';
 import {
   Product,
   Order,
@@ -79,6 +90,7 @@ export const AdminDashboard: React.FC = () => {
     updateOrderDetails,
     deleteOrder,
     sendOrderToSteadfast,
+    bookOrderCourier,
     checkCustomerFraudRisk,
     abandonedCarts,
     markAbandonedCartWhatsAppSent,
@@ -107,11 +119,30 @@ export const AdminDashboard: React.FC = () => {
     lang,
     t,
     addToast,
-    priceAlerts
+    priceAlerts,
+    whatsappLogs,
+    sendMetaWhatsAppMessage,
+    applyBusinessTheme
   } = useStore();
 
   // Pure language translation helper based on admin language preference
   const at = (bnText: string, enText: string) => (adminLang === 'en' ? enText : bnText);
+
+  const handleImageFileUpload = (file: File | undefined, onLoaded: (dataUrl: string) => void) => {
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) {
+      addToast('error', at('ফাইল অনেক বড়', 'File too large'), at('সর্বোচ্চ ৪MB ছবি আপলোড করুন।', 'Please choose an image under 4MB.'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = ev.target?.result;
+      if (typeof result === 'string') {
+        onLoaded(result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Active tab state (all 16 left-hand sidebar options)
   type AdminTab =
@@ -173,6 +204,11 @@ export const AdminDashboard: React.FC = () => {
     warrantyInfoBn: '৭ দিনের সহজ রিপ্লেসমেন্ট ওয়ারেন্টি'
   });
 
+  const [newGalleryUrl, setNewGalleryUrl] = useState('');
+  const [waTestPhone, setWaTestPhone] = useState('01886289663');
+  const [waTestMsg, setWaTestMsg] = useState('আসসালামু আলাইকুম! BuyOne BD থেকে আপনার অর্ডার নিশ্চিত করা হয়েছে।');
+  const [isSendingWaTest, setIsSendingWaTest] = useState(false);
+
   // Category Modal
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
@@ -180,7 +216,8 @@ export const AdminDashboard: React.FC = () => {
     nameBn: '',
     nameEn: '',
     slug: '',
-    icon: '📦',
+    icon: '',
+    iconImage: '',
     isActive: true
   });
 
@@ -301,7 +338,8 @@ export const AdminDashboard: React.FC = () => {
       nameBn: '',
       nameEn: '',
       slug: '',
-      icon: '🛍️',
+      icon: '',
+      iconImage: '',
       isActive: true
     });
     setIsCategoryModalOpen(true);
@@ -313,7 +351,8 @@ export const AdminDashboard: React.FC = () => {
       nameBn: cat.nameBn,
       nameEn: cat.nameEn,
       slug: cat.slug,
-      icon: cat.icon || '🛍️',
+      icon: cat.icon || '',
+      iconImage: cat.iconImage || '',
       isActive: cat.isActive
     });
     setIsCategoryModalOpen(true);
@@ -406,16 +445,16 @@ export const AdminDashboard: React.FC = () => {
     setIsUserModalOpen(false);
   };
 
-  // Steadfast 1-click booking
-  const handleSteadfastBooking = async (orderId: string) => {
+  // Multi-Courier 1-click booking
+  const handleBookCourier = async (orderId: string, provider: CourierProvider) => {
     setIsBookingSteadfast(orderId);
-    const res = await sendOrderToSteadfast(orderId);
+    const res = await bookOrderCourier(orderId, provider);
     setIsBookingSteadfast(null);
     if (res.success) {
       addToast(
         'success',
-        t('Steadfast কুরিয়ারে বুকিং সম্পন্ন!', 'Steadfast Booked Successfully!'),
-        t(`কনসাইনমেন্ট আইডি: ${res.consignmentId}`, `Tracking Code: ${res.trackingCode}`)
+        at(`${provider} কুরিয়ারে বুকিং সম্পন্ন!`, `${provider} Booked Successfully!`),
+        at(`ট্র্যাকিং কোড: ${res.trackingCode}`, `Tracking Code: ${res.trackingCode}`)
       );
     }
   };
@@ -476,7 +515,7 @@ export const AdminDashboard: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col overflow-x-hidden w-full max-w-full">
       {/* Top Header Bar */}
       <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 px-4 sm:px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -613,7 +652,7 @@ export const AdminDashboard: React.FC = () => {
         )}
 
         {/* Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-slate-950">
+        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 bg-slate-950">
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6 animate-fade-in">
@@ -921,25 +960,55 @@ export const AdminDashboard: React.FC = () => {
                                 <option value="cancelled">{at('ক্যান্সেল', 'Cancelled')}</option>
                               </select>
                             </td>
-                            <td className="py-3.5 px-4">
+                            <td className="py-3.5 px-4 min-w-[200px]">
                               {ord.courier?.trackingCode ? (
-                                <div>
-                                  <span className="font-mono text-xs font-bold text-emerald-400">{ord.courier.trackingCode}</span>
+                                <div className="space-y-1">
+                                  <span className="font-mono text-xs font-bold text-emerald-400 block">{ord.courier.trackingCode}</span>
                                   <div className="text-[10px] text-slate-400">{ord.courier.provider} • {ord.courier.status}</div>
+                                  <div className="flex flex-wrap gap-1 pt-0.5">
+                                    {(['Steadfast', 'Pathao', 'RedX', 'Paperfly', 'Sundarban'] as CourierProvider[]).map((prov) => (
+                                      <button
+                                        key={prov}
+                                        onClick={() => handleBookCourier(ord.id, prov)}
+                                        disabled={isBookingSteadfast === ord.id}
+                                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-colors cursor-pointer ${
+                                          ord.courier.provider === prov
+                                            ? 'bg-emerald-600/30 border-emerald-500 text-emerald-300'
+                                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                                        }`}
+                                      >
+                                        {prov}
+                                      </button>
+                                    ))}
+                                  </div>
                                 </div>
                               ) : (
-                                <button
-                                  onClick={() => handleSteadfastBooking(ord.id)}
-                                  disabled={isBookingSteadfast === ord.id}
-                                  className="py-1 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
-                                >
-                                  {isBookingSteadfast === ord.id ? (
-                                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                  ) : (
-                                    <Truck className="w-3 h-3" />
-                                  )}
-                                  <span>{at('Steadfast বুক করুন', 'Book Steadfast')}</span>
-                                </button>
+                                <div className="space-y-1.5">
+                                  <button
+                                    onClick={() => handleBookCourier(ord.id, 'Steadfast')}
+                                    disabled={isBookingSteadfast === ord.id}
+                                    className="py-1 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
+                                  >
+                                    {isBookingSteadfast === ord.id ? (
+                                      <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    ) : (
+                                      <Truck className="w-3 h-3" />
+                                    )}
+                                    <span>{at('১-ক্লিক Steadfast', '1-Click Steadfast')}</span>
+                                  </button>
+                                  <div className="flex flex-wrap gap-1">
+                                    {(['Pathao', 'RedX', 'Paperfly', 'Sundarban'] as CourierProvider[]).map((prov) => (
+                                      <button
+                                        key={prov}
+                                        onClick={() => handleBookCourier(ord.id, prov)}
+                                        disabled={isBookingSteadfast === ord.id}
+                                        className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-[9px] font-bold cursor-pointer"
+                                      >
+                                        {prov}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
                               )}
                             </td>
                             <td className="py-3.5 px-4 text-right">
@@ -1135,66 +1204,80 @@ export const AdminDashboard: React.FC = () => {
 
               {/* Categories Table */}
               <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-sm">
-                <table className="w-full text-left text-xs text-slate-300">
-                  <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
-                    <tr>
-                      <th className="py-3 px-4">{at('আইকন', 'Icon')}</th>
-                      <th className="py-3 px-4">{at('বাংলা নাম', 'Bangla Name')}</th>
-                      <th className="py-3 px-4">{at('ইংরেজি নাম', 'English Name')}</th>
-                      <th className="py-3 px-4">{at('স্লাগ (Slug)', 'Slug')}</th>
-                      <th className="py-3 px-4">{at('পণ্যের সংখ্যা', 'Products Count')}</th>
-                      <th className="py-3 px-4">{at('স্ট্যাটাস', 'Status')}</th>
-                      <th className="py-3 px-4 text-right">{at('অ্যাকশন', 'Actions')}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {categories.map((cat) => {
-                      const count = products.filter((p) => p.category === cat.slug).length;
-                      return (
-                        <tr key={cat.id} className="hover:bg-slate-800/40">
-                          <td className="py-3.5 px-4 text-xl">{cat.icon || '📦'}</td>
-                          <td className="py-3.5 px-4 font-bold text-white">{cat.nameBn}</td>
-                          <td className="py-3.5 px-4">{cat.nameEn}</td>
-                          <td className="py-3.5 px-4 font-mono text-slate-400">{cat.slug}</td>
-                          <td className="py-3.5 px-4 font-bold text-emerald-400">{count} {at('টি', 'Items')}</td>
-                          <td className="py-3.5 px-4">
-                            <button
-                              onClick={() => toggleCategoryActive(cat.id)}
-                              className={`px-3 py-1 rounded-full text-[11px] font-bold transition-colors cursor-pointer ${
-                                cat.isActive
-                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                                  : 'bg-slate-800 text-slate-500 border border-slate-700'
-                              }`}
-                            >
-                              {cat.isActive ? at('সক্রিয়', 'Active') : at('নিষ্ক্রিয়', 'Inactive')}
-                            </button>
-                          </td>
-                          <td className="py-3.5 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
+                      <tr>
+                        <th className="py-3 px-4">{at('আইকন ছবি', 'Icon Photo')}</th>
+                        <th className="py-3 px-4">{at('বাংলা নাম', 'Bangla Name')}</th>
+                        <th className="py-3 px-4">{at('ইংরেজি নাম', 'English Name')}</th>
+                        <th className="py-3 px-4">{at('স্লাগ (Slug)', 'Slug')}</th>
+                        <th className="py-3 px-4">{at('পণ্যের সংখ্যা', 'Products Count')}</th>
+                        <th className="py-3 px-4">{at('স্ট্যাটাস', 'Status')}</th>
+                        <th className="py-3 px-4 text-right">{at('অ্যাকশন', 'Actions')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {categories.map((cat) => {
+                        const count = products.filter((p) => p.category === cat.slug).length;
+                        return (
+                          <tr key={cat.id} className="hover:bg-slate-800/40">
+                            <td className="py-3.5 px-4">
+                              {cat.iconImage ? (
+                                <img
+                                  src={cat.iconImage}
+                                  alt={cat.nameEn}
+                                  className="w-9 h-9 rounded-full object-cover border border-slate-700 bg-slate-950"
+                                />
+                              ) : (
+                                <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-emerald-400">
+                                  {(cat.nameBn || cat.nameEn || 'C').charAt(0)}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3.5 px-4 font-bold text-white">{cat.nameBn}</td>
+                            <td className="py-3.5 px-4">{cat.nameEn}</td>
+                            <td className="py-3.5 px-4 font-mono text-slate-400">{cat.slug}</td>
+                            <td className="py-3.5 px-4 font-bold text-emerald-400">{count} {at('টি', 'Items')}</td>
+                            <td className="py-3.5 px-4">
                               <button
-                                onClick={() => openEditCategoryModal(cat)}
-                                title={at('ক্যাটাগরি এডিট করুন', 'Edit Category')}
-                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+                                onClick={() => toggleCategoryActive(cat.id)}
+                                className={`px-3 py-1 rounded-full text-[11px] font-bold transition-colors cursor-pointer ${
+                                  cat.isActive
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                                    : 'bg-slate-800 text-slate-500 border border-slate-700'
+                                }`}
                               >
-                                <Edit className="w-3.5 h-3.5" />
+                                {cat.isActive ? at('সক্রিয়', 'Active') : at('নিষ্ক্রিয়', 'Inactive')}
                               </button>
-                              {/* Direct Delete - No blocking confirm */}
-                              <button
-                                onClick={() => {
-                                  deleteCategory(cat.id);
-                                }}
-                                title={at('ক্যাটাগরি মুছে ফেলুন', 'Delete Category')}
-                                className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            </td>
+                            <td className="py-3.5 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => openEditCategoryModal(cat)}
+                                  title={at('ক্যাটাগরি এডিট করুন', 'Edit Category')}
+                                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                                {/* Direct Delete - No blocking confirm */}
+                                <button
+                                  onClick={() => {
+                                    deleteCategory(cat.id);
+                                  }}
+                                  title={at('ক্যাটাগরি মুছে ফেলুন', 'Delete Category')}
+                                  className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -1211,7 +1294,8 @@ export const AdminDashboard: React.FC = () => {
 
               {/* Abandoned Carts Table */}
               <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-sm">
-                <table className="w-full text-left text-xs text-slate-300">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-300">
                   <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
                     <tr>
                       <th className="py-3 px-4">কাস্টমার ও ফোন</th>
@@ -1273,6 +1357,7 @@ export const AdminDashboard: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             </div>
           )}
@@ -1447,6 +1532,235 @@ export const AdminDashboard: React.FC = () => {
                     </p>
                   </div>
                 )}
+              </div>
+
+              {/* Other Popular Bangladesh Couriers (Pathao, RedX, Paperfly, Sundarban) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Pathao */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center font-black">P</div>
+                      <div>
+                        <h4 className="font-bold text-white text-sm">Pathao Courier</h4>
+                        <p className="text-[11px] text-slate-400">merchant.pathao.com API</p>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.courierSettings?.pathao?.enabled ?? true}
+                      onChange={(e) =>
+                        updateSettings({
+                          courierSettings: {
+                            ...settings.courierSettings,
+                            pathao: { ...settings.courierSettings.pathao, enabled: e.target.checked }
+                          }
+                        })
+                      }
+                      className="w-4 h-4 rounded text-emerald-600 bg-slate-800 border-slate-700"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Pathao Client ID"
+                    value={settings.courierSettings?.pathao?.clientId || ''}
+                    onChange={(e) =>
+                      updateSettings({
+                        courierSettings: {
+                          ...settings.courierSettings,
+                          pathao: { ...settings.courierSettings.pathao, clientId: e.target.value }
+                        }
+                      })
+                    }
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Pathao Client Secret"
+                    value={settings.courierSettings?.pathao?.clientSecret || ''}
+                    onChange={(e) =>
+                      updateSettings({
+                        courierSettings: {
+                          ...settings.courierSettings,
+                          pathao: { ...settings.courierSettings.pathao, clientSecret: e.target.value }
+                        }
+                      })
+                    }
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                  />
+                </div>
+
+                {/* RedX */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-red-500/10 text-red-400 flex items-center justify-center font-black">R</div>
+                      <div>
+                        <h4 className="font-bold text-white text-sm">RedX Logistics</h4>
+                        <p className="text-[11px] text-slate-400">openapi.redx.com.bd Bearer Token</p>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.courierSettings?.redx?.enabled ?? true}
+                      onChange={(e) =>
+                        updateSettings({
+                          courierSettings: {
+                            ...settings.courierSettings,
+                            redx: { ...settings.courierSettings.redx, enabled: e.target.checked }
+                          }
+                        })
+                      }
+                      className="w-4 h-4 rounded text-emerald-600 bg-slate-800 border-slate-700"
+                    />
+                  </div>
+                  <input
+                    type="password"
+                    placeholder="RedX API Access Token"
+                    value={settings.courierSettings?.redx?.token || ''}
+                    onChange={(e) =>
+                      updateSettings({
+                        courierSettings: {
+                          ...settings.courierSettings,
+                          redx: { ...settings.courierSettings.redx, token: e.target.value }
+                        }
+                      })
+                    }
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                  />
+                </div>
+
+                {/* Paperfly */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-sky-500/10 text-sky-400 flex items-center justify-center font-black">PF</div>
+                      <div>
+                        <h4 className="font-bold text-white text-sm">Paperfly Express</h4>
+                        <p className="text-[11px] text-slate-400">api.paperfly.com.bd Credentials</p>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.courierSettings?.paperfly?.enabled ?? true}
+                      onChange={(e) =>
+                        updateSettings({
+                          courierSettings: {
+                            ...settings.courierSettings,
+                            paperfly: {
+                              username: settings.courierSettings?.paperfly?.username || '',
+                              apiKey: settings.courierSettings?.paperfly?.apiKey || '',
+                              enabled: e.target.checked
+                            }
+                          }
+                        })
+                      }
+                      className="w-4 h-4 rounded text-emerald-600 bg-slate-800 border-slate-700"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Paperfly Merchant Username"
+                    value={settings.courierSettings?.paperfly?.username || ''}
+                    onChange={(e) =>
+                      updateSettings({
+                        courierSettings: {
+                          ...settings.courierSettings,
+                          paperfly: {
+                            enabled: settings.courierSettings?.paperfly?.enabled ?? true,
+                            apiKey: settings.courierSettings?.paperfly?.apiKey || '',
+                            username: e.target.value
+                          }
+                        }
+                      })
+                    }
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Paperfly API Key"
+                    value={settings.courierSettings?.paperfly?.apiKey || ''}
+                    onChange={(e) =>
+                      updateSettings({
+                        courierSettings: {
+                          ...settings.courierSettings,
+                          paperfly: {
+                            enabled: settings.courierSettings?.paperfly?.enabled ?? true,
+                            username: settings.courierSettings?.paperfly?.username || '',
+                            apiKey: e.target.value
+                          }
+                        }
+                      })
+                    }
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                  />
+                </div>
+
+                {/* Sundarban */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-black">SC</div>
+                      <div>
+                        <h4 className="font-bold text-white text-sm">Sundarban Courier</h4>
+                        <p className="text-[11px] text-slate-400">64-District Branch Booking</p>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.courierSettings?.sundarban?.enabled ?? true}
+                      onChange={(e) =>
+                        updateSettings({
+                          courierSettings: {
+                            ...settings.courierSettings,
+                            sundarban: {
+                              branchCode: settings.courierSettings?.sundarban?.branchCode || 'DHK-01',
+                              apiKey: settings.courierSettings?.sundarban?.apiKey || '',
+                              enabled: e.target.checked
+                            }
+                          }
+                        })
+                      }
+                      className="w-4 h-4 rounded text-emerald-600 bg-slate-800 border-slate-700"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Origin Branch Code (e.g. DHK-01)"
+                    value={settings.courierSettings?.sundarban?.branchCode || ''}
+                    onChange={(e) =>
+                      updateSettings({
+                        courierSettings: {
+                          ...settings.courierSettings,
+                          sundarban: {
+                            enabled: settings.courierSettings?.sundarban?.enabled ?? true,
+                            apiKey: settings.courierSettings?.sundarban?.apiKey || '',
+                            branchCode: e.target.value
+                          }
+                        }
+                      })
+                    }
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Sundarban API Token"
+                    value={settings.courierSettings?.sundarban?.apiKey || ''}
+                    onChange={(e) =>
+                      updateSettings({
+                        courierSettings: {
+                          ...settings.courierSettings,
+                          sundarban: {
+                            enabled: settings.courierSettings?.sundarban?.enabled ?? true,
+                            branchCode: settings.courierSettings?.sundarban?.branchCode || 'DHK-01',
+                            apiKey: e.target.value
+                          }
+                        }
+                      })
+                    }
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -2050,6 +2364,388 @@ export const AdminDashboard: React.FC = () => {
                 )}
               </div>
 
+              {/* Official Meta WhatsApp Cloud API & Social Media CRM Hub */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Meta WhatsApp Cloud API */}
+                <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <div>
+                      <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                        <MessageCircle className="w-4 h-4 text-emerald-400" />
+                        <span>Meta WhatsApp Cloud API</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-400">Official Graph API v21.0 Messaging & Webhook</p>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.marketingSettings?.whatsappCloudApi?.enabled || false}
+                        onChange={(e) =>
+                          updateSettings({
+                            marketingSettings: {
+                              ...settings.marketingSettings,
+                              whatsappCloudApi: {
+                                ...settings.marketingSettings.whatsappCloudApi!,
+                                enabled: e.target.checked
+                              }
+                            }
+                          })
+                        }
+                        className="w-4 h-4 rounded text-emerald-600 bg-slate-800 border-slate-700"
+                      />
+                      <span className="text-xs font-bold text-slate-300">{at('সক্রিয়', 'Live')}</span>
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">Phone Number ID</label>
+                      <input
+                        type="text"
+                        value={settings.marketingSettings?.whatsappCloudApi?.phoneNumberId || ''}
+                        onChange={(e) =>
+                          updateSettings({
+                            marketingSettings: {
+                              ...settings.marketingSettings,
+                              whatsappCloudApi: {
+                                ...settings.marketingSettings.whatsappCloudApi!,
+                                phoneNumberId: e.target.value
+                              }
+                            }
+                          })
+                        }
+                        placeholder="109283746501..."
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">WABA Account ID</label>
+                      <input
+                        type="text"
+                        value={settings.marketingSettings?.whatsappCloudApi?.wabaId || ''}
+                        onChange={(e) =>
+                          updateSettings({
+                            marketingSettings: {
+                              ...settings.marketingSettings,
+                              whatsappCloudApi: {
+                                ...settings.marketingSettings.whatsappCloudApi!,
+                                wabaId: e.target.value
+                              }
+                            }
+                          })
+                        }
+                        placeholder="298172635490..."
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="text-xs">
+                    <label className="block text-slate-300 font-bold mb-1">Permanent System User Access Token</label>
+                    <input
+                      type="password"
+                      value={settings.marketingSettings?.whatsappCloudApi?.accessToken || ''}
+                      onChange={(e) =>
+                        updateSettings({
+                          marketingSettings: {
+                            ...settings.marketingSettings,
+                            whatsappCloudApi: {
+                              ...settings.marketingSettings.whatsappCloudApi!,
+                              accessToken: e.target.value
+                            }
+                          }
+                        })
+                      }
+                      placeholder="EAAG..."
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">Webhook Verify Token</label>
+                      <input
+                        type="text"
+                        value={settings.marketingSettings?.whatsappCloudApi?.verifyToken || 'buyonebd_meta_verify_2026'}
+                        onChange={(e) =>
+                          updateSettings({
+                            marketingSettings: {
+                              ...settings.marketingSettings,
+                              whatsappCloudApi: {
+                                ...settings.marketingSettings.whatsappCloudApi!,
+                                verifyToken: e.target.value
+                              }
+                            }
+                          })
+                        }
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">Webhook Callback URL</label>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          readOnly
+                          value={typeof window !== 'undefined' ? `${window.location.origin}/api/whatsapp/webhook` : '/api/whatsapp/webhook'}
+                          className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-emerald-400 font-mono text-[11px]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(`${window.location.origin}/api/whatsapp/webhook`);
+                            addToast('success', at('কপি হয়েছে', 'Copied'), '/api/whatsapp/webhook');
+                          }}
+                          className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white cursor-pointer"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Test Send */}
+                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                    <span className="text-[11px] font-bold text-emerald-400 block">
+                      {at('টেস্ট হোয়াটসঅ্যাপ মেসেজ পাঠান (Cloud API / Sandbox)', 'Send Test Message (Cloud API / Sandbox)')}
+                    </span>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={waTestPhone}
+                        onChange={(e) => setWaTestPhone(e.target.value)}
+                        placeholder="01886289663"
+                        className="sm:w-36 px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white font-mono"
+                      />
+                      <input
+                        type="text"
+                        value={waTestMsg}
+                        onChange={(e) => setWaTestMsg(e.target.value)}
+                        placeholder="Message..."
+                        className="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white"
+                      />
+                      <button
+                        type="button"
+                        disabled={isSendingWaTest}
+                        onClick={async () => {
+                          setIsSendingWaTest(true);
+                          const res = await sendMetaWhatsAppMessage({ to: waTestPhone, message: waTestMsg });
+                          setIsSendingWaTest(false);
+                          if (res.success) {
+                            addToast('success', at('মেসেজ প্রেরিত!', 'Message Sent!'), `Mode: ${res.mode || 'sent'}`);
+                          } else {
+                            addToast('error', at('ব্যর্থ হয়েছে', 'Failed'), res.error || 'Error');
+                          }
+                        }}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>{isSendingWaTest ? '...' : at('পাঠান', 'Send')}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Social Media CRM Hub */}
+                <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                  <div className="border-b border-slate-800 pb-3">
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Share2 className="w-4 h-4 text-pink-400" />
+                      <span>{at('সোশ্যাল মিডিয়া CRM হাব ও ১-ক্লিক শেয়ার', 'Social Media CRM Connections & Campaigns')}</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400">Facebook, Instagram, TikTok ও YouTube চ্যানেল সংযোগ ও দ্রুত ক্যাম্পেইন শেয়ার</p>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1 flex items-center gap-1.5">
+                        <Facebook className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Facebook Page URL</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.marketingSettings?.socialLinks?.facebookUrl || ''}
+                        onChange={(e) =>
+                          updateSettings({
+                            marketingSettings: {
+                              ...settings.marketingSettings,
+                              socialLinks: {
+                                ...settings.marketingSettings.socialLinks!,
+                                facebookUrl: e.target.value
+                              }
+                            }
+                          })
+                        }
+                        placeholder="https://facebook.com/buyonebd"
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-slate-300 font-bold mb-1 flex items-center gap-1.5">
+                          <Instagram className="w-3.5 h-3.5 text-pink-400" />
+                          <span>Instagram Handle</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={settings.marketingSettings?.socialLinks?.instagramHandle || ''}
+                          onChange={(e) =>
+                            updateSettings({
+                              marketingSettings: {
+                                ...settings.marketingSettings,
+                                socialLinks: {
+                                  ...settings.marketingSettings.socialLinks!,
+                                  instagramHandle: e.target.value
+                                }
+                              }
+                            })
+                          }
+                          placeholder="@buyonebd"
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-300 font-bold mb-1 flex items-center gap-1.5">
+                          <Radio className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>TikTok Handle</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={settings.marketingSettings?.socialLinks?.tiktokHandle || ''}
+                          onChange={(e) =>
+                            updateSettings({
+                              marketingSettings: {
+                                ...settings.marketingSettings,
+                                socialLinks: {
+                                  ...settings.marketingSettings.socialLinks!,
+                                  tiktokHandle: e.target.value
+                                }
+                              }
+                            })
+                          }
+                          placeholder="@buyonebd.official"
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1 flex items-center gap-1.5">
+                        <Youtube className="w-3.5 h-3.5 text-red-400" />
+                        <span>YouTube Channel URL</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.marketingSettings?.socialLinks?.youtubeUrl || ''}
+                        onChange={(e) =>
+                          updateSettings({
+                            marketingSettings: {
+                              ...settings.marketingSettings,
+                              socialLinks: {
+                                ...settings.marketingSettings.socialLinks!,
+                                youtubeUrl: e.target.value
+                              }
+                            }
+                          })
+                        }
+                        placeholder="https://youtube.com/@buyonebd"
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 1-Click Social CRM Campaign Launchers */}
+                  <div className="pt-2 grid grid-cols-2 gap-2 text-xs">
+                    <a
+                      href={settings.marketingSettings?.socialLinks?.facebookUrl || 'https://facebook.com'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-2 rounded-xl bg-blue-950/60 hover:bg-blue-900 border border-blue-800/70 text-blue-300 font-bold flex items-center justify-center gap-1.5"
+                    >
+                      <Facebook className="w-3.5 h-3.5" />
+                      <span>Facebook Inbox</span>
+                    </a>
+                    <a
+                      href={`https://instagram.com/${(settings.marketingSettings?.socialLinks?.instagramHandle || '').replace('@', '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-2 rounded-xl bg-pink-950/60 hover:bg-pink-900 border border-pink-800/70 text-pink-300 font-bold flex items-center justify-center gap-1.5"
+                    >
+                      <Instagram className="w-3.5 h-3.5" />
+                      <span>Instagram DM</span>
+                    </a>
+                    <a
+                      href={`https://tiktok.com/${settings.marketingSettings?.socialLinks?.tiktokHandle || ''}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold flex items-center justify-center gap-1.5"
+                    >
+                      <Radio className="w-3.5 h-3.5" />
+                      <span>TikTok Center</span>
+                    </a>
+                    <a
+                      href={settings.marketingSettings?.socialLinks?.youtubeUrl || 'https://youtube.com'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900 border border-rose-800/70 text-rose-300 font-bold flex items-center justify-center gap-1.5"
+                    >
+                      <Youtube className="w-3.5 h-3.5" />
+                      <span>YouTube Studio</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              {/* WhatsApp Cloud API Delivery Logs */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                    <CheckCheck className="w-4 h-4 text-emerald-400" />
+                    <span>{at('হোয়াটসঅ্যাপ ক্লাউড API ডেলিভারি লগ', 'WhatsApp Cloud API Delivery Logs')}</span>
+                  </h4>
+                  <span className="text-[11px] font-mono text-slate-400">{whatsappLogs.length} logs</span>
+                </div>
+                {whatsappLogs.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-4 text-center border border-slate-800 rounded-xl">
+                    {at('এখনও কোনো API মেসেজ পাঠানো হয়নি। উপরের টেস্ট ফর্ম দিয়ে মেসেজ পাঠিয়ে দেখুন।', 'No API messages logged yet. Use the test sender above to test dispatch.')}
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-slate-300">
+                      <thead className="bg-slate-950 text-slate-400 text-[10px] uppercase">
+                        <tr>
+                          <th className="p-2.5">Phone</th>
+                          <th className="p-2.5">Template</th>
+                          <th className="p-2.5">Status</th>
+                          <th className="p-2.5">Preview</th>
+                          <th className="p-2.5">Time</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {whatsappLogs.slice(0, 12).map((log) => (
+                          <tr key={log.id} className="hover:bg-slate-800/40">
+                            <td className="p-2.5 font-mono text-emerald-400">{log.phone}</td>
+                            <td className="p-2.5 font-mono">{log.template}</td>
+                            <td className="p-2.5">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                log.status === 'failed'
+                                  ? 'bg-rose-500/20 text-rose-300'
+                                  : log.status === 'simulated'
+                                  ? 'bg-amber-500/20 text-amber-300'
+                                  : 'bg-emerald-500/20 text-emerald-300'
+                              }`}>
+                                {log.status}
+                              </span>
+                            </td>
+                            <td className="p-2.5 max-w-xs truncate text-slate-400">{log.messagePreview}</td>
+                            <td className="p-2.5 text-slate-500">{log.time}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('মার্কেটিং টুলস সেটিংস সফলভাবে আপডেট হয়েছে।', 'Marketing settings saved.'))}
                 className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
@@ -2261,58 +2957,60 @@ export const AdminDashboard: React.FC = () => {
 
               {/* Spin Rewards Table */}
               <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-sm">
-                <table className="w-full text-left text-xs text-slate-300">
-                  <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
-                    <tr>
-                      <th className="py-3 px-4">কালার</th>
-                      <th className="py-3 px-4">অফারের নাম (বাংলা)</th>
-                      <th className="py-3 px-4">ইংরেজি নাম</th>
-                      <th className="py-3 px-4">কুপন কোড</th>
-                      <th className="py-3 px-4">ছাড়ের ধরন</th>
-                      <th className="py-3 px-4">মান / ভ্যালু</th>
-                      <th className="py-3 px-4 text-right">অ্যাকশন</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {spinRewards.map((rew) => (
-                      <tr key={rew.id} className="hover:bg-slate-800/40">
-                        <td className="py-3.5 px-4">
-                          <div className="w-6 h-6 rounded-full border border-slate-700" style={{ backgroundColor: rew.color }} />
-                        </td>
-                        <td className="py-3.5 px-4 font-bold text-white">{rew.labelBn}</td>
-                        <td className="py-3.5 px-4">{rew.labelEn}</td>
-                        <td className="py-3.5 px-4 font-mono font-bold text-amber-400">{rew.code}</td>
-                        <td className="py-3.5 px-4 uppercase text-[11px]">{rew.discountType}</td>
-                        <td className="py-3.5 px-4 font-bold text-white">
-                          {rew.discountType === 'percent' ? `${rew.value}%` : rew.discountType === 'free_shipping' ? 'ফ্রি' : `৳${rew.value}`}
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => {
-                                setEditingSpinRewardId(rew.id);
-                                setSpinForm({ ...rew });
-                                setIsSpinModalOpen(true);
-                              }}
-                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                deleteSpinReward(rew.id);
-                              }}
-                              title={at('কুপন মুছে ফেলুন', 'Delete Coupon')}
-                              className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
+                      <tr>
+                        <th className="py-3 px-4">কালার</th>
+                        <th className="py-3 px-4">অফারের নাম (বাংলা)</th>
+                        <th className="py-3 px-4">ইংরেজি নাম</th>
+                        <th className="py-3 px-4">কুপন কোড</th>
+                        <th className="py-3 px-4">ছাড়ের ধরন</th>
+                        <th className="py-3 px-4">মান / ভ্যালু</th>
+                        <th className="py-3 px-4 text-right">অ্যাকশন</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {spinRewards.map((rew) => (
+                        <tr key={rew.id} className="hover:bg-slate-800/40">
+                          <td className="py-3.5 px-4">
+                            <div className="w-6 h-6 rounded-full border border-slate-700" style={{ backgroundColor: rew.color }} />
+                          </td>
+                          <td className="py-3.5 px-4 font-bold text-white">{rew.labelBn}</td>
+                          <td className="py-3.5 px-4">{rew.labelEn}</td>
+                          <td className="py-3.5 px-4 font-mono font-bold text-amber-400">{rew.code}</td>
+                          <td className="py-3.5 px-4 uppercase text-[11px]">{rew.discountType}</td>
+                          <td className="py-3.5 px-4 font-bold text-white">
+                            {rew.discountType === 'percent' ? `${rew.value}%` : rew.discountType === 'free_shipping' ? 'ফ্রি' : `৳${rew.value}`}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setEditingSpinRewardId(rew.id);
+                                  setSpinForm({ ...rew });
+                                  setIsSpinModalOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  deleteSpinReward(rew.id);
+                                }}
+                                title={at('কুপন মুছে ফেলুন', 'Delete Coupon')}
+                                className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -2425,44 +3123,46 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-sm">
-                <table className="w-full text-left text-xs text-slate-300">
-                  <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
-                    <tr>
-                      <th className="py-3 px-4">ক্রেতার নাম</th>
-                      <th className="py-3 px-4">রেটিং</th>
-                      <th className="py-3 px-4">মতামত ও কমেন্ট</th>
-                      <th className="py-3 px-4">তারিখ</th>
-                      <th className="py-3 px-4">ভেরিফাইড</th>
-                      <th className="py-3 px-4 text-right">মুছে ফেলুন</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {reviews.map((rev) => (
-                      <tr key={rev.id} className="hover:bg-slate-800/40">
-                        <td className="py-3.5 px-4 font-bold text-white">{rev.customerName}</td>
-                        <td className="py-3.5 px-4 font-bold text-amber-400">{rev.rating} ★</td>
-                        <td className="py-3.5 px-4 text-slate-300 max-w-xs">{rev.comment}</td>
-                        <td className="py-3.5 px-4 text-slate-400">{rev.date}</td>
-                        <td className="py-3.5 px-4">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400">
-                            Verified
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <button
-                            onClick={() => {
-                              deleteProductReview(rev.id);
-                            }}
-                            title={at('রিভিউ মুছে ফেলুন', 'Delete Review')}
-                            className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
+                      <tr>
+                        <th className="py-3 px-4">ক্রেতার নাম</th>
+                        <th className="py-3 px-4">রেটিং</th>
+                        <th className="py-3 px-4">মতামত ও কমেন্ট</th>
+                        <th className="py-3 px-4">তারিখ</th>
+                        <th className="py-3 px-4">ভেরিফাইড</th>
+                        <th className="py-3 px-4 text-right">মুছে ফেলুন</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {reviews.map((rev) => (
+                        <tr key={rev.id} className="hover:bg-slate-800/40">
+                          <td className="py-3.5 px-4 font-bold text-white">{rev.customerName}</td>
+                          <td className="py-3.5 px-4 font-bold text-amber-400">{rev.rating} ★</td>
+                          <td className="py-3.5 px-4 text-slate-300 max-w-xs">{rev.comment}</td>
+                          <td className="py-3.5 px-4 text-slate-400">{rev.date}</td>
+                          <td className="py-3.5 px-4">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400">
+                              Verified
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <button
+                              onClick={() => {
+                                deleteProductReview(rev.id);
+                              }}
+                              title={at('রিভিউ মুছে ফেলুন', 'Delete Review')}
+                              className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -2473,103 +3173,531 @@ export const AdminDashboard: React.FC = () => {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h3 className="text-xl font-black text-white">{t('ব্যবহারকারী ও স্টাফ টিম', 'Users & Staff Members')}</h3>
-                  <p className="text-xs text-slate-400">{t('অ্যাডমিন, অর্ডার ম্যানেজার ও কাস্টমার সাপোর্ট সদস্যদের একাউন্ট রোল', 'Manage staff roles, order managers and support agents')}</p>
+                  <p className="text-xs text-slate-400">{t('অ্যাডমিন, অর্ডার ম্যানেজার ও কাস্টমার সাপোর্ট সদস্যদের একাউন্ট রোল, এডিট, ডিলিট ও ইমপোর্ট/এক্সপোর্ট', 'Manage staff roles, edit, delete & bulk JSON import/export')}</p>
                 </div>
-                <button
-                  onClick={openNewUserModal}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-600/20"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>{t('নতুন স্টাফ যোগ করুন', 'Add Staff')}</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(users, null, 2));
+                      const a = document.createElement('a');
+                      a.setAttribute('href', dataStr);
+                      a.setAttribute('download', `buyonebd-users-${Date.now()}.json`);
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      addToast('success', at('এক্সপোর্ট সফল!', 'Exported!'), `${users.length} users`);
+                    }}
+                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 border border-slate-700 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>{at('এক্সপোর্ট', 'Export')}</span>
+                  </button>
+                  <label className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 border border-slate-700 cursor-pointer">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{at('ইমপোর্ট (JSON)', 'Import')}</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          try {
+                            const imported = JSON.parse(ev.target?.result as string);
+                            if (Array.isArray(imported)) {
+                              let added = 0;
+                              imported.forEach((u) => {
+                                if (u.name && u.email) {
+                                  addUser({
+                                    name: u.name,
+                                    email: u.email,
+                                    phone: u.phone || '',
+                                    role: u.role || 'order_manager',
+                                    isActive: u.isActive ?? true
+                                  });
+                                  added++;
+                                }
+                              });
+                              addToast('success', at('ইমপোর্ট সম্পন্ন!', 'Imported!'), `${added} users added.`);
+                            }
+                          } catch {
+                            addToast('error', at('ভুল JSON ফাইল', 'Invalid JSON'), '');
+                          }
+                        };
+                        reader.readAsText(file);
+                      }}
+                    />
+                  </label>
+                  <button
+                    onClick={openNewUserModal}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{t('নতুন স্টাফ যোগ করুন', 'Add Staff')}</span>
+                  </button>
+                </div>
               </div>
 
               <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-sm">
-                <table className="w-full text-left text-xs text-slate-300">
-                  <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
-                    <tr>
-                      <th className="py-3 px-4">নাম</th>
-                      <th className="py-3 px-4">ইমেইল</th>
-                      <th className="py-3 px-4">ফোন</th>
-                      <th className="py-3 px-4">রোল (Role)</th>
-                      <th className="py-3 px-4">স্ট্যাটাস</th>
-                      <th className="py-3 px-4 text-right">অ্যাকশন</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {users.map((u) => (
-                      <tr key={u.id} className="hover:bg-slate-800/40">
-                        <td className="py-3.5 px-4 font-bold text-white">{u.name}</td>
-                        <td className="py-3.5 px-4 font-mono text-slate-300">{u.email}</td>
-                        <td className="py-3.5 px-4">{u.phone || 'N/A'}</td>
-                        <td className="py-3.5 px-4">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                            u.role === 'super_admin' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-300'
-                          }`}>
-                            {u.role}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400">
-                            Active
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => openEditUserModal(u)}
-                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            {u.role !== 'super_admin' && (
-                              <button
-                                onClick={() => {
-                                  deleteUser(u.id);
-                                }}
-                                title={at('সদস্য মুছে ফেলুন', 'Delete Staff')}
-                                className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
+                      <tr>
+                        <th className="py-3 px-4">নাম</th>
+                        <th className="py-3 px-4">ইমেইল</th>
+                        <th className="py-3 px-4">ফোন</th>
+                        <th className="py-3 px-4">রোল (Role)</th>
+                        <th className="py-3 px-4">স্ট্যাটাস</th>
+                        <th className="py-3 px-4 text-right">অ্যাকশন</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {users.map((u) => (
+                        <tr key={u.id} className="hover:bg-slate-800/40">
+                          <td className="py-3.5 px-4 font-bold text-white">{u.name}</td>
+                          <td className="py-3.5 px-4 font-mono text-slate-300">{u.email}</td>
+                          <td className="py-3.5 px-4">{u.phone || 'N/A'}</td>
+                          <td className="py-3.5 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                              u.role === 'super_admin' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-300'
+                            }`}>
+                              {u.role}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              u.isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+                            }`}>
+                              {u.isActive ? 'Active' : 'Disabled'}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => openEditUserModal(u)}
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+                              {u.id !== 'usr-01' && (
+                                <button
+                                  onClick={() => {
+                                    deleteUser(u.id);
+                                  }}
+                                  title={at('সদস্য মুছে ফেলুন', 'Delete Staff')}
+                                  className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
 
-          {/* TAB 15: STORE DESIGN & FOOTER EDITOR */}
+          {/* TAB 15: FULL CMS - LOGO, COLORS, TEXTS, SEO & FOOTER */}
           {activeTab === 'design_footer' && (
             <div className="space-y-6 animate-fade-in">
               <div>
-                <h3 className="text-xl font-black text-white">{t('স্টোর ডিজাইন ও ফুটার এডিটর', 'Store Design & Footer Editor')}</h3>
-                <p className="text-xs text-slate-400">{t('ফুটারের সমস্ত তথ্য ১০০% পরিবর্তনযোগ্য (About, হটলাইন, হোয়াটসঅ্যাপ, ঠিকানা ও সোশ্যাল লিংক)', '100% editable footer content and contact links')}</p>
+                <h3 className="text-xl font-black text-white">{at('পূর্ণাঙ্গ CMS: লোগো, থিম কালার, SEO ও ফুটার এডিটর', 'Full Store CMS: Logo, Colors, Texts, SEO & Footer')}</h3>
+                <p className="text-xs text-slate-400">{at('লোগো আপলোড, কালার প্যালেট, বাটন ও সেকশন টেক্সট, Google SEO মেটা ও ফুটার ১০০% পরিবর্তন করুন', 'Upload custom logo, customize colors, UI copy, full SEO metadata & footer')}</p>
               </div>
 
-              <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 max-w-3xl">
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">{t('ফুটার সম্পর্কে (বাংলা বিবরণ)', 'About Text (Bangla)')}</label>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* 1. Store Branding & Logo Uploader */}
+                <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                  <h4 className="font-bold text-white text-sm flex items-center gap-2 border-b border-slate-800 pb-3">
+                    <ImageIcon className="w-4 h-4 text-emerald-400" />
+                    <span>{at('স্টোর ব্র্যান্ডিং ও লোগো সেটআপ', 'Store Branding & Logo Setup')}</span>
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">{at('স্টোরের নাম (ইংরেজি)', 'Store Name (EN)')}</label>
+                      <input
+                        type="text"
+                        value={settings.storeName}
+                        onChange={(e) => updateSettings({ storeName: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">{at('লোগো ডিসপ্লে মোড', 'Logo Mode')}</label>
+                      <select
+                        value={settings.logoMode || 'both'}
+                        onChange={(e) => updateSettings({ logoMode: e.target.value as any })}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      >
+                        <option value="both">{at('লোগো ছবি + নাম', 'Logo Image + Text')}</option>
+                        <option value="image">{at('শুধু লোগো ছবি', 'Image Only')}</option>
+                        <option value="text">{at('শুধু টেক্সট লোগো', 'Text Only')}</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        {settings.logoUrl ? (
+                          <img src={settings.logoUrl} alt="Store Logo" className="h-10 max-w-[140px] object-contain rounded-lg bg-white p-1" />
+                        ) : (
+                          <div className="h-10 px-3 rounded-lg bg-slate-900 border border-slate-800 flex items-center text-xs text-slate-500">
+                            {at('কোনো লোগো নেই', 'No image')}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>{at('লোগো আপলোড', 'Upload Logo')}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) =>
+                              handleImageFileUpload(e.target.files?.[0], (url) => updateSettings({ logoUrl: url }))
+                            }
+                          />
+                        </label>
+                        {settings.logoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => updateSettings({ logoUrl: '' })}
+                            className="px-2.5 py-2 bg-rose-950/60 text-rose-300 border border-rose-800 rounded-xl text-xs font-bold cursor-pointer"
+                          >
+                            {at('মুছুন', 'Clear')}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <input
+                      type="text"
+                      value={settings.logoUrl || ''}
+                      onChange={(e) => updateSettings({ logoUrl: e.target.value })}
+                      placeholder="https://example.com/logo.png"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white font-mono"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">{at('টপ বার ঘোষণা (বাংলা)', 'Announcement Bar (BN)')}</label>
+                      <input
+                        type="text"
+                        value={settings.announcementBar?.textBn || ''}
+                        onChange={(e) =>
+                          updateSettings({ announcementBar: { ...settings.announcementBar, textBn: e.target.value } })
+                        }
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">{at('টপ বার ঘোষণা (ইংরেজি)', 'Announcement Bar (EN)')}</label>
+                      <input
+                        type="text"
+                        value={settings.announcementBar?.textEn || ''}
+                        onChange={(e) =>
+                          updateSettings({ announcementBar: { ...settings.announcementBar, textEn: e.target.value } })
+                        }
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Theme Color Palette & CMS Texts */}
+                <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                  <h4 className="font-bold text-white text-sm flex items-center gap-2 border-b border-slate-800 pb-3">
+                    <Palette className="w-4 h-4 text-amber-400" />
+                    <span>{at('থিম কালার প্যালেট ও CMS বাটন টেক্সট', 'Theme Color Palette & UI Copy')}</span>
+                  </h4>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                    {[
+                      { key: 'primary', label: 'Primary Accent' },
+                      { key: 'secondary', label: 'Secondary Accent' },
+                      { key: 'headerBg', label: 'Header BG' },
+                      { key: 'footerBg', label: 'Footer BG' },
+                      { key: 'heroFrom', label: 'Hero Gradient 1' },
+                      { key: 'heroTo', label: 'Hero Gradient 2' }
+                    ].map((c) => {
+                      const val = (settings.themeColors as any)?.[c.key] || '#059669';
+                      return (
+                        <div key={c.key} className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={val}
+                            onChange={(e) =>
+                              updateSettings({
+                                themeColors: { ...settings.themeColors!, [c.key]: e.target.value }
+                              })
+                            }
+                            className="w-8 h-8 rounded cursor-pointer bg-transparent border-0"
+                          />
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-bold text-slate-300 truncate">{c.label}</div>
+                            <div className="text-[10px] font-mono text-slate-500">{val}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">Trending Heading (BN)</label>
+                      <input
+                        type="text"
+                        value={settings.cmsTexts?.trendingTitleBn || ''}
+                        onChange={(e) =>
+                          updateSettings({ cmsTexts: { ...settings.cmsTexts!, trendingTitleBn: e.target.value } })
+                        }
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">Trending Heading (EN)</label>
+                      <input
+                        type="text"
+                        value={settings.cmsTexts?.trendingTitleEn || ''}
+                        onChange={(e) =>
+                          updateSettings({ cmsTexts: { ...settings.cmsTexts!, trendingTitleEn: e.target.value } })
+                        }
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">Order Button (BN)</label>
+                      <input
+                        type="text"
+                        value={settings.cmsTexts?.orderNowBtnBn || ''}
+                        onChange={(e) =>
+                          updateSettings({ cmsTexts: { ...settings.cmsTexts!, orderNowBtnBn: e.target.value } })
+                        }
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">Order Button (EN)</label>
+                      <input
+                        type="text"
+                        value={settings.cmsTexts?.orderNowBtnEn || ''}
+                        onChange={(e) =>
+                          updateSettings({ cmsTexts: { ...settings.cmsTexts!, orderNowBtnEn: e.target.value } })
+                        }
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Full SEO Settings Studio (A to Z) */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                  <div>
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-sky-400" />
+                      <span>{at('সম্পূর্ণ SEO স্টুডিও (Google, Meta OG, Schema JSON-LD)', 'Complete SEO Studio (Search, OG Social & JSON-LD)')}</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400">Live updates `&lt;title&gt;`, `&lt;meta&gt;`, OpenGraph, Twitter Card & Schema.org</p>
+                  </div>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                    SEO Live Sync Active
+                  </span>
+                </div>
+
+                {/* Live Google Search Snippet Preview */}
+                <div className="p-4 rounded-xl bg-white text-slate-900 space-y-1 border border-slate-300">
+                  <div className="text-[11px] text-emerald-700 font-mono truncate">
+                    {settings.seoSettings?.canonicalUrl || 'https://buyonebd.com'}
+                  </div>
+                  <div className="text-base font-bold text-blue-700 line-clamp-1">
+                    {settings.seoSettings?.metaTitle || settings.storeName}
+                  </div>
+                  <div className="text-xs text-slate-600 line-clamp-2">
+                    {settings.seoSettings?.metaDescription}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">Meta Title (60 chars ideal)</label>
+                    <input
+                      type="text"
+                      value={settings.seoSettings?.metaTitle || ''}
+                      onChange={(e) =>
+                        updateSettings({ seoSettings: { ...settings.seoSettings!, metaTitle: e.target.value } })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">Canonical URL</label>
+                    <input
+                      type="text"
+                      value={settings.seoSettings?.canonicalUrl || ''}
+                      onChange={(e) =>
+                        updateSettings({ seoSettings: { ...settings.seoSettings!, canonicalUrl: e.target.value } })
+                      }
+                      placeholder="https://buyonebd.com"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="text-xs">
+                  <label className="block text-slate-300 font-bold mb-1">Meta Description (155 chars ideal)</label>
                   <textarea
                     rows={2}
-                    value={settings.footerSettings?.aboutTextBn || ''}
-                    onChange={(e) => {
-                      updateSettings({
-                        footerSettings: {
-                          ...settings.footerSettings,
-                          aboutTextBn: e.target.value
-                        }
-                      });
-                    }}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                    value={settings.seoSettings?.metaDescription || ''}
+                    onChange={(e) =>
+                      updateSettings({ seoSettings: { ...settings.seoSettings!, metaDescription: e.target.value } })
+                    }
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
                   />
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">Keywords (comma separated)</label>
+                    <input
+                      type="text"
+                      value={settings.seoSettings?.keywords || ''}
+                      onChange={(e) =>
+                        updateSettings({ seoSettings: { ...settings.seoSettings!, keywords: e.target.value } })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">Robots Indexing</label>
+                    <select
+                      value={settings.seoSettings?.robots || 'index, follow'}
+                      onChange={(e) =>
+                        updateSettings({ seoSettings: { ...settings.seoSettings!, robots: e.target.value } })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                    >
+                      <option value="index, follow">index, follow</option>
+                      <option value="noindex, follow">noindex, follow</option>
+                      <option value="noindex, nofollow">noindex, nofollow</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">Schema.org Type</label>
+                    <select
+                      value={settings.seoSettings?.schemaType || 'Store'}
+                      onChange={(e) =>
+                        updateSettings({ seoSettings: { ...settings.seoSettings!, schemaType: e.target.value as any } })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                    >
+                      <option value="Store">Store</option>
+                      <option value="OnlineStore">OnlineStore</option>
+                      <option value="LocalBusiness">LocalBusiness</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">OpenGraph Share Image URL</label>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        value={settings.seoSettings?.ogImage || ''}
+                        onChange={(e) =>
+                          updateSettings({ seoSettings: { ...settings.seoSettings!, ogImage: e.target.value } })
+                        }
+                        className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      />
+                      <label className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl cursor-pointer flex items-center">
+                        <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) =>
+                            handleImageFileUpload(e.target.files?.[0], (url) =>
+                              updateSettings({ seoSettings: { ...settings.seoSettings!, ogImage: url } })
+                            )
+                          }
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">Google Search Verification Code</label>
+                    <input
+                      type="text"
+                      value={settings.seoSettings?.googleSiteVerification || ''}
+                      onChange={(e) =>
+                        updateSettings({ seoSettings: { ...settings.seoSettings!, googleSiteVerification: e.target.value } })
+                      }
+                      placeholder="google-site-verification token..."
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">Twitter / X Handle</label>
+                    <input
+                      type="text"
+                      value={settings.seoSettings?.twitterHandle || ''}
+                      onChange={(e) =>
+                        updateSettings({ seoSettings: { ...settings.seoSettings!, twitterHandle: e.target.value } })
+                      }
+                      placeholder="@buyonebd"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Full Footer Editor */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                <h4 className="font-bold text-white text-sm border-b border-slate-800 pb-3">
+                  {at('সম্পূর্ণ ফুটার কন্টেন্ট ও কুইক লিংক এডিটর', 'Complete Footer Content & Quick Links Editor')}
+                </h4>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">{t('ফুটার সম্পর্কে (বাংলা বিবরণ)', 'About Text (Bangla)')}</label>
+                    <textarea
+                      rows={2}
+                      value={settings.footerSettings?.aboutTextBn || ''}
+                      onChange={(e) => {
+                        updateSettings({
+                          footerSettings: { ...settings.footerSettings, aboutTextBn: e.target.value }
+                        });
+                      }}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">{at('ফুটার সম্পর্কে (ইংরেজি)', 'About Text (English)')}</label>
+                    <textarea
+                      rows={2}
+                      value={settings.footerSettings?.aboutTextEn || ''}
+                      onChange={(e) => {
+                        updateSettings({
+                          footerSettings: { ...settings.footerSettings, aboutTextEn: e.target.value }
+                        });
+                      }}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-300 mb-1">{t('হটলাইন নাম্বার', 'Hotline Phone')}</label>
                     <input
@@ -2577,10 +3705,7 @@ export const AdminDashboard: React.FC = () => {
                       value={settings.footerSettings?.hotline || ''}
                       onChange={(e) => {
                         updateSettings({
-                          footerSettings: {
-                            ...settings.footerSettings,
-                            hotline: e.target.value
-                          }
+                          footerSettings: { ...settings.footerSettings, hotline: e.target.value }
                         });
                       }}
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
@@ -2594,18 +3719,13 @@ export const AdminDashboard: React.FC = () => {
                       value={settings.footerSettings?.whatsappNumber || ''}
                       onChange={(e) => {
                         updateSettings({
-                          footerSettings: {
-                            ...settings.footerSettings,
-                            whatsappNumber: e.target.value
-                          }
+                          footerSettings: { ...settings.footerSettings, whatsappNumber: e.target.value }
                         });
                       }}
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
                     />
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-300 mb-1">{t('সাপোর্ট ইমেইল', 'Support Email')}</label>
                     <input
@@ -2613,10 +3733,7 @@ export const AdminDashboard: React.FC = () => {
                       value={settings.footerSettings?.email || ''}
                       onChange={(e) => {
                         updateSettings({
-                          footerSettings: {
-                            ...settings.footerSettings,
-                            email: e.target.value
-                          }
+                          footerSettings: { ...settings.footerSettings, email: e.target.value }
                         });
                       }}
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
@@ -2630,112 +3747,283 @@ export const AdminDashboard: React.FC = () => {
                       value={settings.footerSettings?.address || ''}
                       onChange={(e) => {
                         updateSettings({
-                          footerSettings: {
-                            ...settings.footerSettings,
-                            address: e.target.value
-                          }
+                          footerSettings: { ...settings.footerSettings, address: e.target.value }
                         });
                       }}
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
                     />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">Facebook Link</label>
+                    <input
+                      type="text"
+                      value={settings.footerSettings?.facebookUrl || ''}
+                      onChange={(e) => updateSettings({ footerSettings: { ...settings.footerSettings, facebookUrl: e.target.value } })}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">Instagram Link</label>
+                    <input
+                      type="text"
+                      value={settings.footerSettings?.instagramUrl || ''}
+                      onChange={(e) => updateSettings({ footerSettings: { ...settings.footerSettings, instagramUrl: e.target.value } })}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">YouTube Link</label>
+                    <input
+                      type="text"
+                      value={settings.footerSettings?.youtubeUrl || ''}
+                      onChange={(e) => updateSettings({ footerSettings: { ...settings.footerSettings, youtubeUrl: e.target.value } })}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">TikTok Link</label>
+                    <input
+                      type="text"
+                      value={settings.footerSettings?.tiktokUrl || ''}
+                      onChange={(e) => updateSettings({ footerSettings: { ...settings.footerSettings, tiktokUrl: e.target.value } })}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Editable Footer Quick Links */}
+                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white">{at('ফুটার কুইক লিংকসমূহ (Quick Links)', 'Footer Quick Links')}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const existing = settings.footerSettings?.quickLinks || [];
+                        updateSettings({
+                          footerSettings: {
+                            ...settings.footerSettings,
+                            quickLinks: [
+                              ...existing,
+                              { id: `ql-${Date.now()}`, labelBn: 'নতুন লিংক', labelEn: 'New Link', actionType: 'store' }
+                            ]
+                          }
+                        });
+                      }}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <PlusCircle className="w-3 h-3" />
+                      <span>{at('লিংক যোগ', 'Add Link')}</span>
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {(settings.footerSettings?.quickLinks || []).map((ql) => (
+                      <div key={ql.id} className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-center text-xs">
+                        <input
+                          type="text"
+                          value={ql.labelBn}
+                          placeholder="Label (BN)"
+                          onChange={(e) => {
+                            const updated = (settings.footerSettings?.quickLinks || []).map((item) =>
+                              item.id === ql.id ? { ...item, labelBn: e.target.value } : item
+                            );
+                            updateSettings({ footerSettings: { ...settings.footerSettings, quickLinks: updated } });
+                          }}
+                          className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white"
+                        />
+                        <input
+                          type="text"
+                          value={ql.labelEn}
+                          placeholder="Label (EN)"
+                          onChange={(e) => {
+                            const updated = (settings.footerSettings?.quickLinks || []).map((item) =>
+                              item.id === ql.id ? { ...item, labelEn: e.target.value } : item
+                            );
+                            updateSettings({ footerSettings: { ...settings.footerSettings, quickLinks: updated } });
+                          }}
+                          className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white"
+                        />
+                        <select
+                          value={ql.actionType}
+                          onChange={(e) => {
+                            const updated = (settings.footerSettings?.quickLinks || []).map((item) =>
+                              item.id === ql.id ? { ...item, actionType: e.target.value as any } : item
+                            );
+                            updateSettings({ footerSettings: { ...settings.footerSettings, quickLinks: updated } });
+                          }}
+                          className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white"
+                        >
+                          <option value="tracking">Order Tracking</option>
+                          <option value="flash_sale">Flash Sale</option>
+                          <option value="store">Store Home</option>
+                          <option value="url">External URL</option>
+                        </select>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={ql.url || ''}
+                            placeholder="https://..."
+                            disabled={ql.actionType !== 'url'}
+                            onChange={(e) => {
+                              const updated = (settings.footerSettings?.quickLinks || []).map((item) =>
+                                item.id === ql.id ? { ...item, url: e.target.value } : item
+                              );
+                              updateSettings({ footerSettings: { ...settings.footerSettings, quickLinks: updated } });
+                            }}
+                            className="flex-1 px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white disabled:opacity-40"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = (settings.footerSettings?.quickLinks || []).filter((i) => i.id !== ql.id);
+                              updateSettings({ footerSettings: { ...settings.footerSettings, quickLinks: updated } });
+                            }}
+                            className="p-1.5 rounded-lg bg-rose-950/60 text-rose-300 border border-rose-800 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">{t('কপিরাইট টেক্সট (বাংলা)', 'Copyright Text')}</label>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">{t('কপিরাইট টেক্সট (বাংলা)', 'Copyright Text (BN)')}</label>
                     <input
                       type="text"
                       value={settings.footerSettings?.copyrightBn || ''}
                       onChange={(e) => {
                         updateSettings({
-                          footerSettings: {
-                            ...settings.footerSettings,
-                            copyrightBn: e.target.value
-                          }
+                          footerSettings: { ...settings.footerSettings, copyrightBn: e.target.value }
                         });
                       }}
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
                     />
                   </div>
-
-                  <div className="flex items-center pt-5">
-                    <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300 font-bold">
-                      <input
-                        type="checkbox"
-                        checked={settings.footerSettings?.showPaymentBadges !== false}
-                        onChange={(e) => {
-                          updateSettings({
-                            footerSettings: {
-                              ...settings.footerSettings,
-                              showPaymentBadges: e.target.checked
-                            }
-                          });
-                        }}
-                        className="w-4 h-4 rounded text-emerald-600 bg-slate-800 border-slate-700"
-                      />
-                      <span>বিকাশ, নগদ, রকেট ও কুরিয়ার পার্টনার ব্যাজ প্রদর্শন করুন</span>
-                    </label>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">{at('কপিরাইট টেক্সট (ইংরেজি)', 'Copyright Text (EN)')}</label>
+                    <input
+                      type="text"
+                      value={settings.footerSettings?.copyrightEn || ''}
+                      onChange={(e) => {
+                        updateSettings({
+                          footerSettings: { ...settings.footerSettings, copyrightEn: e.target.value }
+                        });
+                      }}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                    />
                   </div>
                 </div>
 
+                <div className="flex flex-wrap gap-6 pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300 font-bold">
+                    <input
+                      type="checkbox"
+                      checked={settings.footerSettings?.showPaymentBadges !== false}
+                      onChange={(e) => {
+                        updateSettings({
+                          footerSettings: { ...settings.footerSettings, showPaymentBadges: e.target.checked }
+                        });
+                      }}
+                      className="w-4 h-4 rounded text-emerald-600 bg-slate-800 border-slate-700"
+                    />
+                    <span>বিকাশ, নগদ, রকেট ও কুরিয়ার পার্টনার ব্যাজ প্রদর্শন করুন</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300 font-bold">
+                    <input
+                      type="checkbox"
+                      checked={settings.footerSettings?.showCategoriesInFooter !== false}
+                      onChange={(e) => {
+                        updateSettings({
+                          footerSettings: { ...settings.footerSettings, showCategoriesInFooter: e.target.checked }
+                        });
+                      }}
+                      className="w-4 h-4 rounded text-emerald-600 bg-slate-800 border-slate-700"
+                    />
+                    <span>{at('ফুটারে সকল ক্যাটাগরি লিংক দেখান', 'Show All Categories in Footer')}</span>
+                  </label>
+                </div>
+
                 <button
-                  onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('ফুটার সেটিংস সফলভাবে আপডেট করা হয়েছে।', 'Footer settings saved.'))}
-                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl"
+                  onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('CMS ও ফুটার সেটিংস সফলভাবে আপডেট করা হয়েছে।', 'CMS & Footer settings saved.'))}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
                 >
-                  {t('ফুটার সেটিংস সেভ করুন', 'Save Footer Settings')}
+                  {at('সম্পূর্ণ CMS ও SEO সেভ করুন', 'Save All CMS, SEO & Footer Settings')}
                 </button>
               </div>
             </div>
           )}
 
-          {/* TAB 16: SETTINGS (PAYMENT & 64 DISTRICTS DELIVERY) */}
+          {/* TAB 16: SETTINGS (PAYMENT, 64 DISTRICTS DELIVERY & 10 BUSINESS THEMES) */}
           {activeTab === 'settings' && (
             <div className="space-y-6 animate-fade-in">
               <div>
-                <h3 className="text-xl font-black text-white">{t('পেমেন্ট ও ডেলিভারি সেটিংস', 'Payment & Delivery Settings')}</h3>
-                <p className="text-xs text-slate-400">{t('বিকাশ, নগদ, রকেট মার্চেন্ট নাম্বার ও বাংলাদেশের ৬৪ জেলার ডেলিভারি চার্জ নির্ধারণ', 'bKash/Nagad/Rocket merchants, advance fees and delivery rates')}</p>
+                <h3 className="text-xl font-black text-white">{t('পেমেন্ট, ডেলিভারি ও বিজনেস থিম সেটিংস', 'Payment, Delivery & Business Theme Settings')}</h3>
+                <p className="text-xs text-slate-400">{t('১০টি বিজনেস থিম ও অটো-ক্যাটাগরি, বিকাশ/নগদ/রকেট মার্চেন্ট ও ৬৪ জেলার ডেলিভারি রেট', '10 Business Themes with Auto-Categories, MFS accounts and 64-district delivery rates')}</p>
               </div>
 
-              {/* Theme Switcher for Different Business Categories (Req 13) */}
+              {/* 10 Business Theme Presets with Colors & Auto-Categories */}
               <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="font-bold text-white text-sm flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-emerald-400" />
-                      <span>{t('স্টোর বিজনেস থিম সিলেক্টর (Store Business Theme)', 'Store Business Theme')}</span>
+                      <span>{at('১০টি প্রিমিয়াম বিজনেস থিম ও অটো ক্যাটাগরি', '10 Business Theme Presets & Auto Categories')}</span>
                     </h4>
                     <p className="text-xs text-slate-400">
-                      {t('আপনার ব্যবসার ধরন অনুযায়ী এক ক্লিকে স্টোর থিম ও ক্যাটাগরি সেট করুন', 'Select theme optimized for your business category')}
+                      {at('আপনার ব্যবসার ধরন অনুযায়ী ১ ক্লিকে সম্পূর্ণ কালার থিম ও ক্যাটাগরি সেট করুন', 'Apply theme colors or sync starter categories for your niche in 1 click')}
                     </p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                  {[
-                    { id: 'gadgets', name: 'স্মার্ট গ্যাজেট', icon: '⚡', desc: 'Smart Gadgets' },
-                    { id: 'islamic', name: 'সুন্নাহ ও আতর', icon: '🌙', desc: 'Sunnah & Attar' },
-                    { id: 'organic', name: 'অর্গানিক ফুড', icon: '🍯', desc: 'Organic Food' },
-                    { id: 'medical', name: 'মেডিকেল ও ফার্মেসি', icon: '💊', desc: 'Pharmacy' },
-                    { id: 'fashion', name: 'ফ্যাশন ও লাইফস্টাইল', icon: '👔', desc: 'Fashion' }
-                  ].map((th) => (
-                    <button
-                      key={th.id}
-                      onClick={() => {
-                        updateSettings({ theme: th.id as any });
-                        addToast('success', t('থিম পরিবর্তন হয়েছে!', 'Theme Changed!'), th.name);
-                      }}
-                      className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-                        settings.theme === th.id
-                          ? 'bg-emerald-950/60 border-emerald-500 ring-2 ring-emerald-500/40 text-white'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-                      }`}
-                    >
-                      <span className="text-2xl block mb-1">{th.icon}</span>
-                      <span className="font-bold text-xs text-white block">{th.name}</span>
-                      <span className="text-[10px] text-slate-500 block">{th.desc}</span>
-                    </button>
-                  ))}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                  {BUSINESS_THEME_PRESETS.map((preset) => {
+                    const isSelected = settings.theme === preset.id;
+                    return (
+                      <div
+                        key={preset.id}
+                        className={`p-3.5 rounded-2xl border flex flex-col justify-between space-y-3 transition-all ${
+                          isSelected
+                            ? 'bg-emerald-950/60 border-emerald-500 ring-2 ring-emerald-500/40 text-white'
+                            : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-2xl">{preset.emoji}</span>
+                            <div className="flex items-center gap-1">
+                              <span className="w-3.5 h-3.5 rounded-full border border-white/20" style={{ backgroundColor: preset.colors.primary }} />
+                              <span className="w-3.5 h-3.5 rounded-full border border-white/20" style={{ backgroundColor: preset.colors.heroFrom }} />
+                            </div>
+                          </div>
+                          <span className="font-bold text-xs text-white block">{at(preset.nameBn, preset.nameEn)}</span>
+                          <span className="text-[10px] text-slate-400 block mt-0.5">{at(preset.descBn, preset.descEn)}</span>
+                        </div>
+
+                        <div className="space-y-1.5 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => applyBusinessTheme(preset.id || 'gadgets', false)}
+                            className="w-full py-1.5 rounded-lg bg-slate-800 hover:bg-emerald-600 text-white text-[10px] font-bold transition-colors cursor-pointer"
+                          >
+                            {at('থিম কালার দিন', 'Apply Colors')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => applyBusinessTheme(preset.id || 'gadgets', true)}
+                            className="w-full py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 text-[10px] font-bold transition-colors cursor-pointer"
+                          >
+                            {at('+ অটো ক্যাটাগরি', '+ Theme & Cats')}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -2883,7 +4171,7 @@ export const AdminDashboard: React.FC = () => {
 
               <button
                 onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('পেমেন্ট ও ডেলিভারি সেটিংস আপডেট হয়েছে।', 'Payment & Delivery rates updated.'))}
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl"
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
               >
                 {t('সেটিংস সংরক্ষণ করুন', 'Save Settings')}
               </button>
@@ -3173,15 +4461,128 @@ export const AdminDashboard: React.FC = () => {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">ছবির URL (কমা দিয়ে একাধিক ছবি দিতে পারেন)</label>
-                <input
-                  type="text"
-                  required
-                  value={productForm.images.join(', ')}
-                  onChange={(e) => setProductForm({ ...productForm, images: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
-                />
+              {/* Product Main & Gallery Media Manager (Recommended 600x600px) */}
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <label className="block text-slate-200 font-bold">
+                      {at('প্রোডাক্ট মেইন ছবি ও গ্যালারি আপলোড', 'Product Main Image & Gallery')}
+                    </label>
+                    <p className="text-[11px] text-emerald-400 font-semibold">
+                      {at('প্রস্তাবিত সাইজ: 600×600 পিক্সেল (স্কয়ার HD ফরম্যাট)', 'Recommended Size: 600×600 px (Square HD)')}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{at('মেইন ছবি আপলোড', 'Main Photo')}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) =>
+                          handleImageFileUpload(e.target.files?.[0], (url) =>
+                            setProductForm((prev) => ({
+                              ...prev,
+                              images: [url, ...prev.images.slice(1)]
+                            }))
+                          )
+                        }
+                      />
+                    </label>
+                    <label className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer border border-slate-700">
+                      <ImagePlus className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{at('গ্যালারি ছবি (+)', 'Add Gallery')}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          files.forEach((f) =>
+                            handleImageFileUpload(f, (url) =>
+                              setProductForm((prev) => ({
+                                ...prev,
+                                images: [...prev.images, url]
+                              }))
+                            )
+                          );
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Add Gallery URL input */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newGalleryUrl}
+                    onChange={(e) => setNewGalleryUrl(e.target.value)}
+                    placeholder={at('অথবা ছবির URL পেস্ট করে যোগ করুন (600x600px)...', 'Or paste image URL (600x600px)...')}
+                    className="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!newGalleryUrl.trim()) return;
+                      setProductForm((prev) => ({
+                        ...prev,
+                        images: [...prev.images, newGalleryUrl.trim()]
+                      }));
+                      setNewGalleryUrl('');
+                    }}
+                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold rounded-xl cursor-pointer"
+                  >
+                    + Add URL
+                  </button>
+                </div>
+
+                {/* Thumbnail Preview Grid */}
+                {productForm.images.length > 0 && (
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2.5">
+                    {productForm.images.map((imgUrl, idx) => (
+                      <div
+                        key={idx}
+                        className={`relative group rounded-xl overflow-hidden border bg-slate-900 aspect-square ${
+                          idx === 0 ? 'border-emerald-500 ring-2 ring-emerald-500/30' : 'border-slate-800'
+                        }`}
+                      >
+                        <img src={imgUrl} alt="" className="w-full h-full object-cover" />
+                        {idx === 0 && (
+                          <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-bold">
+                            MAIN
+                          </span>
+                        )}
+                        <div className="absolute inset-x-0 bottom-0 p-1 bg-slate-950/80 flex items-center justify-between gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                          {idx !== 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const reordered = [imgUrl, ...productForm.images.filter((_, i) => i !== idx)];
+                                setProductForm({ ...productForm, images: reordered });
+                              }}
+                              className="text-[9px] px-1.5 py-0.5 bg-emerald-600 text-white rounded font-bold cursor-pointer"
+                            >
+                              Main
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const filtered = productForm.images.filter((_, i) => i !== idx);
+                              setProductForm({ ...productForm, images: filtered });
+                            }}
+                            className="text-[9px] px-1.5 py-0.5 bg-rose-600 text-white rounded font-bold ml-auto cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -3231,7 +4632,7 @@ export const AdminDashboard: React.FC = () => {
 
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl cursor-pointer"
                 >
                   {editingProductId ? 'পণ্য আপডেট করুন' : 'পণ্য প্রকাশ করুন'}
                 </button>
@@ -3291,6 +4692,54 @@ export const AdminDashboard: React.FC = () => {
                 />
               </div>
 
+              {/* Optional Category Icon Image Uploader */}
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-300">
+                    {at('ক্যাটাগরি আইকন ছবি (ঐচ্ছিক)', 'Category Icon Image (Optional)')}
+                  </span>
+                  <label className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold flex items-center gap-1 cursor-pointer">
+                    <Upload className="w-3 h-3" />
+                    <span>{at('আপলোড', 'Upload')}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) =>
+                        handleImageFileUpload(e.target.files?.[0], (url) =>
+                          setCategoryForm({ ...categoryForm, iconImage: url })
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  {categoryForm.iconImage ? (
+                    <img src={categoryForm.iconImage} alt="" className="w-10 h-10 rounded-full object-cover border border-slate-700 shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-xs font-bold text-slate-500 shrink-0">
+                      {(categoryForm.nameBn || categoryForm.nameEn || 'C').charAt(0)}
+                    </div>
+                  )}
+                  <input
+                    type="text"
+                    value={categoryForm.iconImage || ''}
+                    onChange={(e) => setCategoryForm({ ...categoryForm, iconImage: e.target.value })}
+                    placeholder={at('অথবা ছবির URL দিন (খালি রাখা যাবে)', 'Optional image URL')}
+                    className="flex-1 px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white"
+                  />
+                  {categoryForm.iconImage && (
+                    <button
+                      type="button"
+                      onClick={() => setCategoryForm({ ...categoryForm, iconImage: '' })}
+                      className="px-2 py-1.5 bg-rose-950/60 text-rose-300 rounded-lg font-bold cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div className="flex items-center justify-between pt-2">
                 <label className="flex items-center gap-2 cursor-pointer text-slate-300 font-bold">
                   <input
@@ -3304,7 +4753,7 @@ export const AdminDashboard: React.FC = () => {
 
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl cursor-pointer"
                 >
                   সংরক্ষণ করুন
                 </button>
@@ -3317,7 +4766,7 @@ export const AdminDashboard: React.FC = () => {
       {/* MODAL 5: SLIDER ADD/EDIT MODAL */}
       {isSliderModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl">
+          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
             <button
               onClick={() => setIsSliderModalOpen(false)}
               className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800"
@@ -3330,29 +4779,67 @@ export const AdminDashboard: React.FC = () => {
             </h3>
 
             <form onSubmit={handleSaveSlide} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">ব্যানার বাংলা টাইটেল *</label>
-                <input
-                  type="text"
-                  required
-                  value={slideForm.titleBn}
-                  onChange={(e) => setSlideForm({ ...slideForm, titleBn: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">ব্যানার বাংলা টাইটেল *</label>
+                  <input
+                    type="text"
+                    required
+                    value={slideForm.titleBn}
+                    onChange={(e) => setSlideForm({ ...slideForm, titleBn: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">English Title</label>
+                  <input
+                    type="text"
+                    value={slideForm.titleEn}
+                    onChange={(e) => setSlideForm({ ...slideForm, titleEn: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">সাবটাইটেল (বাংলা)</label>
+                  <input
+                    type="text"
+                    value={slideForm.subtitleBn}
+                    onChange={(e) => setSlideForm({ ...slideForm, subtitleBn: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Subtitle (EN)</label>
+                  <input
+                    type="text"
+                    value={slideForm.subtitleEn}
+                    onChange={(e) => setSlideForm({ ...slideForm, subtitleEn: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="block text-slate-300 font-bold mb-1">সাবটাইটেল (বাংলা)</label>
-                <input
-                  type="text"
-                  value={slideForm.subtitleBn}
-                  onChange={(e) => setSlideForm({ ...slideForm, subtitleBn: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">ছবির URL</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-slate-300 font-bold">ব্যানার ছবি (URL বা আপলোড)</label>
+                  <label className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 cursor-pointer">
+                    <Upload className="w-3 h-3" />
+                    <span>Upload Banner</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) =>
+                        handleImageFileUpload(e.target.files?.[0], (url) =>
+                          setSlideForm({ ...slideForm, image: url })
+                        )
+                      }
+                    />
+                  </label>
+                </div>
                 <input
                   type="text"
                   required

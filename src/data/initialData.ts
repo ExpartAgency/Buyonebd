@@ -122,14 +122,15 @@ export const INITIAL_CATEGORIES: Category[] = [
     nameBn: 'স্মার্ট গ্যাজেট',
     nameEn: 'Smart Gadgets',
     slug: 'smart-gadgets',
-    icon: 'Watch',
+    icon: '',
+    iconImage: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=240&auto=format&fit=crop&q=80',
     isActive: true,
     order: 1,
     subcategories: [
-      { nameBn: 'স্মার্ট ওয়াচ', nameEn: 'Smart Watches', slug: 'smart-gadgets' },
-      { nameBn: 'ব্লুটুথ ইয়ারবাডস', nameEn: 'TWS Earbuds', slug: 'smart-gadgets' },
-      { nameBn: 'পাওয়ার ব্যাংক', nameEn: 'Power Banks', slug: 'smart-gadgets' },
-      { nameBn: 'ট্রিমার ও শেভার', nameEn: 'Trimmers & Shavers', slug: 'smart-gadgets' }
+      { nameBn: 'স্মার্ট ওয়াচ', nameEn: 'Smart Watches', slug: 'smart-gadgets', image: 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=200' },
+      { nameBn: 'ব্লুটুথ ইয়ারবাডস', nameEn: 'TWS Earbuds', slug: 'smart-gadgets', image: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=200' },
+      { nameBn: 'পাওয়ার ব্যাংক', nameEn: 'Power Banks', slug: 'smart-gadgets', image: 'https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=200' },
+      { nameBn: 'ট্রিমার ও শেভার', nameEn: 'Trimmers & Shavers', slug: 'smart-gadgets', image: 'https://images.unsplash.com/photo-1621607512214-68297480165e?w=200' }
     ]
   },
   {
@@ -137,14 +138,15 @@ export const INITIAL_CATEGORIES: Category[] = [
     nameBn: 'ফ্যাশন ও লাইফস্টাইল',
     nameEn: 'Fashion & Lifestyle',
     slug: 'fashion',
-    icon: 'Shirt',
+    icon: '',
+    iconImage: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=240&auto=format&fit=crop&q=80',
     isActive: true,
     order: 2,
     subcategories: [
-      { nameBn: 'প্রিমিয়াম টি-শার্ট', nameEn: 'Polo & T-Shirts', slug: 'fashion' },
-      { nameBn: 'পাঞ্জাবি ও কাবলি', nameEn: 'Panjabi & Kabli', slug: 'fashion' },
-      { nameBn: 'লেদার ওয়ালেট', nameEn: 'Leather Wallets', slug: 'fashion' },
-      { nameBn: 'সানগ্লাস', nameEn: 'Sunglasses', slug: 'fashion' }
+      { nameBn: 'প্রিমিয়াম টি-শার্ট', nameEn: 'Polo & T-Shirts', slug: 'fashion', image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=200' },
+      { nameBn: 'পাঞ্জাবি ও কাবলি', nameEn: 'Panjabi & Kabli', slug: 'fashion', image: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=200' },
+      { nameBn: 'লেদার ওয়ালেট', nameEn: 'Leather Wallets', slug: 'fashion', image: 'https://images.unsplash.com/photo-1627123424574-724758594e93?w=200' },
+      { nameBn: 'সানগ্লাস', nameEn: 'Sunglasses', slug: 'fashion', image: 'https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=200' }
     ]
   },
   {
@@ -152,14 +154,15 @@ export const INITIAL_CATEGORIES: Category[] = [
     nameBn: 'অর্গানিক ফুড ও মধু',
     nameEn: 'Organic Foods & Honey',
     slug: 'organic-food',
-    icon: 'Apple',
+    icon: '',
+    iconImage: 'https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=240&auto=format&fit=crop&q=80',
     isActive: true,
     order: 3,
     subcategories: [
-      { nameBn: 'সুন্দরবনের খাঁটি মধু', nameEn: 'Wild Raw Honey', slug: 'organic-food' },
-      { nameBn: 'ঘানির সরিষার তেল', nameEn: 'Cold Pressed Mustard Oil', slug: 'organic-food' },
-      { nameBn: 'খাঁটি গাওয়া ঘি', nameEn: 'Pure Desi Ghee', slug: 'organic-food' },
-      { nameBn: 'ড্রাই ফ্রুটস ও বাদাম', nameEn: 'Dry Fruits & Nuts', slug: 'organic-food' }
+      { nameBn: 'সুন্দরবনের খাঁটি মধু', nameEn: 'Wild Raw Honey', slug: 'organic-food', image: 'https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=200' },
+      { nameBn: 'ঘানির সরিষার তেল', nameEn: 'Cold Pressed Mustard Oil', slug: 'organic-food', image: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=200' },
+      { nameBn: 'খাঁটি গাওয়া ঘি', nameEn: 'Pure Desi Ghee', slug: 'organic-food', image: 'https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=200' },
+      { nameBn: 'ড্রাই ফ্রুটস ও বাদাম', nameEn: 'Dry Fruits & Nuts', slug: 'organic-food', image: 'https://images.unsplash.com/photo-1536591375315-1988d696054a?w=200' }
     ]
   },
   {
@@ -167,14 +170,15 @@ export const INITIAL_CATEGORIES: Category[] = [
     nameBn: 'ইসলামিক ও আতর',
     nameEn: 'Islamic & Attar',
     slug: 'islamic-lifestyle',
-    icon: 'Moon',
+    icon: '',
+    iconImage: 'https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=240&auto=format&fit=crop&q=80',
     isActive: true,
     order: 4,
     subcategories: [
-      { nameBn: 'জান্নাতুল ফেরদৌস আতর', nameEn: 'Premium Roll-on Attar', slug: 'islamic-lifestyle' },
-      { nameBn: 'ডিজিটাল তসবিহ', nameEn: 'Digital Tasbih Counter', slug: 'islamic-lifestyle' },
-      { nameBn: 'জায়নামাজ', nameEn: 'Luxury Prayer Mat', slug: 'islamic-lifestyle' },
-      { nameBn: 'কুরআন স্ট্যান্ড', nameEn: 'Rehal & Stands', slug: 'islamic-lifestyle' }
+      { nameBn: 'জান্নাতুল ফেরদৌস আতর', nameEn: 'Premium Roll-on Attar', slug: 'islamic-lifestyle', image: 'https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=200' },
+      { nameBn: 'ডিজিটাল তসবিহ', nameEn: 'Digital Tasbih Counter', slug: 'islamic-lifestyle', image: 'https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=200' },
+      { nameBn: 'জায়নামাজ', nameEn: 'Luxury Prayer Mat', slug: 'islamic-lifestyle', image: 'https://images.unsplash.com/photo-1609599006353-e629aaabfeae?w=200' },
+      { nameBn: 'কুরআন স্ট্যান্ড', nameEn: 'Rehal & Stands', slug: 'islamic-lifestyle', image: 'https://images.unsplash.com/photo-1585036156171-384164a8c675?w=200' }
     ]
   },
   {
@@ -182,13 +186,14 @@ export const INITIAL_CATEGORIES: Category[] = [
     nameBn: 'হোম ও কিচেন',
     nameEn: 'Home & Kitchen',
     slug: 'home-kitchen',
-    icon: 'Home',
+    icon: '',
+    iconImage: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=240&auto=format&fit=crop&q=80',
     isActive: true,
     order: 5,
     subcategories: [
-      { nameBn: 'পোর্টেবল ব্লেন্ডার', nameEn: 'Juicer & Blenders', slug: 'home-kitchen' },
-      { nameBn: 'কিচেন গ্যাজেটস', nameEn: 'Kitchen Accessories', slug: 'home-kitchen' },
-      { nameBn: 'স্মার্ট ক্লক ও লাইট', nameEn: 'Night Lamps & Clocks', slug: 'home-kitchen' }
+      { nameBn: 'পোর্টেবল ব্লেন্ডার', nameEn: 'Juicer & Blenders', slug: 'home-kitchen', image: 'https://images.unsplash.com/photo-1570222094114-d054a817e56b?w=200' },
+      { nameBn: 'কিচেন গ্যাজেটস', nameEn: 'Kitchen Accessories', slug: 'home-kitchen', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=200' },
+      { nameBn: 'স্মার্ট ক্লক ও লাইট', nameEn: 'Night Lamps & Clocks', slug: 'home-kitchen', image: 'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=200' }
     ]
   },
   {
@@ -196,13 +201,14 @@ export const INITIAL_CATEGORIES: Category[] = [
     nameBn: 'বিউটি ও পার্সোনাল কেয়ার',
     nameEn: 'Beauty & Personal Care',
     slug: 'beauty-care',
-    icon: 'Sparkles',
+    icon: '',
+    iconImage: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?w=240&auto=format&fit=crop&q=80',
     isActive: true,
     order: 6,
     subcategories: [
-      { nameBn: 'হেয়ার ট্রিমার ও গ্রুমিং', nameEn: 'Hair Grooming Kits', slug: 'beauty-care' },
-      { nameBn: 'অর্গানিক স্কিনকেয়ার', nameEn: 'Herbal Skincare', slug: 'beauty-care' },
-      { nameBn: 'বডি ম্যাসেজার', nameEn: 'Body Massagers', slug: 'beauty-care' }
+      { nameBn: 'হেয়ার ট্রিমার ও গ্রুমিং', nameEn: 'Hair Grooming Kits', slug: 'beauty-care', image: 'https://images.unsplash.com/photo-1621607512214-68297480165e?w=200' },
+      { nameBn: 'অর্গানিক স্কিনকেয়ার', nameEn: 'Herbal Skincare', slug: 'beauty-care', image: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?w=200' },
+      { nameBn: 'বডি ম্যাসেজার', nameEn: 'Body Massagers', slug: 'beauty-care', image: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=200' }
     ]
   }
 ];
@@ -711,6 +717,8 @@ export const INITIAL_REVIEWS: ProductReview[] = [
 export const INITIAL_SETTINGS: StoreSettings = {
   storeName: 'BuyOne BD',
   storeNameBn: 'বাইওয়ান বিডি',
+  logoUrl: '',
+  logoMode: 'text',
   tagline: 'Bangladesh\'s Most Trusted Smart Shopping Platform',
   taglineBn: 'বাংলাদেশের বিশ্বস্ত ১-ক্লিক স্মার্ট ই-কমার্স ও অটোমেটেড এআই সাপোর্ট',
   hotline: '01886-BUYONE (01886-289663)',
@@ -742,15 +750,33 @@ export const INITIAL_SETTINGS: StoreSettings = {
   },
   announcementBar: {
     enabled: true,
-    textBn: '⚡ সুপার অফার: সারাদেশে ক্যাশ অন ডেলিভারি | বিকাশ/নগদে ১০০% নিরাপদ পেমেন্ট | ২-৩ দিনে দ্রুত ডেলিভারি | হটলাইন: 01886-BUYONE',
-    textEn: '⚡ Super Deal: Cash on Delivery All Over Bangladesh | bKash/Nagad Verified | 24-48h Delivery | Hotline: 01886-BUYONE'
+    textBn: '🚚 সারা বাংলাদেশে দ্রুততম হোম ডেলিভারি ও ক্যাশ অন ডেলিভারি সুবিধা | হেল্পলাইন: 01886-289663',
+    textEn: '🚚 Nationwide Fast Home Delivery with Cash on Delivery | Helpline: 01886-289663'
   },
   theme: 'gadgets',
+  themeColors: {
+    primary: '#059669',
+    secondary: '#0d9488',
+    headerBg: '#ffffff',
+    footerBg: '#020617',
+    heroFrom: '#020617',
+    heroTo: '#064e3b'
+  },
+  cmsTexts: {
+    trendingTitleBn: 'হট ও ট্রেন্ডিং কালেকশন',
+    trendingTitleEn: 'Hot & Trending Collection',
+    orderNowBtnBn: 'অর্ডার করুন',
+    orderNowBtnEn: 'Order Now',
+    addToCartBtnBn: 'কার্টে যোগ করুন',
+    addToCartBtnEn: 'Add to Cart',
+    allCategoriesLabelBn: 'সকল পণ্য',
+    allCategoriesLabelEn: 'All Products'
+  },
   spinSettings: {
     enabled: true,
     headlineBn: '🎉 লাকি স্পিন হুইল! ঘুরিয়ে জিতুন আকর্ষণীয় উপহার',
     headlineEn: '🎉 Lucky Spin Wheel! Spin & Win Instant Rewards',
-    spinsPerDay: 1,
+    spinsPerDay: 4,
     rewards: [
       { id: 'spin-1', labelBn: '৳৫০০ ক্যাশ', labelEn: '৳500 OFF', code: 'TEMU500', discountType: 'fixed', value: 500, color: '#f43f5e', isTryAgain: false },
       { id: 'spin-2', labelBn: 'ফ্রি ডেলিভারি', labelEn: 'Free Ship', code: 'FREESHIP', discountType: 'free_shipping', value: 70, color: '#0284c7', isTryAgain: false },
@@ -795,13 +821,23 @@ export const INITIAL_SETTINGS: StoreSettings = {
       autoBook: true
     },
     pathao: {
-      enabled: false,
+      enabled: true,
       clientId: '',
       clientSecret: ''
     },
     redx: {
-      enabled: false,
+      enabled: true,
       token: ''
+    },
+    paperfly: {
+      enabled: true,
+      username: '',
+      apiKey: ''
+    },
+    sundarban: {
+      enabled: true,
+      branchCode: 'DHK-01',
+      apiKey: ''
     }
   },
   marketingSettings: {
@@ -823,6 +859,22 @@ export const INITIAL_SETTINGS: StoreSettings = {
     tiktokPixel: {
       enabled: true,
       pixelId: 'C789TTIKTOK990'
+    },
+    whatsappCloudApi: {
+      enabled: false,
+      phoneNumberId: '',
+      wabaId: '',
+      accessToken: '',
+      verifyToken: 'buyonebd_meta_verify_2026',
+      apiVersion: 'v21.0',
+      defaultTemplate: 'order_confirmation_bn'
+    },
+    socialLinks: {
+      facebookPageId: 'BuyOneBD',
+      facebookUrl: 'https://facebook.com/buyonebd',
+      instagramHandle: '@buyonebd',
+      tiktokHandle: '@buyonebd.official',
+      youtubeUrl: 'https://youtube.com/@buyonebd'
     }
   },
   aiSettings: {
@@ -836,10 +888,15 @@ export const INITIAL_SETTINGS: StoreSettings = {
     autoFraudDetection: true
   },
   seoSettings: {
-    metaTitle: 'BuyOne BD - বাংলাদেশের বিশ্বস্ত অনলাইন শপিং',
-    metaDescription: 'স্মার্ট গ্যাজেট, প্রিমিয়াম আতর, অর্গানিক ফুড ও লাইফস্টাইল পণ্য সারাদেশে ক্যাশ অন ডেলিভারিতে কিনুন BuyOne BD-তে।',
-    keywords: 'BuyOne BD, smart gadgets bangladesh, organic honey, roll-on attar, cash on delivery bangladesh',
-    ogImage: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=1200'
+    metaTitle: 'BuyOne BD - বাংলাদেশের বিশ্বস্ত অনলাইন শপিং | Smart E-Commerce',
+    metaDescription: 'স্মার্ট গ্যাজেট, প্রিমিয়াম আতর, অর্গানিক ফুড ও লাইফস্টাইল পণ্য সারাদেশে ক্যাশ অন ডেলিভারিতে কিনুন BuyOne BD-তে। এআই কল কনফার্মেশন ও দ্রুত কুরিয়ার ডেলিভারি।',
+    keywords: 'BuyOne BD, online shopping bangladesh, smart gadgets dhaka, organic honey bangladesh, roll-on attar, cash on delivery bangladesh, steadfast courier tracking',
+    ogImage: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=1200',
+    canonicalUrl: 'https://buyonebd.com',
+    robots: 'index, follow',
+    twitterHandle: '@buyonebd',
+    googleSiteVerification: '',
+    schemaType: 'Store'
   },
   footerSettings: {
     aboutTextBn: 'BuyOne BD হলো বাংলাদেশের বিশ্বস্ত অনলাইন শপিং প্ল্যাটফর্ম। সারাদেশে ক্যাশ অন ডেলিভারি, এআই অটোমেটেড ভয়েস কল কনফার্মেশন ও স্টিডফাস্ট কুরিয়ারের মাধ্যমে দ্রুততম সময়ে আসল পণ্য পৌঁছে দিতে আমরা প্রতিশ্রুতিবদ্ধ।',
@@ -851,8 +908,164 @@ export const INITIAL_SETTINGS: StoreSettings = {
     facebookUrl: 'https://facebook.com',
     youtubeUrl: 'https://youtube.com',
     instagramUrl: 'https://instagram.com',
+    tiktokUrl: 'https://tiktok.com',
     copyrightBn: '© ২০২৬ BuyOne BD। সর্বস্বত্ব সংরক্ষিত।',
     copyrightEn: '© 2026 BuyOne BD. All rights reserved.',
-    showPaymentBadges: true
+    showPaymentBadges: true,
+    showCategoriesInFooter: true,
+    quickLinks: [
+      { id: 'ql-1', labelBn: 'রিয়েল-টাইম অর্ডার ট্র্যাকিং', labelEn: 'Live Order Tracking', actionType: 'tracking' },
+      { id: 'ql-2', labelBn: 'আজকের ফ্ল্যাশ সেল অফার', labelEn: "Today's Flash Sale Deals", actionType: 'flash_sale' },
+      { id: 'ql-3', labelBn: '৭ দিনের রিটার্ন ও রিফান্ড নীতি', labelEn: '7 Days Return & Refund Policy', actionType: 'store' },
+      { id: 'ql-4', labelBn: 'গোপনীয়তা ও শর্তাবলী', labelEn: 'Terms & Privacy Policy', actionType: 'store' }
+    ]
   }
 };
+
+export interface BusinessThemePreset {
+  id: StoreSettings['theme'];
+  nameBn: string;
+  nameEn: string;
+  emoji: string;
+  descBn: string;
+  descEn: string;
+  colors: NonNullable<StoreSettings['themeColors']>;
+  suggestedCategories: Omit<Category, 'id'>[];
+}
+
+export const BUSINESS_THEME_PRESETS: BusinessThemePreset[] = [
+  {
+    id: 'gadgets',
+    nameBn: 'স্মার্ট গ্যাজেট ও টেক',
+    nameEn: 'Smart Gadgets & Tech',
+    emoji: '⌚',
+    descBn: 'স্মার্টওয়াচ, ইয়ারবাড, পাওয়ারব্যাংক',
+    descEn: 'Smartwatches, Audio, Accessories',
+    colors: { primary: '#059669', secondary: '#0d9488', headerBg: '#ffffff', footerBg: '#020617', heroFrom: '#020617', heroTo: '#064e3b' },
+    suggestedCategories: [
+      { nameBn: 'স্মার্ট ওয়াচ', nameEn: 'Smart Watches', slug: 'smart-watches', isActive: true, iconImage: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=200' },
+      { nameBn: 'ইয়ারবাডস ও অডিও', nameEn: 'Earbuds & Audio', slug: 'audio', isActive: true, iconImage: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=200' },
+      { nameBn: 'চার্জার ও পাওয়ারব্যাংক', nameEn: 'Chargers & Power', slug: 'chargers', isActive: true, iconImage: 'https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=200' }
+    ]
+  },
+  {
+    id: 'islamic',
+    nameBn: 'সুন্নাহ, আতর ও ইসলামিক',
+    nameEn: 'Sunnah, Attar & Islamic',
+    emoji: '🕌',
+    descBn: 'অরিজিনাল আতর, তসবিহ, জায়নামাজ',
+    descEn: 'Pure Attar, Prayer Mats, Tasbih',
+    colors: { primary: '#047857', secondary: '#b45309', headerBg: '#ffffff', footerBg: '#022c22', heroFrom: '#022c22', heroTo: '#1e293b' },
+    suggestedCategories: [
+      { nameBn: 'প্রিমিয়াম আতর', nameEn: 'Pure Roll-on Attar', slug: 'islamic-lifestyle', isActive: true, iconImage: 'https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=200' },
+      { nameBn: 'জায়নামাজ ও টুপি', nameEn: 'Prayer Mats & Caps', slug: 'prayer-mats', isActive: true, iconImage: 'https://images.unsplash.com/photo-1609599006353-e629aaabfeae?w=200' },
+      { nameBn: 'ডিজিটাল তসবিহ ও বই', nameEn: 'Tasbih & Islamic Books', slug: 'tasbih', isActive: true, iconImage: 'https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=200' }
+    ]
+  },
+  {
+    id: 'organic',
+    nameBn: 'অর্গানিক ফুড ও মধু',
+    nameEn: 'Organic Food & Honey',
+    emoji: '🍯',
+    descBn: 'সুন্দরবনের মধু, গাওয়া ঘি, সরিষার তেল',
+    descEn: 'Raw Honey, Pure Ghee, Cold Oils',
+    colors: { primary: '#d97706', secondary: '#15803d', headerBg: '#ffffff', footerBg: '#1c1917', heroFrom: '#1c1917', heroTo: '#713f12' },
+    suggestedCategories: [
+      { nameBn: 'খাঁটি মধু', nameEn: 'Pure Raw Honey', slug: 'organic-food', isActive: true, iconImage: 'https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=200' },
+      { nameBn: 'খাঁটি ঘি ও তেল', nameEn: 'Pure Ghee & Mustard Oil', slug: 'ghee-oil', isActive: true, iconImage: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=200' },
+      { nameBn: 'খেজুর ও ড্রাই ফ্রুটস', nameEn: 'Dates & Dry Fruits', slug: 'dry-fruits', isActive: true, iconImage: 'https://images.unsplash.com/photo-1536591375315-1988d696054a?w=200' }
+    ]
+  },
+  {
+    id: 'medical',
+    nameBn: 'মেডিকেল ও হেলথ কেয়ার',
+    nameEn: 'Medical & Healthcare',
+    emoji: '💊',
+    descBn: 'ডিজিটাল থার্মোমিটার, ব্লাড প্রেশার মনিটর',
+    descEn: 'Health Monitors, First Aid, Wellness',
+    colors: { primary: '#0284c7', secondary: '#059669', headerBg: '#ffffff', footerBg: '#0c4a6e', heroFrom: '#0c4a6e', heroTo: '#0f172a' },
+    suggestedCategories: [
+      { nameBn: 'হেলথ ডিভাইস', nameEn: 'Health Devices', slug: 'health-devices', isActive: true, iconImage: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=200' },
+      { nameBn: 'ভিটামিন ও সাপ্লিমেন্ট', nameEn: 'Vitamins & Supplements', slug: 'supplements', isActive: true, iconImage: 'https://images.unsplash.com/photo-1550572017-edd951b55104?w=200' }
+    ]
+  },
+  {
+    id: 'fashion',
+    nameBn: 'ফ্যাশন ও লাইফস্টাইল',
+    nameEn: 'Fashion & Lifestyle',
+    emoji: '👔',
+    descBn: 'পাঞ্জাবি, টি-শার্ট, শাড়ি, ওয়ালেট',
+    descEn: 'Panjabi, Apparel, Leather Goods',
+    colors: { primary: '#e11d48', secondary: '#9333ea', headerBg: '#ffffff', footerBg: '#0f172a', heroFrom: '#1e1b4b', heroTo: '#881337' },
+    suggestedCategories: [
+      { nameBn: 'মেন্স কালেকশন', nameEn: "Men's Fashion", slug: 'fashion', isActive: true, iconImage: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=200' },
+      { nameBn: 'উইমেন্স ও জুয়েলারি', nameEn: "Women's & Jewelry", slug: 'womens-fashion', isActive: true, iconImage: 'https://images.unsplash.com/photo-1483985988655-71728e1935b8?w=200' }
+    ]
+  },
+  {
+    id: 'beauty',
+    nameBn: 'বিউটি ও স্কিনকেয়ার',
+    nameEn: 'Beauty & Cosmetics',
+    emoji: '💄',
+    descBn: 'কোরিয়ান স্কিনকেয়ার, সিরাম, ফেসওয়াশ',
+    descEn: 'Skincare, Serums, Cosmetics',
+    colors: { primary: '#db2777', secondary: '#f43f5e', headerBg: '#ffffff', footerBg: '#4c0519', heroFrom: '#500724', heroTo: '#831843' },
+    suggestedCategories: [
+      { nameBn: 'ফেসওয়াশ ও ক্লিনজার', nameEn: 'Cleansers & Washes', slug: 'beauty-care', isActive: true, iconImage: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?w=200' },
+      { nameBn: 'সিরাম ও ময়েশ্চারাইজার', nameEn: 'Serums & Creams', slug: 'serums', isActive: true, iconImage: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?w=200' }
+    ]
+  },
+  {
+    id: 'grocery',
+    nameBn: 'গ্রোসারি ও সুপারশপ',
+    nameEn: 'Grocery & Daily Mart',
+    emoji: '🛒',
+    descBn: 'চাল, ডাল, মসলা ও নিত্যপ্রয়োজনীয় পণ্য',
+    descEn: 'Daily Essentials, Spices, Pantry',
+    colors: { primary: '#16a34a', secondary: '#ca8a04', headerBg: '#ffffff', footerBg: '#052e16', heroFrom: '#052e16', heroTo: '#14532d' },
+    suggestedCategories: [
+      { nameBn: 'নিত্যপণ্য ও গ্রোসারি', nameEn: 'Daily Grocery', slug: 'grocery', isActive: true, iconImage: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=200' },
+      { nameBn: 'হোম ক্লিনিং', nameEn: 'Home Cleaning', slug: 'cleaning', isActive: true, iconImage: 'https://images.unsplash.com/photo-1585421514738-01798e348b17?w=200' }
+    ]
+  },
+  {
+    id: 'electronics',
+    nameBn: 'ইলেকট্রনিক্স ও হোম অ্যাপ্লায়েন্স',
+    nameEn: 'Electronics & Appliances',
+    emoji: '📺',
+    descBn: 'ব্লেন্ডার, রাইস কুকার, স্মার্ট টিভি বক্স',
+    descEn: 'Kitchen Appliances, Smart Home',
+    colors: { primary: '#2563eb', secondary: '#06b6d4', headerBg: '#ffffff', footerBg: '#0f172a', heroFrom: '#0f172a', heroTo: '#1e3a8a' },
+    suggestedCategories: [
+      { nameBn: 'হোম ও কিচেন', nameEn: 'Home & Kitchen', slug: 'home-kitchen', isActive: true, iconImage: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=200' },
+      { nameBn: 'স্মার্ট লাইট ও ফ্যান', nameEn: 'Lights & Cooling', slug: 'lights', isActive: true, iconImage: 'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=200' }
+    ]
+  },
+  {
+    id: 'kids',
+    nameBn: 'বেবি ও কিডস শপ',
+    nameEn: 'Baby, Kids & Toys',
+    emoji: '🧸',
+    descBn: 'বেবি কেয়ার, শিক্ষণীয় খেলনা, পোশাক',
+    descEn: 'Educational Toys, Baby Care',
+    colors: { primary: '#7c3aed', secondary: '#ec4899', headerBg: '#ffffff', footerBg: '#2e1065', heroFrom: '#2e1065', heroTo: '#701a75' },
+    suggestedCategories: [
+      { nameBn: 'বাচ্চাদের খেলনা', nameEn: 'Kids Toys', slug: 'kids-toys', isActive: true, iconImage: 'https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=200' },
+      { nameBn: 'বেবি কেয়ার', nameEn: 'Baby Care', slug: 'baby-care', isActive: true, iconImage: 'https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=200' }
+    ]
+  },
+  {
+    id: 'books',
+    nameBn: 'বই ও স্টেশনারি হাব',
+    nameEn: 'Books & Stationery',
+    emoji: '📚',
+    descBn: 'বেস্টসেলার বই, ডায়েরি ও অফিস আইটেম',
+    descEn: 'Bestsellers, Academic, Office',
+    colors: { primary: '#ea580c', secondary: '#0d9488', headerBg: '#ffffff', footerBg: '#1e293b', heroFrom: '#1e293b', heroTo: '#7c2d12' },
+    suggestedCategories: [
+      { nameBn: 'জনপ্রিয় বই', nameEn: 'Popular Books', slug: 'books', isActive: true, iconImage: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=200' },
+      { nameBn: 'অফিস স্টেশনারি', nameEn: 'Office Stationery', slug: 'stationery', isActive: true, iconImage: 'https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=200' }
+    ]
+  }
+];
+

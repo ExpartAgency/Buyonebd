@@ -14,7 +14,7 @@ const app = express();
 const port = parseInt(process.env.PORT || '3000', 10);
 const isProd = process.env.NODE_ENV === 'production';
 
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
 
 // Initialize GoogleGenAI server-side client with v1alpha for high-grade speech
 const ai = new GoogleGenAI({
@@ -278,6 +278,102 @@ app.post('/api/store/sync', (req, res) => {
   };
   saveStoreData(updated);
   return res.json({ success: true, message: 'Store synchronized' });
+});
+
+// Meta WhatsApp Cloud API Webhook Verification
+app.get('/api/whatsapp/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  const savedStore = loadStoreData();
+  const expectedToken =
+    savedStore?.settings?.marketingSettings?.whatsappCloudApi?.verifyToken ||
+    process.env.WHATSAPP_VERIFY_TOKEN ||
+    'buyonebd_meta_verify_2026';
+
+  if (mode === 'subscribe' && token === expectedToken) {
+    return res.status(200).send(challenge);
+  }
+  return res.sendStatus(403);
+});
+
+// Meta WhatsApp Cloud API Live / Simulated Message Sender
+app.post('/api/whatsapp/send', async (req, res) => {
+  try {
+    const {
+      to,
+      message,
+      templateName,
+      phoneNumberId,
+      accessToken,
+      apiVersion = 'v21.0'
+    } = req.body || {};
+
+    if (!to || (!message && !templateName)) {
+      return res.status(400).json({ success: false, error: 'Recipient phone and message or template are required.' });
+    }
+
+    const cleanPhone = String(to).replace(/[^0-9]/g, '');
+    const formattedPhone = cleanPhone.startsWith('88') ? cleanPhone : `88${cleanPhone}`;
+
+    // If Meta Cloud API credentials are configured, send real Graph API request
+    if (phoneNumberId && accessToken) {
+      const endpoint = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
+      const payload = templateName && !message
+        ? {
+            messaging_product: 'whatsapp',
+            to: formattedPhone,
+            type: 'template',
+            template: { name: templateName, language: { code: 'bn' } }
+          }
+        : {
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: formattedPhone,
+            type: 'text',
+            text: { preview_url: false, body: String(message) }
+          };
+
+      const metaRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const metaJson: any = await metaRes.json().catch(() => ({}));
+      if (metaRes.ok) {
+        return res.json({
+          success: true,
+          mode: 'live',
+          messageId: metaJson?.messages?.[0]?.id || `wamid.${Date.now()}`,
+          to: formattedPhone,
+          data: metaJson
+        });
+      }
+
+      return res.status(metaRes.status).json({
+        success: false,
+        mode: 'live_error',
+        error: metaJson?.error?.message || 'Meta Graph API returned an error',
+        details: metaJson
+      });
+    }
+
+    // Demo / Sandbox fallback when credentials are not yet entered
+    return res.json({
+      success: true,
+      mode: 'simulated',
+      messageId: `sim_wamid_${Date.now()}`,
+      to: formattedPhone,
+      preview: String(message || templateName)
+    });
+  } catch (err: any) {
+    console.error('WhatsApp Cloud API send error:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'WhatsApp dispatch failed' });
+  }
 });
 
 // Mount Vite or serve static files

@@ -72,9 +72,14 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6 w-full max-w-full overflow-hidden">
       {/* Dynamic 5-6 Slider Showcase */}
-      <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-slate-950 via-slate-900 to-emerald-950 text-white border border-slate-800 shadow-2xl min-h-[420px] flex items-center">
+      <div
+        className="relative rounded-3xl overflow-hidden text-white border border-slate-800 shadow-2xl min-h-[360px] sm:min-h-[420px] flex items-center"
+        style={{
+          background: `linear-gradient(135deg, ${settings.themeColors?.heroFrom || '#020617'}, ${settings.themeColors?.heroTo || '#064e3b'})`
+        }}
+      >
         {/* Slide Background Image overlay if available */}
         {activeSlide?.image && (
           <div className="absolute inset-0 opacity-20 pointer-events-none mix-blend-overlay">
@@ -87,14 +92,14 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
         )}
 
         {/* Ambient glow backgrounds */}
-        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-80 h-80 rounded-full bg-emerald-500/20 blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-80 h-80 rounded-full bg-teal-500/15 blur-3xl pointer-events-none" />
+        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-72 h-72 rounded-full bg-emerald-500/20 blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-72 h-72 rounded-full bg-teal-500/15 blur-3xl pointer-events-none" />
 
-        {/* Slide Content - Full Width Slider Only (As annotated: "only slider show here") */}
-        <div className="relative w-full p-6 sm:p-10 lg:p-14 flex flex-col justify-center items-start z-10 max-w-4xl">
-          <div className="space-y-4 text-left">
-            <div className="inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider backdrop-blur-md">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+        {/* Slide Content */}
+        <div className="relative w-full p-5 sm:p-10 lg:p-14 flex flex-col justify-center items-start z-10 max-w-4xl">
+          <div className="space-y-3 sm:space-y-4 text-left w-full">
+            <div className="inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] sm:text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider backdrop-blur-md">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span>
                 {activeSlide
                   ? t(activeSlide.discountBadgeBn || 'স্পেশাল অফার', activeSlide.discountBadgeEn || 'Special Offer')
@@ -102,7 +107,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
               </span>
             </div>
 
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
+            <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
               {activeSlide ? (
                 t(activeSlide.titleBn, activeSlide.titleEn)
               ) : (
@@ -115,7 +120,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
               )}
             </h1>
 
-            <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl">
+            <p className="text-xs sm:text-base text-slate-300 leading-relaxed max-w-2xl">
               {activeSlide
                 ? t(activeSlide.subtitleBn, activeSlide.subtitleEn)
                 : t(
@@ -124,14 +129,14 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
                   )}
             </p>
 
-            {/* Flash Sale Strip (if enabled in settings) */}
+            {/* Flash Sale Strip */}
             {settings?.flashSale?.enabled && (
-              <div className="bg-black/50 border border-slate-800/80 rounded-2xl p-3 inline-flex items-center gap-3">
-                <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5 uppercase tracking-wider">
-                  <Flame className="w-4 h-4 text-rose-500 animate-bounce" />
-                  {t(settings.flashSale.headlineBn || 'ফ্ল্যাশ সেল বাকি:', 'Flash Sale Ends In:')}
+              <div className="bg-black/50 border border-slate-800/80 rounded-2xl p-2.5 sm:p-3 inline-flex flex-wrap items-center gap-2 sm:gap-3 max-w-full">
+                <span className="text-[11px] sm:text-xs font-bold text-amber-400 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Flame className="w-4 h-4 text-rose-500 animate-bounce shrink-0" />
+                  <span className="line-clamp-1">{t(settings.flashSale.headlineBn || 'ফ্ল্যাশ সেল বাকি:', 'Flash Sale Ends In:')}</span>
                 </span>
-                <div className="flex items-center gap-1.5 font-mono text-sm font-bold text-white">
+                <div className="flex items-center gap-1 font-mono text-xs sm:text-sm font-bold text-white">
                   <span className="bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-700">
                     {timeLeft.hours.toString().padStart(2, '0')}h
                   </span>
@@ -148,7 +153,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
             )}
 
             {/* CTA Buttons */}
-            <div className="flex flex-wrap items-center gap-3 pt-2">
+            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 pt-1">
               <button
                 onClick={() => {
                   if (activeSlide?.linkCategory && onCategoryFilter) {
@@ -157,15 +162,16 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
                     openOneClickCheckout(featuredProduct);
                   }
                 }}
-                className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-sm px-6 py-3.5 rounded-2xl shadow-xl shadow-emerald-600/30 flex items-center gap-2 group transition-all cursor-pointer active:scale-95"
+                style={{ backgroundColor: settings.themeColors?.primary || '#059669' }}
+                className="hover:opacity-95 text-white font-black text-xs sm:text-sm px-5 sm:px-6 py-3 sm:py-3.5 rounded-2xl shadow-xl flex items-center gap-2 group transition-all cursor-pointer active:scale-95"
               >
-                <Zap className="w-4 h-4 text-amber-300" />
+                <Zap className="w-4 h-4 text-amber-300 shrink-0" />
                 <span>
                   {activeSlide
                     ? t(activeSlide.buttonTextBn, activeSlide.buttonTextEn)
                     : t('এখনই কিনুন', 'Buy Now')}
                 </span>
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform shrink-0" />
               </button>
 
               <div className="flex items-center gap-2 text-xs text-slate-300 bg-white/10 px-3.5 py-3 rounded-2xl border border-white/10 backdrop-blur-sm">

@@ -14,12 +14,23 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
     addToCart,
     toggleWishlist,
     isWishlisted,
+    settings,
     lang,
     t
   } = useStore();
 
   const discountPercent = Math.round(
     ((product.originalPrice - product.price) / product.originalPrice) * 100
+  );
+
+  const primaryColor = settings.themeColors?.primary || '#059669';
+  const orderBtnLabel = t(
+    settings.cmsTexts?.orderNowBtnBn || 'অর্ডার করুন',
+    settings.cmsTexts?.orderNowBtnEn || 'Order Now'
+  );
+  const cartBtnLabel = t(
+    settings.cmsTexts?.addToCartBtnBn || 'কার্টে যোগ করুন',
+    settings.cmsTexts?.addToCartBtnEn || 'Add to Cart'
   );
 
   return (
@@ -37,12 +48,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
 
         {/* Discount badge */}
         {discountPercent > 0 && (
-          <span className="absolute top-2 left-2 bg-emerald-600 text-white text-[9px] sm:text-xs font-black px-1.5 sm:px-2 py-0.5 rounded-md sm:rounded-lg shadow-md">
+          <span
+            style={{ backgroundColor: primaryColor }}
+            className="absolute top-2 left-2 text-white text-[9px] sm:text-xs font-black px-1.5 sm:px-2 py-0.5 rounded-md sm:rounded-lg shadow-md"
+          >
             -{discountPercent}% {t('ছাড়', 'OFF')}
           </span>
         )}
 
-        {/* Top-Right: Wishlist Heart Only (No Compare Button as per Req 16) */}
+        {/* Top-Right: Wishlist Heart */}
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -79,14 +93,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
       </div>
 
       {/* Body Info */}
-      <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between">
+      <div className="p-2.5 sm:p-4 flex-1 flex flex-col justify-between min-w-0">
         <div>
           {/* Category & Rating */}
-          <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-slate-400 mb-1">
-            <span className="font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider text-[9px] sm:text-[10px]">
+          <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-slate-400 mb-1 gap-1">
+            <span className="font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider text-[9px] sm:text-[10px] truncate">
               {lang === 'bn' ? product.categoryBn : product.category}
             </span>
-            <div className="flex items-center gap-0.5 text-amber-500 font-bold">
+            <div className="flex items-center gap-0.5 text-amber-500 font-bold shrink-0">
               <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
               <span>{product.rating}</span>
             </div>
@@ -101,7 +115,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
           </h3>
 
           {/* Price */}
-          <div className="flex items-baseline gap-1.5 sm:gap-2 mt-2">
+          <div className="flex items-baseline gap-1.5 sm:gap-2 mt-1.5 flex-wrap">
             <span className="text-sm sm:text-base font-black text-emerald-600 dark:text-emerald-400">
               ৳ {product.price.toLocaleString()}
             </span>
@@ -113,24 +127,23 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
           </div>
         </div>
 
-        {/* Actions Strip - No "1-Click" wording */}
-        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-1 sm:space-y-1.5">
-          {/* Order Now Button */}
+        {/* Actions Strip */}
+        <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1 sm:space-y-1.5">
           <button
             onClick={() => openOneClickCheckout(product)}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 sm:py-2.5 px-2 rounded-xl shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95"
+            style={{ backgroundColor: primaryColor }}
+            className="w-full hover:opacity-95 text-white font-bold text-xs py-2 sm:py-2.5 px-2 rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95"
           >
-            <span>{t('অর্ডার করুন', 'Order Now')}</span>
+            <span>{orderBtnLabel}</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
 
-          {/* Add to Cart button */}
           <button
             onClick={() => addToCart(product, 1)}
             className="w-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold text-[10px] sm:text-xs py-1.5 sm:py-2 px-2 rounded-xl flex items-center justify-center gap-1 transition-colors cursor-pointer"
           >
-            <ShoppingBag className="w-3 h-3 text-slate-600 dark:text-slate-400" />
-            <span>{t('কার্টে যোগ করুন', 'Add to Cart')}</span>
+            <ShoppingBag className="w-3 h-3 text-slate-600 dark:text-slate-400 shrink-0" />
+            <span className="truncate">{cartBtnLabel}</span>
           </button>
         </div>
       </div>
