@@ -167,7 +167,10 @@ interface StoreContextType {
   markChatRead: (sessionId: string) => void;
   browserCalls: BrowserCallSession[];
   activeBrowserCall: BrowserCallSession | null;
-  initiateCustomerBrowserCall: (order?: Order | null) => void;
+  initiateCustomerBrowserCall: (
+    order?: Order | null,
+    callerInfo?: { name?: string; phone?: string; autoConnect?: boolean }
+  ) => string;
   answerBrowserCallFromBackend: (callId: string) => void;
   appendBrowserCallMessage: (callId: string, speaker: 'customer' | 'assistant' | 'ai', text: string, textBn?: string) => void;
   endBrowserCallSession: (callId: string, confirmed?: boolean) => void;
@@ -1317,7 +1320,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // SEO-friendly URL Navigation Helpers
   const navigateToPath = (path: string, replace = false) => {
     const normalized = path.startsWith('/') ? path : `/${path}`;
-    if (window.location.pathname !== normalized) {
+    if (window.location.pathname !== normalized || window.location.hash !== '') {
       if (replace) {
         window.history.replaceState({}, '', normalized);
       } else {
@@ -1334,8 +1337,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       recordPageVisit('/tracking', t('অর্ডার ট্র্যাকিং', 'Order Tracking'));
     } else if (view === 'admin') {
       navigateToPath('/hossain');
-    } else if (view === 'store' && window.location.pathname === '/tracking') {
-      navigateToPath(storeSubView === 'products' ? '/products' : '/');
+    } else if (view === 'store') {
+      if (
+        window.location.pathname === '/tracking' ||
+        window.location.pathname === '/hossain' ||
+        window.location.pathname.startsWith('/hossain')
+      ) {
+        const target = selectedProductForPage
+          ? `/product/${selectedProductForPage.seo?.slug || selectedProductForPage.id}`
+          : storeSubView === 'products'
+          ? '/products'
+          : '/';
+        navigateToPath(target);
+      }
     }
   };
 
@@ -1417,6 +1431,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const applyRouteFromUrl = () => {
       const p = window.location.pathname.replace(/\/+$/, '') || '/';
       if (p === '/hossain') {
+        if (window.location.pathname !== '/hossain' || window.location.hash !== '') {
+          window.history.replaceState({}, '', '/hossain');
+        }
         if (isAdminLoggedIn) {
           setActiveViewState('admin');
         } else {
@@ -1769,14 +1786,28 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
-  // Bidirectional Browser Call Engine (Customer -> Backend Assistant Desk)
-  const initiateCustomerBrowserCall = (order?: Order | null) => {
+  // Bidirectional Browser Call Engine (Customer <-> Backend Assistant Desk)
+  const initiateCustomerBrowserCall = (
+    order?: Order | null,
+    callerInfo?: { name?: string; phone?: string; autoConnect?: boolean }
+  ): string => {
     const callId = `CALL-${Math.floor(10000 + Math.random() * 90000)}`;
+    const resolvedName =
+      callerInfo?.name?.trim() ||
+      order?.customer?.name ||
+      customerProfile.name ||
+      t('সম্মানিত গ্রাহক', 'Valued Customer');
+    const resolvedPhone =
+      callerInfo?.phone?.trim() ||
+      order?.customer?.phone ||
+      customerProfile.phone ||
+      settings.hotline;
+
     const targetOrder: Order = order || {
       id: `SUP-${Math.floor(10000 + Math.random() * 90000)}`,
       customer: {
-        name: customerProfile.name || t('সম্মানিত গ্রাহক', 'Valued Customer'),
-        phone: customerProfile.phone || settings.hotline,
+        name: resolvedName,
+        phone: resolvedPhone,
         address: customerProfile.address || 'Dhaka, Bangladesh',
         district: customerProfile.district || 'Dhaka - Inside City',
         thana: 'Customer Care Desk'
@@ -1809,22 +1840,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       createdAt: new Date().toISOString()
     };
 
+    const isOutboundLive = Boolean(callerInfo?.autoConnect);
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const session: BrowserCallSession = {
       id: callId,
       orderId: order?.id,
       callType: order ? 'order_verification' : 'support',
-      customerName: targetOrder.customer.name,
-      customerPhone: targetOrder.customer.phone,
-      status: 'ringing_backend',
+      customerName: resolvedName,
+      customerPhone: resolvedPhone,
+      status: isOutboundLive ? 'connected' : 'ringing_backend',
+      answeredBy: isOutboundLive ? 'backend_assistant' : undefined,
       startedAt: new Date().toISOString(),
       durationSeconds: 0,
       transcript: [
         {
           id: `t-${Date.now()}`,
-          speaker: 'customer',
-          text: `Customer initiated a browser support call (${targetOrder.customer.name}).`,
-          textBn: `গ্রাহক (${targetOrder.customer.name}) ব্রাউজার থেকে কল করেছেন — ব্যাকএন্ড অ্যাসিস্ট্যান্টের রিসিভের জন্য রিং হচ্ছে...`,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          speaker: isOutboundLive ? 'assistant' : 'customer',
+          text: isOutboundLive
+            ? `Outbound voice call connected to ${resolvedName} (${resolvedPhone}).`
+            : `Customer initiated a browser support call (${resolvedName}).`,
+          textBn: isOutboundLive
+            ? `সাপোর্ট ডেস্ক থেকে ${resolvedName} (${resolvedPhone})-কে লাইভ কল সংযুক্ত হয়েছে।`
+            : `গ্রাহক (${resolvedName}) ব্রাউজার থেকে কল করেছেন — রিসিভের জন্য রিং হচ্ছে...`,
+          time: nowTime
         }
       ]
     };
@@ -1834,10 +1872,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       syncCallsToServer(next);
       return next;
     });
-    setActiveBrowserCallId(callId);
-    setActiveCallOrder(targetOrder);
-    setIsCallRinging(true);
-    setIsCallActive(false);
+
+    if (!isOutboundLive) {
+      setActiveBrowserCallId(callId);
+      setActiveCallOrder(targetOrder);
+      setIsCallRinging(true);
+      setIsCallActive(false);
+    } else {
+      addToast(
+        'success',
+        t('লাইভ কল সংযুক্ত!', 'Live Call Connected!'),
+        t(`${resolvedName} (${resolvedPhone})-এর সাথে কল চালু হয়েছে।`, `Live call started with ${resolvedName}.`)
+      );
+    }
+    return callId;
   };
 
   const answerBrowserCallFromBackend = (callId: string) => {

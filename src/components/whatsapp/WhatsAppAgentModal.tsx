@@ -41,6 +41,7 @@ export const WhatsAppAgentModal: React.FC = () => {
     playVoiceSample,
     isPlayingVoiceSample,
     openProductPage,
+    customerProfile,
     lang,
     t
   } = useStore();
@@ -48,7 +49,14 @@ export const WhatsAppAgentModal: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'chat' | 'call' | 'spin' | 'flash'>('chat');
   const [inputMessage, setInputMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [callerName, setCallerName] = useState(customerProfile?.name || '');
+  const [callerPhone, setCallerPhone] = useState(customerProfile?.phone || '');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (customerProfile?.name) setCallerName((prev) => prev || customerProfile.name);
+    if (customerProfile?.phone) setCallerPhone((prev) => prev || customerProfile.phone);
+  }, [customerProfile?.name, customerProfile?.phone]);
 
   const currentSession = supportChats.find((s) => s.id === activeChatSessionId) || supportChats[0];
   const sessionMessages = currentSession?.messages || [];
@@ -73,7 +81,10 @@ export const WhatsAppAgentModal: React.FC = () => {
 
   const handleLaunchBackendCall = (orderToCall?: Order) => {
     setIsWhatsAppOpen(false);
-    initiateCustomerBrowserCall(orderToCall || null);
+    initiateCustomerBrowserCall(orderToCall || null, {
+      name: orderToCall?.customer?.name || callerName.trim() || undefined,
+      phone: orderToCall?.customer?.phone || callerPhone.trim() || undefined
+    });
   };
 
   const handleQuickAction = (action: string) => {
@@ -296,6 +307,33 @@ export const WhatsAppAgentModal: React.FC = () => {
                       'Call our backend support assistant directly from your browser with full live transcript and voice.'
                     )}
                   </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-left">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">
+                      {t('আপনার নাম', 'Your Name')}
+                    </label>
+                    <input
+                      type="text"
+                      value={callerName}
+                      onChange={(e) => setCallerName(e.target.value)}
+                      placeholder={t('নাম লিখুন', 'Caller name')}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">
+                      {t('মোবাইল নম্বর', 'Mobile Number')}
+                    </label>
+                    <input
+                      type="tel"
+                      value={callerPhone}
+                      onChange={(e) => setCallerPhone(e.target.value)}
+                      placeholder="01XXXXXXXXX"
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex flex-col gap-2">

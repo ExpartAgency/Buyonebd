@@ -20,7 +20,7 @@ import { LuckySpinModal, LuckySpinLeftLauncher } from './components/spin/LuckySp
 import { SingleProductView } from './components/home/SingleProductView';
 import { CustomerDashboardModal } from './components/customer/CustomerDashboardModal';
 import { Product } from './types';
-import { Flame, PackageSearch } from 'lucide-react';
+import { Flame, PackageSearch, Clock } from 'lucide-react';
 
 function StoreMainContent() {
   const {
@@ -50,16 +50,34 @@ function StoreMainContent() {
 
   const [sortBy, setSortBy] = useState<'default' | 'price_asc' | 'price_desc' | 'rating' | 'discount'>('default');
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
+  const [flashTimeLeft, setFlashTimeLeft] = useState({ hours: 4, minutes: 38, seconds: 52 });
 
-  // Detect URL "/hossain" or "#hossain" or typed keyword to pop up admin login
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setFlashTimeLeft((prev) => {
+        if (prev.seconds > 0) return { ...prev, seconds: prev.seconds - 1 };
+        if (prev.minutes > 0) return { ...prev, minutes: 59, seconds: 59 };
+        if (prev.hours > 0) return { hours: prev.hours - 1, minutes: 59, seconds: 59 };
+        return { hours: 6, minutes: 0, seconds: 0 };
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Detect clean "/hossain" path or typed keyword without trapping Store View transitions
+  const isAdminLoggedInRef = React.useRef(isAdminLoggedIn);
+  isAdminLoggedInRef.current = isAdminLoggedIn;
+
   useEffect(() => {
     const checkHossainRoute = () => {
-      const path = window.location.pathname.toLowerCase();
+      const path = window.location.pathname.replace(/\/+$/, '').toLowerCase() || '/';
       const hash = window.location.hash.toLowerCase();
-      const search = window.location.search.toLowerCase();
 
-      if (path.includes('hossain') || hash.includes('hossain') || search.includes('hossain')) {
-        if (!isAdminLoggedIn) {
+      if (path === '/hossain' || hash === '#hossain') {
+        if (window.location.pathname !== '/hossain' || window.location.hash) {
+          window.history.replaceState({}, '', '/hossain');
+        }
+        if (!isAdminLoggedInRef.current) {
           setIsAdminLoginOpen(true);
         } else {
           setActiveView('admin');
@@ -69,7 +87,6 @@ function StoreMainContent() {
 
     checkHossainRoute();
     window.addEventListener('popstate', checkHossainRoute);
-    window.addEventListener('hashchange', checkHossainRoute);
 
     let typedBuffer = '';
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -78,7 +95,10 @@ function StoreMainContent() {
 
       typedBuffer = (typedBuffer + e.key.toLowerCase()).slice(-7);
       if (typedBuffer === 'hossain') {
-        if (!isAdminLoggedIn) {
+        if (window.location.pathname !== '/hossain' || window.location.hash) {
+          window.history.pushState({}, '', '/hossain');
+        }
+        if (!isAdminLoggedInRef.current) {
           setIsAdminLoginOpen(true);
         } else {
           setActiveView('admin');
@@ -90,10 +110,9 @@ function StoreMainContent() {
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('popstate', checkHossainRoute);
-      window.removeEventListener('hashchange', checkHossainRoute);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isAdminLoggedIn, setIsAdminLoginOpen, setActiveView]);
+  }, []);
 
   const activeCategoryObj = categories.find((c) => c.slug === selectedCategory);
   const activeSubObj = activeCategoryObj?.subcategories?.find((s) => s.slug === selectedSubcategory);
@@ -333,14 +352,26 @@ function StoreMainContent() {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => selectCategoryFilter('flash-sale', null)}
-                className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer self-start sm:self-auto whitespace-nowrap"
-              >
-                <span>{t('সব ফ্ল্যাশ ডিল দেখুন', 'View All Flash Deals')}</span>
-                <span>→</span>
-              </button>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1.5 text-xs font-mono font-black text-white bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 tabular-nums">
+                  <Clock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                  <span>{flashTimeLeft.hours.toString().padStart(2, '0')}h</span>
+                  <span className="text-rose-400">:</span>
+                  <span>{flashTimeLeft.minutes.toString().padStart(2, '0')}m</span>
+                  <span className="text-rose-400">:</span>
+                  <span className="text-rose-400">{flashTimeLeft.seconds.toString().padStart(2, '0')}s</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => selectCategoryFilter('flash-sale', null)}
+                  className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                >
+                  <span>{t('সব ফ্ল্যাশ ডিল দেখুন', 'View All Flash Deals')}</span>
+                  <span>→</span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">

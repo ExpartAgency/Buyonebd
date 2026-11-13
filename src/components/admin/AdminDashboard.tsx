@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   LayoutDashboard,
   Package,
@@ -58,7 +58,11 @@ import {
   Activity,
   History,
   FileText,
-  Wand2
+  Wand2,
+  Mic,
+  Volume2,
+  VolumeX,
+  PhoneOutgoing
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BUSINESS_THEME_PRESETS } from '../../data/initialData';
@@ -120,6 +124,7 @@ export const AdminDashboard: React.FC = () => {
     updateSettings,
     resetAllToDefault,
     setActiveView,
+    goHome,
     adminLang,
     setAdminLang,
     toggleProductFlashSale,
@@ -137,6 +142,7 @@ export const AdminDashboard: React.FC = () => {
     generateAgentAIReply,
     markChatRead,
     browserCalls,
+    initiateCustomerBrowserCall,
     answerBrowserCallFromBackend,
     appendBrowserCallMessage,
     endBrowserCallSession
@@ -189,8 +195,15 @@ export const AdminDashboard: React.FC = () => {
   const [chatReplyDraft, setChatReplyDraft] = useState<string>('');
   const [isGeneratingAiReply, setIsGeneratingAiReply] = useState<boolean>(false);
   const [selectedCallId, setSelectedCallId] = useState<string>('');
+  const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string>('');
+  const [callRosterSearch, setCallRosterSearch] = useState<string>('');
+  const [callRosterFilter, setCallRosterFilter] = useState<'all' | 'active' | 'orders'>('all');
   const [callReplyInput, setCallReplyInput] = useState<string>('');
   const [isGeneratingCallDraft, setIsGeneratingCallDraft] = useState<boolean>(false);
+  const [isVoiceSpeakerOn, setIsVoiceSpeakerOn] = useState<boolean>(true);
+  const [isMicListening, setIsMicListening] = useState<boolean>(false);
+  const [callElapsed, setCallElapsed] = useState<number>(0);
+  const speechRecognitionRef = useRef<any>(null);
   const [browsingSearch, setBrowsingSearch] = useState<string>('');
 
   // AI Keyword Rules form state
@@ -580,26 +593,265 @@ export const AdminDashboard: React.FC = () => {
 
   const activeChatObj =
     supportChats.find((c) => c.id === selectedChatId) || supportChats[0] || null;
-  const activeCallObj =
-    browserCalls.find((c) => c.id === selectedCallId) ||
-    ringingCalls[0] ||
-    browserCalls.find((c) => c.status === 'connected') ||
-    browserCalls[0] ||
-    null;
+
+  // Group all distinct customers by normalized phone across browserCalls, orders, and supportChats
+  const normalizePhoneKey = (phone?: string) => (phone || '').replace(/[^0-9]/g, '').slice(-11);
+
+  interface DistinctCallCustomer {
+    key: string;
+    name: string;
+    phone: string;
+    district: string;
+    customerOrders: Order[];
+    totalSpent: number;
+    latestOrder: Order | null;
+    customerCalls: typeof browserCalls;
+    latestCall: (typeof browserCalls)[number] | null;
+    activeCall: (typeof browserCalls)[number] | null;
+  }
+
+  const callCustomersRoster = useMemo<DistinctCallCustomer[]>(() => {
+    const map = new Map<string, DistinctCallCustomer>();
+
+    const upsert = (phoneRaw: string | undefined, nameRaw: string | undefined, districtRaw?: string) => {
+      const cleanPhone = (phoneRaw || '').trim();
+      const key = normalizePhoneKey(cleanPhone) || `name:${(nameRaw || 'guest').toLowerCase()}`;
+      const existing = map.get(key);
+      if (existing) {
+        if (nameRaw && (!existing.name || existing.name === 'সম্মানিত গ্রাহক' || existing.name === 'Guest Visitor')) {
+          existing.name = nameRaw;
+        }
+        if (districtRaw && !existing.district) {
+          existing.district = districtRaw;
+        }
+        return existing;
+      }
+      const created: DistinctCallCustomer = {
+        key,
+        name: nameRaw || at('অতিথি গ্রাহক', 'Guest Customer'),
+        phone: cleanPhone || '01886289663',
+        district: districtRaw || '',
+        customerOrders: [],
+        totalSpent: 0,
+        latestOrder: null,
+        customerCalls: [],
+        latestCall: null,
+        activeCall: null
+      };
+      map.set(key, created);
+      return created;
+    };
+
+    browserCalls.forEach((call) => {
+      const rec = upsert(call.customerPhone, call.customerName);
+      rec.customerCalls.push(call);
+    });
+
+    orders.forEach((ord) => {
+      const rec = upsert(ord.customer.phone, ord.customer.name, ord.customer.district);
+      rec.customerOrders.push(ord);
+      if (ord.status !== 'cancelled') {
+        rec.totalSpent += ord.pricing.total;
+      }
+    });
+
+    supportChats.forEach((chat) => {
+      if (chat.customerPhone || (chat.customerName && chat.customerName !== 'সম্মানিত গ্রাহক')) {
+        upsert(chat.customerPhone, chat.customerName);
+      }
+    });
+
+    const list = Array.from(map.values()).map((rec) => {
+      const sortedOrders = [...rec.customerOrders].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      const sortedCalls = [...rec.customerCalls].sort(
+        (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+      );
+      const activeCall =
+        sortedCalls.find((c) => c.status === 'ringing_backend') ||
+        sortedCalls.find((c) => c.status === 'connected') ||
+        null;
+      return {
+        ...rec,
+        customerOrders: sortedOrders,
+        latestOrder: sortedOrders[0] || null,
+        customerCalls: sortedCalls,
+        latestCall: sortedCalls[0] || null,
+        activeCall
+      };
+    });
+
+    return list.sort((a, b) => {
+      const score = (c: DistinctCallCustomer) =>
+        c.activeCall?.status === 'ringing_backend'
+          ? 4
+          : c.activeCall?.status === 'connected'
+          ? 3
+          : c.latestCall
+          ? 2
+          : c.latestOrder
+          ? 1
+          : 0;
+      return score(b) - score(a) || b.customerOrders.length - a.customerOrders.length;
+    });
+  }, [browserCalls, orders, supportChats, adminLang]);
+
+  const filteredCallCustomers = useMemo(() => {
+    const q = callRosterSearch.trim().toLowerCase();
+    return callCustomersRoster.filter((c) => {
+      if (callRosterFilter === 'active' && !c.activeCall && c.customerCalls.length === 0) return false;
+      if (callRosterFilter === 'orders' && c.customerOrders.length === 0) return false;
+      if (!q) return true;
+      return (
+        c.name.toLowerCase().includes(q) ||
+        c.phone.toLowerCase().includes(q) ||
+        c.district.toLowerCase().includes(q) ||
+        c.customerOrders.some((o) => o.id.toLowerCase().includes(q))
+      );
+    });
+  }, [callCustomersRoster, callRosterSearch, callRosterFilter]);
+
+  const selectedCallCustomer = useMemo(() => {
+    if (selectedCustomerPhone) {
+      const match = callCustomersRoster.find((c) => c.key === selectedCustomerPhone);
+      if (match) return match;
+    }
+    if (selectedCallId) {
+      const byCall = callCustomersRoster.find((c) => c.customerCalls.some((cc) => cc.id === selectedCallId));
+      if (byCall) return byCall;
+    }
+    return callCustomersRoster[0] || null;
+  }, [callCustomersRoster, selectedCustomerPhone, selectedCallId]);
+
+  const activeCallObj = useMemo(() => {
+    if (selectedCallId) {
+      const explicit = browserCalls.find((c) => c.id === selectedCallId);
+      if (explicit) {
+        if (!selectedCallCustomer || selectedCallCustomer.customerCalls.some((cc) => cc.id === explicit.id)) {
+          return explicit;
+        }
+      }
+    }
+    if (selectedCallCustomer) {
+      return selectedCallCustomer.activeCall || selectedCallCustomer.latestCall || null;
+    }
+    return ringingCalls[0] || browserCalls.find((c) => c.status === 'connected') || browserCalls[0] || null;
+  }, [browserCalls, selectedCallId, selectedCallCustomer, ringingCalls]);
+
+  useEffect(() => {
+    if (activeCallObj?.status !== 'connected') {
+      setCallElapsed(activeCallObj?.durationSeconds || 0);
+      return;
+    }
+    const updateElapsed = () => {
+      setCallElapsed(Math.max(0, Math.floor((Date.now() - new Date(activeCallObj.startedAt).getTime()) / 1000)));
+    };
+    updateElapsed();
+    const timer = setInterval(updateElapsed, 1000);
+    return () => clearInterval(timer);
+  }, [activeCallObj?.id, activeCallObj?.status, activeCallObj?.startedAt, activeCallObj?.durationSeconds]);
+
+  const formatCallTimer = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const rem = secs % 60;
+    return `${mins.toString().padStart(2, '0')}:${rem.toString().padStart(2, '0')}`;
+  };
+
+  const speakVoiceLine = (text: string) => {
+    if (!isVoiceSpeakerOn || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = /[\u0980-\u09FF]/.test(text) ? 'bn-BD' : 'en-US';
+      utter.rate = 0.98;
+      window.speechSynthesis.speak(utter);
+    } catch {}
+  };
+
+  const sendAssistantVoiceSpeech = (callId: string, text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    appendBrowserCallMessage(callId, 'assistant', clean, clean);
+    speakVoiceLine(clean);
+  };
+
+  const handleStartLiveVoiceCallForCustomer = (customer: DistinctCallCustomer) => {
+    setSelectedCustomerPhone(customer.key);
+    if (customer.activeCall) {
+      setSelectedCallId(customer.activeCall.id);
+      if (customer.activeCall.status === 'ringing_backend') {
+        answerBrowserCallFromBackend(customer.activeCall.id);
+      }
+      return;
+    }
+    const newId = initiateCustomerBrowserCall(customer.latestOrder, {
+      name: customer.name,
+      phone: customer.phone,
+      autoConnect: true
+    });
+    setSelectedCallId(newId);
+    speakVoiceLine(
+      adminLang === 'bn'
+        ? `আসসালামু আলাইকুম ${customer.name}, BuyOne BD সাপোর্ট ডেস্ক থেকে লাইভ কল যুক্ত হয়েছে।`
+        : `Hello ${customer.name}, live support call connected from BuyOne BD desk.`
+    );
+  };
+
+  const toggleMicVoiceInput = () => {
+    if (!activeCallObj || activeCallObj.status === 'ended') return;
+    if (isMicListening && speechRecognitionRef.current) {
+      try {
+        speechRecognitionRef.current.stop();
+      } catch {}
+      setIsMicListening(false);
+      return;
+    }
+    const w = window as any;
+    const SpeechRec = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!SpeechRec) {
+      addToast(
+        'warning',
+        at('মাইক ভয়েস সাপোর্ট নেই', 'Voice Mic Unavailable'),
+        at('এই ব্রাউজারে মাইক্রোফোন স্পিচ-টু-টেক্সট চালু নেই — নিচের ভয়েস বক্সে লিখুন।', 'Speech recognition not available in this browser; type below to speak.')
+      );
+      return;
+    }
+    try {
+      const rec = new SpeechRec();
+      rec.lang = adminLang === 'bn' ? 'bn-BD' : 'en-US';
+      rec.interimResults = false;
+      rec.onresult = (event: any) => {
+        const spoken = event?.results?.[0]?.[0]?.transcript;
+        if (spoken && activeCallObj) {
+          sendAssistantVoiceSpeech(activeCallObj.id, spoken);
+        }
+      };
+      rec.onerror = () => setIsMicListening(false);
+      rec.onend = () => setIsMicListening(false);
+      speechRecognitionRef.current = rec;
+      rec.start();
+      setIsMicListening(true);
+    } catch {
+      setIsMicListening(false);
+    }
+  };
 
   const handleGenerateCallAiDraft = async () => {
-    if (!activeCallObj) return;
+    if (!activeCallObj && !selectedCallCustomer) return;
     setIsGeneratingCallDraft(true);
     try {
+      const custName = activeCallObj?.customerName || selectedCallCustomer?.name || 'Customer';
       const lastCustomerLine =
-        [...activeCallObj.transcript].reverse().find((m) => m.speaker === 'customer')?.text ||
-        'কাস্টমারের সাথে অর্ডার বা পণ্য নিয়ে কথা বলুন';
-      const linkedOrd = activeCallObj.orderId
+        (activeCallObj
+          ? [...activeCallObj.transcript].reverse().find((m) => m.speaker === 'customer')?.text
+          : '') || 'কাস্টমারের সাথে অর্ডার বা পণ্য নিয়ে কথা বলুন';
+      const linkedOrd = activeCallObj?.orderId
         ? orders.find((o) => o.id === activeCallObj.orderId)
-        : undefined;
+        : selectedCallCustomer?.latestOrder;
       const contextPrompt = linkedOrd
-        ? `Customer ${activeCallObj.customerName} (Order ${linkedOrd.id}, Total ৳${linkedOrd.pricing.total}, Status: ${linkedOrd.status}). Customer said: "${lastCustomerLine}". Draft a helpful Bengali response for our support assistant.`
-        : `Customer ${activeCallObj.customerName} said: "${lastCustomerLine}". Draft a polite Bengali response for our support assistant.`;
+        ? `Customer ${custName} (Order ${linkedOrd.id}, Total ৳${linkedOrd.pricing.total}, Status: ${linkedOrd.status}). Customer said: "${lastCustomerLine}". Draft a helpful Bengali response for our support assistant.`
+        : `Customer ${custName} said: "${lastCustomerLine}". Draft a polite Bengali response for our support assistant.`;
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -682,7 +934,7 @@ export const AdminDashboard: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setActiveView('store')}
+            onClick={() => goHome()}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
           >
             <ExternalLink className="w-3.5 h-3.5" />
@@ -700,7 +952,7 @@ export const AdminDashboard: React.FC = () => {
           <button
             onClick={() => {
               logoutAdmin();
-              setActiveView('store');
+              goHome();
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs font-bold rounded-xl transition-colors cursor-pointer"
             title={at('লগআউট', 'Logout')}
@@ -848,208 +1100,505 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* A. BROWSER CALL DESK & HISTORY */}
-              <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between">
-                  <h4 className="text-sm font-black text-white flex items-center gap-2">
-                    <PhoneCall className="w-4 h-4 text-emerald-400" />
-                    <span>{at('ব্রাউজার কল রিসিভার ও কল টক হিস্ট্রি', 'Browser Call Console & Calling Talk History')}</span>
-                  </h4>
-                  <span className="text-[11px] font-mono text-slate-400">
-                    {at(`মোট কল: ${browserCalls.length}টি`, `Total Calls: ${browserCalls.length}`)}
-                  </span>
+              {/* A. LIVE VOICE CALL CENTER — DISTINCT CUSTOMER DIRECTORY & TELEPHONE CONSOLE */}
+              <div className="rounded-2xl bg-slate-900 border border-emerald-900/50 overflow-hidden shadow-xl">
+                <div className="px-5 py-3.5 border-b border-slate-800 bg-gradient-to-r from-slate-950 via-emerald-950/30 to-slate-950 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                      <PhoneCall className="w-4 h-4" />
+                    </span>
+                    <div>
+                      <h4 className="text-sm font-black text-white">
+                        {at('লাইভ ভয়েস কল ডিরেক্টরি ও কাস্টমার কল সেন্টার', 'Live Voice Call Directory & Customer Call Desk')}
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        {at(
+                          'প্রতিটি ভিন্ন কাস্টমারের তালিকা থেকে সরাসরি কল রিসিভ করুন অথবা আউটবাউন্ড লাইভ কল করুন',
+                          'Dial or answer distinct customers individually from the live customer directory with full order details'
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-emerald-300 tabular-nums">
+                      {at(`মোট কাস্টমার: ${callCustomersRoster.length} জন`, `${callCustomersRoster.length} Customers`)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsVoiceSpeakerOn((prev) => !prev)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1.5 cursor-pointer ${
+                        isVoiceSpeakerOn
+                          ? 'bg-emerald-950/60 border-emerald-600/50 text-emerald-300'
+                          : 'bg-slate-950 border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      {isVoiceSpeakerOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                      <span>{isVoiceSpeakerOn ? at('স্পিকার চালু', 'Audio On') : at('মিউট', 'Muted')}</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-800">
-                  {/* Call Sessions List */}
-                  <div className="p-3 space-y-2 max-h-[420px] overflow-y-auto">
-                    {browserCalls.length === 0 ? (
-                      <div className="p-6 text-center text-xs text-slate-500">
-                        {at('এখনও কোনো ব্রাউজার কল নেই। কাস্টমার স্টোর থেকে কল করলে এখানে আসবে।', 'No browser calls yet. Customer calls from storefront appear here.')}
+                <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-slate-800">
+                  {/* Left: Distinct Customers Directory List */}
+                  <div className="lg:col-span-5 p-3.5 space-y-3 bg-slate-950/30">
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={callRosterSearch}
+                          onChange={(e) => setCallRosterSearch(e.target.value)}
+                          placeholder={at('নাম, ফোন বা অর্ডার আইডি দিয়ে কাস্টমার খুঁজুন...', 'Search distinct customer by name, phone, district...')}
+                          className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                        />
                       </div>
-                    ) : (
-                      browserCalls.map((call) => {
-                        const isSelected = activeCallObj?.id === call.id;
-                        return (
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold">
+                        {(['all', 'active', 'orders'] as const).map((flt) => (
                           <button
-                            key={call.id}
-                            onClick={() => setSelectedCallId(call.id)}
-                            className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer ${
-                              isSelected
-                                ? 'bg-emerald-950/60 border-emerald-500/60'
-                                : 'bg-slate-950/50 border-slate-800 hover:border-slate-700'
+                            key={flt}
+                            type="button"
+                            onClick={() => setCallRosterFilter(flt)}
+                            className={`px-2.5 py-1 rounded-lg border cursor-pointer transition-colors ${
+                              callRosterFilter === flt
+                                ? 'bg-emerald-600 text-white border-emerald-500'
+                                : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
                             }`}
                           >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-bold text-white truncate">{call.customerName}</span>
-                              <span
-                                className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                                  call.status === 'ringing_backend'
-                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                                    : call.status === 'connected'
-                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                    : 'bg-slate-800 text-slate-400'
-                                }`}
-                              >
-                                {call.status === 'ringing_backend'
-                                  ? at('রিং হচ্ছে', 'Ringing')
-                                  : call.status === 'connected'
-                                  ? at('যুক্ত', 'Live')
-                                  : at('সমাপ্ত', 'Ended')}
-                              </span>
-                            </div>
-                            <div className="text-[11px] font-mono text-slate-400 mt-1 flex items-center justify-between">
-                              <span>{call.customerPhone}</span>
-                              <span>{call.transcript.length} msgs</span>
-                            </div>
-                            {call.orderId && (
-                              <div className="text-[10px] font-mono text-amber-400 mt-1">Order #{call.orderId}</div>
-                            )}
+                            {flt === 'all'
+                              ? at(`সকল কাস্টমার (${callCustomersRoster.length})`, `All (${callCustomersRoster.length})`)
+                              : flt === 'active'
+                              ? at('কল সক্রিয়/হিস্ট্রি', 'Call Activity')
+                              : at('অর্ডারসহ', 'With Orders')}
                           </button>
-                        );
-                      })
-                    )}
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 max-h-[430px] overflow-y-auto pr-1">
+                      {filteredCallCustomers.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-slate-500">
+                          {at('কোনো কাস্টমার পাওয়া যায়নি', 'No matching customers found')}
+                        </div>
+                      ) : (
+                        filteredCallCustomers.map((cust) => {
+                          const isSelected = selectedCallCustomer?.key === cust.key;
+                          const isRinging = cust.activeCall?.status === 'ringing_backend';
+                          const isLive = cust.activeCall?.status === 'connected';
+
+                          return (
+                            <div
+                              key={cust.key}
+                              onClick={() => {
+                                setSelectedCustomerPhone(cust.key);
+                                setSelectedCallId(cust.activeCall?.id || cust.latestCall?.id || '');
+                              }}
+                              className={`p-3 rounded-xl border transition-all cursor-pointer space-y-2 ${
+                                isSelected
+                                  ? 'bg-emerald-950/45 border-emerald-500/70 shadow-lg shadow-emerald-950/30'
+                                  : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div
+                                    className={`w-9 h-9 rounded-full shrink-0 flex items-center justify-center font-black text-xs border ${
+                                      isRinging
+                                        ? 'bg-amber-500/20 text-amber-300 border-amber-500 animate-pulse'
+                                        : isLive
+                                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500'
+                                        : 'bg-slate-800 text-slate-200 border-slate-700'
+                                    }`}
+                                  >
+                                    {cust.name.slice(0, 2).toUpperCase()}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-black text-white truncate">{cust.name}</p>
+                                    <p className="text-[11px] font-mono text-emerald-400 truncate">{cust.phone}</p>
+                                  </div>
+                                </div>
+
+                                <span
+                                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
+                                    isRinging
+                                      ? 'bg-amber-500 text-slate-950 animate-pulse'
+                                      : isLive
+                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                      : cust.latestCall
+                                      ? 'bg-slate-800 text-slate-300'
+                                      : 'bg-sky-950/70 text-sky-300 border border-sky-800/60'
+                                  }`}
+                                >
+                                  {isRinging
+                                    ? at('ইনকামিং কল', 'Ringing')
+                                    : isLive
+                                    ? at('লাইভ কল', 'On Call')
+                                    : cust.latestCall
+                                    ? at(`${cust.customerCalls.length} কল`, `${cust.customerCalls.length} Calls`)
+                                    : at('কল প্রস্তুত', 'Ready')}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400">
+                                <span className="truncate">
+                                  {cust.district ? `${cust.district} • ` : ''}
+                                  {at(`${cust.customerOrders.length}টি অর্ডার`, `${cust.customerOrders.length} orders`)}
+                                  {cust.totalSpent > 0 ? ` • ৳${cust.totalSpent.toLocaleString()}` : ''}
+                                </span>
+                                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartLiveVoiceCallForCustomer(cust)}
+                                    className={`px-2.5 py-1 rounded-lg font-bold text-[10px] flex items-center gap-1 cursor-pointer ${
+                                      isRinging
+                                        ? 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                                        : isLive
+                                        ? 'bg-emerald-500 text-slate-950'
+                                        : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                                    }`}
+                                  >
+                                    {isRinging ? <PhoneIncoming className="w-3 h-3" /> : <PhoneOutgoing className="w-3 h-3" />}
+                                    <span>
+                                      {isRinging
+                                        ? at('রিসিভ', 'Answer')
+                                        : isLive
+                                        ? at('কথা বলুন', 'Open')
+                                        : at('লাইভ কল', 'Call Live')}
+                                    </span>
+                                  </button>
+                                  {cust.latestOrder && (
+                                    <button
+                                      type="button"
+                                      onClick={() => startAICall(cust.latestOrder!)}
+                                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 font-bold text-[10px] cursor-pointer"
+                                      title={at('AI অটো ভয়েস কল', 'Trigger AI Auto-Call')}
+                                    >
+                                      AI
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
 
-                  {/* Active Call Console & Transcript + Order Details */}
-                  <div className="lg:col-span-2 p-4 flex flex-col justify-between min-h-[360px]">
-                    {!activeCallObj ? (
-                      <div className="flex-1 flex items-center justify-center text-xs text-slate-500">
-                        {at('বিস্তারিত দেখতে বাম পাশ থেকে একটি কল নির্বাচন করুন', 'Select a call session to view transcript and controls')}
+                  {/* Right: Telephone Voice Stage, Order Details & Call Audit Log */}
+                  <div className="lg:col-span-7 p-4 sm:p-5 flex flex-col justify-between gap-4 bg-slate-900">
+                    {!selectedCallCustomer ? (
+                      <div className="flex-1 flex items-center justify-center text-xs text-slate-500 min-h-[360px]">
+                        {at('বাম পাশের তালিকা থেকে যেকোনো কাস্টমার নির্বাচন করুন', 'Select a customer from the directory to start or manage a live call')}
                       </div>
                     ) : (
                       <>
-                        {/* Call Header & Linked Order Summary */}
-                        <div className="pb-3 border-b border-slate-800 space-y-2.5">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <h5 className="text-sm font-black text-white flex items-center gap-2">
-                                <span>{activeCallObj.customerName}</span>
-                                <span className="text-xs font-mono text-emerald-400">({activeCallObj.customerPhone})</span>
-                              </h5>
-                              <p className="text-[11px] text-slate-400">
-                                {new Date(activeCallObj.startedAt).toLocaleString()} • {activeCallObj.durationSeconds}s
-                                {activeCallObj.answeredBy ? ` • ${activeCallObj.answeredBy}` : ''}
-                              </p>
+                        {/* Telephone Dialer Stage Header */}
+                        <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-950 via-slate-950 to-emerald-950/40 border border-slate-800 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${
+                                  activeCallObj?.status === 'ringing_backend'
+                                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 animate-pulse'
+                                    : activeCallObj?.status === 'connected'
+                                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+                                    : 'bg-slate-800 border-slate-700 text-slate-300'
+                                }`}
+                              >
+                                <PhoneCall className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h5 className="text-base font-black text-white">{selectedCallCustomer.name}</h5>
+                                  <span className="text-xs font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/50 px-2 py-0.5 rounded-md">
+                                    {selectedCallCustomer.phone}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                                  {activeCallObj?.status === 'connected' ? (
+                                    <>
+                                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                                      <span className="font-bold text-emerald-400">
+                                        {at('লাইভ ভয়েস সংযুক্ত', 'Live Voice Connected')}
+                                      </span>
+                                      <span className="font-mono text-white font-bold tabular-nums">
+                                        {formatCallTimer(callElapsed)}
+                                      </span>
+                                    </>
+                                  ) : activeCallObj?.status === 'ringing_backend' ? (
+                                    <span className="font-bold text-amber-300">
+                                      {at('ব্রাউজার থেকে কল আসছে — রিসিভ করতে বাটনে ক্লিক করুন', 'Incoming browser call ringing...')}
+                                    </span>
+                                  ) : (
+                                    <span>
+                                      {selectedCallCustomer.district || at('বাংলাদেশ', 'Bangladesh')} •{' '}
+                                      {at(`মোট কল: ${selectedCallCustomer.customerCalls.length}টি`, `${selectedCallCustomer.customerCalls.length} past call(s)`)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              {activeCallObj.status === 'ringing_backend' && (
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              {activeCallObj?.status === 'ringing_backend' && (
                                 <button
+                                  type="button"
                                   onClick={() => answerBrowserCallFromBackend(activeCallObj.id)}
-                                  className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/20"
                                 >
-                                  <PhoneCall className="w-3.5 h-3.5" />
+                                  <PhoneIncoming className="w-3.5 h-3.5" />
                                   <span>{at('কল রিসিভ করুন', 'Answer Call')}</span>
                                 </button>
                               )}
-                              {activeCallObj.status !== 'ended' && (
+
+                              {activeCallObj && activeCallObj.status !== 'ended' ? (
                                 <>
                                   <button
+                                    type="button"
+                                    onClick={toggleMicVoiceInput}
+                                    className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 border cursor-pointer ${
+                                      isMicListening
+                                        ? 'bg-rose-600 text-white border-rose-400 animate-pulse'
+                                        : 'bg-slate-800 hover:bg-slate-700 text-emerald-300 border-slate-700'
+                                    }`}
+                                  >
+                                    <Mic className="w-3.5 h-3.5" />
+                                    <span>{isMicListening ? at('শুনছে...', 'Listening...') : at('মাইক কথা', 'Mic Speak')}</span>
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => endBrowserCallSession(activeCallObj.id, true)}
                                     className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl cursor-pointer"
                                   >
                                     {at('কনফার্ম ও শেষ', 'Confirm & End')}
                                   </button>
                                   <button
+                                    type="button"
                                     onClick={() => endBrowserCallSession(activeCallObj.id, false)}
-                                    className="px-3 py-2 bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-200 font-bold text-xs rounded-xl cursor-pointer"
+                                    className="px-3 py-2 bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-200 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer"
                                   >
-                                    {at('কল শেষ', 'End Call')}
+                                    <PhoneOff className="w-3.5 h-3.5" />
+                                    <span>{at('কাটুন', 'Hang Up')}</span>
                                   </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartLiveVoiceCallForCustomer(selectedCallCustomer)}
+                                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                                  >
+                                    <PhoneOutgoing className="w-3.5 h-3.5" />
+                                    <span>{at('নতুন লাইভ কল করুন', 'Start Live Call')}</span>
+                                  </button>
+                                  {selectedCallCustomer.latestOrder && (
+                                    <button
+                                      type="button"
+                                      onClick={() => startAICall(selectedCallCustomer.latestOrder!)}
+                                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                      <Bot className="w-3.5 h-3.5" />
+                                      <span>{at('AI অটো কল', 'AI Voice Call')}</span>
+                                    </button>
+                                  )}
                                 </>
                               )}
                             </div>
                           </div>
 
-                          {/* Linked Order Full Details when calling customer */}
-                          {activeCallObj.orderId && (() => {
-                            const ord = orders.find((o) => o.id === activeCallObj.orderId);
-                            if (!ord) return null;
-                            return (
-                              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] flex flex-wrap items-center justify-between gap-2">
-                                <div>
-                                  <span className="font-bold text-amber-400">#{ord.id}</span>
-                                  <span className="text-slate-400 mx-1.5">•</span>
-                                  <span className="text-slate-200">
-                                    {ord.items.map((i) => `${i.productTitleBn} x${i.quantity}`).join(', ')}
-                                  </span>
-                                  <span className="text-slate-400 mx-1.5">•</span>
-                                  <span className="text-slate-400">{ord.customer.address}, {ord.customer.district}</span>
-                                </div>
-                                <span className="font-black text-emerald-400 tabular-nums">৳ {ord.pricing.total.toLocaleString()}</span>
+                          {/* Audio Waveform Strip when Call is Connected */}
+                          {activeCallObj?.status === 'connected' && (
+                            <div className="px-3 py-2 rounded-xl bg-emerald-950/30 border border-emerald-800/40 flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2 text-[11px] text-emerald-300 font-bold">
+                                <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                                <span>{at('ভয়েস চ্যানেল সক্রিয় — স্পিকার ও মাইক রেডি', 'Live Voice Audio Channel Ready')}</span>
                               </div>
-                            );
-                          })()}
-                        </div>
-
-                        {/* Calling Talk Transcript */}
-                        <div className="flex-1 overflow-y-auto py-3 space-y-2.5 max-h-56">
-                          {activeCallObj.transcript.map((item) => (
-                            <div
-                              key={item.id}
-                              className={`flex ${item.speaker === 'customer' ? 'justify-start' : 'justify-end'}`}
-                            >
-                              <div
-                                className={`max-w-[82%] px-3.5 py-2 rounded-2xl text-xs ${
-                                  item.speaker === 'customer'
-                                    ? 'bg-slate-800 text-slate-100 rounded-tl-sm'
-                                    : item.speaker === 'assistant'
-                                    ? 'bg-emerald-600 text-white rounded-tr-sm'
-                                    : 'bg-sky-700 text-white rounded-tr-sm'
-                                }`}
-                              >
-                                <div className="text-[10px] opacity-75 font-bold mb-0.5 flex items-center justify-between gap-3">
-                                  <span>
-                                    {item.speaker === 'customer'
-                                      ? activeCallObj.customerName
-                                      : item.speaker === 'assistant'
-                                      ? at('অ্যাসিস্ট্যান্ট (আপনি)', 'Backend Assistant')
-                                      : 'AI Auto'}
-                                  </span>
-                                  <span>{item.time}</span>
-                                </div>
-                                <p>{item.textBn || item.text}</p>
+                              <div className="flex items-end gap-1 h-4">
+                                {[40, 85, 55, 95, 70, 45, 90, 60, 80, 50].map((h, idx) => (
+                                  <span
+                                    key={idx}
+                                    style={{ height: `${h}%` }}
+                                    className="w-1 rounded-full bg-emerald-400/80 animate-pulse"
+                                  />
+                                ))}
                               </div>
                             </div>
-                          ))}
+                          )}
+
+                          {/* Complete Customer Orders Details When Calling */}
+                          {selectedCallCustomer.customerOrders.length > 0 && (
+                            <div className="space-y-1.5">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                {at(
+                                  `কাস্টমারের অর্ডারসমূহ (${selectedCallCustomer.customerOrders.length}টি)`,
+                                  `Customer Order Details (${selectedCallCustomer.customerOrders.length})`
+                                )}
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-28 overflow-y-auto">
+                                {selectedCallCustomer.customerOrders.map((ord) => (
+                                  <div
+                                    key={ord.id}
+                                    className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-[11px] space-y-1"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="font-mono font-bold text-amber-400">#{ord.id}</span>
+                                      <span className="font-black text-emerald-400 tabular-nums">৳{ord.pricing.total.toLocaleString()}</span>
+                                    </div>
+                                    <p className="text-slate-200 truncate">
+                                      {ord.items.map((i) => `${i.productTitleBn} x${i.quantity}`).join(', ')}
+                                    </p>
+                                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                                      <span className="truncate">{ord.customer.address}, {ord.customer.district}</span>
+                                      <span className="uppercase font-mono text-slate-300 shrink-0 ml-1">{ord.status}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
 
-                        {/* Speak / Send Message During Call */}
-                        {activeCallObj.status !== 'ended' && (
-                          <form
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              if (!callReplyInput.trim()) return;
-                              appendBrowserCallMessage(activeCallObj.id, 'assistant', callReplyInput.trim(), callReplyInput.trim());
-                              setCallReplyInput('');
-                            }}
-                            className="pt-3 border-t border-slate-800 flex flex-wrap gap-2"
-                          >
-                            <input
-                              type="text"
-                              value={callReplyInput}
-                              onChange={(e) => setCallReplyInput(e.target.value)}
-                              placeholder={at('কলে কাস্টমারকে বলার মেসেজ লিখুন...', 'Type reply to speak/send in live browser call...')}
-                              className="flex-1 min-w-[200px] px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleGenerateCallAiDraft}
-                              disabled={isGeneratingCallDraft}
-                              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                        {/* One-Click Voice Prompts + Custom Voice Broadcast Bar */}
+                        {activeCallObj && activeCallObj.status !== 'ended' && (
+                          <div className="space-y-2.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">
+                                {at('দ্রুত ভয়েস বার্তা:', 'Quick Voice Prompts:')}
+                              </span>
+                              {[
+                                {
+                                  labelBn: 'অর্ডার কনফার্ম করুন',
+                                  labelEn: 'Confirm Order',
+                                  speakBn: `আসসালামু আলাইকুম ${selectedCallCustomer.name}, BuyOne BD থেকে আপনার অর্ডারটি কনফার্ম করার জন্য কল করেছি। অনুগ্রহ করে ঠিকানাটি নিশ্চিত করবেন?`,
+                                  speakEn: `Hello ${selectedCallCustomer.name}, calling from BuyOne BD to confirm your order and delivery address.`
+                                },
+                                {
+                                  labelBn: 'ঠিকানা যাচাই',
+                                  labelEn: 'Verify Address',
+                                  speakBn: `আপনার ডেলিভারি ঠিকানা (${selectedCallCustomer.latestOrder?.customer?.address || selectedCallCustomer.district || 'ঢাকা'}) কি ঠিক আছে?`,
+                                  speakEn: `Please confirm if your delivery address (${selectedCallCustomer.latestOrder?.customer?.address || 'Dhaka'}) is correct.`
+                                },
+                                {
+                                  labelBn: 'কুরিয়ারে পাঠানো হয়েছে',
+                                  labelEn: 'Parcel Dispatched',
+                                  speakBn: `আপনার পার্সেলটি স্টিডফাস্ট কুরিয়ারে হ্যান্ডওভার করা হয়েছে। ২৪ থেকে ৪৮ ঘণ্টার মধ্যে হাতে পেয়ে যাবেন ইনশাআল্লাহ।`,
+                                  speakEn: `Your parcel has been dispatched via Steadfast Courier and will reach you within 24-48 hours.`
+                                }
+                              ].map((preset, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() =>
+                                    sendAssistantVoiceSpeech(
+                                      activeCallObj.id,
+                                      adminLang === 'bn' ? preset.speakBn : preset.speakEn
+                                    )
+                                  }
+                                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-emerald-950/70 border border-slate-700 hover:border-emerald-600/50 text-[11px] font-bold text-slate-200 cursor-pointer transition-colors"
+                                >
+                                  🎙️ {adminLang === 'bn' ? preset.labelBn : preset.labelEn}
+                                </button>
+                              ))}
+                            </div>
+
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                if (!callReplyInput.trim()) return;
+                                sendAssistantVoiceSpeech(activeCallObj.id, callReplyInput.trim());
+                                setCallReplyInput('');
+                              }}
+                              className="flex flex-wrap gap-2"
                             >
-                              <Wand2 className="w-3.5 h-3.5" />
-                              <span>{isGeneratingCallDraft ? '...' : at('AI ড্রাফট', 'AI Draft')}</span>
-                            </button>
-                            <button
-                              type="submit"
-                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Send className="w-3.5 h-3.5" />
-                              <span>{at('পাঠান', 'Send')}</span>
-                            </button>
-                          </form>
+                              <input
+                                type="text"
+                                value={callReplyInput}
+                                onChange={(e) => setCallReplyInput(e.target.value)}
+                                placeholder={at('ভয়েসে কাস্টমারকে যা বলবেন লিখুন...', 'Enter voice line to speak aloud & log in call...')}
+                                className="flex-1 min-w-[200px] px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleGenerateCallAiDraft}
+                                disabled={isGeneratingCallDraft}
+                                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Wand2 className="w-3.5 h-3.5" />
+                                <span>{isGeneratingCallDraft ? '...' : at('AI ভয়েস স্ক্রিপ্ট', 'AI Script')}</span>
+                              </button>
+                              <button
+                                type="submit"
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Volume2 className="w-3.5 h-3.5" />
+                                <span>{at('ভয়েস বলুন', 'Speak')}</span>
+                              </button>
+                            </form>
+                          </div>
                         )}
+
+                        {/* Compact Structured Call Audit Log (Distinct from Live Chat Bubbles) */}
+                        <div className="rounded-xl bg-slate-950 border border-slate-800 overflow-hidden">
+                          <div className="px-3.5 py-2 border-b border-slate-800 bg-slate-950 flex items-center justify-between text-[11px]">
+                            <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                              <History className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>{at('কল ভয়েস লগ ও হিস্ট্রি', 'Structured Call Voice Log')}</span>
+                            </span>
+                            {selectedCallCustomer.customerCalls.length > 1 && (
+                              <div className="flex items-center gap-1 overflow-x-auto">
+                                {selectedCallCustomer.customerCalls.slice(0, 4).map((histCall, i) => (
+                                  <button
+                                    key={histCall.id}
+                                    type="button"
+                                    onClick={() => setSelectedCallId(histCall.id)}
+                                    className={`px-2 py-0.5 rounded font-mono text-[10px] cursor-pointer ${
+                                      activeCallObj?.id === histCall.id
+                                        ? 'bg-emerald-600 text-white'
+                                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                                    }`}
+                                  >
+                                    #{i + 1} ({histCall.durationSeconds}s)
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="divide-y divide-slate-800/70 max-h-44 overflow-y-auto">
+                            {!activeCallObj || activeCallObj.transcript.length === 0 ? (
+                              <div className="p-4 text-center text-[11px] text-slate-500">
+                                {at(
+                                  'এই কাস্টমারের সাথে এখনও কোনো কল রেকর্ড হয়নি। "নতুন লাইভ কল করুন" বাটনে ক্লিক করে কথা শুরু করুন।',
+                                  'No call audio logs yet for this customer. Click "Start Live Call" above to begin.'
+                                )}
+                              </div>
+                            ) : (
+                              activeCallObj.transcript.map((item) => (
+                                <div key={item.id} className="px-3.5 py-2 flex items-start gap-2.5 text-xs">
+                                  <span className="font-mono text-[10px] text-slate-500 shrink-0 mt-0.5 w-12">
+                                    {item.time}
+                                  </span>
+                                  <span
+                                    className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase shrink-0 ${
+                                      item.speaker === 'customer'
+                                        ? 'bg-slate-800 text-sky-300'
+                                        : item.speaker === 'assistant'
+                                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/50'
+                                        : 'bg-amber-950 text-amber-300 border border-amber-700/50'
+                                    }`}
+                                  >
+                                    {item.speaker === 'customer'
+                                      ? at('ক্রেতা', 'Customer')
+                                      : item.speaker === 'assistant'
+                                      ? at('এজেন্ট ভয়েস', 'Agent')
+                                      : 'AI'}
+                                  </span>
+                                  <p className="text-slate-200 leading-snug flex-1">{item.textBn || item.text}</p>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
                       </>
                     )}
                   </div>
@@ -2505,16 +3054,35 @@ export const AdminDashboard: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {sliders.map((sl, index) => (
                   <div key={sl.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
-                    <div className="aspect-[16/7] rounded-xl overflow-hidden bg-slate-950 relative">
+                    <div className="aspect-[16/7] rounded-xl overflow-hidden bg-slate-950 relative border border-slate-800 group">
                       <img src={sl.image} alt="" className="w-full h-full object-cover" />
-                      <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-black/70 text-white">
+                      <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-black/75 text-white">
                         {at(`স্লাইড #${index + 1}`, `Slide #${index + 1}`)}
                       </span>
+                      <label className="absolute bottom-2 right-2 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-lg cursor-pointer transition-colors">
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>{at('ব্যানার ছবি আপলোড', 'Upload Image')}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            handleImageFileUpload(file, (url) => updateSlide(sl.id, { image: url }));
+                            e.currentTarget.value = '';
+                          }}
+                        />
+                      </label>
                     </div>
 
                     <div>
-                      <h4 className="font-bold text-sm text-white">{at(sl.titleBn, sl.titleEn)}</h4>
-                      <p className="text-xs text-slate-400 line-clamp-1">{at(sl.subtitleBn, sl.subtitleEn)}</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="font-bold text-sm text-white truncate">{at(sl.titleBn, sl.titleEn)}</h4>
+                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md shrink-0">
+                          → {sl.linkCategory || 'all'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 line-clamp-1 mt-0.5">{at(sl.subtitleBn, sl.subtitleEn)}</p>
                     </div>
 
                     <div className="flex items-center justify-between pt-2 border-t border-slate-800">
@@ -2528,6 +3096,23 @@ export const AdminDashboard: React.FC = () => {
                       </button>
 
                       <div className="flex items-center gap-1.5">
+                        <label
+                          title={at('নতুন ছবি আপলোড', 'Upload New Photo')}
+                          className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-emerald-700 text-emerald-300 hover:text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <Upload className="w-3 h-3" />
+                          <span className="hidden sm:inline">{at('ছবি পরিবর্তন', 'Change Photo')}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              handleImageFileUpload(file, (url) => updateSlide(sl.id, { image: url }));
+                              e.currentTarget.value = '';
+                            }}
+                          />
+                        </label>
                         <button
                           onClick={() => openEditSlideModal(sl)}
                           title={at('স্লাইড এডিট করুন', 'Edit Slide')}
@@ -5916,36 +6501,86 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-slate-300 font-bold">ব্যানার ছবি (URL বা আপলোড)</label>
-                  <label className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 cursor-pointer">
-                    <Upload className="w-3 h-3" />
-                    <span>Upload Banner</span>
+              {/* Slider Banner Image Upload Studio */}
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <label className="block text-slate-200 font-bold">
+                      {at('স্লাইডার ব্যানার ছবি (আপলোড বা URL)', 'Slider Banner Image (Upload or URL)')}
+                    </label>
+                    <p className="text-[11px] text-emerald-400 font-semibold">
+                      {at('প্রস্তাবিত সাইজ: 1200×520 পিক্সেল (ওয়াইড HD)', 'Recommended Size: 1200×520 px (Wide 16:7 HD)')}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <label className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{at('ডিভাইস থেকে আপলোড', 'Upload Image')}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          handleImageFileUpload(file, (url) =>
+                            setSlideForm((prev) => ({ ...prev, image: url }))
+                          );
+                          e.currentTarget.value = '';
+                        }}
+                      />
+                    </label>
+                    {slideForm.image && (
+                      <button
+                        type="button"
+                        onClick={() => setSlideForm({ ...slideForm, image: '' })}
+                        className="px-2.5 py-2 bg-rose-950/60 text-rose-300 border border-rose-800 rounded-xl text-xs font-bold cursor-pointer"
+                      >
+                        {at('মুছুন', 'Clear')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Live Banner Preview */}
+                {slideForm.image ? (
+                  <div className="aspect-[16/7] rounded-xl overflow-hidden border border-slate-800 bg-slate-900">
+                    <img src={slideForm.image} alt="Banner Preview" className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <label className="aspect-[16/7] rounded-xl border-2 border-dashed border-slate-700 hover:border-emerald-500 bg-slate-900/60 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors">
+                    <ImagePlus className="w-7 h-7 text-emerald-400" />
+                    <span className="text-xs font-bold text-slate-300">
+                      {at('স্লাইডার ছবি আপলোড করতে এখানে ক্লিক করুন', 'Click to upload slider banner image')}
+                    </span>
                     <input
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) =>
-                        handleImageFileUpload(e.target.files?.[0], (url) =>
-                          setSlideForm({ ...slideForm, image: url })
-                        )
-                      }
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        handleImageFileUpload(file, (url) =>
+                          setSlideForm((prev) => ({ ...prev, image: url }))
+                        );
+                        e.currentTarget.value = '';
+                      }}
                     />
                   </label>
-                </div>
+                )}
+
                 <input
                   type="text"
                   required
                   value={slideForm.image}
                   onChange={(e) => setSlideForm({ ...slideForm, image: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  placeholder={at('অথবা ব্যানার ছবির URL পেস্ট করুন...', 'Or paste banner image URL...')}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono text-[11px]"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-bold mb-1">ডিসকাউন্ট ব্যাজ টেক্সট</label>
+                  <label className="block text-slate-300 font-bold mb-1">ডিসকাউন্ট ব্যাজ (বাংলা)</label>
                   <input
                     type="text"
                     value={slideForm.discountBadgeBn || ''}
@@ -5954,13 +6589,50 @@ export const AdminDashboard: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 font-bold mb-1">বাটন টেক্সট</label>
+                  <label className="block text-slate-300 font-bold mb-1">Discount Badge (EN)</label>
+                  <input
+                    type="text"
+                    value={slideForm.discountBadgeEn || ''}
+                    onChange={(e) => setSlideForm({ ...slideForm, discountBadgeEn: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">বাটন টেক্সট (বাংলা)</label>
                   <input
                     type="text"
                     value={slideForm.buttonTextBn}
                     onChange={(e) => setSlideForm({ ...slideForm, buttonTextBn: e.target.value })}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
                   />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Button Text (EN)</label>
+                  <input
+                    type="text"
+                    value={slideForm.buttonTextEn}
+                    onChange={(e) => setSlideForm({ ...slideForm, buttonTextEn: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('ক্লিক লিংক ক্যাটাগরি', 'Target Category')}</label>
+                  <select
+                    value={slideForm.linkCategory || 'all'}
+                    onChange={(e) => setSlideForm({ ...slideForm, linkCategory: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  >
+                    <option value="all">{at('সকল পণ্য', 'All Products')}</option>
+                    <option value="flash-sale">{at('ফ্ল্যাশ সেল', 'Flash Sale')}</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.slug}>
+                        {at(c.nameBn, c.nameEn)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -5977,7 +6649,7 @@ export const AdminDashboard: React.FC = () => {
 
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl cursor-pointer"
                 >
                   সেভ করুন
                 </button>
