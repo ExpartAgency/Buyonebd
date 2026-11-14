@@ -476,6 +476,14 @@ export interface StoreSettings {
   };
   theme?: StoreTheme;
   themeColors?: StoreThemeColors;
+  brandAttributes?: {
+    primaryHover?: string;
+    primarySoft?: string;
+    primaryBorder?: string;
+    onPrimary?: string;
+    cssAttributeString?: string;
+    generatedAt?: string;
+  };
   cmsTexts?: StoreCMSTexts;
   spinSettings: {
     enabled: boolean;

@@ -25,8 +25,9 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onOpenCategori
       <div className="flex items-center justify-around text-[10px] font-bold">
         <button
           onClick={goHome}
+          style={activeView === 'store' ? { color: 'var(--brand-primary, #059669)' } : undefined}
           className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition-colors cursor-pointer ${
-            activeView === 'store' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 hover:text-slate-800'
+            activeView === 'store' ? 'font-extrabold' : 'text-slate-500 hover:text-slate-800'
           }`}
         >
           <Home className="w-5 h-5 mb-0.5" />
@@ -35,7 +36,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onOpenCategori
 
         <button
           onClick={onOpenCategories}
-          className="flex flex-col items-center py-1 px-2.5 text-slate-500 hover:text-emerald-600 rounded-xl transition-colors cursor-pointer"
+          className="flex flex-col items-center py-1 px-2.5 text-slate-500 rounded-xl transition-colors cursor-pointer"
         >
           <Grid className="w-5 h-5 mb-0.5" />
           <span>{t('ক্যাটাগরি', 'Categories')}</span>
@@ -48,8 +49,9 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onOpenCategori
             recordPageVisit('/tracking', t('পার্সেল ট্র্যাকিং', 'Order Tracking'));
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
+          style={activeView === 'tracking' ? { color: 'var(--brand-primary, #059669)' } : undefined}
           className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition-colors cursor-pointer ${
-            activeView === 'tracking' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 hover:text-slate-800'
+            activeView === 'tracking' ? 'font-extrabold' : 'text-slate-500 hover:text-slate-800'
           }`}
         >
           <Truck className="w-5 h-5 mb-0.5" />
@@ -58,12 +60,15 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onOpenCategori
 
         <button
           onClick={openCustomerPortal}
-          className="relative flex flex-col items-center py-1 px-2.5 text-slate-500 hover:text-emerald-600 rounded-xl transition-colors cursor-pointer"
+          className="relative flex flex-col items-center py-1 px-2.5 text-slate-500 rounded-xl transition-colors cursor-pointer"
         >
           <div className="relative">
-            <User className="w-5 h-5 mb-0.5 text-emerald-600 dark:text-emerald-400" />
+            <User className="w-5 h-5 mb-0.5" style={{ color: 'var(--brand-primary, #059669)' }} />
             {isCustomerLoggedIn && (
-              <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-emerald-500" />
+              <span
+                className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full"
+                style={{ backgroundColor: 'var(--brand-primary, #10b981)' }}
+              />
             )}
           </div>
           <span>{t('প্রোফাইল', 'Profile')}</span>
@@ -76,7 +81,13 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onOpenCategori
           <div className="relative">
             <ShoppingBag className="w-5 h-5 mb-0.5" />
             {cartCount > 0 && (
-              <span className="absolute -top-1.5 -right-2 bg-emerald-600 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center font-mono">
+              <span
+                style={{
+                  backgroundColor: 'var(--brand-primary, #059669)',
+                  color: 'var(--brand-on-primary, #ffffff)'
+                }}
+                className="absolute -top-1.5 -right-2 text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center font-mono"
+              >
                 {cartCount}
               </span>
             )}

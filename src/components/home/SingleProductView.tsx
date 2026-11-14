@@ -90,7 +90,8 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
     const diffMs = Number.isFinite(targetMs) ? Math.max(0, targetMs - Date.now()) : 6 * 3600 * 1000;
     const totalSeconds = Math.floor(diffMs / 1000);
     return {
-      hours: Math.floor(totalSeconds / 3600),
+      days: Math.floor(totalSeconds / 86400),
+      hours: Math.floor((totalSeconds % 86400) / 3600),
       minutes: Math.floor((totalSeconds % 3600) / 60),
       seconds: totalSeconds % 60
     };
@@ -314,6 +315,14 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 {t('অফার শেষ:', 'Ends in:')}
               </span>
               <div className="flex items-center gap-1 font-mono font-black">
+                {timeLeft.days > 0 && (
+                  <>
+                    <span className="px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-white">
+                      {timeLeft.days}d
+                    </span>
+                    <span className="text-rose-400">:</span>
+                  </>
+                )}
                 <span className="px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-white">
                   {timeLeft.hours.toString().padStart(2, '0')}h
                 </span>
@@ -1079,6 +1088,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     )}
                   </span>
                   <span className="text-xs font-mono font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-md tabular-nums">
+                    {timeLeft.days > 0 ? `${timeLeft.days}d:` : ''}
                     {timeLeft.hours.toString().padStart(2, '0')}:{timeLeft.minutes.toString().padStart(2, '0')}:
                     {timeLeft.seconds.toString().padStart(2, '0')}
                   </span>

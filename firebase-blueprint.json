@@ -1,0 +1,91 @@
+{
+  "entities": {
+    "StorefrontSettings": {
+      "title": "StorefrontSettings",
+      "description": "Public storefront configuration including brand theme colors, flash sale schedule, and CMS labels.",
+      "type": "object",
+      "properties": {
+        "storeName": { "type": "string", "maxLength": 120 },
+        "storeNameBn": { "type": "string", "maxLength": 160 },
+        "theme": { "type": "string", "maxLength": 40 },
+        "themeColors": { "type": "object" },
+        "flashSale": { "type": "object" },
+        "announcementBar": { "type": "object" },
+        "cmsTexts": { "type": "object" },
+        "singleProductCms": { "type": "object" },
+        "promoCoupons": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["storeName", "theme", "updatedAt"]
+    },
+    "CatalogProduct": {
+      "title": "CatalogProduct",
+      "description": "Individual product entry in the catalog.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "title": { "type": "string", "maxLength": 200 },
+        "titleBn": { "type": "string", "maxLength": 240 },
+        "price": { "type": "number" },
+        "originalPrice": { "type": "number" },
+        "stock": { "type": "number" },
+        "category": { "type": "string", "maxLength": 80 },
+        "isFlashSale": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "price", "stock", "updatedAt"]
+    },
+    "StoreOrder": {
+      "title": "StoreOrder",
+      "description": "Customer order record created at checkout or POS terminal.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 64 },
+        "customer": { "type": "object" },
+        "items": { "type": "array" },
+        "pricing": { "type": "object" },
+        "payment": { "type": "object" },
+        "deliveryZone": { "type": "string", "enum": ["dhaka_inside", "dhaka_sub", "dhaka_outside"] },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "ai_confirmed", "processing", "on_hold", "shipped", "delivered", "partial", "cancelled"]
+        },
+        "courier": { "type": "object" },
+        "source": { "type": "string", "enum": ["online", "pos"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "serverCreatedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "customer", "items", "pricing", "payment", "deliveryZone", "status", "createdAt", "serverCreatedAt"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized admin UID registry entry.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/storefront/{configId}": {
+      "schema": { "$ref": "#/backend/entities/StorefrontSettings" },
+      "description": "Public storefront configuration document ('public')."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/backend/entities/CatalogProduct" },
+      "description": "Public catalog products readable by all shoppers and writable by admins."
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/backend/entities/StoreOrder" },
+      "description": "Cross-device orders created at checkout and managed by admins."
+    },
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/backend/entities/AdminUser" },
+      "description": "Admin role allowlist collection."
+    }
+  }
+}

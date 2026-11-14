@@ -78,7 +78,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
       <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between min-w-0">
         <div>
           <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1 gap-1.5">
-            <span className="font-semibold text-emerald-700 dark:text-emerald-400 truncate">
+            <span className="font-semibold truncate" style={{ color: primaryColor }}>
               {lang === 'bn' ? product.categoryBn : product.category}
             </span>
             <span className="flex items-center gap-0.5 text-amber-500 font-semibold shrink-0 tabular-nums">
@@ -89,13 +89,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
 
           <h3
             onClick={() => onViewDetails(product)}
-            className="font-semibold text-xs sm:text-sm text-slate-900 dark:text-white group-hover:text-emerald-600 transition-colors line-clamp-2 cursor-pointer leading-snug min-h-[2.4rem]"
+            className="font-semibold text-xs sm:text-sm text-slate-900 dark:text-white transition-colors line-clamp-2 cursor-pointer leading-snug min-h-[2.4rem]"
           >
             {lang === 'bn' ? product.titleBn : product.title}
           </h3>
 
           <div className="flex items-baseline gap-2 mt-2 flex-wrap tabular-nums">
-            <span className="text-sm sm:text-base font-extrabold text-emerald-600 dark:text-emerald-400">
+            <span className="text-sm sm:text-base font-extrabold" style={{ color: primaryColor }}>
               ৳ {product.price.toLocaleString()}
             </span>
             {product.originalPrice > product.price && (
@@ -110,8 +110,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
           <button
             type="button"
             onClick={() => openOneClickCheckout(product)}
-            style={{ backgroundColor: primaryColor }}
-            className="w-full hover:opacity-95 text-white font-bold text-xs py-2 px-3 rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95"
+            style={{
+              backgroundColor: primaryColor,
+              color: 'var(--brand-on-primary, #ffffff)'
+            }}
+            className="w-full hover:opacity-95 font-bold text-xs py-2 px-3 rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95"
           >
             <span>{orderBtnLabel}</span>
             <ArrowRight className="w-3.5 h-3.5 shrink-0" />

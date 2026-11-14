@@ -7,7 +7,15 @@ interface AdminLoginModalProps {
 }
 
 export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavigate }) => {
-  const { isAdminLoginOpen, setIsAdminLoginOpen, loginAdmin, isAdminLoggedIn, goHome, t } = useStore();
+  const {
+    isAdminLoginOpen,
+    setIsAdminLoginOpen,
+    loginAdmin,
+    signInAdminWithGoogle,
+    isAdminLoggedIn,
+    goHome,
+    t
+  } = useStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -48,6 +56,16 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
         );
       }
     }, 300);
+  };
+
+  const handleGoogleSyncLogin = async () => {
+    setError(null);
+    setIsLoading(true);
+    const ok = await signInAdminWithGoogle();
+    setIsLoading(false);
+    if (ok && onSuccessNavigate) {
+      onSuccessNavigate();
+    }
   };
 
   return (
@@ -145,7 +163,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full mt-2 py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
+              className="w-full mt-2 py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70 cursor-pointer"
             >
               {isLoading ? (
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -158,14 +176,31 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
             </button>
           </form>
 
-          {/* Security note */}
-          <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 text-center">
-            <span className="text-[11px] text-slate-400 dark:text-slate-500">
-              {t(
-                'সুরক্ষিত সেশন • ই-কমার্স ম্যানেজমেন্ট হাব',
-                'Protected Session • Secured E-Commerce Management Hub'
-              )}
-            </span>
+          {/* Firebase Cloud Sync Google Sign-In */}
+          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={handleGoogleSyncLogin}
+              className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-700 text-emerald-300 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                {t(
+                  'Google Cloud Sync দিয়ে প্রবেশ করুন (সকল ডিভাইস অর্ডার)',
+                  'Connect Google Cloud Sync (buyonebd@gmail.com)'
+                )}
+              </span>
+            </button>
+
+            <div className="text-center">
+              <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                {t(
+                  'সুরক্ষিত সেশন • রিয়েল-টাইম ক্লাউড ডাটাবেস সিঙ্ক',
+                  'Protected Session • Real-Time Cloud Database Sync'
+                )}
+              </span>
+            </div>
           </div>
         </div>
       </div>

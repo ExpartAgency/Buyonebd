@@ -3,7 +3,15 @@
 
 :root {
   --brand-primary: #059669;
+  --brand-primary-hover: #047857;
+  --brand-primary-soft: rgba(5, 150, 105, 0.12);
+  --brand-primary-border: rgba(5, 150, 105, 0.32);
+  --brand-on-primary: #ffffff;
   --brand-secondary: #0d9488;
+  --brand-header-bg: #ffffff;
+  --brand-footer-bg: #0f172a;
+  --brand-hero-from: #064e3b;
+  --brand-hero-to: #0f766e;
 }
 
 @layer base {

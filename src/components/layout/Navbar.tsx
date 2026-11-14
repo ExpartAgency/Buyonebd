@@ -47,7 +47,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
     if (raw === 'BuyOne BD' || raw === 'BuyOneBD') {
       return (
         <>
-          BuyOne<span className="text-emerald-600 dark:text-emerald-400">BD</span>
+          BuyOne<span style={{ color: 'var(--brand-primary, #059669)' }}>BD</span>
         </>
       );
     }
@@ -230,7 +230,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
             className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-[11px] sm:text-xs font-bold cursor-pointer transition-colors border border-slate-200/70 dark:border-slate-700 whitespace-nowrap shrink-0"
             title={lang === 'bn' ? 'Switch to English' : 'বাংলায় পরিবর্তন করুন'}
           >
-            <Globe className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <Globe className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--brand-primary, #059669)' }} />
             <span>{lang === 'bn' ? 'EN' : 'BN'}</span>
           </button>
 
@@ -240,8 +240,14 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
             className="relative flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-bold shadow-sm cursor-pointer transition-all active:scale-95 shrink-0"
             aria-label={t('কার্ট', 'Cart')}
           >
-            <ShoppingBag className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span className="bg-emerald-500 text-slate-950 font-black text-[10px] sm:text-[11px] w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center font-mono tabular-nums">
+            <ShoppingBag className="w-4 h-4 shrink-0" style={{ color: 'var(--brand-primary, #34d399)' }} />
+            <span
+              style={{
+                backgroundColor: 'var(--brand-primary, #10b981)',
+                color: 'var(--brand-on-primary, #ffffff)'
+              }}
+              className="font-black text-[10px] sm:text-[11px] w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center font-mono tabular-nums"
+            >
               {cartCount}
             </span>
           </button>

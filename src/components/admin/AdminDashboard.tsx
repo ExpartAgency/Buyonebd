@@ -184,7 +184,11 @@ export const AdminDashboard: React.FC = () => {
     adjustSpecificCustomerBalance,
     resetCustomerWalletExpiry,
     createOrder,
-    clearAppCache
+    clearAppCache,
+    firebaseAdminUserEmail,
+    isFirebaseAdminConnected,
+    signInAdminWithGoogle,
+    generateBrandColorAttributes
   } = useStore();
 
   // Pure language translation helper based on admin language preference
@@ -358,6 +362,7 @@ export const AdminDashboard: React.FC = () => {
   const [walletStatusFilter, setWalletStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [adminAdjustAmount, setAdminAdjustAmount] = useState<string>('200');
   const [adminAdjustNote, setAdminAdjustNote] = useState<string>('');
+  const [rowCourierChoice, setRowCourierChoice] = useState<Record<string, CourierProvider>>({});
 
   // Support Desk & Browser Call Console state
   const [selectedChatId, setSelectedChatId] = useState<string>('');
@@ -1197,6 +1202,27 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Cross-Device Cloud Order Sync Status / Quick Connect */}
+          {isFirebaseAdminConnected ? (
+            <span
+              title={at('রিয়েল-টাইম ক্লাউড ডাটাবেস সিঙ্ক সক্রিয়', 'Real-time Firebase Cloud Order Sync Active')}
+              className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-950/70 border border-emerald-700/60 text-emerald-300 text-[11px] font-bold"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="truncate max-w-[140px]">Cloud: {firebaseAdminUserEmail || 'Live'}</span>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => signInAdminWithGoogle()}
+              title={at('অন্যান্য ডিভাইস/ব্রাউজারের অর্ডার লাইভ পেতে কানেক্ট করুন', 'Connect Google Cloud Sync to receive cross-device orders live')}
+              className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-sky-950/70 hover:bg-sky-900 border border-sky-700/70 text-sky-300 text-[11px] font-bold cursor-pointer transition-colors"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+              <span>{at('ক্লাউড সিঙ্ক চালু করুন', 'Connect Cloud Orders')}</span>
+            </button>
+          )}
+
           {/* Admin Language Switcher */}
           <button
             type="button"
@@ -2542,6 +2568,21 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                  {!isFirebaseAdminConnected ? (
+                    <button
+                      type="button"
+                      onClick={() => signInAdminWithGoogle()}
+                      className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>{at('অন্য ডিভাইসের অর্ডার সিঙ্ক করুন', 'Enable Cross-Device Cloud Orders')}</span>
+                    </button>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-xl bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 text-[11px] font-bold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>{at('লাইভ ক্লাউড সিঙ্ক চালু', 'Live Cloud Active')}</span>
+                    </span>
+                  )}
                   <button
                     type="button"
                     disabled={isSyncingOrders}
@@ -2751,7 +2792,7 @@ export const AdminDashboard: React.FC = () => {
                         <th className="py-3 px-3">{at('তারিখ', 'Date')}</th>
                         <th className="py-3 px-3">{at('স্ট্যাটাস', 'Status')}</th>
                         <th className="py-3 px-3">{at('মোট বিল', 'Total')}</th>
-                        <th className="py-3 px-3">{at('SteadFast পাঠান', 'Send to SteadFast')}</th>
+                        <th className="py-3 px-3">{at('সকল কুরিয়ারে পাঠান', 'Send to Courier')}</th>
                         <th className="py-3 px-3">{at('ইনভয়েস', 'Invoice')}</th>
                         <th className="py-3 px-3">{at('কনসাইনমেন্ট আইডি', 'ConsignmentID')}</th>
                         <th className="py-3 px-3">{at('ডেলিভারি স্ট্যাটাস', 'DeliveryStatus')}</th>
@@ -2777,6 +2818,7 @@ export const AdminDashboard: React.FC = () => {
                             ? ord.createdAt
                             : createdDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                           const hasPartial = ord.status === 'partial' || ((ord.pricing.advancePaid || 0) > 0 && (ord.payment.dueAmount || 0) > 0);
+                          const selectedCourier: CourierProvider = rowCourierChoice[ord.id] || ord.courier?.provider || 'Steadfast';
 
                           return (
                             <tr key={ord.id} className={`hover:bg-slate-800/40 ${isChecked ? 'bg-emerald-950/20' : ''}`}>
@@ -2822,7 +2864,7 @@ export const AdminDashboard: React.FC = () => {
                                   className={`py-1 px-2 rounded-lg border text-[11px] font-bold cursor-pointer focus:outline-none ${
                                     ord.status === 'delivered'
                                       ? 'bg-emerald-950/60 border-emerald-700 text-emerald-300'
-                                      : ord.status === 'on_hold'
+                                      : ord.status === 'on_hold' || ord.status === 'partial'
                                       ? 'bg-amber-950/60 border-amber-700 text-amber-300'
                                       : ord.status === 'cancelled'
                                       ? 'bg-rose-950/60 border-rose-700 text-rose-300'
@@ -2832,6 +2874,7 @@ export const AdminDashboard: React.FC = () => {
                                   <option value="pending">{at('পেন্ডিং', 'Pending')}</option>
                                   <option value="ai_confirmed">{at('এআই কনফার্মড', 'AI Confirmed')}</option>
                                   <option value="processing">{at('প্রসেসিং', 'Processing')}</option>
+                                  <option value="partial">{at('আংশিক অর্ডার', 'Partial Order')}</option>
                                   <option value="on_hold">{at('অন হোল্ড', 'On hold')}</option>
                                   <option value="shipped">{at('শিপড', 'Shipped')}</option>
                                   <option value="delivered">{at('সম্পন্ন', 'Completed')}</option>
@@ -2842,32 +2885,70 @@ export const AdminDashboard: React.FC = () => {
                                 ৳{ord.pricing.total.toLocaleString()}
                               </td>
                               <td className="py-3 px-3 whitespace-nowrap">
-                                <div className="flex items-center gap-1">
-                                  {isBooked ? (
-                                    <span className="px-2.5 py-1 rounded-md bg-emerald-600 text-white font-bold text-[11px] inline-flex items-center gap-1">
-                                      <Check className="w-3 h-3" />
-                                      <span>Success</span>
-                                    </span>
-                                  ) : (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-1">
+                                    <select
+                                      value={selectedCourier}
+                                      onChange={(e) =>
+                                        setRowCourierChoice((prev) => ({
+                                          ...prev,
+                                          [ord.id]: e.target.value as CourierProvider
+                                        }))
+                                      }
+                                      className="py-1 px-1.5 rounded-md bg-slate-950 border border-slate-700 text-[11px] font-bold text-slate-200"
+                                      title={at('কুরিয়ার বেছে নিন', 'Select Courier')}
+                                    >
+                                      {(['Steadfast', 'Pathao', 'RedX', 'Paperfly', 'Sundarban'] as CourierProvider[]).map((prov) => (
+                                        <option key={prov} value={prov}>{prov}</option>
+                                      ))}
+                                    </select>
                                     <button
                                       type="button"
                                       disabled={isBookingSteadfast === ord.id}
-                                      onClick={() => handleBookCourier(ord.id, 'Steadfast')}
-                                      className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                                      onClick={() => handleBookCourier(ord.id, selectedCourier)}
+                                      className={`px-2.5 py-1 rounded-md font-bold text-[11px] cursor-pointer transition-colors ${
+                                        isBooked && ord.courier?.provider === selectedCourier
+                                          ? 'bg-emerald-600/20 border border-emerald-500/60 text-emerald-300 hover:bg-emerald-600 hover:text-white'
+                                          : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                                      }`}
+                                      title={at(`${selectedCourier}-এ পাঠান`, `Send to ${selectedCourier}`)}
                                     >
-                                      {isBookingSteadfast === ord.id ? '...' : 'Send'}
+                                      {isBookingSteadfast === ord.id
+                                        ? '...'
+                                        : isBooked && ord.courier?.provider === selectedCourier
+                                        ? `Success (${selectedCourier})`
+                                        : 'Send'}
                                     </button>
-                                  )}
-                                  <select
-                                    value={ord.courier?.provider || 'Steadfast'}
-                                    onChange={(e) => handleBookCourier(ord.id, e.target.value as CourierProvider)}
-                                    className="py-1 px-1.5 rounded bg-slate-950 border border-slate-700 text-[10px] text-slate-300"
-                                    title={at('কুরিয়ার পরিবর্তন করুন', 'Switch Courier Provider')}
-                                  >
-                                    {(['Steadfast', 'Pathao', 'RedX', 'Paperfly', 'Sundarban'] as CourierProvider[]).map((prov) => (
-                                      <option key={prov} value={prov}>{prov}</option>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    {(
+                                      [
+                                        ['Steadfast', 'SF'],
+                                        ['Pathao', 'PT'],
+                                        ['RedX', 'RX'],
+                                        ['Paperfly', 'PF'],
+                                        ['Sundarban', 'SB']
+                                      ] as [CourierProvider, string][]
+                                    ).map(([prov, shortCode]) => (
+                                      <button
+                                        key={prov}
+                                        type="button"
+                                        disabled={isBookingSteadfast === ord.id}
+                                        onClick={() => {
+                                          setRowCourierChoice((prev) => ({ ...prev, [ord.id]: prov }));
+                                          handleBookCourier(ord.id, prov);
+                                        }}
+                                        title={`Send to ${prov}`}
+                                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold cursor-pointer border transition-colors ${
+                                          ord.courier?.provider === prov && isBooked
+                                            ? 'bg-emerald-600 text-white border-emerald-500'
+                                            : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-sky-500 hover:text-sky-300'
+                                        }`}
+                                      >
+                                        {shortCode}
+                                      </button>
                                     ))}
-                                  </select>
+                                  </div>
                                 </div>
                               </td>
                               <td className="py-3 px-3 whitespace-nowrap">
@@ -4480,11 +4561,36 @@ export const AdminDashboard: React.FC = () => {
           )}
 
           {/* TAB 7: FLASH SALE MANAGER */}
-          {activeTab === 'flash_sale' && (
+          {activeTab === 'flash_sale' && (() => {
+            const toLocalDateTimeInput = (iso?: string) => {
+              const d = iso ? new Date(iso) : new Date(Date.now() + 24 * 3600 * 1000);
+              if (isNaN(d.getTime())) return '';
+              const pad = (n: number) => String(n).padStart(2, '0');
+              return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            };
+            const targetMs = settings.flashSale?.endsAt ? new Date(settings.flashSale.endsAt).getTime() : NaN;
+            const remainingMs = Number.isFinite(targetMs) ? targetMs - Date.now() : 0;
+            const isExpired = !Number.isFinite(targetMs) || remainingMs <= 0;
+            const remDays = Math.floor(Math.max(0, remainingMs) / (1000 * 3600 * 24));
+            const remHours = Math.floor((Math.max(0, remainingMs) / (1000 * 3600)) % 24);
+            const remMins = Math.floor((Math.max(0, remainingMs) / (1000 * 60)) % 60);
+
+            const applyFlashDurationHours = (hours: number) => {
+              const nextIso = new Date(Date.now() + hours * 3600 * 1000).toISOString();
+              updateSettings({
+                flashSale: {
+                  ...settings.flashSale,
+                  enabled: true,
+                  endsAt: nextIso
+                }
+              });
+            };
+
+            return (
             <div className="space-y-6 animate-fade-in">
               <div>
                 <h3 className="text-xl font-black text-white">{at('ফ্ল্যাশ সেল ম্যানেজার', 'Flash Sale Manager')}</h3>
-                <p className="text-xs text-slate-400">{at('স্টোরের মূল ফ্ল্যাশ সেল সক্রিয়/নিষ্ক্রিয় ও পণ্য নির্বাচন করুন', 'Manage flash sale status, headline, discounts, and select products for the sale')}</p>
+                <p className="text-xs text-slate-400">{at('স্টোরের মূল ফ্ল্যাশ সেল সক্রিয়/নিষ্ক্রিয়, সময়সূচী ও পণ্য নির্বাচন করুন', 'Manage flash sale status, headline, exact countdown time, and select products')}</p>
               </div>
 
               {/* Main settings card */}
@@ -4551,17 +4657,19 @@ export const AdminDashboard: React.FC = () => {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-300 mb-1">{at('গড় ছাড়ের শতাংশ (%)', 'Discount %')}</label>
                     <input
                       type="number"
+                      min={1}
+                      max={95}
                       value={settings.flashSale?.discountPercentage || 40}
                       onChange={(e) => {
                         updateSettings({
                           flashSale: {
                             ...settings.flashSale,
-                            discountPercentage: Number(e.target.value)
+                            discountPercentage: Math.max(1, Number(e.target.value) || 0)
                           }
                         });
                       }}
@@ -4569,28 +4677,69 @@ export const AdminDashboard: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">{at('ফ্ল্যাশ সেল সমাপ্তির তারিখ', 'Ends At')}</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-slate-300">{at('ফ্ল্যাশ সেল সমাপ্তির সময়', 'Ends At (Date & Time)')}</label>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isExpired ? 'bg-rose-500/20 text-rose-300' : 'bg-emerald-500/20 text-emerald-300'}`}>
+                        {isExpired ? at('মেয়াদ শেষ', 'Expired') : `${remDays}d ${remHours}h ${remMins}m`}
+                      </span>
+                    </div>
                     <input
-                      type="date"
-                      value={settings.flashSale?.endsAt?.slice(0, 10) || '2026-12-31'}
+                      type="datetime-local"
+                      value={toLocalDateTimeInput(settings.flashSale?.endsAt)}
                       onChange={(e) => {
-                        updateSettings({
-                          flashSale: {
-                            ...settings.flashSale,
-                            endsAt: new Date(e.target.value).toISOString()
-                          }
-                        });
+                        if (!e.target.value) return;
+                        const parsed = new Date(e.target.value);
+                        if (!isNaN(parsed.getTime())) {
+                          updateSettings({
+                            flashSale: {
+                              ...settings.flashSale,
+                              endsAt: parsed.toISOString()
+                            }
+                          });
+                        }
                       }}
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
                     />
                   </div>
                 </div>
 
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-bold text-slate-400">{at('দ্রুত সময় সেট:', 'Quick Extend:')}</span>
+                  {[
+                    { h: 6, label: '+6h' },
+                    { h: 24, label: '+24h' },
+                    { h: 72, label: '+3 Days' },
+                    { h: 168, label: '+7 Days' }
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => applyFlashDurationHours(preset.h)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-rose-950/60 border border-slate-700 hover:border-rose-500/60 text-[11px] font-bold text-slate-200 cursor-pointer"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
                 <button
-                  onClick={() => addToast('success', at('সংরক্ষিত হয়েছে!', 'Saved!'), at('ফ্ল্যাশ সেল সেটিংস আপডেট হয়েছে।', 'Flash sale settings updated.'))}
+                  type="button"
+                  onClick={() => {
+                    const nextEnds = isExpired
+                      ? new Date(Date.now() + 24 * 3600 * 1000).toISOString()
+                      : settings.flashSale?.endsAt || new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+                    updateSettings({
+                      flashSale: {
+                        ...settings.flashSale,
+                        enabled: settings.flashSale?.enabled !== false,
+                        endsAt: nextEnds
+                      }
+                    });
+                    addToast('success', at('ফ্ল্যাশ সেল সংরক্ষিত ও সিঙ্ক সম্পন্ন!', 'Flash Sale Saved & Synced!'), at('সকল ডিভাইসে নতুন ফ্ল্যাশ সেল সময়সূচী চালু হয়েছে।', 'Live countdown updated across devices.'));
+                  }}
                   className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors"
                 >
-                  {at('ফ্ল্যাশ সেল আপডেট সংরক্ষণ করুন', 'Save Flash Sale Settings')}
+                  {at('ফ্ল্যাশ সেল আপডেট সংরক্ষণ ও লাইভ সিঙ্ক করুন', 'Save & Sync Flash Sale Settings')}
                 </button>
               </div>
 
@@ -4606,9 +4755,29 @@ export const AdminDashboard: React.FC = () => {
                       {at('যেসব পণ্য ফ্ল্যাশ সেলে দেখাতে চান সেগুলোতে ক্লিক করুন', 'Click any product to toggle its inclusion in the Flash Sale section')}
                     </p>
                   </div>
-                  <span className="text-xs font-mono font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1 rounded-full self-start">
-                    {products.filter(p => p.isFlashSale).length} {at('টি পণ্য নির্বাচিত', 'Products Selected')}
-                  </span>
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <span className="text-xs font-mono font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1 rounded-full">
+                      {products.filter((p) => p.isFlashSale).length} {at('টি পণ্য নির্বাচিত', 'Selected')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        products.filter((p) => !p.isFlashSale).forEach((p) => toggleProductFlashSale(p.id));
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-emerald-700 text-slate-200 text-[11px] font-bold cursor-pointer"
+                    >
+                      {at('সব সিলেক্ট', 'Select All')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        products.filter((p) => p.isFlashSale).forEach((p) => toggleProductFlashSale(p.id));
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-rose-800 text-slate-200 text-[11px] font-bold cursor-pointer"
+                    >
+                      {at('সব আনসিলেক্ট', 'Clear All')}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
@@ -4641,7 +4810,8 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* TAB 8: STORE SLIDERS (5-6 Editable) */}
           {activeTab === 'sliders' && (
@@ -7279,12 +7449,22 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 2. Theme Color Palette & CMS Texts */}
+                {/* 2. Theme Color Palette, Brand Attributes Generator & CMS Texts */}
                 <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
-                  <h4 className="font-bold text-white text-sm flex items-center gap-2 border-b border-slate-800 pb-3">
-                    <Palette className="w-4 h-4 text-amber-400" />
-                    <span>{at('থিম কালার প্যালেট ও CMS বাটন টেক্সট', 'Theme Color Palette & UI Copy')}</span>
-                  </h4>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Palette className="w-4 h-4 text-amber-400" />
+                      <span>{at('থিম কালার প্যালেট ও ব্র্যান্ড অ্যাট্রিবিউট', 'Theme Color Palette & Brand Attributes')}</span>
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => generateBrandColorAttributes(settings.themeColors?.primary)}
+                      className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    >
+                      <Wand2 className="w-3.5 h-3.5" />
+                      <span>{at('অটো ব্র্যান্ড কালার অ্যাট্রিবিউট জেনারেট', 'Generate Brand Color Attributes')}</span>
+                    </button>
+                  </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
                     {[
@@ -7315,6 +7495,51 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                       );
                     })}
+                  </div>
+
+                  {/* Generated Brand CSS Variables & Root Data Attributes */}
+                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-amber-300">
+                        {at('লাইভ জেনারেটেড ব্র্যান্ড কালার অ্যাট্রিবিউটস (:root)', 'Live Generated Brand Attributes (:root CSS & data-*)')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const attrs =
+                            settings.brandAttributes?.cssAttributeString ||
+                            `--brand-primary: ${settings.themeColors?.primary || '#059669'};\n--brand-secondary: ${settings.themeColors?.secondary || '#0d9488'};`;
+                          try {
+                            await navigator.clipboard.writeText(attrs);
+                            addToast('success', at('CSS অ্যাট্রিবিউট কপি হয়েছে!', 'CSS Attributes Copied!'), '');
+                          } catch {}
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>{at('কপি CSS', 'Copy Attributes')}</span>
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-[10px] font-mono">
+                      <span className="px-2 py-1 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
+                        data-theme="{settings.theme || 'gadgets'}"
+                      </span>
+                      <span className="px-2 py-1 rounded-md bg-slate-900 border border-slate-800 text-slate-300 inline-flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: settings.themeColors?.primary || '#059669' }} />
+                        data-brand-primary="{settings.themeColors?.primary || '#059669'}"
+                      </span>
+                      {settings.brandAttributes?.primaryHover && (
+                        <span className="px-2 py-1 rounded-md bg-slate-900 border border-slate-800 text-slate-300 inline-flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: settings.brandAttributes.primaryHover }} />
+                          --brand-primary-hover: {settings.brandAttributes.primaryHover}
+                        </span>
+                      )}
+                      {settings.brandAttributes?.onPrimary && (
+                        <span className="px-2 py-1 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
+                          --brand-on-primary: {settings.brandAttributes.onPrimary}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">

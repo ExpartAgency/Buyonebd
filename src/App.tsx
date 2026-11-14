@@ -55,8 +55,11 @@ function StoreMainContent() {
     const targetMs = endsAtIso ? new Date(endsAtIso).getTime() : NaN;
     const diffMs = Number.isFinite(targetMs) ? Math.max(0, targetMs - Date.now()) : 6 * 3600 * 1000;
     const totalSeconds = Math.floor(diffMs / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
     return {
-      hours: Math.floor(totalSeconds / 3600),
+      days,
+      hours,
       minutes: Math.floor((totalSeconds % 3600) / 60),
       seconds: totalSeconds % 60
     };
@@ -472,6 +475,12 @@ function StoreMainContent() {
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-1.5 text-xs font-mono font-black text-white bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 tabular-nums">
                   <Clock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                  {flashTimeLeft.days > 0 && (
+                    <>
+                      <span>{flashTimeLeft.days}d</span>
+                      <span className="text-rose-400">:</span>
+                    </>
+                  )}
                   <span>{flashTimeLeft.hours.toString().padStart(2, '0')}h</span>
                   <span className="text-rose-400">:</span>
                   <span>{flashTimeLeft.minutes.toString().padStart(2, '0')}m</span>
@@ -482,7 +491,8 @@ function StoreMainContent() {
                 <button
                   type="button"
                   onClick={() => selectCategoryFilter('flash-sale', null)}
-                  className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                  style={{ color: 'var(--brand-primary, #34d399)' }}
+                  className="text-xs font-bold hover:opacity-80 flex items-center gap-1 cursor-pointer whitespace-nowrap"
                 >
                   <span>{t('সব ফ্ল্যাশ ডিল দেখুন', 'View All Flash Deals')}</span>
                   <span>→</span>

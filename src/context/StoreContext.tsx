@@ -40,6 +40,82 @@ import {
   INITIAL_REVIEWS,
   BUSINESS_THEME_PRESETS
 } from '../data/initialData';
+import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { onSnapshot, getDoc, getDocs } from 'firebase/firestore';
+import {
+  db,
+  auth,
+  googleProvider,
+  collection,
+  doc,
+  writeOrderToFirestore,
+  updateOrderInFirestore,
+  deleteOrderFromFirestore,
+  saveStorefrontSettingsToFirestore,
+  saveProductToFirestore,
+  deleteProductFromFirestore,
+  ensureAdminDocInFirestore
+} from '../firebase';
+
+function normalizeHexColor(hex?: string, fallback = '#059669'): string {
+  const clean = String(hex || '').trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(clean)) return clean;
+  if (/^#[0-9a-fA-F]{3}$/.test(clean)) {
+    return `#${clean[1]}${clean[1]}${clean[2]}${clean[2]}${clean[3]}${clean[3]}`;
+  }
+  return fallback;
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const n = normalizeHexColor(hex).slice(1);
+  return {
+    r: parseInt(n.slice(0, 2), 16),
+    g: parseInt(n.slice(2, 4), 16),
+    b: parseInt(n.slice(4, 6), 16)
+  };
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+  return '#' + [clamp(r), clamp(g), clamp(b)].map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+
+function computeBrandPaletteAttributes(primaryHex?: string, secondaryHex?: string) {
+  const primary = normalizeHexColor(primaryHex, '#059669');
+  const { r, g, b } = hexToRgb(primary);
+  const primaryHover = rgbToHex(r * 0.84, g * 0.84, b * 0.84);
+  const primarySoft = `rgba(${r}, ${g}, ${b}, 0.12)`;
+  const primaryBorder = `rgba(${r}, ${g}, ${b}, 0.32)`;
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const onPrimary = luminance > 0.62 ? '#0f172a' : '#ffffff';
+  const secondary = normalizeHexColor(
+    secondaryHex,
+    rgbToHex(Math.max(0, r - 12), Math.min(255, g + 16), Math.min(255, b + 28))
+  );
+  const heroFrom = rgbToHex(r * 0.18, g * 0.18, b * 0.22);
+  const heroTo = rgbToHex(r * 0.48, g * 0.48, b * 0.52);
+  const footerBg = rgbToHex(r * 0.08 + 8, g * 0.08 + 14, b * 0.08 + 24);
+  const cssAttributeString = [
+    `--brand-primary: ${primary};`,
+    `--brand-primary-hover: ${primaryHover};`,
+    `--brand-primary-soft: ${primarySoft};`,
+    `--brand-primary-border: ${primaryBorder};`,
+    `--brand-on-primary: ${onPrimary};`,
+    `--brand-secondary: ${secondary};`
+  ].join('\n');
+  return {
+    primary,
+    secondary,
+    heroFrom,
+    heroTo,
+    footerBg,
+    primaryHover,
+    primarySoft,
+    primaryBorder,
+    onPrimary,
+    cssAttributeString
+  };
+}
 
 interface CartItem {
   product: Product;
@@ -244,12 +320,16 @@ interface StoreContextType {
   updateUser: (id: string, updates: Partial<UserStaff>) => void;
   deleteUser: (id: string) => void;
 
-  // Admin Auth (Hossain login)
+  // Admin Auth (Hossain login & Cloud Firebase Sync)
   isAdminLoggedIn: boolean;
   isAdminLoginOpen: boolean;
   setIsAdminLoginOpen: (open: boolean) => void;
   loginAdmin: (email: string, pass: string) => boolean;
   logoutAdmin: () => void;
+  firebaseAdminUserEmail: string | null;
+  isFirebaseAdminConnected: boolean;
+  signInAdminWithGoogle: () => Promise<boolean>;
+  signOutAdminFirebase: () => Promise<void>;
 
   // Spin Rewards CRUD & Limit
   spinRewards: SpinReward[];
@@ -277,9 +357,10 @@ interface StoreContextType {
   playVoiceSample: () => Promise<void>;
   isPlayingVoiceSample: boolean;
 
-  // Store Settings
+  // Store Settings & Dynamic Brand Attributes
   settings: StoreSettings;
   updateSettings: (newSettings: Partial<StoreSettings>) => void;
+  generateBrandColorAttributes: (primaryHex?: string) => void;
   clearAppCache: () => Promise<void>;
   resetAllToDefault: () => void;
 
@@ -461,7 +542,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const t = (bn: string, en: string) => (lang === 'bn' ? bn : en);
 
-  // Settings
+  // Settings & Local Mutation Guard (prevents stale server/cloud snapshots from overwriting in-flight admin edits)
+  const lastLocalMutationAtRef = useRef<number>(0);
+
   const [settings, setSettings] = useState<StoreSettings>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_SETTINGS);
@@ -604,23 +687,41 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ...productData,
       id: `prod-${Date.now().toString().slice(-5)}`
     };
+    lastLocalMutationAtRef.current = Date.now();
     setProducts((prev) => [newProduct, ...prev]);
+    saveProductToFirestore(newProduct).catch(() => {});
     addToast('success', t('পণ্য যোগ সফল!', 'Product Added!'), t('নতুন পণ্য স্টোরে সফলভাবে তালিকাভুক্ত হয়েছে।', 'New product listed.'));
   };
 
   const updateProduct = (id: string, updates: Partial<Product>) => {
-    setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, ...updates } : p)));
+    lastLocalMutationAtRef.current = Date.now();
+    setProducts((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const next = { ...p, ...updates };
+        saveProductToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
     addToast('success', t('পণ্য আপডেট সম্পন্ন!', 'Product Updated!'), t('পণ্যের বিবরণ সফলভাবে সংরক্ষিত হয়েছে।', 'Product saved.'));
   };
 
   const deleteProduct = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
     setProducts((prev) => prev.filter((p) => p.id !== id));
+    deleteProductFromFirestore(id).catch(() => {});
     addToast('info', lang === 'bn' ? 'পণ্য মুছে ফেলা হয়েছে' : 'Product Deleted', '');
   };
 
   const toggleProductFlashSale = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
     setProducts((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, isFlashSale: !p.isFlashSale } : p))
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const next = { ...p, isFlashSale: !p.isFlashSale };
+        saveProductToFirestore(next).catch(() => {});
+        return next;
+      })
     );
     addToast('success', lang === 'bn' ? 'ফ্ল্যাশ সেল স্ট্যাটাস আপডেট হয়েছে' : 'Flash Sale Status Updated', '');
   };
@@ -799,6 +900,92 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState<boolean>(() => {
     return isHossainPathInitial() && localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) !== 'true';
   });
+  const [firebaseAdminUserEmail, setFirebaseAdminUserEmail] = useState<string | null>(() => {
+    return auth.currentUser?.email || null;
+  });
+  const [isFirebaseAdminConnected, setIsFirebaseAdminConnected] = useState<boolean>(() => {
+    return Boolean(auth.currentUser?.email === 'buyonebd@gmail.com' && auth.currentUser?.emailVerified);
+  });
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user?.email) {
+        setFirebaseAdminUserEmail(user.email);
+        const isBootstrappedEmail = user.email.toLowerCase() === 'buyonebd@gmail.com' && user.emailVerified;
+        if (isBootstrappedEmail) {
+          setIsFirebaseAdminConnected(true);
+          ensureAdminDocInFirestore().catch(() => {});
+          if (isHossainPathInitial()) {
+            setIsAdminLoggedIn(true);
+            localStorage.setItem(LOCAL_STORAGE_ADMIN_AUTH, 'true');
+            setIsAdminLoginOpen(false);
+            setActiveViewState('admin');
+          }
+        } else {
+          try {
+            const admSnap = await getDoc(doc(db, 'admins', user.uid));
+            setIsFirebaseAdminConnected(admSnap.exists());
+          } catch {
+            setIsFirebaseAdminConnected(false);
+          }
+        }
+      } else {
+        setFirebaseAdminUserEmail(null);
+        setIsFirebaseAdminConnected(false);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const signInAdminWithGoogle = async (): Promise<boolean> => {
+    try {
+      const cred = await signInWithPopup(auth, googleProvider);
+      const email = cred.user?.email?.toLowerCase() || '';
+      setFirebaseAdminUserEmail(cred.user?.email || null);
+      if (email === 'buyonebd@gmail.com' || email === 'hossain@gmail.com') {
+        await ensureAdminDocInFirestore().catch(() => {});
+        setIsFirebaseAdminConnected(true);
+        setIsAdminLoggedIn(true);
+        localStorage.setItem(LOCAL_STORAGE_ADMIN_AUTH, 'true');
+        setIsAdminLoginOpen(false);
+        setActiveView('admin');
+        addToast(
+          'success',
+          t('ক্লাউড অর্ডার সিঙ্ক সক্রিয় হয়েছে!', 'Cloud Order Sync Connected!'),
+          t(`Firebase সেশন: ${cred.user.email} • সব ডিভাইসের অর্ডার রিয়েল-টাইম আসবে।`, `Signed in as ${cred.user.email} for live cross-device order sync.`)
+        );
+        return true;
+      }
+      // Verify if UID exists in admins collection
+      const admSnap = await getDoc(doc(db, 'admins', cred.user.uid)).catch(() => null);
+      if (admSnap && admSnap.exists()) {
+        setIsFirebaseAdminConnected(true);
+        setIsAdminLoggedIn(true);
+        localStorage.setItem(LOCAL_STORAGE_ADMIN_AUTH, 'true');
+        setIsAdminLoginOpen(false);
+        setActiveView('admin');
+        addToast('success', t('ক্লাউড সিঙ্ক সক্রিয়!', 'Cloud Sync Connected!'), cred.user.email || '');
+        return true;
+      }
+      addToast(
+        'warning',
+        t('অ্যাডমিন অনুমোদিত ইমেইল নয়', 'Non-Admin Google Account'),
+        t('ক্লাউড সিঙ্কের জন্য অনুগ্রহ করে buyonebd@gmail.com দিয়ে সাইন ইন করুন।', 'Please sign in with buyonebd@gmail.com for Firestore order streaming.')
+      );
+      return false;
+    } catch (err: any) {
+      addToast('error', t('Google সাইন-ইন ব্যর্থ', 'Google Sign-In Cancelled'), err?.message || 'Popup closed or blocked.');
+      return false;
+    }
+  };
+
+  const signOutAdminFirebase = async (): Promise<void> => {
+    try {
+      await signOut(auth);
+      setFirebaseAdminUserEmail(null);
+      setIsFirebaseAdminConnected(false);
+    } catch {}
+  };
 
   const loginAdmin = (email: string, pass: string): boolean => {
     if (
@@ -2298,97 +2485,142 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => window.removeEventListener('popstate', applyRouteFromUrl);
   }, []);
 
-  // Cross-Device Store & Order Synchronization (Pull before Push + Realtime Polling)
+  // Cross-Device Store & Order Synchronization (Express API + Real-Time Firestore Listeners)
   const hasHydratedFromServerRef = useRef(false);
   const activeViewRef = useRef(activeView);
   activeViewRef.current = activeView;
   const knownOrderIdsRef = useRef<Set<string>>(new Set(orders.map((o) => o.id)));
 
+  const mergeRemoteOrders = (incomingOrders: Order[], deletedSet: Set<string>, notifyOnNew: boolean) => {
+    if (!Array.isArray(incomingOrders)) return;
+    const brandNewRemoteOrders = incomingOrders.filter(
+      (o: any) => o && o.id && !knownOrderIdsRef.current.has(o.id)
+    );
+
+    setOrders((prev) => {
+      const map = new Map<string, Order>();
+      prev.forEach((o) => {
+        if (!deletedSet.has(o.id)) map.set(o.id, o);
+      });
+      incomingOrders.forEach((o: Order) => {
+        if (o && o.id && !deletedSet.has(o.id)) {
+          map.set(o.id, o);
+        }
+      });
+      const merged = Array.from(map.values()).sort(
+        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
+      const fingerprint = (list: Order[]) =>
+        JSON.stringify(
+          list.map(
+            (x) =>
+              `${x.id}:${x.status}:${x.courier?.provider}:${x.courier?.status}:${x.courier?.trackingCode}:${x.pricing?.total}:${x.payment?.dueAmount}:${x.fraudCheck?.successRate}`
+          )
+        );
+      return fingerprint(prev) === fingerprint(merged) ? prev : merged;
+    });
+
+    incomingOrders.forEach((o) => {
+      if (o?.id) knownOrderIdsRef.current.add(o.id);
+    });
+
+    if (notifyOnNew && brandNewRemoteOrders.length > 0 && activeViewRef.current === 'admin') {
+      const latest = brandNewRemoteOrders[0];
+      addToast(
+        'success',
+        t(`নতুন অর্ডার এসেছে! #${latest.id}`, `New Order Received! #${latest.id}`),
+        `${latest.customer?.name || 'Customer'} • ৳${latest.pricing?.total || 0}`
+      );
+    }
+  };
+
   const fetchStoreSnapshotFromServer = async (notifyOnNewOrders = false) => {
     try {
+      // 1. Pull from Express server snapshot if available
       const res = await fetch(`/api/store/sync?t=${Date.now()}`, { cache: 'no-store' });
-      const json = await res.json();
-      const data = json?.data;
+      if (res.ok) {
+        const json = await res.json();
+        const data = json?.data;
 
-      if (data && typeof data === 'object') {
-        if (Array.isArray(data.orders)) {
-          const deletedSet = new Set<string>(Array.isArray(data.deletedOrderIds) ? data.deletedOrderIds : []);
-          const incomingIds = new Set<string>(data.orders.map((o: any) => o?.id).filter(Boolean));
-
-          // Identify newly placed remote orders
-          const brandNewRemoteOrders = data.orders.filter(
-            (o: any) => o && o.id && !knownOrderIdsRef.current.has(o.id)
-          );
-
-          setOrders((prev) => {
-            const map = new Map<string, Order>();
-            prev.forEach((o) => {
-              if (!deletedSet.has(o.id)) map.set(o.id, o);
-            });
-            data.orders.forEach((o: Order) => {
-              if (o && o.id && !deletedSet.has(o.id)) {
-                map.set(o.id, o);
-              }
-            });
-            const merged = Array.from(map.values()).sort(
-              (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-            );
-            const prevJson = JSON.stringify(prev.map((x) => `${x.id}:${x.status}:${x.courier?.trackingCode}`));
-            const mergedJson = JSON.stringify(merged.map((x) => `${x.id}:${x.status}:${x.courier?.trackingCode}`));
-            return prevJson === mergedJson ? prev : merged;
-          });
-
-          incomingIds.forEach((id) => knownOrderIdsRef.current.add(id));
-
-          if (notifyOnNewOrders && brandNewRemoteOrders.length > 0 && activeViewRef.current === 'admin') {
-            const latest = brandNewRemoteOrders[0];
-            addToast(
-              'success',
-              t(`নতুন অর্ডার এসেছে! #${latest.id}`, `New Order Received! #${latest.id}`),
-              `${latest.customer?.name || 'Customer'} • ৳${latest.pricing?.total || 0}`
-            );
+        if (data && typeof data === 'object') {
+          if (Array.isArray(data.orders)) {
+            const deletedSet = new Set<string>(Array.isArray(data.deletedOrderIds) ? data.deletedOrderIds : []);
+            mergeRemoteOrders(data.orders, deletedSet, notifyOnNewOrders);
           }
-        }
 
-        if (!hasHydratedFromServerRef.current) {
-          if (Array.isArray(data.products) && data.products.length > 0) setProducts(data.products);
-          if (data.settings) setSettings(mergeSettings(data.settings));
-          if (Array.isArray(data.categories) && data.categories.length > 0) setCategories(data.categories);
-          if (Array.isArray(data.sliders) && data.sliders.length > 0) setSliders(data.sliders);
-          if (Array.isArray(data.customerAccounts) && data.customerAccounts.length > 0) setCustomerAccounts(data.customerAccounts);
-          if (Array.isArray(data.walletTopUps) && data.walletTopUps.length > 0) setWalletTopUps(data.walletTopUps);
-          if (Array.isArray(data.abandonedCarts) && data.abandonedCarts.length > 0) setAbandonedCarts(data.abandonedCarts);
-          if (Array.isArray(data.reviews) && data.reviews.length > 0) setReviews(data.reviews);
-          if (Array.isArray(data.priceAlerts)) setPriceAlerts(data.priceAlerts);
-          if (Array.isArray(data.users) && data.users.length > 0) setUsers(data.users);
-          if (Array.isArray(data.mediaLibrary) && data.mediaLibrary.length > 0) setMediaLibrary(data.mediaLibrary);
+          const isRecentlyMutatedLocally = Date.now() - lastLocalMutationAtRef.current < 3000;
+          if (!hasHydratedFromServerRef.current || !isRecentlyMutatedLocally) {
+            if (Array.isArray(data.products) && data.products.length > 0) {
+              setProducts(data.products);
+            }
+            if (data.settings) {
+              setSettings(mergeSettings(data.settings));
+            }
+          }
+
+          if (!hasHydratedFromServerRef.current) {
+            if (Array.isArray(data.categories) && data.categories.length > 0) setCategories(data.categories);
+            if (Array.isArray(data.sliders) && data.sliders.length > 0) setSliders(data.sliders);
+            if (Array.isArray(data.customerAccounts) && data.customerAccounts.length > 0) setCustomerAccounts(data.customerAccounts);
+            if (Array.isArray(data.walletTopUps) && data.walletTopUps.length > 0) setWalletTopUps(data.walletTopUps);
+            if (Array.isArray(data.abandonedCarts) && data.abandonedCarts.length > 0) setAbandonedCarts(data.abandonedCarts);
+            if (Array.isArray(data.reviews) && data.reviews.length > 0) setReviews(data.reviews);
+            if (Array.isArray(data.priceAlerts)) setPriceAlerts(data.priceAlerts);
+            if (Array.isArray(data.users) && data.users.length > 0) setUsers(data.users);
+            if (Array.isArray(data.mediaLibrary) && data.mediaLibrary.length > 0) setMediaLibrary(data.mediaLibrary);
+          }
+        } else if (!hasHydratedFromServerRef.current) {
+          fetch('/api/store/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              products,
+              orders,
+              settings,
+              spinRewards,
+              categories,
+              sliders,
+              customerAccounts,
+              walletTopUps,
+              abandonedCarts,
+              reviews,
+              priceAlerts,
+              users,
+              mediaLibrary
+            })
+          }).catch(() => {});
         }
-      } else if (!hasHydratedFromServerRef.current) {
-        // First ever startup on empty server store: seed initial store to server
-        fetch('/api/store/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            products,
-            orders,
-            settings,
-            spinRewards,
-            categories,
-            sliders,
-            customerAccounts,
-            walletTopUps,
-            abandonedCarts,
-            reviews,
-            priceAlerts,
-            users,
-            mediaLibrary
-          })
-        }).catch(() => {});
       }
     } catch {
-      // keep local state seamlessly if server temporarily offline
+      // ignore if Express server not active (e.g. static hosting like Vercel)
     } finally {
       hasHydratedFromServerRef.current = true;
+    }
+
+    // 2. Also pull from Firestore directly when admin manually requests sync or on static hosts
+    try {
+      const cfgSnap = await getDoc(doc(db, 'storefront', 'public'));
+      if (cfgSnap.exists() && Date.now() - lastLocalMutationAtRef.current >= 3000) {
+        setSettings((prev) => mergeSettings({ ...prev, ...cfgSnap.data() }));
+      }
+      const prodSnap = await getDocs(collection(db, 'products'));
+      if (!prodSnap.empty && Date.now() - lastLocalMutationAtRef.current >= 3000) {
+        const fsProducts = prodSnap.docs.map((d) => ({ ...d.data(), id: d.id } as Product));
+        setProducts((prev) => {
+          const map = new Map(prev.map((p) => [p.id, p]));
+          fsProducts.forEach((p) => map.set(p.id, p));
+          return Array.from(map.values());
+        });
+      }
+      if (isFirebaseAdminConnected) {
+        const ordSnap = await getDocs(collection(db, 'orders'));
+        if (!ordSnap.empty) {
+          const fsOrders = ordSnap.docs.map((d) => ({ ...d.data(), id: d.id } as Order));
+          mergeRemoteOrders(fsOrders, new Set(), notifyOnNewOrders);
+        }
+      }
+    } catch {
+      // non-fatal if not signed in as admin for orders
     }
   };
 
@@ -2414,6 +2646,60 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
     };
   }, []);
+
+  // Real-time Firestore Listeners for Storefront Public Config & Catalog Products (all visitors)
+  useEffect(() => {
+    const unsubSettings = onSnapshot(
+      doc(db, 'storefront', 'public'),
+      (snap) => {
+        if (!snap.exists()) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const remote = snap.data();
+        if (remote) {
+          setSettings((prev) => mergeSettings({ ...prev, ...remote }));
+        }
+      },
+      () => {}
+    );
+
+    const unsubProducts = onSnapshot(
+      collection(db, 'products'),
+      (snap) => {
+        if (snap.empty) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const remoteList = snap.docs.map((d) => ({ ...d.data(), id: d.id } as Product));
+        setProducts((prev) => {
+          const map = new Map(prev.map((p) => [p.id, p]));
+          remoteList.forEach((p) => map.set(p.id, p));
+          return Array.from(map.values());
+        });
+      },
+      () => {}
+    );
+
+    return () => {
+      unsubSettings();
+      unsubProducts();
+    };
+  }, []);
+
+  // Real-time Firestore Listener for Orders when authenticated as Firebase Admin (works across Vercel/mobile/desktop)
+  useEffect(() => {
+    if (!isFirebaseAdminConnected) return;
+    let isInitialBatch = true;
+    const unsubOrders = onSnapshot(
+      collection(db, 'orders'),
+      (snap) => {
+        const fsOrders = snap.docs.map((d) => ({ ...d.data(), id: d.id } as Order));
+        mergeRemoteOrders(fsOrders, new Set(), !isInitialBatch);
+        isInitialBatch = false;
+      },
+      (err) => {
+        console.warn('Firestore orders listener warning:', err?.message || err);
+      }
+    );
+    return () => unsubOrders();
+  }, [isFirebaseAdminConnected]);
 
   // Push store snapshot updates AFTER initial server hydration completes
   useEffect(() => {
@@ -3020,16 +3306,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 }
               ]
             };
+            const updatedOrder: Order = {
+              ...ord,
+              status: 'shipped',
+              courier: updatedCourier
+            };
             fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ updates: { status: 'shipped', courier: updatedCourier } })
             }).catch(() => {});
-            return {
-              ...ord,
-              status: 'shipped',
-              courier: updatedCourier
-            };
+            updateOrderInFirestore(updatedOrder).catch(() => {});
+            return updatedOrder;
           }
           return ord;
         })
@@ -3182,14 +3470,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // Apply 1 of 10 Business Themes (Colors + optional curated Categories)
+  // Apply 1 of 10 Business Themes (Colors + Auto-Generated Brand Attributes + optional curated Categories)
   const applyBusinessTheme = (themeId: StoreTheme, includeCategories = false) => {
     const preset = BUSINESS_THEME_PRESETS.find((p) => p.id === themeId);
     if (!preset) return;
 
+    const palette = computeBrandPaletteAttributes(preset.colors.primary, preset.colors.secondary);
     updateSettings({
       theme: themeId,
-      themeColors: { ...preset.colors }
+      themeColors: { ...preset.colors },
+      brandAttributes: {
+        primaryHover: palette.primaryHover,
+        primarySoft: palette.primarySoft,
+        primaryBorder: palette.primaryBorder,
+        onPrimary: palette.onPrimary,
+        cssAttributeString: palette.cssAttributeString,
+        generatedAt: new Date().toISOString()
+      }
     });
 
     if (includeCategories && preset.suggestedCategories.length > 0) {
@@ -3211,16 +3508,58 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   };
 
-  // Apply dynamic CSS theme variables whenever themeColors changes
+  // Backend Brand Color Attribute Generator (derives full CSS token set & HTML root attributes)
+  const generateBrandColorAttributes = (primaryHex?: string) => {
+    const sourcePrimary = primaryHex || settings.themeColors?.primary || '#059669';
+    const computed = computeBrandPaletteAttributes(sourcePrimary);
+    updateSettings({
+      themeColors: {
+        primary: computed.primary,
+        secondary: computed.secondary,
+        headerBg: settings.themeColors?.headerBg || '#ffffff',
+        footerBg: computed.footerBg,
+        heroFrom: computed.heroFrom,
+        heroTo: computed.heroTo
+      },
+      brandAttributes: {
+        primaryHover: computed.primaryHover,
+        primarySoft: computed.primarySoft,
+        primaryBorder: computed.primaryBorder,
+        onPrimary: computed.onPrimary,
+        cssAttributeString: computed.cssAttributeString,
+        generatedAt: new Date().toISOString()
+      }
+    });
+    addToast(
+      'success',
+      t('ব্র্যান্ড কালার অ্যাট্রিবিউট জেনারেট সম্পন্ন!', 'Brand Color Attributes Generated!'),
+      t(`Primary: ${computed.primary} • Hover: ${computed.primaryHover}`, `Applied tokens for ${computed.primary} across storefront.`)
+    );
+  };
+
+  // Apply dynamic CSS theme variables & root brand data-attributes whenever themeColors or theme changes
   useEffect(() => {
     const colors = settings.themeColors;
-    if (colors) {
-      document.documentElement.style.setProperty('--brand-primary', colors.primary || '#059669');
-      document.documentElement.style.setProperty('--brand-secondary', colors.secondary || '#0d9488');
-      const themeMeta = document.querySelector('meta[name="theme-color"]');
-      if (themeMeta) themeMeta.setAttribute('content', colors.primary || '#059669');
-    }
-  }, [settings.themeColors]);
+    const computed = computeBrandPaletteAttributes(colors?.primary, colors?.secondary);
+    const root = document.documentElement;
+    root.style.setProperty('--brand-primary', computed.primary);
+    root.style.setProperty('--brand-primary-hover', settings.brandAttributes?.primaryHover || computed.primaryHover);
+    root.style.setProperty('--brand-primary-soft', settings.brandAttributes?.primarySoft || computed.primarySoft);
+    root.style.setProperty('--brand-primary-border', settings.brandAttributes?.primaryBorder || computed.primaryBorder);
+    root.style.setProperty('--brand-on-primary', settings.brandAttributes?.onPrimary || computed.onPrimary);
+    root.style.setProperty('--brand-secondary', colors?.secondary || computed.secondary);
+    root.style.setProperty('--brand-header-bg', colors?.headerBg || '#ffffff');
+    root.style.setProperty('--brand-footer-bg', colors?.footerBg || computed.footerBg);
+    root.style.setProperty('--brand-hero-from', colors?.heroFrom || computed.heroFrom);
+    root.style.setProperty('--brand-hero-to', colors?.heroTo || computed.heroTo);
+
+    root.setAttribute('data-theme', settings.theme || 'gadgets');
+    root.setAttribute('data-brand-primary', computed.primary);
+    root.setAttribute('data-brand-secondary', colors?.secondary || computed.secondary);
+
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeMeta) themeMeta.setAttribute('content', computed.primary);
+  }, [settings.themeColors, settings.theme, settings.brandAttributes]);
 
   // Dynamic SEO Head Tags + Schema.org JSON-LD Updater (Global + Per-Product SEO)
   useEffect(() => {
@@ -3514,7 +3853,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           ? 'pending'
           : 'paid',
         trxId: orderData.paymentTrxId,
-        paymentNumber: orderData.customer.phone
+        paymentNumber: orderData.customer.phone,
+        dueAmount:
+          orderData.paymentMethod === 'cod' || (orderData.advancePaid && orderData.advancePaid < total)
+            ? Math.max(0, total - (orderData.advancePaid || 0))
+            : 0
       },
       deliveryZone: orderData.deliveryZone,
       status: orderData.initialStatus || (orderData.source === 'pos' ? 'delivered' : 'pending'),
@@ -3562,12 +3905,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       })
     );
 
-    // Immediately persist atomically to server so all other browsers & devices receive it
+    // Immediately persist atomically to BOTH Express API and Cloud Firestore so all devices/browsers receive it live
     fetch('/api/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ order: newOrder })
     }).catch(() => {});
+    writeOrderToFirestore(newOrder).catch((err) => {
+      console.warn('Firestore order sync warning:', err?.message || err);
+    });
 
     // Send automatic SMTP Order Confirmation Email if configured & enabled
     if (settings.smtpSettings?.enabled && settings.smtpSettings?.sendOnOrderConfirmation) {
@@ -3647,7 +3993,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 status: 'In Transit',
                 time: 'Just now',
                 location: 'Hub Dispatched',
-                note: 'Dispatched to customer destination hub via Steadfast Courier'
+                note: 'Dispatched to customer destination hub via courier'
               }
             ];
           } else if (status === 'delivered') {
@@ -3662,16 +4008,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               }
             ];
           }
+          const updatedOrder: Order = {
+            ...ord,
+            status,
+            courier: updatedCourier
+          };
           fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ updates: { status, courier: updatedCourier } })
           }).catch(() => {});
-          return {
-            ...ord,
-            status,
-            courier: updatedCourier
-          };
+          updateOrderInFirestore(updatedOrder).catch(() => {});
+          return updatedOrder;
         }
         return ord;
       })
@@ -3684,22 +4032,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       prev.map((ord) => {
         if (ord.id !== orderId) return ord;
         const nextCourier = { ...ord.courier, ...updates };
+        const updatedOrder: Order = { ...ord, courier: nextCourier };
         fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ updates: { courier: nextCourier } })
         }).catch(() => {});
-        return {
-          ...ord,
-          courier: nextCourier
-        };
+        updateOrderInFirestore(updatedOrder).catch(() => {});
+        return updatedOrder;
       })
     );
   };
 
   const updateOrderDetails = (orderId: string, updates: Partial<Order>) => {
     setOrders((prev) =>
-      prev.map((ord) => (ord.id === orderId ? { ...ord, ...updates } : ord))
+      prev.map((ord) => {
+        if (ord.id !== orderId) return ord;
+        const updatedOrder = { ...ord, ...updates };
+        updateOrderInFirestore(updatedOrder).catch(() => {});
+        return updatedOrder;
+      })
     );
     fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
       method: 'PATCH',
@@ -3715,6 +4067,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
       method: 'DELETE'
     }).catch(() => {});
+    deleteOrderFromFirestore(orderId).catch(() => {});
     addToast('info', t('অর্ডার অপসারিত', 'Order Deleted'), t('অর্ডারটি ডাটাবেজ থেকে মুছে দেওয়া হয়েছে।', 'Order removed.'));
   };
 
@@ -3726,6 +4079,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       orderIds.forEach((id) => {
         knownOrderIdsRef.current.delete(id);
         fetch(`/api/orders/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+        deleteOrderFromFirestore(id).catch(() => {});
       });
       setOrders((prev) => prev.filter((ord) => !idSet.has(ord.id)));
       addToast(
@@ -3765,16 +4119,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               }
             ];
           }
+          const updatedOrder: Order = {
+            ...ord,
+            status: nextStatus,
+            courier: updatedCourier
+          };
           fetch(`/api/orders/${encodeURIComponent(ord.id)}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ updates: { status: nextStatus, courier: updatedCourier } })
           }).catch(() => {});
-          return {
-            ...ord,
-            status: nextStatus,
-            courier: updatedCourier
-          };
+          updateOrderInFirestore(updatedOrder).catch(() => {});
+          return updatedOrder;
         })
       );
       addToast(
@@ -3955,7 +4311,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Settings
   const updateSettings = (newSettings: Partial<StoreSettings>) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }));
+    lastLocalMutationAtRef.current = Date.now();
+    setSettings((prev) => {
+      const next = { ...prev, ...newSettings };
+      if (newSettings.themeColors && !newSettings.brandAttributes) {
+        const computed = computeBrandPaletteAttributes(
+          next.themeColors?.primary,
+          next.themeColors?.secondary
+        );
+        next.brandAttributes = {
+          primaryHover: computed.primaryHover,
+          primarySoft: computed.primarySoft,
+          primaryBorder: computed.primaryBorder,
+          onPrimary: computed.onPrimary,
+          cssAttributeString: computed.cssAttributeString,
+          generatedAt: new Date().toISOString()
+        };
+      }
+      saveStorefrontSettingsToFirestore(next).catch(() => {});
+      return next;
+    });
     addToast('success', t('সেটিংস সংরক্ষিত হয়েছে', 'Settings Saved'), t('স্টোরের সকল পরিবর্তন সফলভাবে সংরক্ষিত।', 'Configurations updated.'));
   };
 
@@ -4157,6 +4532,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setIsAdminLoginOpen,
         loginAdmin,
         logoutAdmin,
+        firebaseAdminUserEmail,
+        isFirebaseAdminConnected,
+        signInAdminWithGoogle,
+        signOutAdminFirebase,
         spinRewards,
         addSpinReward,
         updateSpinReward,
@@ -4179,6 +4558,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isPlayingVoiceSample,
         settings,
         updateSettings,
+        generateBrandColorAttributes,
         clearAppCache,
         resetAllToDefault,
         cart,
