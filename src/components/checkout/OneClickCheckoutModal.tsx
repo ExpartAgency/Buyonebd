@@ -115,10 +115,33 @@ export const OneClickCheckoutModal: React.FC = () => {
     if (!code) return;
 
     const reward = settings.spinSettings?.rewards.find((r) => r.code.toUpperCase() === code);
+    const promoCoupon = (settings.promoCoupons || []).find((c) => c.code.toUpperCase() === code && c.active !== false);
     const organicPromoCode = settings.organicMarketing?.promoPopup?.couponCode?.toUpperCase();
     const organicShareCode = settings.organicMarketing?.socialShareDiscount?.couponCode?.toUpperCase();
 
-    if (reward) {
+    if (promoCoupon) {
+      if (promoCoupon.minOrder && subtotal < promoCoupon.minOrder) {
+        addToast(
+          'warning',
+          t('মিনিমাম অর্ডার প্রয়োজন', 'Minimum Order Required'),
+          t(`${code} ব্যবহার করতে কমপক্ষে ৳${promoCoupon.minOrder} এর অর্ডার করুন।`, `Spend at least ৳${promoCoupon.minOrder} to apply ${code}.`)
+        );
+        return;
+      }
+      const amount =
+        promoCoupon.discountType === 'free_shipping'
+          ? rawDeliveryFee
+          : promoCoupon.discountType === 'percent'
+          ? Math.round(subtotal * (promoCoupon.value / 100))
+          : promoCoupon.value;
+      setAppliedCoupon({
+        code,
+        label: promoCoupon.title || `${code} (-৳${amount})`,
+        amount
+      });
+      setCouponCode(code);
+      addToast('success', t('প্রোমো কুপন প্রয়োগ হয়েছে!', 'Promo Coupon Applied!'), `${code} (-৳${amount})`);
+    } else if (reward) {
       let amount = 0;
       if (reward.discountType === 'fixed') amount = reward.value;
       else if (reward.discountType === 'free_shipping') amount = rawDeliveryFee;
@@ -522,7 +545,7 @@ export const OneClickCheckoutModal: React.FC = () => {
               <div className="flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder={t('যেমন: SPIN150 বা FREESHIP', 'e.g. SPIN150 or FREESHIP')}
+                  placeholder={t('যেমন: WELCOME100 বা FREESHIP', 'e.g. WELCOME100 or FREESHIP')}
                   value={couponCode}
                   onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
                   className="flex-1 px-3 py-1.5 bg-white border border-amber-300 rounded-xl text-xs font-mono uppercase focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -535,6 +558,21 @@ export const OneClickCheckoutModal: React.FC = () => {
                   {t('প্রয়োগ করুন', 'Apply')}
                 </button>
               </div>
+              {(settings.promoCoupons || []).filter((c) => c.active !== false).length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  <span className="text-[10px] text-amber-800 font-semibold">{t('সক্রিয় কোড:', 'Active:')}</span>
+                  {(settings.promoCoupons || []).filter((c) => c.active !== false).slice(0, 4).map((cpn) => (
+                    <button
+                      key={cpn.id}
+                      type="button"
+                      onClick={() => handleApplyCoupon(cpn.code)}
+                      className="px-2 py-0.5 rounded-md bg-white border border-amber-300 hover:border-amber-500 text-[10px] font-mono font-bold text-amber-900 cursor-pointer"
+                    >
+                      {cpn.code}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Payment Method Selector */}

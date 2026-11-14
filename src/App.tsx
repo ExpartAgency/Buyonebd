@@ -51,21 +51,28 @@ function StoreMainContent() {
 
   const [sortBy, setSortBy] = useState<'default' | 'price_asc' | 'price_desc' | 'rating' | 'discount'>('default');
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
-  const [flashTimeLeft, setFlashTimeLeft] = useState({ hours: 4, minutes: 38, seconds: 52 });
+  const computeFlashTimeLeft = (endsAtIso?: string) => {
+    const targetMs = endsAtIso ? new Date(endsAtIso).getTime() : NaN;
+    const diffMs = Number.isFinite(targetMs) ? Math.max(0, targetMs - Date.now()) : 6 * 3600 * 1000;
+    const totalSeconds = Math.floor(diffMs / 1000);
+    return {
+      hours: Math.floor(totalSeconds / 3600),
+      minutes: Math.floor((totalSeconds % 3600) / 60),
+      seconds: totalSeconds % 60
+    };
+  };
+
+  const [flashTimeLeft, setFlashTimeLeft] = useState(() => computeFlashTimeLeft(settings.flashSale?.endsAt));
   const [isPromoPopupVisible, setIsPromoPopupVisible] = useState(false);
   const [referralBannerCode, setReferralBannerCode] = useState<string | null>(null);
 
   useEffect(() => {
+    setFlashTimeLeft(computeFlashTimeLeft(settings.flashSale?.endsAt));
     const timer = setInterval(() => {
-      setFlashTimeLeft((prev) => {
-        if (prev.seconds > 0) return { ...prev, seconds: prev.seconds - 1 };
-        if (prev.minutes > 0) return { ...prev, minutes: 59, seconds: 59 };
-        if (prev.hours > 0) return { hours: prev.hours - 1, minutes: 59, seconds: 59 };
-        return { hours: 6, minutes: 0, seconds: 0 };
-      });
+      setFlashTimeLeft(computeFlashTimeLeft(settings.flashSale?.endsAt));
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [settings.flashSale?.endsAt]);
 
   // Organic Referral URL detection (?ref=CODE)
   useEffect(() => {

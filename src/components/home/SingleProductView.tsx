@@ -84,19 +84,26 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
 
-  // Live Flash Sale Countdown Timer
-  const [timeLeft, setTimeLeft] = useState({ hours: 4, minutes: 38, seconds: 52 });
+  // Live Flash Sale Countdown Timer computed from Admin settings.flashSale.endsAt
+  const computeFlashTimeLeft = (endsAtIso?: string) => {
+    const targetMs = endsAtIso ? new Date(endsAtIso).getTime() : NaN;
+    const diffMs = Number.isFinite(targetMs) ? Math.max(0, targetMs - Date.now()) : 6 * 3600 * 1000;
+    const totalSeconds = Math.floor(diffMs / 1000);
+    return {
+      hours: Math.floor(totalSeconds / 3600),
+      minutes: Math.floor((totalSeconds % 3600) / 60),
+      seconds: totalSeconds % 60
+    };
+  };
+
+  const [timeLeft, setTimeLeft] = useState(() => computeFlashTimeLeft(settings.flashSale?.endsAt));
   useEffect(() => {
+    setTimeLeft(computeFlashTimeLeft(settings.flashSale?.endsAt));
     const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev.seconds > 0) return { ...prev, seconds: prev.seconds - 1 };
-        if (prev.minutes > 0) return { ...prev, minutes: 59, seconds: 59 };
-        if (prev.hours > 0) return { hours: prev.hours - 1, minutes: 59, seconds: 59 };
-        return { hours: 6, minutes: 0, seconds: 0 };
-      });
+      setTimeLeft(computeFlashTimeLeft(settings.flashSale?.endsAt));
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [settings.flashSale?.endsAt]);
 
   const discountPercent =
     product.originalPrice > product.price
@@ -112,7 +119,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
   const flashStockPercent = Math.min(92, Math.max(58, 100 - Math.min(product.stock || 15, 40)));
 
   const productReviews = useMemo(
-    () => reviews.filter((r) => r.productId === product.id),
+    () => reviews.filter((r) => r.productId === product.id && r.isApproved !== false),
     [reviews, product.id]
   );
 
@@ -191,10 +198,13 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
 
   const unitSavings = Math.max(0, (product.originalPrice - product.price) * quantity);
   const totalPayable = product.price * quantity;
-  const loyaltyEarn = Math.max(5, Math.floor(totalPayable / 20));
+  const cms = settings.singleProductCms;
+  const loyaltyEarn =
+    product.loyaltyPoints !== undefined
+      ? product.loyaltyPoints * quantity
+      : Math.max(5, Math.floor(totalPayable / Math.max(1, cms?.pointsPerOrderDivisor || 20)));
 
   // Per-product delivery charge calculation (freeShipping or customDeliveryFees or store settings default)
-  const cms = settings.singleProductCms;
   const organic = settings.organicMarketing;
   const isFreeShip = Boolean(product.freeShipping);
   const dhakaFee = isFreeShip ? 0 : (product.customDeliveryFees?.dhakaInside ?? settings.deliveryFees?.dhakaInside ?? 60);
@@ -496,9 +506,14 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   <span className="text-slate-300 dark:text-slate-700">|</span>
                   <span className="text-emerald-600 dark:text-emerald-400 font-bold">
                     {product.stock > 0
-                      ? t(`স্টকে আছে (${product.stock})`, `In Stock (${product.stock})`)
-                      : t('স্টক শেষ', 'Out of Stock')}
+                      ? t(`${cms?.inStockLabelBn || 'স্টকে আছে'} (${product.stock})`, `${cms?.inStockLabelEn || 'In Stock'} (${product.stock})`)
+                      : t(cms?.outOfStockLabelBn || 'স্টক শেষ', cms?.outOfStockLabelEn || 'Out of Stock')}
                   </span>
+                  {product.soldCount ? (
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                      · {product.soldCount}+ {t('বিক্রি', 'sold')}
+                    </span>
+                  ) : null}
                 </div>
               </div>
 
@@ -528,7 +543,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
 
                   {unitSavings > 0 && (
                     <span className="bg-rose-500/10 text-rose-600 dark:text-rose-400 text-xs font-black px-2.5 py-1 rounded-lg border border-rose-500/20 tabular-nums">
-                      {t(`সাশ্রয় ৳${unitSavings.toLocaleString()}`, `Save ৳${unitSavings.toLocaleString()}`)}
+                      {t(`${cms?.saveBadgeLabelBn || 'সাশ্রয়'} ৳${unitSavings.toLocaleString()}`, `${cms?.saveBadgeLabelEn || 'Save'} ৳${unitSavings.toLocaleString()}`)}
                     </span>
                   )}
                 </div>
@@ -539,8 +554,8 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                       <Award className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                       <span>
                         {t(
-                          `এই অর্ডারে +${loyaltyEarn} রিওয়ার্ড পয়েন্ট পাবেন`,
-                          `Earn +${loyaltyEarn} Loyalty Points on purchase`
+                          (cms?.loyaltyTextBn || 'এই অর্ডারে +{points} রিওয়ার্ড পয়েন্ট পাবেন').replace('{points}', String(loyaltyEarn)),
+                          (cms?.loyaltyTextEn || 'Earn +{points} Loyalty Points on purchase').replace('{points}', String(loyaltyEarn))
                         )}
                       </span>
                     </span>
@@ -560,7 +575,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   {product.colors && product.colors.length > 0 && (
                     <div className="space-y-1.5">
                       <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
-                        {t('রং / ভ্যারিয়েন্ট:', 'Color / Variant:')}
+                        {t(cms?.colorLabelBn || 'রং / ভ্যারিয়েন্ট:', cms?.colorLabelEn || 'Color / Variant:')}
                       </span>
                       <div className="flex items-center gap-2 flex-wrap">
                         {product.colors.map((c) => (
@@ -585,7 +600,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   {product.sizes && product.sizes.length > 0 && (
                     <div className="space-y-1.5">
                       <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
-                        {t('সাইজ / প্যাক:', 'Size / Edition:')}
+                        {t(cms?.sizeLabelBn || 'সাইজ / এডিশন:', cms?.sizeLabelEn || 'Size / Edition:')}
                       </span>
                       <div className="flex items-center gap-2 flex-wrap">
                         {product.sizes.map((s) => (

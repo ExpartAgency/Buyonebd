@@ -1,6 +1,6 @@
 export type PaymentMethod = 'cod' | 'bkash' | 'nagad' | 'rocket' | 'sslcommerz' | 'cash' | 'card';
 export type PaymentStatus = 'pending' | 'paid' | 'advance_paid';
-export type OrderStatus = 'pending' | 'ai_confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+export type OrderStatus = 'pending' | 'ai_confirmed' | 'processing' | 'on_hold' | 'shipped' | 'delivered' | 'partial' | 'cancelled';
 export type CourierProvider = 'Steadfast' | 'Pathao' | 'RedX' | 'Paperfly' | 'Sundarban';
 export type DeliveryZone = 'dhaka_inside' | 'dhaka_sub' | 'dhaka_outside';
 
@@ -39,6 +39,7 @@ export interface ProductReview {
   comment: string;
   date: string;
   verifiedPurchase: boolean;
+  isApproved?: boolean;
 }
 
 export interface ProductSEO {
@@ -74,6 +75,8 @@ export interface Product {
   };
   rating: number;
   reviewsCount: number;
+  soldCount?: number;
+  loyaltyPoints?: number;
   isFlashSale?: boolean;
   colors?: string[];
   sizes?: string[];
@@ -162,6 +165,7 @@ export interface Order {
     status: PaymentStatus;
     trxId?: string;
     paymentNumber?: string;
+    dueAmount?: number;
   };
   deliveryZone: DeliveryZone;
   status: OrderStatus;
@@ -499,6 +503,18 @@ export interface StoreSettings {
   smtpSettings?: SMTPSettings;
   singleProductCms?: SingleProductCMSSettings;
   organicMarketing?: OrganicMarketingSettings;
+  promoCoupons?: PromoCoupon[];
+}
+
+export interface PromoCoupon {
+  id: string;
+  code: string;
+  title?: string;
+  discountType: 'fixed' | 'percent' | 'free_shipping';
+  value: number;
+  minOrder: number;
+  active: boolean;
+  expiresAt?: string;
 }
 
 export interface SMTPSettings {
@@ -535,6 +551,19 @@ export interface SingleProductCMSSettings {
   warrantyBadgeValueEn: string;
   codTrustTextBn: string;
   codTrustTextEn: string;
+  colorLabelBn?: string;
+  colorLabelEn?: string;
+  sizeLabelBn?: string;
+  sizeLabelEn?: string;
+  loyaltyTextBn?: string;
+  loyaltyTextEn?: string;
+  pointsPerOrderDivisor?: number;
+  saveBadgeLabelBn?: string;
+  saveBadgeLabelEn?: string;
+  inStockLabelBn?: string;
+  inStockLabelEn?: string;
+  outOfStockLabelBn?: string;
+  outOfStockLabelEn?: string;
   returnPolicyTitleBn: string;
   returnPolicyTitleEn: string;
   returnPolicyTextBn: string;

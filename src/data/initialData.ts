@@ -756,7 +756,8 @@ export const INITIAL_REVIEWS: ProductReview[] = [
     rating: 5,
     comment: 'অসাধারণ ওয়াচ! কলিং স্পিকার খুবই ক্লিয়ার আর ডিসপ্লে একদম স্মুথ। এআই কল এসে কনফার্ম করল, ২ দিনেই ডেলিভারি পেলাম।',
     date: '২ দিন আগে',
-    verifiedPurchase: true
+    verifiedPurchase: true,
+    isApproved: true
   },
   {
     id: 'rev-02',
@@ -765,7 +766,8 @@ export const INITIAL_REVIEWS: ProductReview[] = [
     rating: 5,
     comment: 'ব্যাটারি ব্যাকআপ খুব ভালো দিচ্ছে। ক্যাশ অন ডেলিভারিতে কোনো ঝামেলা ছাড়াই হাতে পেয়েছি। ১০০% রেকমেন্ডেড।',
     date: '১ সপ্তাহ আগে',
-    verifiedPurchase: true
+    verifiedPurchase: true,
+    isApproved: true
   },
   {
     id: 'rev-03',
@@ -774,7 +776,8 @@ export const INITIAL_REVIEWS: ProductReview[] = [
     rating: 5,
     comment: 'সুন্দরবনের খাঁটি মধুর স্বাদ! ল্যাব টেস্টেও উত্তীর্ণ। কাঁচের বয়াম খুব যত্নে প্যাকিং করা ছিল।',
     date: '৩ দিন আগে',
-    verifiedPurchase: true
+    verifiedPurchase: true,
+    isApproved: true
   }
 ];
 
@@ -1103,6 +1106,19 @@ export const INITIAL_SETTINGS: StoreSettings = {
     warrantyBadgeValueEn: '7-Day Replace',
     codTrustTextBn: 'ক্যাশ অন ডেলিভারি সুবিধা',
     codTrustTextEn: 'Pay Cash on Delivery',
+    colorLabelBn: 'রং / ভ্যারিয়েন্ট:',
+    colorLabelEn: 'Color / Variant:',
+    sizeLabelBn: 'সাইজ / এডিশন:',
+    sizeLabelEn: 'Size / Edition:',
+    loyaltyTextBn: 'এই অর্ডারে +{points} রিওয়ার্ড পয়েন্ট পাবেন',
+    loyaltyTextEn: 'Earn +{points} Loyalty Points on purchase',
+    pointsPerOrderDivisor: 20,
+    saveBadgeLabelBn: 'সাশ্রয়',
+    saveBadgeLabelEn: 'Save',
+    inStockLabelBn: 'স্টকে আছে',
+    inStockLabelEn: 'In Stock',
+    outOfStockLabelBn: 'স্টক শেষ',
+    outOfStockLabelEn: 'Out of Stock',
     returnPolicyTitleBn: 'সহজ রিটার্ন পলিসি',
     returnPolicyTitleEn: 'Hassle-Free Return',
     returnPolicyTextBn: 'ডেলিভারি ম্যানের সামনে পণ্য চেক করে নেওয়ার সুযোগ এবং যেকোনো ত্রুটিতে তাৎক্ষণিক পরিবর্তন।',
@@ -1112,6 +1128,11 @@ export const INITIAL_SETTINGS: StoreSettings = {
     courierNoteTextBn: 'Steadfast, Pathao ও RedX-এর মাধ্যমে ৬৪ জেলায় দ্রুত হোম ডেলিভারি।',
     courierNoteTextEn: 'Fast Steadfast, Pathao & RedX delivery across all 64 districts.'
   },
+  promoCoupons: [
+    { id: 'cpn-welcome', code: 'WELCOME100', discountType: 'fixed', value: 100, minOrder: 500, active: true },
+    { id: 'cpn-eid', code: 'BUYONE15', discountType: 'percent', value: 15, minOrder: 1000, active: true },
+    { id: 'cpn-ship', code: 'FREESHIP', discountType: 'free_shipping', value: 0, minOrder: 800, active: true }
+  ],
   organicMarketing: {
     referralProgram: {
       enabled: true,

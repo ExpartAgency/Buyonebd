@@ -10,7 +10,10 @@ import {
   LogIn,
   UserPlus,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  KeyRound,
+  ArrowLeft,
+  CheckCircle2
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 
@@ -20,11 +23,14 @@ export const CustomerLoginModal: React.FC = () => {
     setIsCustomerLoginOpen,
     loginCustomer,
     registerCustomer,
+    sendPasswordResetOtp,
+    resetCustomerPassword,
     settings,
-    t
+    t,
+    addToast
   } = useStore();
 
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [showPassword, setShowPassword] = useState(false);
 
   // Login form
@@ -37,6 +43,16 @@ export const CustomerLoginModal: React.FC = () => {
   const [regPhone, setRegPhone] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
+
+  // Forgot Password 2-Step OTP Reset form
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [forgotStep, setForgotStep] = useState<'request' | 'verify'>('request');
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [enteredOtp, setEnteredOtp] = useState('');
+  const [newResetPassword, setNewResetPassword] = useState('');
+  const [confirmResetPassword, setConfirmResetPassword] = useState('');
+  const [resetTargetInfo, setResetTargetInfo] = useState<{ customerName?: string; contactLabel?: string } | null>(null);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
 
   if (!isCustomerLoginOpen) return null;
 
@@ -54,6 +70,49 @@ export const CustomerLoginModal: React.FC = () => {
       email: regEmail,
       password: regPassword
     });
+  };
+
+  const handleRequestOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotIdentifier.trim()) return;
+    setIsSendingOtp(true);
+    try {
+      const res = await sendPasswordResetOtp(forgotIdentifier.trim());
+      if (res.success && res.otpCode) {
+        setGeneratedOtp(res.otpCode);
+        setResetTargetInfo({ customerName: res.customerName, contactLabel: res.contactLabel });
+        setForgotStep('verify');
+      }
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleResetSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (enteredOtp.trim() !== generatedOtp) {
+      addToast('error', t('ভুল OTP কোড', 'Invalid OTP'), t('সঠিক ৬ ডিজিটের ভেরিফিকেশন কোড দিন।', 'Please enter the exact 6-digit OTP code.'));
+      return;
+    }
+    if (newResetPassword.length < 4) {
+      addToast('warning', t('পাসওয়ার্ড ছোট', 'Password Too Short'), t('কমপক্ষে ৪ অক্ষরের পাসওয়ার্ড দিন।', 'Password must be at least 4 characters.'));
+      return;
+    }
+    if (newResetPassword !== confirmResetPassword) {
+      addToast('warning', t('পাসওয়ার্ড মিলছে না', 'Passwords Do Not Match'), t('নতুন পাসওয়ার্ড দুটি এক হতে হবে।', 'New password and confirmation must match.'));
+      return;
+    }
+    const ok = resetCustomerPassword(forgotIdentifier.trim(), newResetPassword);
+    if (ok) {
+      setIdentifier(forgotIdentifier.trim());
+      setPassword(newResetPassword);
+      setMode('login');
+      setForgotStep('request');
+      setEnteredOtp('');
+      setNewResetPassword('');
+      setConfirmResetPassword('');
+      setGeneratedOtp('');
+    }
   };
 
   return (
@@ -80,48 +139,66 @@ export const CustomerLoginModal: React.FC = () => {
           {/* Header */}
           <div className="text-center space-y-1.5">
             <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 mb-1">
-              <User className="w-7 h-7" />
+              {mode === 'forgot' ? <KeyRound className="w-7 h-7" /> : <User className="w-7 h-7" />}
             </div>
             <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
               {mode === 'login'
                 ? t('কাস্টমার প্রোফাইল লগইন', 'Customer Sign In')
-                : t('নতুন অ্যাকাউন্ট তৈরি করুন', 'Create Customer Account')}
+                : mode === 'register'
+                ? t('নতুন অ্যাকাউন্ট তৈরি করুন', 'Create Customer Account')
+                : t('পাসওয়ার্ড রিসেট করুন', 'Reset Your Password')}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {t(
-                'অর্ডার ট্র্যাকিং, স্পিন গিফট ওয়ালেট ও রিওয়ার্ডস দেখতে লগইন করুন',
-                'Sign in to manage orders, spin cash wallet & coupons'
-              )}
+              {mode === 'forgot'
+                ? t('রেজিস্টার্ড ফোন, ইমেইল বা ইউজারনেম দিয়ে OTP নিন', 'Recover access using phone, email or username OTP')
+                : t(
+                    'অর্ডার ট্র্যাকিং, স্পিন গিফট ওয়ালেট ও রিওয়ার্ডস দেখতে লগইন করুন',
+                    'Sign in to manage orders, spin cash wallet & coupons'
+                  )}
             </p>
           </div>
 
           {/* Mode Tabs */}
-          <div className="grid grid-cols-2 gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl text-xs font-bold">
+          {mode !== 'forgot' ? (
+            <div className="grid grid-cols-2 gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setMode('login')}
+                className={`py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  mode === 'login'
+                    ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>{t('লগইন', 'Sign In')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('register')}
+                className={`py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  mode === 'register'
+                    ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>{t('রেজিস্টার', 'Register')}</span>
+              </button>
+            </div>
+          ) : (
             <button
               type="button"
-              onClick={() => setMode('login')}
-              className={`py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                mode === 'login'
-                  ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
+              onClick={() => {
+                setMode('login');
+                setForgotStep('request');
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-emerald-600 cursor-pointer"
             >
-              <LogIn className="w-3.5 h-3.5" />
-              <span>{t('লগইন', 'Sign In')}</span>
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>{t('লগইন পেজে ফিরুন', 'Back to Sign In')}</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setMode('register')}
-              className={`py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                mode === 'register'
-                  ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>{t('রেজিস্টার', 'Register')}</span>
-            </button>
-          </div>
+          )}
 
           {mode === 'login' ? (
             <form onSubmit={handleLoginSubmit} className="space-y-3.5">
@@ -143,9 +220,22 @@ export const CustomerLoginModal: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                  {t('পাসওয়ার্ড', 'Password')}
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">
+                    {t('পাসওয়ার্ড', 'Password')}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotIdentifier(identifier);
+                      setForgotStep('request');
+                      setMode('forgot');
+                    }}
+                    className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                  >
+                    {t('পাসওয়ার্ড ভুলে গেছেন?', 'Forgot Password?')}
+                  </button>
+                </div>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                   <input
@@ -195,6 +285,106 @@ export const CustomerLoginModal: React.FC = () => {
                 </button>
               </div>
             </form>
+          ) : mode === 'forgot' ? (
+            forgotStep === 'request' ? (
+              <form onSubmit={handleRequestOtp} className="space-y-3.5">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                    {t('ইউজারনেম / মোবাইল নম্বর / ইমেইল *', 'Username / Phone / Email *')}
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                    <input
+                      type="text"
+                      required
+                      value={forgotIdentifier}
+                      onChange={(e) => setForgotIdentifier(e.target.value)}
+                      placeholder={t('যেমন: hossain বা 01886289663', 'e.g. hossain or 01886289663')}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSendingOtp}
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-60"
+                >
+                  <KeyRound className="w-4 h-4" />
+                  <span>{isSendingOtp ? t('OTP পাঠানো হচ্ছে...', 'Sending OTP...') : t('৬ ডিজিটের OTP পাঠান', 'Send 6-Digit Verification OTP')}</span>
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleResetSubmit} className="space-y-3">
+                <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 text-[11px] space-y-1">
+                  <p className="font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {t(
+                        `${resetTargetInfo?.customerName || 'কাস্টমার'} (${resetTargetInfo?.contactLabel || ''}) এ OTP পাঠানো হয়েছে`,
+                        `OTP sent for ${resetTargetInfo?.customerName || 'account'} (${resetTargetInfo?.contactLabel || ''})`
+                      )}
+                    </span>
+                  </p>
+                  <p className="font-mono text-emerald-700 dark:text-emerald-400">
+                    {t('ভেরিফিকেশন OTP কোড:', 'Verification OTP Code:')} <strong className="text-sm">{generatedOtp}</strong>
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    {t('৬ ডিজিটের OTP লিখুন *', 'Enter 6-Digit OTP *')}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    value={enteredOtp}
+                    onChange={(e) => setEnteredOtp(e.target.value.replace(/[^0-9]/g, ''))}
+                    placeholder="123456"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-black tracking-widest text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      {t('নতুন পাসওয়ার্ড *', 'New Password *')}
+                    </label>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      minLength={4}
+                      value={newResetPassword}
+                      onChange={(e) => setNewResetPassword(e.target.value)}
+                      placeholder="••••••"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      {t('নিশ্চিত পাসওয়ার্ড *', 'Confirm Password *')}
+                    </label>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      minLength={4}
+                      value={confirmResetPassword}
+                      onChange={(e) => setConfirmResetPassword(e.target.value)}
+                      placeholder="••••••"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{t('পাসওয়ার্ড আপডেট ও লগইন করুন', 'Update Password & Return to Login')}</span>
+                </button>
+              </form>
+            )
           ) : (
             <form onSubmit={handleRegisterSubmit} className="space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
