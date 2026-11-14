@@ -20,7 +20,7 @@ import { LuckySpinModal, LuckySpinLeftLauncher } from './components/spin/LuckySp
 import { SingleProductView } from './components/home/SingleProductView';
 import { CustomerDashboardModal } from './components/customer/CustomerDashboardModal';
 import { Product } from './types';
-import { Flame, PackageSearch, Clock } from 'lucide-react';
+import { Flame, PackageSearch, Clock, ShieldCheck, Truck, Award, Sparkles, X, Copy, Gift } from 'lucide-react';
 
 function StoreMainContent() {
   const {
@@ -45,12 +45,15 @@ function StoreMainContent() {
     isSpinOpen,
     setIsSpinOpen,
     isMobileCategoryDrawerOpen,
-    setIsMobileCategoryDrawerOpen
+    setIsMobileCategoryDrawerOpen,
+    addToast
   } = useStore();
 
   const [sortBy, setSortBy] = useState<'default' | 'price_asc' | 'price_desc' | 'rating' | 'discount'>('default');
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [flashTimeLeft, setFlashTimeLeft] = useState({ hours: 4, minutes: 38, seconds: 52 });
+  const [isPromoPopupVisible, setIsPromoPopupVisible] = useState(false);
+  const [referralBannerCode, setReferralBannerCode] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -64,6 +67,28 @@ function StoreMainContent() {
     return () => clearInterval(timer);
   }, []);
 
+  // Organic Referral URL detection (?ref=CODE)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const refCode = params.get('ref');
+    if (refCode && settings.organicMarketing?.referralProgram?.enabled !== false) {
+      setReferralBannerCode(refCode.toUpperCase());
+      localStorage.setItem('buyone_referred_by', refCode.toUpperCase());
+    }
+  }, [settings.organicMarketing?.referralProgram?.enabled]);
+
+  // Organic Promo / Exit-Intent Discount Popup trigger
+  useEffect(() => {
+    const promo = settings.organicMarketing?.promoPopup;
+    if (!promo?.enabled || activeView === 'admin') return;
+    if (sessionStorage.getItem('buyone_promo_dismissed') === '1') return;
+    const delayMs = Math.max(1, promo.delaySeconds ?? 6) * 1000;
+    const id = setTimeout(() => {
+      setIsPromoPopupVisible(true);
+    }, delayMs);
+    return () => clearTimeout(id);
+  }, [settings.organicMarketing?.promoPopup?.enabled, settings.organicMarketing?.promoPopup?.delaySeconds, activeView]);
+
   // Detect clean "/hossain" path or typed keyword without trapping Store View transitions
   const isAdminLoggedInRef = React.useRef(isAdminLoggedIn);
   isAdminLoggedInRef.current = isAdminLoggedIn;
@@ -73,7 +98,7 @@ function StoreMainContent() {
       const path = window.location.pathname.replace(/\/+$/, '').toLowerCase() || '/';
       const hash = window.location.hash.toLowerCase();
 
-      if (path === '/hossain' || hash === '#hossain') {
+      if (path === '/hossain' || path.startsWith('/hossain/') || hash === '#hossain') {
         if (window.location.pathname !== '/hossain' || window.location.hash) {
           window.history.replaceState({}, '', '/hossain');
         }
@@ -87,6 +112,7 @@ function StoreMainContent() {
 
     checkHossainRoute();
     window.addEventListener('popstate', checkHossainRoute);
+    window.addEventListener('hashchange', checkHossainRoute);
 
     let typedBuffer = '';
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -110,6 +136,7 @@ function StoreMainContent() {
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('popstate', checkHossainRoute);
+      window.removeEventListener('hashchange', checkHossainRoute);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
@@ -154,8 +181,36 @@ function StoreMainContent() {
     return list;
   }, [products, searchQuery, selectedCategory, selectedSubcategory, sortBy]);
 
-  // View: Admin Dashboard
+  // View: Admin Dashboard (strictly guarded by isAdminLoggedIn so /hossain always shows login popup first)
   if (activeView === 'admin') {
+    if (!isAdminLoggedIn) {
+      return (
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+          <div className="text-center space-y-4">
+            <h2 className="text-xl font-black text-white">{t('অ্যাডমিন প্যানেল সুরক্ষিত', 'Admin Portal Protected (/hossain)')}</h2>
+            <p className="text-xs text-slate-400">{t('প্রবেশ করতে অ্যাডমিন ইমেইল ও পাসওয়ার্ড দিয়ে লগইন করুন।', 'Sign in with administrator credentials to continue.')}</p>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsAdminLoginOpen(true)}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl cursor-pointer"
+              >
+                {t('অ্যাডমিন লগইন পপআপ খুলুন', 'Open Admin Login')}
+              </button>
+              <button
+                type="button"
+                onClick={() => goHome()}
+                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                {t('স্টোরে ফিরুন', 'Return to Store')}
+              </button>
+            </div>
+          </div>
+          <ToastContainer />
+          <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-slate-950 pb-16 md:pb-0 overflow-x-clip w-full max-w-full">
         <AdminDashboard />
@@ -244,10 +299,64 @@ function StoreMainContent() {
       />
 
       <main className="flex-1 max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-6 sm:space-y-8 w-full overflow-x-clip">
+        {/* Organic Referral Visitor Welcome Strip */}
+        {referralBannerCode && (
+          <div className="p-3 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white flex flex-wrap items-center justify-between gap-2 shadow-md">
+            <div className="flex items-center gap-2.5 text-xs">
+              <Gift className="w-4 h-4 shrink-0 text-amber-300" />
+              <span>
+                {t(
+                  `রেফারেল ইনভাইটেশন অ্যাক্টিভ! প্রথম অর্ডারে ৳${settings.organicMarketing?.referralProgram?.refereeDiscountBdt || 100} ছাড় পেতে কুপন ব্যবহার করুন:`,
+                  `Referral Active! Enjoy ৳${settings.organicMarketing?.referralProgram?.refereeDiscountBdt || 100} OFF with code:`
+                )}{' '}
+                <strong className="font-mono bg-white/20 px-2 py-0.5 rounded">{referralBannerCode}</strong>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReferralBannerCode(null)}
+              className="text-white/80 hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Show Hero Carousel only on Home root with no active filter */}
         {storeSubView === 'home' && searchQuery.trim() === '' && selectedCategory === 'all' && (
           <HeroBanner onCategoryFilter={(cat) => selectCategoryFilter(cat, null)} />
         )}
+
+        {/* Editable Home Storefront USP Feature Strip */}
+        {storeSubView === 'home' &&
+          searchQuery.trim() === '' &&
+          selectedCategory === 'all' &&
+          settings.organicMarketing?.homeFeatureStrip?.enabled &&
+          settings.organicMarketing.homeFeatureStrip.items.length > 0 && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+              {settings.organicMarketing.homeFeatureStrip.items.map((item, idx) => {
+                const Icon = idx === 0 ? Truck : idx === 1 ? ShieldCheck : idx === 2 ? Award : Sparkles;
+                return (
+                  <div
+                    key={item.id || idx}
+                    className="p-3 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center gap-3 shadow-xs"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
+                        {lang === 'bn' ? item.titleBn : item.titleEn}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                        {lang === 'bn' ? item.subBn : item.subEn}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
         {/* Active Department Breadcrumb & Subcategory Segmented Switcher */}
         <div className="space-y-2.5">
@@ -503,6 +612,68 @@ function StoreMainContent() {
       />
       <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
       <ToastContainer />
+
+      {/* Organic Discount Promo Popup (Admin Controlled) */}
+      {isPromoPopupVisible && settings.organicMarketing?.promoPopup?.enabled && (
+        <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
+            <div className="h-2 bg-gradient-to-r from-emerald-500 via-teal-500 to-amber-500" />
+            <button
+              type="button"
+              onClick={() => {
+                setIsPromoPopupVisible(false);
+                sessionStorage.setItem('buyone_promo_dismissed', '1');
+              }}
+              className="absolute top-3.5 right-3.5 p-2 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="p-6 text-center space-y-4">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 text-xs font-black">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>
+                  {lang === 'bn'
+                    ? settings.organicMarketing.promoPopup.discountLabelBn
+                    : settings.organicMarketing.promoPopup.discountLabelEn}
+                </span>
+              </div>
+              <h3 className="text-xl font-black text-slate-900 dark:text-white">
+                {lang === 'bn'
+                  ? settings.organicMarketing.promoPopup.headlineBn
+                  : settings.organicMarketing.promoPopup.headlineEn}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                {lang === 'bn'
+                  ? settings.organicMarketing.promoPopup.subtextBn
+                  : settings.organicMarketing.promoPopup.subtextEn}
+              </p>
+              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-dashed border-emerald-500/60 flex items-center justify-between gap-2">
+                <span className="font-mono font-black text-base text-emerald-600 dark:text-emerald-400 tracking-wider">
+                  {settings.organicMarketing.promoPopup.couponCode}
+                </span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const code = settings.organicMarketing?.promoPopup?.couponCode || 'WELCOME100';
+                    try {
+                      await navigator.clipboard.writeText(code);
+                    } catch {
+                      // ignore clipboard error
+                    }
+                    addToast('success', t('কুপন কোড কপি হয়েছে!', 'Coupon Copied!'), code);
+                    setIsPromoPopupVisible(false);
+                    sessionStorage.setItem('buyone_promo_dismissed', '1');
+                  }}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{t('কোড কপি করুন', 'Copy Code')}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <MobileBottomNav onOpenCategories={() => setIsMobileCategoryDrawerOpen(true)} />
     </div>

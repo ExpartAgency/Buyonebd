@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -282,26 +283,257 @@ Keep responses concise, helpful, and direct.`;
   }
 });
 
-// Full E-commerce Persistence REST Endpoints
+// Full E-commerce Persistence REST Endpoints (Cross-Device Sync)
+function mergeOrdersById(primary: any[] = [], secondary: any[] = [], deletedIds: string[] = []) {
+  const deletedSet = new Set(deletedIds || []);
+  const map = new Map<string, any>();
+  [...secondary, ...primary].forEach((ord) => {
+    if (ord && ord.id && !deletedSet.has(ord.id)) {
+      map.set(ord.id, ord);
+    }
+  });
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+  );
+}
+
 app.get('/api/store/sync', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   const data = loadStoreData();
   return res.json({ success: true, data });
 });
 
 app.post('/api/store/sync', (req, res) => {
-  const { products, orders, settings, spinRewards, categories } = req.body || {};
+  const {
+    products,
+    orders,
+    settings,
+    spinRewards,
+    categories,
+    sliders,
+    customerAccounts,
+    walletTopUps,
+    abandonedCarts,
+    reviews,
+    priceAlerts,
+    users,
+    mediaLibrary
+  } = req.body || {};
+
   const current = loadStoreData() || {};
+  const deletedIds: string[] = Array.isArray(current.deletedOrderIds) ? current.deletedOrderIds : [];
+  const mergedOrders = Array.isArray(orders)
+    ? mergeOrdersById(orders, Array.isArray(current.orders) ? current.orders : [], deletedIds)
+    : current.orders;
+
   const updated = {
     ...current,
-    products: products || current.products,
-    orders: orders || current.orders,
-    settings: settings || current.settings,
-    spinRewards: spinRewards || current.spinRewards,
-    categories: categories || current.categories,
+    products: products !== undefined ? products : current.products,
+    orders: mergedOrders,
+    settings: settings !== undefined ? settings : current.settings,
+    spinRewards: spinRewards !== undefined ? spinRewards : current.spinRewards,
+    categories: categories !== undefined ? categories : current.categories,
+    sliders: sliders !== undefined ? sliders : current.sliders,
+    customerAccounts: customerAccounts !== undefined ? customerAccounts : current.customerAccounts,
+    walletTopUps: walletTopUps !== undefined ? walletTopUps : current.walletTopUps,
+    abandonedCarts: abandonedCarts !== undefined ? abandonedCarts : current.abandonedCarts,
+    reviews: reviews !== undefined ? reviews : current.reviews,
+    priceAlerts: priceAlerts !== undefined ? priceAlerts : current.priceAlerts,
+    users: users !== undefined ? users : current.users,
+    mediaLibrary: mediaLibrary !== undefined ? mediaLibrary : current.mediaLibrary,
     lastUpdated: new Date().toISOString()
   };
   saveStoreData(updated);
-  return res.json({ success: true, message: 'Store synchronized' });
+  return res.json({ success: true, message: 'Store synchronized', data: updated });
+});
+
+// Atomic Cross-Device Order Endpoints
+app.post('/api/orders', (req, res) => {
+  const { order } = req.body || {};
+  if (!order || !order.id) {
+    return res.status(400).json({ success: false, error: 'Order payload with id is required.' });
+  }
+  const current = loadStoreData() || {};
+  const existingOrders: any[] = Array.isArray(current.orders) ? current.orders : [];
+  const nextOrders = [order, ...existingOrders.filter((o) => o && o.id !== order.id)];
+  current.orders = nextOrders;
+  if (Array.isArray(current.deletedOrderIds)) {
+    current.deletedOrderIds = current.deletedOrderIds.filter((id: string) => id !== order.id);
+  }
+  current.lastUpdated = new Date().toISOString();
+  saveStoreData(current);
+  return res.json({ success: true, order, totalOrders: nextOrders.length });
+});
+
+app.patch('/api/orders/:id', (req, res) => {
+  const { id } = req.params;
+  const updates = req.body?.updates || req.body || {};
+  const current = loadStoreData() || {};
+  const existingOrders: any[] = Array.isArray(current.orders) ? current.orders : [];
+  let updatedOrder: any = null;
+  current.orders = existingOrders.map((o) => {
+    if (o && o.id === id) {
+      updatedOrder = {
+        ...o,
+        ...updates,
+        courier: updates.courier ? { ...(o.courier || {}), ...updates.courier } : o.courier,
+        customer: updates.customer ? { ...(o.customer || {}), ...updates.customer } : o.customer,
+        pricing: updates.pricing ? { ...(o.pricing || {}), ...updates.pricing } : o.pricing
+      };
+      return updatedOrder;
+    }
+    return o;
+  });
+  current.lastUpdated = new Date().toISOString();
+  saveStoreData(current);
+  return res.json({ success: true, order: updatedOrder });
+});
+
+app.delete('/api/orders/:id', (req, res) => {
+  const { id } = req.params;
+  const current = loadStoreData() || {};
+  const existingOrders: any[] = Array.isArray(current.orders) ? current.orders : [];
+  current.orders = existingOrders.filter((o) => o && o.id !== id);
+  const delIds: string[] = Array.isArray(current.deletedOrderIds) ? current.deletedOrderIds : [];
+  current.deletedOrderIds = Array.from(new Set([id, ...delIds])).slice(0, 200);
+  current.lastUpdated = new Date().toISOString();
+  saveStoreData(current);
+  return res.json({ success: true });
+});
+
+// Non-Destructive Cache Clear Endpoint (Preserves all products, orders, settings, customers, media)
+app.post('/api/cache/clear', (_req, res) => {
+  const clearedAudioEntries = audioCache.size;
+  audioCache.clear();
+  const current = loadStoreData();
+  if (current) {
+    current.pixelEvents = [];
+    current.browsingHistory = [];
+    saveStoreData(current);
+  }
+  return res.json({
+    success: true,
+    clearedAudioEntries,
+    message: 'Temporary server caches cleared without altering products, orders, customers, or settings.'
+  });
+});
+
+// Working SMTP Email Transport & Campaign / Test Endpoints
+function createSmtpTransporter(smtpInput?: any) {
+  const saved = loadStoreData();
+  const cfg = { ...(saved?.settings?.smtpSettings || {}), ...(smtpInput || {}) };
+
+  const host = String(cfg.host || process.env.SMTP_HOST || '').trim();
+  const port = Number(cfg.port || process.env.SMTP_PORT || 465);
+  const secure = cfg.secure !== undefined ? Boolean(cfg.secure) : port === 465;
+  const user = String(cfg.user || process.env.SMTP_USER || '').trim();
+  const pass = String(cfg.pass || process.env.SMTP_PASS || '').trim();
+  const fromName = String(cfg.fromName || saved?.settings?.storeName || 'BuyOne BD').trim();
+  const fromEmail = String(cfg.fromEmail || user || 'noreply@buyonebd.com').trim();
+
+  if (!host || !user || !pass) {
+    throw new Error('SMTP Host, Username, and Password are required to connect to your mail server.');
+  }
+
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: { user, pass },
+    tls: { rejectUnauthorized: false },
+    connectionTimeout: 12000,
+    greetingTimeout: 10000
+  });
+
+  return { transporter, fromHeader: `"${fromName}" <${fromEmail}>`, host, port };
+}
+
+app.post('/api/email/test', async (req, res) => {
+  try {
+    const { smtp, toEmail } = req.body || {};
+    const recipient = String(toEmail || smtp?.fromEmail || smtp?.user || '').trim();
+    if (!recipient || !recipient.includes('@')) {
+      return res.status(400).json({ success: false, error: 'Valid recipient email address is required.' });
+    }
+
+    const { transporter, fromHeader, host, port } = createSmtpTransporter(smtp);
+    await transporter.verify();
+
+    const info = await transporter.sendMail({
+      from: fromHeader,
+      to: recipient,
+      subject: 'BuyOne BD SMTP Test - Connection Verified ✅',
+      text: 'Congratulations! Your BuyOne BD Email SMTP configuration is active and verified.',
+      html: `<div style="font-family:sans-serif;max-width:520px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px">
+        <h2 style="color:#059669;margin:0 0 8px">BuyOne BD SMTP Verified ✅</h2>
+        <p style="color:#334155;font-size:14px">Your mail server <b>${host}:${port}</b> is connected and ready to deliver automated order confirmations and email campaigns.</p>
+        <p style="color:#64748b;font-size:12px;margin-top:16px">Sent at ${new Date().toLocaleString()}</p>
+      </div>`
+    });
+
+    return res.json({
+      success: true,
+      messageId: info.messageId,
+      accepted: info.accepted,
+      message: `Test email sent to ${recipient}`
+    });
+  } catch (err: any) {
+    console.error('SMTP test error:', err);
+    return res.status(400).json({
+      success: false,
+      error: err?.message || 'SMTP connection/authentication failed'
+    });
+  }
+});
+
+app.post('/api/email/send', async (req, res) => {
+  try {
+    const { smtp, to, toList, subject, text, html } = req.body || {};
+    const recipients = Array.isArray(toList) && toList.length > 0
+      ? toList.filter((e: any) => typeof e === 'string' && e.includes('@'))
+      : typeof to === 'string' && to.includes('@')
+      ? [to]
+      : [];
+
+    if (recipients.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one valid recipient email is required.' });
+    }
+    if (!subject || (!text && !html)) {
+      return res.status(400).json({ success: false, error: 'Subject and message body are required.' });
+    }
+
+    const { transporter, fromHeader } = createSmtpTransporter(smtp);
+    let sentCount = 0;
+    const errors: string[] = [];
+
+    for (const addr of recipients.slice(0, 100)) {
+      try {
+        await transporter.sendMail({
+          from: fromHeader,
+          to: addr,
+          subject: String(subject),
+          text: String(text || ''),
+          html: html ? String(html) : `<div style="font-family:sans-serif;line-height:1.6;color:#1e293b">${String(text || '').replace(/\n/g, '<br/>')}</div>`
+        });
+        sentCount += 1;
+      } catch (sendErr: any) {
+        errors.push(`${addr}: ${sendErr?.message || 'failed'}`);
+      }
+    }
+
+    if (sentCount === 0) {
+      return res.status(400).json({ success: false, error: errors[0] || 'Failed to send email' });
+    }
+
+    return res.json({
+      success: true,
+      sentCount,
+      failedCount: recipients.length - sentCount,
+      errors
+    });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err?.message || 'Email dispatch failed' });
+  }
 });
 
 // Dynamic robots.txt served from backend SEO settings

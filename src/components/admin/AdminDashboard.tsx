@@ -67,7 +67,12 @@ import {
   Maximize2,
   CheckSquare,
   Square,
-  RefreshCw
+  RefreshCw,
+  Mail,
+  Barcode,
+  CreditCard,
+  Megaphone,
+  Award
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BUSINESS_THEME_PRESETS } from '../../data/initialData';
@@ -163,7 +168,11 @@ export const AdminDashboard: React.FC = () => {
     registerMediaItem,
     deleteMediaItems,
     resizeMediaItems,
-    syncStoreMediaLibrary
+    syncStoreMediaLibrary,
+    customerAccounts,
+    adjustSpecificCustomerBalance,
+    createOrder,
+    clearAppCache
   } = useStore();
 
   // Pure language translation helper based on admin language preference
@@ -218,6 +227,7 @@ export const AdminDashboard: React.FC = () => {
     | 'overview'
     | 'support_desk'
     | 'orders'
+    | 'pos_system'
     | 'products'
     | 'media_gallery'
     | 'categories'
@@ -237,6 +247,34 @@ export const AdminDashboard: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
+
+  // POS & 1-Click Barcode System State
+  const [posBarcodeInput, setPosBarcodeInput] = useState('');
+  const [posSearch, setPosSearch] = useState('');
+  const [posCart, setPosCart] = useState<{ product: Product; quantity: number }[]>([]);
+  const [posSelectedCustomerId, setPosSelectedCustomerId] = useState<string>('walk-in');
+  const [posWalkInName, setPosWalkInName] = useState('Walk-in Customer');
+  const [posWalkInPhone, setPosWalkInPhone] = useState('01700000000');
+  const [posDiscount, setPosDiscount] = useState<number>(0);
+  const [posDeliveryFee, setPosDeliveryFee] = useState<number>(0);
+  const [posPaymentMethod, setPosPaymentMethod] = useState<'cash' | 'bkash' | 'nagad' | 'card'>('cash');
+  const [posReceiptOrder, setPosReceiptOrder] = useState<Order | null>(null);
+  const [printableBarcodeProduct, setPrintableBarcodeProduct] = useState<Product | null>(null);
+
+  // Customer Manual Wallet Balance Control State
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [balanceAdjustAmounts, setBalanceAdjustAmounts] = useState<Record<string, number>>({});
+
+  // SMTP Test & Organic Email Campaign State
+  const [smtpTestEmail, setSmtpTestEmail] = useState('');
+  const [isTestingSmtp, setIsTestingSmtp] = useState(false);
+  const [emailCampaignAudience, setEmailCampaignAudience] = useState<'all' | 'customers' | 'orders' | 'custom'>('all');
+  const [emailCampaignCustomList, setEmailCampaignCustomList] = useState('');
+  const [emailCampaignSubject, setEmailCampaignSubject] = useState('BuyOne BD স্পেশাল অফার — সীমিত সময়ের জন্য ছাড়!');
+  const [emailCampaignBody, setEmailCampaignBody] = useState(
+    'আসসালামু আলাইকুম,\n\nBuyOne BD এর নতুন ও ফ্ল্যাশ সেল কালেকশনে এখন বিশেষ ডিসকাউন্ট চলছে! ক্যাশ অন ডেলিভারিতে আজই অর্ডার করুন।'
+  );
+  const [isSendingEmailCampaign, setIsSendingEmailCampaign] = useState(false);
 
   // Media / Gallery state (bulk select, delete, canvas resize)
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
@@ -302,6 +340,13 @@ export const AdminDashboard: React.FC = () => {
     tags: ['Best Seller'],
     images: ['https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=800'],
     sku: `PROD-${Date.now().toString().slice(-4)}`,
+    barcode: `880${Date.now().toString().slice(-9)}`,
+    freeShipping: false,
+    customDeliveryFees: {
+      dhakaInside: undefined,
+      dhakaSub: undefined,
+      dhakaOutside: undefined
+    },
     rating: 4.9,
     reviewsCount: 16,
     isFlashSale: true,
@@ -400,6 +445,13 @@ export const AdminDashboard: React.FC = () => {
       tags: ['Trending'],
       images: ['https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=800'],
       sku: `PROD-${Date.now().toString().slice(-4)}`,
+      barcode: `880${Date.now().toString().slice(-9)}`,
+      freeShipping: false,
+      customDeliveryFees: {
+        dhakaInside: undefined,
+        dhakaSub: undefined,
+        dhakaOutside: undefined
+      },
       rating: 4.8,
       reviewsCount: 15,
       isFlashSale: true,
@@ -438,6 +490,13 @@ export const AdminDashboard: React.FC = () => {
       tags: prod.tags || [],
       images: prod.images || [],
       sku: prod.sku,
+      barcode: prod.barcode || `880${prod.id.replace(/\D/g, '').padStart(9, '0').slice(-9)}`,
+      freeShipping: prod.freeShipping ?? false,
+      customDeliveryFees: {
+        dhakaInside: prod.customDeliveryFees?.dhakaInside,
+        dhakaSub: prod.customDeliveryFees?.dhakaSub,
+        dhakaOutside: prod.customDeliveryFees?.dhakaOutside
+      },
       rating: prod.rating,
       reviewsCount: prod.reviewsCount,
       isFlashSale: prod.isFlashSale ?? false,
@@ -466,8 +525,21 @@ export const AdminDashboard: React.FC = () => {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
+    const customFeesClean =
+      productForm.customDeliveryFees &&
+      (productForm.customDeliveryFees.dhakaInside !== undefined ||
+        productForm.customDeliveryFees.dhakaSub !== undefined ||
+        productForm.customDeliveryFees.dhakaOutside !== undefined)
+        ? {
+            dhakaInside: productForm.customDeliveryFees.dhakaInside,
+            dhakaSub: productForm.customDeliveryFees.dhakaSub,
+            dhakaOutside: productForm.customDeliveryFees.dhakaOutside
+          }
+        : undefined;
     const payload: Omit<Product, 'id'> = {
       ...productForm,
+      barcode: productForm.barcode?.trim() || `880${Date.now().toString().slice(-9)}`,
+      customDeliveryFees: customFeesClean,
       seo: {
         ...productForm.seo,
         slug: cleanedSlug || `product-${Date.now().toString().slice(-4)}`
@@ -943,6 +1015,7 @@ export const AdminDashboard: React.FC = () => {
     { id: 'overview', labelBn: 'ওভারভিউ ও অ্যানালিটিক্স', labelEn: 'Overview', icon: LayoutDashboard },
     { id: 'support_desk', labelBn: 'লাইভ চ্যাট ও ব্রাউজার কল', labelEn: 'Live Chat & Calls', icon: Headphones, badge: supportDeskBadge },
     { id: 'orders', labelBn: 'অর্ডার ম্যানেজমেন্ট', labelEn: 'Orders', icon: ShoppingCart, badge: orders.length },
+    { id: 'pos_system', labelBn: 'পস ও ১-ক্লিক বারকোড', labelEn: 'POS & Barcode', icon: Barcode, badge: posCart.reduce((s, c) => s + c.quantity, 0) || undefined },
     { id: 'products', labelBn: 'পণ্য তালিকা ও প্রোডাক্ট যোগ', labelEn: 'Products', icon: Package, badge: products.length },
     { id: 'media_gallery', labelBn: 'মিডিয়া ও গ্যালারি', labelEn: 'Media / Gallery', icon: ImagePlus, badge: mediaLibrary.length },
     { id: 'categories', labelBn: 'ক্যাটাগরি ম্যানেজমেন্ট', labelEn: 'Categories', icon: Grid, badge: categories.length },
@@ -956,9 +1029,9 @@ export const AdminDashboard: React.FC = () => {
     { id: 'spin_wheel', labelBn: 'লাকি স্পিন কুপন ম্যানেজার', labelEn: 'Spin Rewards', icon: Gift, badge: spinRewards.length },
     { id: 'analytics', labelBn: 'সম্পূর্ণ স্টোর অ্যানালিটিক্স', labelEn: 'All Analytics', icon: TrendingUp },
     { id: 'reviews', labelBn: 'কাস্টমার রিভিউ ও রেটিং', labelEn: 'Customer Reviews', icon: MessageCircle, badge: reviews.length },
-    { id: 'users', labelBn: 'ব্যবহারকারী ও স্টাফ টিম', labelEn: 'Users & Staff', icon: Users, badge: users.length },
+    { id: 'users', labelBn: 'কাস্টমার ব্যালেন্স ও স্টাফ টিম', labelEn: 'Customers & Staff', icon: Users, badge: customerAccounts.length + users.length },
     { id: 'design_footer', labelBn: 'স্টোর ডিজাইন ও ফুটার', labelEn: 'Store & Footer', icon: Sliders },
-    { id: 'settings', labelBn: 'পেমেন্ট ও ডেলিভারি সেটিংস', labelEn: 'Store Settings', icon: Settings }
+    { id: 'settings', labelBn: 'পেমেন্ট, ডেলিভারি ও SMTP', labelEn: 'Settings & SMTP', icon: Settings }
   ];
 
   return (
@@ -968,31 +1041,42 @@ export const AdminDashboard: React.FC = () => {
         <div className="flex items-center gap-3">
           {/* Mobile sidebar toggle button */}
           <button
+            type="button"
             onClick={() => setIsSidebarMobileOpen(!isSidebarMobileOpen)}
             className="p-2 text-slate-400 hover:text-white rounded-xl lg:hidden hover:bg-slate-800"
           >
             {isSidebarMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
 
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center font-black text-white shadow-lg shadow-emerald-600/30">
-            B
-          </div>
-          <div>
-            <h2 className="text-base font-black text-white flex items-center gap-2">
-              BuyOne<span className="text-emerald-400">BD</span>
-              <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                Admin (/hossain)
-              </span>
-            </h2>
-            <p className="text-[11px] text-slate-400 hidden sm:block">
-              {at('হোসাইন ম্যানেজমেন্ট প্ল্যাটফর্ম', 'Hossain Management Portal')}
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              window.location.href = '/hossain';
+            }}
+            title={at('লোগোতে ক্লিক করে অ্যাডমিন প্যানেল সম্পূর্ণ রিলোড করুন', 'Click logo to reload full Admin Dashboard (/hossain)')}
+            className="flex items-center gap-3 text-left cursor-pointer hover:opacity-90 transition-opacity"
+          >
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center font-black text-white shadow-lg shadow-emerald-600/30">
+              B
+            </div>
+            <div>
+              <h2 className="text-base font-black text-white flex items-center gap-2">
+                BuyOne<span className="text-emerald-400">BD</span>
+                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                  Admin (/hossain)
+                </span>
+              </h2>
+              <p className="text-[11px] text-slate-400 hidden sm:block">
+                {at('হোসাইন ম্যানেজমেন্ট প্ল্যাটফর্ম · রিলোড করতে ক্লিক করুন', 'Hossain Management Portal · Click to reload')}
+              </p>
+            </div>
+          </button>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Admin Language Switcher */}
           <button
+            type="button"
             onClick={() => setAdminLang(adminLang === 'bn' ? 'en' : 'bn')}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
             title="Switch Language"
@@ -1002,6 +1086,7 @@ export const AdminDashboard: React.FC = () => {
           </button>
 
           <button
+            type="button"
             onClick={() => goHome()}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
           >
@@ -1010,11 +1095,13 @@ export const AdminDashboard: React.FC = () => {
           </button>
 
           <button
-            onClick={resetAllToDefault}
-            title={at('ডেমো ডাটা রিসেট', 'Reset Demo Data')}
-            className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+            type="button"
+            onClick={() => clearAppCache()}
+            title={at('ক্যাশ ক্লিয়ার (পণ্য, অর্ডার ও সেটিংস অক্ষুণ্ণ থাকবে)', 'Clear Temporary Cache Only (Preserves Products, Orders & Settings)')}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-950/50 hover:bg-amber-900/70 border border-amber-700/60 text-amber-300 text-xs font-bold rounded-xl transition-colors cursor-pointer"
           >
-            <RotateCcw className="w-4 h-4" />
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">{at('ক্যাশ ক্লিয়ার', 'Clear Cache')}</span>
           </button>
 
           <button
@@ -2224,6 +2311,475 @@ export const AdminDashboard: React.FC = () => {
               </div>
             </div>
           )}
+
+          {/* TAB 2B: POS & 1-CLICK BARCODE SYSTEM */}
+          {activeTab === 'pos_system' && (() => {
+            const getProdBarcode = (p: Product) =>
+              p.barcode || `880${p.id.replace(/\D/g, '').padStart(9, '0').slice(-9)}`;
+
+            const addProductToPos = (prod: Product) => {
+              setPosCart((prev) => {
+                const existing = prev.find((item) => item.product.id === prod.id);
+                if (existing) {
+                  return prev.map((item) =>
+                    item.product.id === prod.id ? { ...item, quantity: item.quantity + 1 } : item
+                  );
+                }
+                return [...prev, { product: prod, quantity: 1 }];
+              });
+            };
+
+            const handleBarcodeEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              const code = posBarcodeInput.trim().toLowerCase();
+              if (!code) return;
+              const matched = products.find(
+                (p) =>
+                  getProdBarcode(p).toLowerCase() === code ||
+                  p.sku.toLowerCase() === code ||
+                  p.id.toLowerCase() === code ||
+                  p.title.toLowerCase().includes(code) ||
+                  p.titleBn.toLowerCase().includes(code)
+              );
+              if (matched) {
+                addProductToPos(matched);
+                setPosBarcodeInput('');
+                addToast('success', at('বারকোড স্ক্যান সফল!', 'Barcode Scanned!'), `${at(matched.titleBn, matched.title)} (+1)`);
+              } else {
+                addToast('error', at('বারকোড পাওয়া যায়নি', 'Barcode Not Found'), posBarcodeInput);
+              }
+            };
+
+            const posFilteredProducts = products.filter((p) => {
+              const q = posSearch.trim().toLowerCase();
+              if (!q) return true;
+              return (
+                p.title.toLowerCase().includes(q) ||
+                p.titleBn.toLowerCase().includes(q) ||
+                p.sku.toLowerCase().includes(q) ||
+                getProdBarcode(p).toLowerCase().includes(q)
+              );
+            });
+
+            const posSubtotal = posCart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+            const posTotal = Math.max(0, posSubtotal + (posDeliveryFee || 0) - (posDiscount || 0));
+
+            const handleCompletePosSale = () => {
+              if (posCart.length === 0) {
+                addToast('warning', at('পস কার্ট খালি', 'POS Cart Empty'), at('প্রথমে বারকোড স্ক্যান করে বা ক্লিক করে পণ্য যোগ করুন।', 'Scan or click a product barcode first.'));
+                return;
+              }
+              const pickedAcc = customerAccounts.find((a) => (a.phone || a.email || a.username) === posSelectedCustomerId);
+              const custName = pickedAcc ? pickedAcc.name : posWalkInName.trim() || 'Walk-in POS Customer';
+              const custPhone = pickedAcc ? pickedAcc.phone : posWalkInPhone.trim() || '01700000000';
+              const newOrder = createOrder({
+                customer: {
+                  name: custName,
+                  phone: custPhone,
+                  address: 'POS Counter / In-Store Pickup',
+                  district: 'Dhaka - Inside City',
+                  thana: 'POS Counter',
+                  note: `POS Sale (${posPaymentMethod.toUpperCase()})`
+                },
+                items: posCart.map((c) => ({
+                  product: c.product,
+                  quantity: c.quantity
+                })),
+                paymentMethod: posPaymentMethod,
+                deliveryZone: 'dhaka_inside',
+                customDeliveryFee: posDeliveryFee || 0,
+                discountAmount: posDiscount || 0,
+                source: 'pos',
+                initialStatus: 'delivered',
+                skipAICall: true
+              });
+              setPosReceiptOrder(newOrder);
+              setPosCart([]);
+              setPosDiscount(0);
+              setPosDeliveryFee(0);
+            };
+
+            return (
+              <div className="space-y-6 animate-fade-in">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xl font-black text-white flex items-center gap-2">
+                      <Barcode className="w-6 h-6 text-emerald-400" />
+                      <span>{at('পস সিস্টেম ও ১-ক্লিক বারকোড বিলিং', 'Backend POS & 1-Click Barcode System')}</span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      {at('বারকোড স্ক্যান করুন অথবা পণ্যের বারকোডে ১ ক্লিক করে সরাসরি POS অর্ডার ও প্রিন্টেবল রিসিট তৈরি করুন', 'Scan any barcode/SKU or 1-click barcode chip to bill & print thermal receipts')}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Barcode Scanner + Search Bar */}
+                <div className="p-4 rounded-2xl bg-slate-900 border border-emerald-500/30 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-emerald-400 mb-1">
+                      {at('বারকোড / SKU স্ক্যান ইনপুট (Enter চাপুন)', 'Barcode / SKU Scanner Input (Press Enter)')}
+                    </label>
+                    <div className="relative">
+                      <Barcode className="w-4 h-4 text-emerald-400 absolute left-3 top-2.5" />
+                      <input
+                        type="text"
+                        value={posBarcodeInput}
+                        onChange={(e) => setPosBarcodeInput(e.target.value)}
+                        onKeyDown={handleBarcodeEnter}
+                        placeholder={at('স্ক্যানার দিয়ে স্ক্যান করুন বা 880... / PROD-... লিখে Enter দিন', 'Scan barcode or type 880... / SKU & press Enter')}
+                        className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl text-xs text-white font-mono outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                      {at('দ্রুত পণ্য খুঁজুন', 'Quick Filter Products')}
+                    </label>
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                      <input
+                        type="text"
+                        value={posSearch}
+                        onChange={(e) => setPosSearch(e.target.value)}
+                        placeholder={at('নাম, SKU বা বারকোড দিয়ে খুঁজুন...', 'Search name, SKU or barcode...')}
+                        className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Split Workspace: 1-Click Barcode Catalog + POS Billing Cart */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Left 7 Cols: 1-Click Barcode Product Grid */}
+                  <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-3 content-start">
+                    {posFilteredProducts.map((prod) => {
+                      const bcode = getProdBarcode(prod);
+                      return (
+                        <div
+                          key={`pos-${prod.id}`}
+                          className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-all flex flex-col justify-between gap-3"
+                        >
+                          <div className="flex items-start gap-3">
+                            <img src={prod.images[0]} alt="" className="w-14 h-14 rounded-xl object-cover bg-slate-950 border border-slate-800 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <h4 className="text-xs font-bold text-white line-clamp-1">{at(prod.titleBn, prod.title)}</h4>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-sm font-black text-emerald-400 font-mono">৳{prod.price.toLocaleString()}</span>
+                                <span className="text-[10px] text-slate-400">Stock: {prod.stock}</span>
+                              </div>
+                              <p className="text-[10px] font-mono text-slate-400 truncate">SKU: {prod.sku}</p>
+                            </div>
+                          </div>
+
+                          {/* Visual Barcode Chip + 1-Click Actions */}
+                          <div className="p-2 rounded-xl bg-white text-slate-900 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <svg viewBox="0 0 120 24" className="w-28 h-5">
+                                {[2, 6, 9, 14, 18, 23, 26, 31, 35, 38, 43, 47, 52, 56, 61, 65, 70, 74, 79, 83, 88, 92, 97, 102, 107, 113].map((x, idx) => (
+                                  <rect key={x} x={x} y={1} width={idx % 3 === 0 ? 3 : 1.5} height={22} fill="#0f172a" />
+                                ))}
+                              </svg>
+                              <span className="block text-[9px] font-mono font-bold tracking-widest text-slate-700">{bcode}</span>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setPrintableBarcodeProduct(prod)}
+                                title={at('বারকোড লেবেল প্রিন্ট', 'Print Barcode Label')}
+                                className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => addProductToPos(prod)}
+                                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] flex items-center gap-1 cursor-pointer"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>{at('স্ক্যান', 'Add')}</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Right 5 Cols: POS Checkout Register */}
+                  <div className="lg:col-span-5 p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 h-fit sticky top-20">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                      <h4 className="font-black text-white text-sm flex items-center gap-2">
+                        <ShoppingCart className="w-4 h-4 text-emerald-400" />
+                        <span>{at('পস ক্যাশ রেজিস্টার', 'POS Billing Cart')}</span>
+                      </h4>
+                      {posCart.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setPosCart([])}
+                          className="text-[11px] font-bold text-rose-400 hover:text-rose-300 cursor-pointer"
+                        >
+                          {at('কার্ট খালি করুন', 'Clear Cart')}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Customer Picker */}
+                    <div className="space-y-2 text-xs">
+                      <label className="block text-slate-300 font-bold">{at('কাস্টমার নির্বাচন করুন', 'Select Customer')}</label>
+                      <select
+                        value={posSelectedCustomerId}
+                        onChange={(e) => setPosSelectedCustomerId(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      >
+                        <option value="walk-in">{at('ওয়াক-ইন কাস্টমার (Walk-in)', 'Walk-in Counter Customer')}</option>
+                        {customerAccounts.map((acc, idx) => {
+                          const key = acc.phone || acc.email || acc.username || String(idx);
+                          return (
+                            <option key={key} value={key}>
+                              {acc.name} ({acc.phone}) — ৳{acc.walletBalance}
+                            </option>
+                          );
+                        })}
+                      </select>
+
+                      {posSelectedCustomerId === 'walk-in' && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={posWalkInName}
+                            onChange={(e) => setPosWalkInName(e.target.value)}
+                            placeholder={at('ক্রেতার নাম', 'Customer Name')}
+                            className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white"
+                          />
+                          <input
+                            type="text"
+                            value={posWalkInPhone}
+                            onChange={(e) => setPosWalkInPhone(e.target.value)}
+                            placeholder="017XXXXXXXX"
+                            className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Cart Items */}
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {posCart.length === 0 ? (
+                        <p className="text-xs text-slate-500 text-center py-6 border border-dashed border-slate-800 rounded-xl">
+                          {at('বাম দিক থেকে বারকোড স্ক্যান বা ক্লিক করে পণ্য যোগ করুন', 'Click "+ Add" on any barcode card or scan to start billing')}
+                        </p>
+                      ) : (
+                        posCart.map((item) => (
+                          <div key={item.product.id} className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2 text-xs">
+                            <div className="min-w-0 flex-1">
+                              <p className="font-bold text-white truncate">{at(item.product.titleBn, item.product.title)}</p>
+                              <p className="text-[10px] font-mono text-emerald-400">
+                                ৳{item.product.price} × {item.quantity} = ৳{(item.product.price * item.quantity).toLocaleString()}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPosCart((prev) =>
+                                    prev
+                                      .map((c) => (c.product.id === item.product.id ? { ...c, quantity: c.quantity - 1 } : c))
+                                      .filter((c) => c.quantity > 0)
+                                  )
+                                }
+                                className="w-6 h-6 rounded bg-slate-800 text-white font-bold cursor-pointer"
+                              >
+                                -
+                              </button>
+                              <span className="w-6 text-center font-mono font-bold text-white">{item.quantity}</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPosCart((prev) =>
+                                    prev.map((c) => (c.product.id === item.product.id ? { ...c, quantity: c.quantity + 1 } : c))
+                                  )
+                                }
+                                className="w-6 h-6 rounded bg-slate-800 text-white font-bold cursor-pointer"
+                              >
+                                +
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPosCart((prev) => prev.filter((c) => c.product.id !== item.product.id))}
+                                className="p-1 text-rose-400 hover:text-rose-300 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Discount, Delivery & Payment */}
+                    <div className="grid grid-cols-2 gap-2.5 text-xs pt-2 border-t border-slate-800">
+                      <div>
+                        <label className="block text-slate-400 font-bold mb-1">{at('ডিসকাউন্ট (৳)', 'Discount (৳)')}</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={posDiscount}
+                          onChange={(e) => setPosDiscount(Math.max(0, Number(e.target.value)))}
+                          className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 font-bold mb-1">{at('ডেলিভারি / প্যাকিং (৳)', 'Delivery Fee (৳)')}</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={posDeliveryFee}
+                          onChange={(e) => setPosDeliveryFee(Math.max(0, Number(e.target.value)))}
+                          className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-slate-400 font-bold mb-1.5">{at('পেমেন্ট মেথড', 'Payment Method')}</label>
+                      <div className="grid grid-cols-4 gap-1.5 text-[11px] font-bold">
+                        {(['cash', 'bkash', 'nagad', 'card'] as const).map((pm) => (
+                          <button
+                            key={pm}
+                            type="button"
+                            onClick={() => setPosPaymentMethod(pm)}
+                            className={`py-2 rounded-xl border uppercase cursor-pointer ${
+                              posPaymentMethod === pm
+                                ? 'bg-emerald-600 border-emerald-500 text-white'
+                                : 'bg-slate-950 border-slate-800 text-slate-300'
+                            }`}
+                          >
+                            {pm}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Totals Summary */}
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1 text-xs font-mono">
+                      <div className="flex justify-between text-slate-400">
+                        <span>Subtotal:</span>
+                        <span>৳{posSubtotal.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Delivery / Fee:</span>
+                        <span>+৳{(posDeliveryFee || 0).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-rose-400">
+                        <span>Discount:</span>
+                        <span>-৳{(posDiscount || 0).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-base font-black text-emerald-400 pt-1 border-t border-slate-800">
+                        <span>TOTAL PAYABLE:</span>
+                        <span>৳{posTotal.toLocaleString()}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleCompletePosSale}
+                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Printer className="w-4 h-4" />
+                      <span>{at('১ ক্লিকে POS সেল সম্পন্ন ও রিসিট প্রিন্ট', '1-Click Complete Sale & Receipt')}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Printable 80mm POS Receipt Modal */}
+                {posReceiptOrder && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+                    <div className="w-full max-w-sm bg-white text-slate-900 rounded-2xl p-6 shadow-2xl space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                        <div>
+                          <h4 className="font-black text-base">{settings.storeName} — POS RECEIPT</h4>
+                          <p className="text-[11px] font-mono text-slate-500">Invoice #{posReceiptOrder.id}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPosReceiptOrder(null)}
+                          className="p-1.5 rounded-lg bg-slate-100 text-slate-600 cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="text-xs space-y-1">
+                        <p><strong>Customer:</strong> {posReceiptOrder.customer.name} ({posReceiptOrder.customer.phone})</p>
+                        <p><strong>Date:</strong> {posReceiptOrder.createdAt}</p>
+                        <p><strong>Method:</strong> {posReceiptOrder.payment.method.toUpperCase()}</p>
+                      </div>
+                      <div className="border-y border-dashed border-slate-300 py-2 space-y-1 text-xs">
+                        {posReceiptOrder.items.map((it, idx) => (
+                          <div key={idx} className="flex justify-between">
+                            <span className="truncate max-w-[190px]">{it.productTitleBn} ×{it.quantity}</span>
+                            <span className="font-mono font-bold">৳{(it.price * it.quantity).toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="text-xs font-mono space-y-1">
+                        <div className="flex justify-between"><span>Subtotal:</span><span>৳{posReceiptOrder.pricing.subtotal.toLocaleString()}</span></div>
+                        <div className="flex justify-between"><span>Discount:</span><span>-৳{posReceiptOrder.pricing.discount.toLocaleString()}</span></div>
+                        <div className="flex justify-between font-black text-sm pt-1 border-t border-slate-200">
+                          <span>PAID TOTAL:</span><span>৳{posReceiptOrder.pricing.total.toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => window.print()}
+                        className="w-full py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Printer className="w-4 h-4" />
+                        <span>{at('রিসিট প্রিন্ট করুন', 'Print 80mm Receipt')}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Printable Product Barcode Label Modal */}
+                {printableBarcodeProduct && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+                    <div className="w-full max-w-xs bg-white text-slate-900 rounded-2xl p-5 shadow-2xl text-center space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase">Barcode Sticker Label</span>
+                        <button
+                          type="button"
+                          onClick={() => setPrintableBarcodeProduct(null)}
+                          className="p-1 rounded bg-slate-100 text-slate-600 cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="p-4 border-2 border-dashed border-slate-300 rounded-xl space-y-1">
+                        <p className="text-xs font-black truncate">{printableBarcodeProduct.titleBn}</p>
+                        <p className="text-sm font-black text-emerald-700 font-mono">৳{printableBarcodeProduct.price.toLocaleString()}</p>
+                        <svg viewBox="0 0 180 42" className="w-48 h-10 mx-auto">
+                          {Array.from({ length: 42 }).map((_, i) => (
+                            <rect key={i} x={i * 4.2 + 2} y={2} width={i % 4 === 0 ? 3 : 1.5} height={38} fill="#0f172a" />
+                          ))}
+                        </svg>
+                        <p className="text-xs font-mono font-bold tracking-widest">{getProdBarcode(printableBarcodeProduct)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => window.print()}
+                        className="w-full py-2 bg-emerald-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Printer className="w-4 h-4" />
+                        <span>{at('বারকোড লেবেল প্রিন্ট', 'Print Sticker')}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* TAB 3: PRODUCTS */}
           {activeTab === 'products' && (
@@ -3954,6 +4510,426 @@ export const AdminDashboard: React.FC = () => {
                 )}
               </div>
 
+              {/* ZERO-AD ORGANIC MARKETING SUITE (NO PAID ADS NEEDED) */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-black text-white text-base flex items-center gap-2">
+                      <Megaphone className="w-5 h-5 text-emerald-400" />
+                      <span>{at('ফ্রি অর্গানিক মার্কেটিং টুলস (অ্যাড ছাড়াই সেলস বৃদ্ধি)', 'Zero-Ad Organic Marketing Growth Suite')}</span>
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      {at('কোনো ফেসবুক/গুগল বিজ্ঞাপন খরচ ছাড়াই ইমেইল ক্যাম্পেইন, রেফারেল রিওয়ার্ড, এক্সিট-ইন্টেন্ট পপআপ ও VIP টিয়ার চালান', 'Drive repeat organic orders with SMTP newsletters, promo popups, referral links & VIP milestones')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Card 1: SMTP Organic Email Newsletter Broadcaster */}
+                  <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
+                    <h5 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-sky-400" />
+                      <span>{at('SMTP ইমেইল নিউজলেটার ও অফার ব্রডকাস্ট', 'SMTP Email Campaign Broadcaster')}</span>
+                    </h5>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-slate-400 font-bold mb-1">{at('প্রাপক অডিয়েন্স', 'Audience')}</label>
+                        <select
+                          value={emailCampaignAudience}
+                          onChange={(e) => setEmailCampaignAudience(e.target.value as any)}
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                        >
+                          <option value="all">{at('সকল কাস্টমার ও অর্ডার ইমেইল', 'All Customers & Orders')}</option>
+                          <option value="customers">{at('নিবন্ধিত কাস্টমার অ্যাকাউন্ট', 'Registered Customer Accounts')}</option>
+                          <option value="custom">{at('কাস্টম ইমেইল তালিকা', 'Custom Email List')}</option>
+                        </select>
+                      </div>
+                      <div className="flex items-end">
+                        <span className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 font-mono w-full text-center">
+                          {customerAccounts.filter((a) => a.email.includes('@')).length} customer emails
+                        </span>
+                      </div>
+                    </div>
+                    {emailCampaignAudience === 'custom' && (
+                      <input
+                        type="text"
+                        value={emailCampaignCustomList}
+                        onChange={(e) => setEmailCampaignCustomList(e.target.value)}
+                        placeholder="user1@gmail.com, user2@gmail.com"
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono"
+                      />
+                    )}
+                    <input
+                      type="text"
+                      value={emailCampaignSubject}
+                      onChange={(e) => setEmailCampaignSubject(e.target.value)}
+                      placeholder={at('ইমেইল সাবজেক্ট...', 'Email Subject...')}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                    />
+                    <textarea
+                      rows={3}
+                      value={emailCampaignBody}
+                      onChange={(e) => setEmailCampaignBody(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                    />
+                    <button
+                      type="button"
+                      disabled={isSendingEmailCampaign}
+                      onClick={async () => {
+                        const accountEmails = customerAccounts.map((a) => a.email).filter((e) => e && e.includes('@'));
+                        const customEmails = emailCampaignCustomList
+                          .split(/[,\s]+/)
+                          .map((e) => e.trim())
+                          .filter((e) => e.includes('@'));
+                        const recipients =
+                          emailCampaignAudience === 'custom'
+                            ? customEmails
+                            : Array.from(new Set([...accountEmails, ...customEmails]));
+                        if (recipients.length === 0) {
+                          addToast('warning', at('কোনো ইমেইল নেই', 'No Recipients'), at('কাস্টম ইমেইল লিখুন বা কাস্টমার অ্যাকাউন্ট তৈরি করুন।', 'Enter comma-separated recipient emails.'));
+                          return;
+                        }
+                        if (!settings.smtpSettings?.host || !settings.smtpSettings?.user) {
+                          addToast('warning', at('SMTP সেটআপ করুন', 'Configure SMTP First'), at('সেটিংস ট্যাব থেকে SMTP Host, User ও Password দিন।', 'Open Settings tab to configure Email SMTP first.'));
+                          return;
+                        }
+                        setIsSendingEmailCampaign(true);
+                        try {
+                          const res = await fetch('/api/email/send', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              smtp: settings.smtpSettings,
+                              to: recipients,
+                              subject: emailCampaignSubject,
+                              html: `<div style="font-family:sans-serif;line-height:1.6"><h2>${settings.storeName}</h2><p>${emailCampaignBody.replace(/\n/g, '<br/>')}</p></div>`
+                            })
+                          });
+                          const data = await res.json();
+                          if (res.ok && data.success) {
+                            addToast('success', at('ইমেইল ক্যাম্পেইন পাঠানো হয়েছে!', 'Campaign Sent!'), `${data.sentCount} recipients notified.`);
+                          } else {
+                            addToast('error', at('SMTP ইরর', 'SMTP Error'), data.error || 'Failed to send');
+                          }
+                        } catch {
+                          addToast('error', at('নেটওয়ার্ক সমস্যা', 'Network Error'), 'Could not reach /api/email/send');
+                        } finally {
+                          setIsSendingEmailCampaign(false);
+                        }
+                      }}
+                      className="w-full py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>{isSendingEmailCampaign ? at('পাঠানো হচ্ছে...', 'Sending...') : at('SMTP দিয়ে ইমেইল ব্রডকাস্ট পাঠান', 'Send Organic Email Broadcast')}</span>
+                    </button>
+                  </div>
+
+                  {/* Card 2: Promo / Exit-Intent Discount Popup Manager */}
+                  <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
+                    <div className="flex items-center justify-between">
+                      <h5 className="font-bold text-white text-sm flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-amber-400" />
+                        <span>{at('অর্গানিক প্রমো ও এক্সিট ডিসকাউন্ট পপআপ', 'Promo & Exit Discount Popup')}</span>
+                      </h5>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={settings.organicMarketing?.promoPopup?.enabled ?? false}
+                          onChange={(e) =>
+                            updateSettings({
+                              organicMarketing: {
+                                ...settings.organicMarketing!,
+                                promoPopup: {
+                                  ...settings.organicMarketing!.promoPopup,
+                                  enabled: e.target.checked
+                                }
+                              }
+                            })
+                          }
+                          className="w-4 h-4 rounded text-emerald-600"
+                        />
+                        <span className="font-bold text-emerald-400">{at('চালু', 'Enabled')}</span>
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        value={settings.organicMarketing?.promoPopup?.headlineBn || ''}
+                        onChange={(e) =>
+                          updateSettings({
+                            organicMarketing: {
+                              ...settings.organicMarketing!,
+                              promoPopup: { ...settings.organicMarketing!.promoPopup, headlineBn: e.target.value }
+                            }
+                          })
+                        }
+                        placeholder="পপআপ শিরোনাম (বাংলা)"
+                        className="px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                      />
+                      <input
+                        type="text"
+                        value={settings.organicMarketing?.promoPopup?.headlineEn || ''}
+                        onChange={(e) =>
+                          updateSettings({
+                            organicMarketing: {
+                              ...settings.organicMarketing!,
+                              promoPopup: { ...settings.organicMarketing!.promoPopup, headlineEn: e.target.value }
+                            }
+                          })
+                        }
+                        placeholder="Popup Title (EN)"
+                        className="px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <input
+                        type="text"
+                        value={settings.organicMarketing?.promoPopup?.couponCode || ''}
+                        onChange={(e) =>
+                          updateSettings({
+                            organicMarketing: {
+                              ...settings.organicMarketing!,
+                              promoPopup: { ...settings.organicMarketing!.promoPopup, couponCode: e.target.value.toUpperCase() }
+                            }
+                          })
+                        }
+                        placeholder="WELCOME100"
+                        className="px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-emerald-400 font-mono uppercase"
+                      />
+                      <input
+                        type="text"
+                        value={settings.organicMarketing?.promoPopup?.discountLabelBn || ''}
+                        onChange={(e) =>
+                          updateSettings({
+                            organicMarketing: {
+                              ...settings.organicMarketing!,
+                              promoPopup: { ...settings.organicMarketing!.promoPopup, discountLabelBn: e.target.value }
+                            }
+                          })
+                        }
+                        placeholder="৳100 OFF"
+                        className="px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        value={settings.organicMarketing?.promoPopup?.delaySeconds ?? 8}
+                        onChange={(e) =>
+                          updateSettings({
+                            organicMarketing: {
+                              ...settings.organicMarketing!,
+                              promoPopup: { ...settings.organicMarketing!.promoPopup, delaySeconds: Number(e.target.value) }
+                            }
+                          })
+                        }
+                        placeholder="Delay (s)"
+                        className="px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Card 3: Referral & Social Share Coupon Booster */}
+                  <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
+                    <div className="flex items-center justify-between">
+                      <h5 className="font-bold text-white text-sm flex items-center gap-2">
+                        <Share2 className="w-4 h-4 text-emerald-400" />
+                        <span>{at('রেফারেল ও সোশ্যাল শেয়ার ডিসকাউন্ট', 'Referral & Social Share Rewards')}</span>
+                      </h5>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={settings.organicMarketing?.socialShareDiscount?.enabled ?? true}
+                          onChange={(e) =>
+                            updateSettings({
+                              organicMarketing: {
+                                ...settings.organicMarketing!,
+                                socialShareDiscount: {
+                                  ...settings.organicMarketing!.socialShareDiscount,
+                                  enabled: e.target.checked
+                                }
+                              }
+                            })
+                          }
+                          className="w-4 h-4 rounded text-emerald-600"
+                        />
+                        <span className="font-bold text-emerald-400">{at('সক্রিয়', 'Active')}</span>
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">Share Coupon</label>
+                        <input
+                          type="text"
+                          value={settings.organicMarketing?.socialShareDiscount?.couponCode || ''}
+                          onChange={(e) =>
+                            updateSettings({
+                              organicMarketing: {
+                                ...settings.organicMarketing!,
+                                socialShareDiscount: {
+                                  ...settings.organicMarketing!.socialShareDiscount,
+                                  couponCode: e.target.value.toUpperCase()
+                                }
+                              }
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-emerald-400 font-mono uppercase"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">Share Off (৳)</label>
+                        <input
+                          type="number"
+                          value={settings.organicMarketing?.socialShareDiscount?.discountAmount ?? 50}
+                          onChange={(e) =>
+                            updateSettings({
+                              organicMarketing: {
+                                ...settings.organicMarketing!,
+                                socialShareDiscount: {
+                                  ...settings.organicMarketing!.socialShareDiscount,
+                                  discountAmount: Number(e.target.value)
+                                }
+                              }
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">Friend Off (৳)</label>
+                        <input
+                          type="number"
+                          value={settings.organicMarketing?.referralProgram?.refereeDiscountBdt ?? 100}
+                          onChange={(e) =>
+                            updateSettings({
+                              organicMarketing: {
+                                ...settings.organicMarketing!,
+                                referralProgram: {
+                                  ...settings.organicMarketing!.referralProgram,
+                                  refereeDiscountBdt: Number(e.target.value)
+                                }
+                              }
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono"
+                        />
+                      </div>
+                    </div>
+                    <input
+                      type="text"
+                      value={settings.organicMarketing?.socialShareDiscount?.messageBn || ''}
+                      onChange={(e) =>
+                        updateSettings({
+                          organicMarketing: {
+                            ...settings.organicMarketing!,
+                            socialShareDiscount: {
+                              ...settings.organicMarketing!.socialShareDiscount,
+                              messageBn: e.target.value
+                            }
+                          }
+                        })
+                      }
+                      placeholder="সিঙ্গেল প্রোডাক্টে শেয়ার ডিসকাউন্ট বার্তা (বাংলা)"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+
+                  {/* Card 4: VIP Customer Tier Milestones */}
+                  <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
+                    <div className="flex items-center justify-between">
+                      <h5 className="font-bold text-white text-sm flex items-center gap-2">
+                        <Award className="w-4 h-4 text-amber-400" />
+                        <span>{at('অটো VIP কাস্টমার টিয়ার (Repeat Retention)', 'VIP Loyalty Tier Milestones')}</span>
+                      </h5>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={settings.organicMarketing?.vipTiers?.enabled ?? true}
+                          onChange={(e) =>
+                            updateSettings({
+                              organicMarketing: {
+                                ...settings.organicMarketing!,
+                                vipTiers: {
+                                  ...settings.organicMarketing!.vipTiers,
+                                  enabled: e.target.checked
+                                }
+                              }
+                            })
+                          }
+                          className="w-4 h-4 rounded text-emerald-600"
+                        />
+                        <span className="font-bold text-emerald-400">{at('চালু', 'Enabled')}</span>
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">Silver Threshold (৳)</label>
+                        <input
+                          type="number"
+                          value={settings.organicMarketing?.vipTiers?.silverThreshold ?? 3000}
+                          onChange={(e) =>
+                            updateSettings({
+                              organicMarketing: {
+                                ...settings.organicMarketing!,
+                                vipTiers: { ...settings.organicMarketing!.vipTiers, silverThreshold: Number(e.target.value) }
+                              }
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">Silver Bonus (%)</label>
+                        <input
+                          type="number"
+                          value={settings.organicMarketing?.vipTiers?.silverDiscountPct ?? 5}
+                          onChange={(e) =>
+                            updateSettings({
+                              organicMarketing: {
+                                ...settings.organicMarketing!,
+                                vipTiers: { ...settings.organicMarketing!.vipTiers, silverDiscountPct: Number(e.target.value) }
+                              }
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">Gold Threshold (৳)</label>
+                        <input
+                          type="number"
+                          value={settings.organicMarketing?.vipTiers?.goldThreshold ?? 10000}
+                          onChange={(e) =>
+                            updateSettings({
+                              organicMarketing: {
+                                ...settings.organicMarketing!,
+                                vipTiers: { ...settings.organicMarketing!.vipTiers, goldThreshold: Number(e.target.value) }
+                              }
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">Gold Bonus (%)</label>
+                        <input
+                          type="number"
+                          value={settings.organicMarketing?.vipTiers?.goldDiscountPct ?? 10}
+                          onChange={(e) =>
+                            updateSettings({
+                              organicMarketing: {
+                                ...settings.organicMarketing!,
+                                vipTiers: { ...settings.organicMarketing!.vipTiers, goldDiscountPct: Number(e.target.value) }
+                              }
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <button
                 onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('মার্কেটিং টুলস সেটিংস সফলভাবে আপডেট হয়েছে।', 'Marketing settings saved.'))}
                 className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
@@ -4651,9 +5627,118 @@ export const AdminDashboard: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 14: USERS & STAFF TEAM */}
+          {/* TAB 14: CUSTOMERS MANUAL BALANCE CONTROL & STAFF TEAM */}
           {activeTab === 'users' && (
-            <div className="space-y-6 animate-fade-in">
+            <div className="space-y-8 animate-fade-in">
+              {/* REGISTERED CUSTOMERS LIST WITH INLINE MANUAL BALANCE +/- */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-black text-white flex items-center gap-2">
+                      <Wallet className="w-5 h-5 text-emerald-400" />
+                      <span>{at('কাস্টমার তালিকা ও ম্যানুয়াল ব্যালেন্স নিয়ন্ত্রণ (+/-)', 'Customer List & Manual Balance Control (+/-)')}</span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      {at('প্রতিটি কাস্টমারের ওয়ালেট ব্যালেন্স এখান থেকেই সরাসরি কমান বা বাড়ান', 'Increase or decrease any customer wallet balance directly from this list')}
+                    </p>
+                  </div>
+                  <div className="relative w-full sm:w-64">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      value={customerSearch}
+                      onChange={(e) => setCustomerSearch(e.target.value)}
+                      placeholder={at('নাম, ফোন বা ইমেইল খুঁজুন...', 'Search name, phone or email...')}
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-800">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
+                      <tr>
+                        <th className="py-3 px-4">{at('কাস্টমার', 'Customer')}</th>
+                        <th className="py-3 px-4">{at('ফোন ও ইমেইল', 'Phone & Email')}</th>
+                        <th className="py-3 px-4">{at('পয়েন্ট', 'Points')}</th>
+                        <th className="py-3 px-4">{at('বর্তমান ব্যালেন্স', 'Wallet Balance')}</th>
+                        <th className="py-3 px-4 text-right">{at('ব্যালেন্স কমান / বাড়ান', 'Increase / Decrease')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {customerAccounts
+                        .filter((acc) => {
+                          const q = customerSearch.trim().toLowerCase();
+                          if (!q) return true;
+                          return (
+                            acc.name.toLowerCase().includes(q) ||
+                            acc.phone.toLowerCase().includes(q) ||
+                            acc.email.toLowerCase().includes(q) ||
+                            (acc.username || '').toLowerCase().includes(q)
+                          );
+                        })
+                        .map((acc, idx) => {
+                          const targetKey = acc.phone || acc.email || acc.username || String(idx);
+                          const stepAmt = balanceAdjustAmounts[targetKey] ?? 50;
+                          return (
+                            <tr key={targetKey} className="hover:bg-slate-800/40">
+                              <td className="py-3 px-4">
+                                <p className="font-bold text-white">{acc.name}</p>
+                                <p className="text-[10px] font-mono text-slate-400">@{acc.username || acc.phone}</p>
+                              </td>
+                              <td className="py-3 px-4 font-mono text-[11px]">
+                                <p className="text-emerald-400">{acc.phone || '—'}</p>
+                                <p className="text-slate-400">{acc.email || '—'}</p>
+                              </td>
+                              <td className="py-3 px-4 font-mono text-amber-400 font-bold">{acc.loyaltyPoints || 0} pts</td>
+                              <td className="py-3 px-4 font-mono font-black text-base text-emerald-400">
+                                ৳{(acc.walletBalance || 0).toLocaleString()}
+                              </td>
+                              <td className="py-3 px-4">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={stepAmt}
+                                    onChange={(e) =>
+                                      setBalanceAdjustAmounts((prev) => ({
+                                        ...prev,
+                                        [targetKey]: Math.max(1, Number(e.target.value))
+                                      }))
+                                    }
+                                    className="w-20 px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs text-center"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => adjustSpecificCustomerBalance(targetKey, -Math.abs(stepAmt), 'Admin Decreased')}
+                                    className="px-2.5 py-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-700 text-rose-200 font-black text-xs cursor-pointer"
+                                  >
+                                    - ৳{stepAmt}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => adjustSpecificCustomerBalance(targetKey, Math.abs(stepAmt), 'Admin Increased')}
+                                    className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs cursor-pointer"
+                                  >
+                                    + ৳{stepAmt}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      {customerAccounts.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="py-6 text-center text-slate-500">
+                            {at('এখনও কোনো নিবন্ধিত কাস্টমার নেই।', 'No registered customers yet.')}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h3 className="text-xl font-black text-white">{t('ব্যবহারকারী ও স্টাফ টিম', 'Users & Staff Members')}</h3>
@@ -5507,6 +6592,252 @@ export const AdminDashboard: React.FC = () => {
                   </label>
                 </div>
 
+                {/* Editable Single Product Page CMS */}
+                <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
+                  <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                    <Package className="w-4 h-4 text-emerald-400" />
+                    <span>{at('সিঙ্গেল প্রোডাক্ট পেজ CMS ও সেকশন কন্ট্রোল', 'Single Product Page CMS & Section Controls')}</span>
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                      <div>
+                      <label className="block text-slate-400 font-bold mb-1">Dhaka Label (BN / EN)</label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <input
+                          type="text"
+                          value={settings.singleProductCms?.dhakaCityLabelBn || ''}
+                          onChange={(e) =>
+                            updateSettings({
+                              singleProductCms: { ...settings.singleProductCms!, dhakaCityLabelBn: e.target.value }
+                            })
+                          }
+                          className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white"
+                        />
+                        <input
+                          type="text"
+                          value={settings.singleProductCms?.dhakaCityLabelEn || ''}
+                          onChange={(e) =>
+                            updateSettings({
+                              singleProductCms: { ...settings.singleProductCms!, dhakaCityLabelEn: e.target.value }
+                            })
+                          }
+                          className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 font-bold mb-1">Dhaka ETA (BN / EN)</label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <input
+                          type="text"
+                          value={settings.singleProductCms?.dhakaEtaBn || ''}
+                          onChange={(e) =>
+                            updateSettings({
+                              singleProductCms: { ...settings.singleProductCms!, dhakaEtaBn: e.target.value }
+                            })
+                          }
+                          className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white"
+                        />
+                        <input
+                          type="text"
+                          value={settings.singleProductCms?.dhakaEtaEn || ''}
+                          onChange={(e) =>
+                            updateSettings({
+                              singleProductCms: { ...settings.singleProductCms!, dhakaEtaEn: e.target.value }
+                            })
+                          }
+                          className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 font-bold mb-1">COD Badge (BN / EN)</label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <input
+                          type="text"
+                          value={settings.singleProductCms?.codTrustTextBn || ''}
+                          onChange={(e) =>
+                            updateSettings({
+                              singleProductCms: { ...settings.singleProductCms!, codTrustTextBn: e.target.value }
+                            })
+                          }
+                          className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white"
+                        />
+                        <input
+                          type="text"
+                          value={settings.singleProductCms?.codTrustTextEn || ''}
+                          onChange={(e) =>
+                            updateSettings({
+                              singleProductCms: { ...settings.singleProductCms!, codTrustTextEn: e.target.value }
+                            })
+                          }
+                          className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="block text-slate-400 font-bold mb-1">Courier Policy Note (BN)</label>
+                      <input
+                        type="text"
+                        value={settings.singleProductCms?.courierNoteTextBn || ''}
+                        onChange={(e) =>
+                          updateSettings({
+                            singleProductCms: { ...settings.singleProductCms!, courierNoteTextBn: e.target.value }
+                          })
+                        }
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 font-bold mb-1">Return Policy Note (BN)</label>
+                      <input
+                        type="text"
+                        value={settings.singleProductCms?.returnPolicyTextBn || ''}
+                        onChange={(e) =>
+                          updateSettings({
+                            singleProductCms: { ...settings.singleProductCms!, returnPolicyTextBn: e.target.value }
+                          })
+                        }
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-4 text-xs text-slate-300">
+                    {(
+                      [
+                        ['showDeliveryMatrix', 'ডেলিভারি রেট বক্স (Delivery Matrix)'],
+                        ['showWarrantyBadge', 'ওয়ারেন্টি ব্যাজ (Warranty)'],
+                        ['showReturnPolicy', 'রিটার্ন পলিসি (Return Policy)'],
+                        ['showFlashSaleSection', 'ফ্ল্যাশ সেল সেকশন (Flash Sale)'],
+                        ['showPriceAlertButton', 'প্রাইস অ্যালার্ট (Price Alert)'],
+                        ['showLoyaltyBadge', 'লয়্যালটি পয়েন্ট ব্যাজ']
+                      ] as const
+                    ).map(([field, label]) => (
+                      <label key={field} className="flex items-center gap-1.5 cursor-pointer font-bold">
+                        <input
+                          type="checkbox"
+                          checked={settings.singleProductCms?.[field] !== false}
+                          onChange={(e) =>
+                            updateSettings({
+                              singleProductCms: { ...settings.singleProductCms!, [field]: e.target.checked }
+                            })
+                          }
+                          className="w-4 h-4 rounded text-emerald-600"
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Editable Home Storefront USP Feature Strip */}
+                <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-emerald-400" />
+                      <span>{at('হোম স্টোরফ্রন্ট ফিচার স্ট্রিপ (৪টি USP কার্ড)', 'Editable Home USP Feature Strip')}</span>
+                    </h4>
+                    <label className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.organicMarketing?.homeFeatureStrip?.enabled ?? true}
+                        onChange={(e) =>
+                          updateSettings({
+                            organicMarketing: {
+                              ...settings.organicMarketing!,
+                              homeFeatureStrip: {
+                                ...settings.organicMarketing!.homeFeatureStrip,
+                                enabled: e.target.checked
+                              }
+                            }
+                          })
+                        }
+                        className="w-4 h-4 rounded text-emerald-600"
+                      />
+                      <span>{at('চালু রাখুন', 'Show on Home')}</span>
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    {(settings.organicMarketing?.homeFeatureStrip?.items || []).map((item, idx) => (
+                      <div key={item.id || idx} className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={item.titleBn}
+                            onChange={(e) => {
+                              const next = (settings.organicMarketing?.homeFeatureStrip?.items || []).map((row, i) =>
+                                i === idx ? { ...row, titleBn: e.target.value } : row
+                              );
+                              updateSettings({
+                                organicMarketing: {
+                                  ...settings.organicMarketing!,
+                                  homeFeatureStrip: { ...settings.organicMarketing!.homeFeatureStrip, items: next }
+                                }
+                              });
+                            }}
+                            placeholder="Title BN"
+                            className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white font-bold"
+                          />
+                          <input
+                            type="text"
+                            value={item.titleEn}
+                            onChange={(e) => {
+                              const next = (settings.organicMarketing?.homeFeatureStrip?.items || []).map((row, i) =>
+                                i === idx ? { ...row, titleEn: e.target.value } : row
+                              );
+                              updateSettings({
+                                organicMarketing: {
+                                  ...settings.organicMarketing!,
+                                  homeFeatureStrip: { ...settings.organicMarketing!.homeFeatureStrip, items: next }
+                                }
+                              });
+                            }}
+                            placeholder="Title EN"
+                            className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={item.subBn}
+                            onChange={(e) => {
+                              const next = (settings.organicMarketing?.homeFeatureStrip?.items || []).map((row, i) =>
+                                i === idx ? { ...row, subBn: e.target.value } : row
+                              );
+                              updateSettings({
+                                organicMarketing: {
+                                  ...settings.organicMarketing!,
+                                  homeFeatureStrip: { ...settings.organicMarketing!.homeFeatureStrip, items: next }
+                                }
+                              });
+                            }}
+                            placeholder="Subtitle BN"
+                            className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-300"
+                          />
+                          <input
+                            type="text"
+                            value={item.subEn}
+                            onChange={(e) => {
+                              const next = (settings.organicMarketing?.homeFeatureStrip?.items || []).map((row, i) =>
+                                i === idx ? { ...row, subEn: e.target.value } : row
+                              );
+                              updateSettings({
+                                organicMarketing: {
+                                  ...settings.organicMarketing!,
+                                  homeFeatureStrip: { ...settings.organicMarketing!.homeFeatureStrip, items: next }
+                                }
+                              });
+                            }}
+                            placeholder="Subtitle EN"
+                            className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-300"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <button
                   onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('CMS ও ফুটার সেটিংস সফলভাবে আপডেট করা হয়েছে।', 'CMS & Footer settings saved.'))}
                   className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
@@ -5727,12 +7058,245 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <button
-                onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('পেমেন্ট ও ডেলিভারি সেটিংস আপডেট হয়েছে।', 'Payment & Delivery rates updated.'))}
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
-              >
-                {t('সেটিংস সংরক্ষণ করুন', 'Save Settings')}
-              </button>
+              {/* REAL EMAIL SMTP SERVER SETTINGS & TESTER */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-sky-500/30 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-sky-400" />
+                      <span>{at('ইমেইল SMTP সার্ভার কনফিগারেশন (Nodemailer Live)', 'Email SMTP Server Settings (Live Verification)')}</span>
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      {at('অটো অর্ডার কনফার্মেশন ইমেইল ও ক্যাম্পেইন পাঠাতে Gmail / cPanel / Zoho / Hostinger SMTP সংযুক্ত করুন', 'Configure Gmail, cPanel, or Hostinger SMTP for order emails & campaigns')}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateSettings({
+                          smtpSettings: {
+                            ...settings.smtpSettings!,
+                            host: 'smtp.gmail.com',
+                            port: 465,
+                            secure: true,
+                            enabled: true
+                          }
+                        })
+                      }
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-sky-300 cursor-pointer"
+                    >
+                      Gmail SSL (:465)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateSettings({
+                          smtpSettings: {
+                            ...settings.smtpSettings!,
+                            host: 'mail.buyonebd.com',
+                            port: 465,
+                            secure: true,
+                            enabled: true
+                          }
+                        })
+                      }
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-emerald-300 cursor-pointer"
+                    >
+                      cPanel / Webmail (:465)
+                    </button>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-emerald-400 pl-2">
+                      <input
+                        type="checkbox"
+                        checked={settings.smtpSettings?.enabled ?? false}
+                        onChange={(e) =>
+                          updateSettings({
+                            smtpSettings: { ...settings.smtpSettings!, enabled: e.target.checked }
+                          })
+                        }
+                        className="w-4 h-4 rounded text-emerald-600"
+                      />
+                      <span>{at('SMTP চালু', 'Enabled')}</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">SMTP Host *</label>
+                    <input
+                      type="text"
+                      value={settings.smtpSettings?.host || ''}
+                      onChange={(e) =>
+                        updateSettings({
+                          smtpSettings: { ...settings.smtpSettings!, host: e.target.value }
+                        })
+                      }
+                      placeholder="smtp.gmail.com"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">SMTP Port *</label>
+                    <input
+                      type="number"
+                      value={settings.smtpSettings?.port ?? 465}
+                      onChange={(e) =>
+                        updateSettings({
+                          smtpSettings: { ...settings.smtpSettings!, port: Number(e.target.value) }
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">SMTP Username *</label>
+                    <input
+                      type="text"
+                      value={settings.smtpSettings?.user || ''}
+                      onChange={(e) =>
+                        updateSettings({
+                          smtpSettings: { ...settings.smtpSettings!, user: e.target.value }
+                        })
+                      }
+                      placeholder="support@buyonebd.com"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">SMTP Password / App Pass *</label>
+                    <input
+                      type="password"
+                      value={settings.smtpSettings?.pass || ''}
+                      onChange={(e) =>
+                        updateSettings({
+                          smtpSettings: { ...settings.smtpSettings!, pass: e.target.value }
+                        })
+                      }
+                      placeholder="••••••••••••"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">From Name</label>
+                    <input
+                      type="text"
+                      value={settings.smtpSettings?.fromName || ''}
+                      onChange={(e) =>
+                        updateSettings({
+                          smtpSettings: { ...settings.smtpSettings!, fromName: e.target.value }
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">From Email</label>
+                    <input
+                      type="email"
+                      value={settings.smtpSettings?.fromEmail || ''}
+                      onChange={(e) =>
+                        updateSettings({
+                          smtpSettings: { ...settings.smtpSettings!, fromEmail: e.target.value }
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.smtpSettings?.secure ?? true}
+                      onChange={(e) =>
+                        updateSettings({
+                          smtpSettings: { ...settings.smtpSettings!, secure: e.target.checked }
+                        })
+                      }
+                      className="w-4 h-4 rounded text-emerald-600"
+                    />
+                    <span>Use SSL/TLS Encryption (Port 465)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.smtpSettings?.sendOnOrderConfirmation ?? true}
+                      onChange={(e) =>
+                        updateSettings({
+                          smtpSettings: { ...settings.smtpSettings!, sendOnOrderConfirmation: e.target.checked }
+                        })
+                      }
+                      className="w-4 h-4 rounded text-emerald-600"
+                    />
+                    <span>{at('নতুন অর্ডারে অটো SMTP ইমেইল পাঠান', 'Auto-Send Order Email on New Orders')}</span>
+                  </label>
+                </div>
+
+                {/* Live Verify & Test Email Box */}
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 text-xs">
+                  <input
+                    type="email"
+                    value={smtpTestEmail}
+                    onChange={(e) => setSmtpTestEmail(e.target.value)}
+                    placeholder={at('টেস্ট ইমেইল প্রাপক (যেমন hossain@gmail.com)', 'Recipient email for SMTP test...')}
+                    className="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono"
+                  />
+                  <button
+                    type="button"
+                    disabled={isTestingSmtp}
+                    onClick={async () => {
+                      setIsTestingSmtp(true);
+                      try {
+                        const res = await fetch('/api/email/test', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            smtp: settings.smtpSettings,
+                            testTo: smtpTestEmail.trim() || settings.supportEmail || undefined
+                          })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                          addToast('success', at('SMTP কানেকশন সফল!', 'SMTP Verified & Sent!'), data.message || 'SMTP connection works!');
+                        } else {
+                          addToast('error', at('SMTP কানেকশন ব্যর্থ', 'SMTP Failed'), data.error || 'Check SMTP credentials');
+                        }
+                      } catch {
+                        addToast('error', at('সার্ভার পাওয়া যায়নি', 'Network Error'), 'Could not connect to /api/email/test');
+                      } finally {
+                        setIsTestingSmtp(false);
+                      }
+                    }}
+                    className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>{isTestingSmtp ? at('যাচাই হচ্ছে...', 'Verifying...') : at('SMTP কানেকশন যাচাই ও টেস্ট ইমেইল', 'Verify & Send Test Email')}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <button
+                  onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('পেমেন্ট, ডেলিভারি ও SMTP সেটিংস আপডেট হয়েছে।', 'Payment, Delivery & SMTP settings updated.'))}
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
+                >
+                  {t('সেটিংস সংরক্ষণ করুন', 'Save Settings')}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={resetAllToDefault}
+                  className="px-4 py-2 bg-rose-950/50 hover:bg-rose-900 border border-rose-800/60 text-rose-300 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>{at('ডেমো ডাটা সম্পূর্ণ রিসেট করুন', 'Factory Reset Demo Data')}</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -6719,6 +8283,116 @@ export const AdminDashboard: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                </div>
+              </div>
+
+              {/* SKU, Barcode & Per-Product Editable Delivery Charges */}
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">SKU কোড</label>
+                    <input
+                      type="text"
+                      value={productForm.sku}
+                      onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">{at('POS বারকোড নম্বর', 'POS Barcode Number')}</label>
+                    <input
+                      type="text"
+                      value={productForm.barcode || ''}
+                      onChange={(e) => setProductForm({ ...productForm, barcode: e.target.value })}
+                      placeholder="880100000101"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-emerald-400 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold text-emerald-400">
+                      {at('এই পণ্যের কাস্টম ডেলিভারি চার্জ (সিঙ্গেল প্রোডাক্ট ও চেকআউট)', 'Single-Product Custom Delivery Charges')}
+                    </span>
+                    <label className="flex items-center gap-2 cursor-pointer text-white font-bold">
+                      <input
+                        type="checkbox"
+                        checked={productForm.freeShipping ?? false}
+                        onChange={(e) => setProductForm({ ...productForm, freeShipping: e.target.checked })}
+                        className="w-4 h-4 rounded text-emerald-600"
+                      />
+                      <span>{at('ফ্রি ডেলিভারি (৳০)', 'Free Delivery (৳0)')}</span>
+                    </label>
+                  </div>
+
+                  {!productForm.freeShipping && (
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">
+                          {at('ঢাকা সিটি (খালি = ডিফল্ট)', 'Inside Dhaka')}
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder={`${settings.deliveryFees.dhakaInside}`}
+                          value={productForm.customDeliveryFees?.dhakaInside ?? ''}
+                          onChange={(e) =>
+                            setProductForm({
+                              ...productForm,
+                              customDeliveryFees: {
+                                ...productForm.customDeliveryFees,
+                                dhakaInside: e.target.value === '' ? undefined : Number(e.target.value)
+                              }
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">
+                          {at('ঢাকা উপশহর', 'Sub-Dhaka')}
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder={`${settings.deliveryFees.dhakaSub}`}
+                          value={productForm.customDeliveryFees?.dhakaSub ?? ''}
+                          onChange={(e) =>
+                            setProductForm({
+                              ...productForm,
+                              customDeliveryFees: {
+                                ...productForm.customDeliveryFees,
+                                dhakaSub: e.target.value === '' ? undefined : Number(e.target.value)
+                              }
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">
+                          {at('ঢাকার বাইরে', 'Outside Dhaka')}
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder={`${settings.deliveryFees.dhakaOutside}`}
+                          value={productForm.customDeliveryFees?.dhakaOutside ?? ''}
+                          onChange={(e) =>
+                            setProductForm({
+                              ...productForm,
+                              customDeliveryFees: {
+                                ...productForm.customDeliveryFees,
+                                dhakaOutside: e.target.value === '' ? undefined : Number(e.target.value)
+                              }
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -1069,6 +1069,114 @@ export const INITIAL_SETTINGS: StoreSettings = {
         accountType: 'Personal'
       }
     }
+  },
+  smtpSettings: {
+    enabled: false,
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    user: '',
+    pass: '',
+    fromName: 'BuyOne BD',
+    fromEmail: 'buyonebd@gmail.com',
+    sendOnOrderConfirmation: true,
+    sendOnStatusUpdate: false
+  },
+  singleProductCms: {
+    showDeliveryMatrix: true,
+    showWarrantyBadge: true,
+    showReturnPolicy: true,
+    showFlashSaleSection: true,
+    showPriceAlertButton: true,
+    showLoyaltyBadge: true,
+    dhakaCityLabelBn: 'ঢাকা সিটি',
+    dhakaCityLabelEn: 'Dhaka City',
+    dhakaEtaBn: '২৪ ঘন্টা',
+    dhakaEtaEn: '24h',
+    nationwideLabelBn: 'সারাদেশে',
+    nationwideLabelEn: 'Nationwide',
+    nationwideEtaBn: '৪৮-৭২ ঘন্টা',
+    nationwideEtaEn: '48-72h',
+    warrantyBadgeTitleBn: 'গ্যারান্টি',
+    warrantyBadgeTitleEn: 'Warranty',
+    warrantyBadgeValueBn: '৭ দিন রিপ্লেস',
+    warrantyBadgeValueEn: '7-Day Replace',
+    codTrustTextBn: 'ক্যাশ অন ডেলিভারি সুবিধা',
+    codTrustTextEn: 'Pay Cash on Delivery',
+    returnPolicyTitleBn: 'সহজ রিটার্ন পলিসি',
+    returnPolicyTitleEn: 'Hassle-Free Return',
+    returnPolicyTextBn: 'ডেলিভারি ম্যানের সামনে পণ্য চেক করে নেওয়ার সুযোগ এবং যেকোনো ত্রুটিতে তাৎক্ষণিক পরিবর্তন।',
+    returnPolicyTextEn: 'Inspect item in front of the rider on delivery with instant replacement on defects.',
+    courierNoteTitleBn: 'কুরিয়ার ডেলিভারি',
+    courierNoteTitleEn: 'Express Courier',
+    courierNoteTextBn: 'Steadfast, Pathao ও RedX-এর মাধ্যমে ৬৪ জেলায় দ্রুত হোম ডেলিভারি।',
+    courierNoteTextEn: 'Fast Steadfast, Pathao & RedX delivery across all 64 districts.'
+  },
+  organicMarketing: {
+    referralProgram: {
+      enabled: true,
+      referrerRewardBdt: 100,
+      refereeDiscountBdt: 100,
+      referralCodePrefix: 'BUYONE'
+    },
+    promoPopup: {
+      enabled: false,
+      headlineBn: 'স্বাগতম! প্রথম অর্ডারে ৳১০০ বিশেষ ছাড়!',
+      headlineEn: 'Welcome! Get ৳100 Instant Discount!',
+      subtextBn: 'বিজ্ঞাপন ছাড়াই সরাসরি আমাদের বিশেষ কুপন ব্যবহার করে ক্যাশ অন ডেলিভারিতে অর্ডার করুন।',
+      subtextEn: 'Apply our exclusive organic member voucher at checkout for instant savings.',
+      couponCode: 'GIFT100',
+      discountLabelBn: '৳১০০ ছাড়',
+      discountLabelEn: '৳100 OFF',
+      delaySeconds: 5
+    },
+    socialShareDiscount: {
+      enabled: true,
+      discountAmount: 100,
+      couponCode: 'GIFT100',
+      messageBn: 'হোয়াটসঅ্যাপ বা ফেসবুকে বন্ধুদের শেয়ার করলেই পাচ্ছেন ৳১০০ বোনাস কুপন!',
+      messageEn: 'Share this product with friends on WhatsApp or Facebook to unlock an instant ৳100 coupon!'
+    },
+    vipTiers: {
+      enabled: true,
+      silverThreshold: 5000,
+      silverDiscountPct: 5,
+      goldThreshold: 15000,
+      goldDiscountPct: 10
+    },
+    homeFeatureStrip: {
+      enabled: true,
+      items: [
+        {
+          id: 'usp-1',
+          titleBn: '১০০% ক্যাশ অন ডেলিভারি',
+          titleEn: '100% Cash on Delivery',
+          subBn: 'পণ্য হাতে পেয়ে চেক করে পেমেন্ট',
+          subEn: 'Inspect parcel before paying'
+        },
+        {
+          id: 'usp-2',
+          titleBn: '২৪-৭২ ঘন্টায় হোম ডেলিভারি',
+          titleEn: '24-72h Nationwide Delivery',
+          subBn: 'Steadfast ও Pathao কুরিয়ার',
+          subEn: 'All 64 districts in Bangladesh'
+        },
+        {
+          id: 'usp-3',
+          titleBn: '৭ দিনের সহজ রিপ্লেসমেন্ট',
+          titleEn: '7-Day Easy Replacement',
+          subBn: 'কোনো সমস্যায় ঝামেলামুক্ত বদল',
+          subEn: 'Instant defect exchange'
+        },
+        {
+          id: 'usp-4',
+          titleBn: 'লাইভ এআই ও ভয়েস সাপোর্ট',
+          titleEn: 'Live Support Desk',
+          subBn: 'সরাসরি চ্যাট ও ব্রাউজার কল',
+          subEn: 'Instant chat & browser call'
+        }
+      ]
+    }
   }
 };
 

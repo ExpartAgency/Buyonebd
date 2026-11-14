@@ -193,6 +193,14 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
   const totalPayable = product.price * quantity;
   const loyaltyEarn = Math.max(5, Math.floor(totalPayable / 20));
 
+  // Per-product delivery charge calculation (freeShipping or customDeliveryFees or store settings default)
+  const cms = settings.singleProductCms;
+  const organic = settings.organicMarketing;
+  const isFreeShip = Boolean(product.freeShipping);
+  const dhakaFee = isFreeShip ? 0 : (product.customDeliveryFees?.dhakaInside ?? settings.deliveryFees?.dhakaInside ?? 60);
+  const subDhakaFee = isFreeShip ? 0 : (product.customDeliveryFees?.dhakaSub ?? settings.deliveryFees?.dhakaSub ?? 100);
+  const outsideFee = isFreeShip ? 0 : (product.customDeliveryFees?.dhakaOutside ?? settings.deliveryFees?.dhakaOutside ?? 120);
+
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-8 animate-fade-in">
       {/* Top Compact Utility Bar: Back + Breadcrumb + Copy Share */}
@@ -240,7 +248,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
 
         <div className="flex items-center gap-2">
           <span className="hidden sm:inline-block px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-mono text-[11px] text-slate-500">
-            SKU: {product.sku}
+            SKU: {product.sku}{product.barcode ? ` · ${product.barcode}` : ''}
           </span>
           <button
             type="button"
@@ -525,20 +533,25 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   )}
                 </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-200/70 dark:border-slate-700/70 text-[11px] text-slate-600 dark:text-slate-300">
-                  <span className="flex items-center gap-1.5 font-semibold">
-                    <Award className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    <span>
+                {(cms?.showLoyaltyBadge !== false) && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-200/70 dark:border-slate-700/70 text-[11px] text-slate-600 dark:text-slate-300">
+                    <span className="flex items-center gap-1.5 font-semibold">
+                      <Award className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <span>
+                        {t(
+                          `এই অর্ডারে +${loyaltyEarn} রিওয়ার্ড পয়েন্ট পাবেন`,
+                          `Earn +${loyaltyEarn} Loyalty Points on purchase`
+                        )}
+                      </span>
+                    </span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
                       {t(
-                        `এই অর্ডারে +${loyaltyEarn} রিওয়ার্ড পয়েন্ট পাবেন`,
-                        `Earn +${loyaltyEarn} Loyalty Points on purchase`
+                        cms?.codTrustTextBn || 'ক্যাশ অন ডেলিভারি সুবিধা',
+                        cms?.codTrustTextEn || 'Pay Cash on Delivery'
                       )}
                     </span>
-                  </span>
-                  <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                    {t('ক্যাশ অন ডেলিভারি সুবিধা', 'Pay Cash on Delivery')}
-                  </span>
-                </div>
+                  </div>
+                )}
               </div>
 
               {/* Variants: Colors & Sizes Side by Side on wider cards */}
@@ -679,6 +692,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
               </div>
 
               {/* Price Drop Alert Toggle */}
+              {cms?.showPriceAlertButton !== false && (
               <div>
                 {!isAlertOpen ? (
                   <button
@@ -746,37 +760,80 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   </form>
                 )}
               </div>
+              )}
 
-              {/* 64-District Quick Courier & Service Matrix */}
+              {/* Organic Social Share & Referral Discount Booster */}
+              {(organic?.socialShareDiscount?.enabled || organic?.referralProgram?.enabled) && (
+                <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-200/80 dark:border-emerald-800/60 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="min-w-0">
+                    <p className="font-bold text-emerald-900 dark:text-emerald-200">
+                      {t(
+                        organic?.socialShareDiscount?.messageBn || 'শেয়ার করলেই স্পেশাল ডিসকাউন্ট কুপন!',
+                        organic?.socialShareDiscount?.messageEn || 'Share & unlock instant discount coupon!'
+                      )}
+                    </p>
+                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-mono">
+                      {t('কুপন কোড:', 'Coupon:')}{' '}
+                      <strong>{organic?.socialShareDiscount?.couponCode || 'SHARE50'}</strong>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <a
+                      href={`https://wa.me/?text=${encodeURIComponent(`${lang === 'bn' ? product.titleBn : product.title} — ${window.location.href}?ref=${organic?.socialShareDiscount?.couponCode || 'SHARE50'}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px]"
+                    >
+                      WhatsApp
+                    </a>
+                    <a
+                      href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px]"
+                    >
+                      Facebook
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {/* 64-District Quick Courier & Service Matrix (Fully Editable via Product & CMS) */}
+              {cms?.showDeliveryMatrix !== false && (
               <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] font-bold text-slate-600 dark:text-slate-400 tabular-nums">
                 <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 flex flex-col gap-0.5">
                   <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                     <Truck className="w-3.5 h-3.5 shrink-0" />
-                    <span>{t('ঢাকা সিটি', 'Dhaka City')}</span>
+                    <span className="truncate">{t(cms?.dhakaCityLabelBn || 'ঢাকা সিটি', cms?.dhakaCityLabelEn || 'Dhaka City')}</span>
                   </div>
                   <span className="text-slate-900 dark:text-white font-mono">
-                    ৳{settings.deliveryFees?.dhakaInside ?? 60} (24h)
+                    {dhakaFee === 0 ? t('ফ্রি (FREE)', 'FREE (৳0)') : `৳${dhakaFee}`} ({t(cms?.dhakaEtaBn || '২৪ ঘন্টা', cms?.dhakaEtaEn || '24h')})
                   </span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 flex flex-col gap-0.5">
                   <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                     <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                    <span>{t('সারাদেশে', 'Nationwide')}</span>
+                    <span className="truncate">{t(cms?.nationwideLabelBn || 'সারাদেশে', cms?.nationwideLabelEn || 'Nationwide')}</span>
                   </div>
                   <span className="text-slate-900 dark:text-white font-mono">
-                    ৳{settings.deliveryFees?.dhakaOutside ?? 120} (48h)
+                    {outsideFee === 0 ? t('ফ্রি (FREE)', 'FREE (৳0)') : `৳${outsideFee}`} ({t(cms?.nationwideEtaBn || '৪৮ ঘন্টা', cms?.nationwideEtaEn || '48h')})
                   </span>
                 </div>
+                {cms?.showWarrantyBadge !== false && (
                 <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 flex flex-col gap-0.5">
                   <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                     <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-                    <span>{t('গ্যারান্টি', 'Warranty')}</span>
+                    <span className="truncate">{t(cms?.warrantyBadgeTitleBn || 'গ্যারান্টি', cms?.warrantyBadgeTitleEn || 'Warranty')}</span>
                   </div>
                   <span className="text-slate-900 dark:text-white truncate">
-                    {t('৭ দিন রিপ্লেস', '7-Day Replace')}
+                    {lang === 'bn'
+                      ? product.warrantyInfoBn || cms?.warrantyBadgeValueBn || '৭ দিন রিপ্লেস'
+                      : product.warrantyInfo || cms?.warrantyBadgeValueEn || '7-Day Replace'}
                   </span>
                 </div>
+                )}
               </div>
+              )}
             </div>
           </div>
         </div>
@@ -950,41 +1007,48 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 </h4>
                 <p className="text-slate-500 leading-relaxed">
                   {t(
-                    `Steadfast, Pathao ও RedX এর মাধ্যমে ঢাকায় ২৪ ঘন্টায় (৳${settings.deliveryFees?.dhakaInside ?? 60}) এবং সারাদেশে ৪৮-৭২ ঘন্টায় (৳${settings.deliveryFees?.dhakaOutside ?? 120}) হোম ডেলিভারি।`,
-                    `Steadfast, Pathao & RedX delivery across all 64 districts. Dhaka City ৳${settings.deliveryFees?.dhakaInside ?? 60}, Nationwide ৳${settings.deliveryFees?.dhakaOutside ?? 120}.`
-                  )}
+                    cms?.courierNoteTextBn ||
+                      `ঢাকা সিটি ৳${dhakaFee}, উপশহর ৳${subDhakaFee} এবং সারাদেশে ৬৪ জেলায় ৳${outsideFee} হোম ডেলিভারি।`,
+                    cms?.courierNoteTextEn ||
+                      `Dhaka City ৳${dhakaFee}, Sub-Dhaka ৳${subDhakaFee}, Nationwide 64 districts ৳${outsideFee} home delivery.`
+                  )}{' '}
+                  ({t(`ঢাকা ৳${dhakaFee} · উপশহর ৳${subDhakaFee} · সারাদেশ ৳${outsideFee}`, `Dhaka ৳${dhakaFee} · Sub ৳${subDhakaFee} · Outside ৳${outsideFee}`)})
                 </p>
               </div>
               <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-1.5">
                 <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                  <span>{t('ওয়ারেন্টি ও সুরক্ষা', 'Warranty & Guarantee')}</span>
+                  <span>{t(cms?.warrantyBadgeTitleBn || 'ওয়ারেন্টি ও সুরক্ষা', cms?.warrantyBadgeTitleEn || 'Warranty & Guarantee')}</span>
                 </h4>
                 <p className="text-slate-500 leading-relaxed">
                   {lang === 'bn'
-                    ? product.warrantyInfoBn || '৭ দিনের সহজ রিপ্লেসমেন্ট ওয়ারেন্টি ও চেক করে পেমেন্ট সুবিধা।'
-                    : product.warrantyInfo || '7-day easy replacement guarantee with parcel inspection.'}
+                    ? product.warrantyInfoBn || cms?.warrantyBadgeValueBn || '৭ দিনের সহজ রিপ্লেসমেন্ট ওয়ারেন্টি ও চেক করে পেমেন্ট সুবিধা।'
+                    : product.warrantyInfo || cms?.warrantyBadgeValueEn || '7-day easy replacement guarantee with parcel inspection.'}
                 </p>
               </div>
+              {cms?.showReturnPolicy !== false && (
               <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-1.5">
                 <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                   <RotateCcw className="w-4 h-4 text-emerald-500" />
-                  <span>{t('সহজ রিটার্ন পলিসি', 'Hassle-Free Return')}</span>
+                  <span>{t(cms?.returnPolicyTitleBn || 'সহজ রিটার্ন পলিসি', cms?.returnPolicyTitleEn || 'Hassle-Free Return')}</span>
                 </h4>
                 <p className="text-slate-500 leading-relaxed">
                   {t(
-                    'ডেলিভারি ম্যানের সামনে পণ্য চেক করে নেওয়ার সুযোগ এবং যেকোনো ত্রুটিতে তাৎক্ষণিক পরিবর্তন।',
-                    'Inspect item in front of the rider on delivery with instant replacement on defects.'
+                    cms?.returnPolicyTextBn ||
+                      'ডেলিভারি ম্যানের সামনে পণ্য চেক করে নেওয়ার সুযোগ এবং যেকোনো ত্রুটিতে তাৎক্ষণিক পরিবর্তন।',
+                    cms?.returnPolicyTextEn ||
+                      'Inspect item in front of the rider on delivery with instant replacement on defects.'
                   )}
                 </p>
               </div>
+              )}
             </div>
           )}
         </div>
       </div>
 
       {/* SINGLE-PRODUCT PAGE DEDICATED FLASH SALE SECTION */}
-      {settings?.flashSale?.enabled !== false && flashSaleProducts.length > 0 && (
+      {cms?.showFlashSaleSection !== false && settings?.flashSale?.enabled !== false && flashSaleProducts.length > 0 && (
         <section className="p-4 sm:p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-lg space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">

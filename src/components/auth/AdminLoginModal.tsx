@@ -7,7 +7,7 @@ interface AdminLoginModalProps {
 }
 
 export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavigate }) => {
-  const { isAdminLoginOpen, setIsAdminLoginOpen, loginAdmin, t } = useStore();
+  const { isAdminLoginOpen, setIsAdminLoginOpen, loginAdmin, isAdminLoggedIn, goHome, t } = useStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -15,6 +15,16 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
   const [isLoading, setIsLoading] = useState(false);
 
   if (!isAdminLoginOpen) return null;
+
+  const handleClose = () => {
+    setIsAdminLoginOpen(false);
+    const p = window.location.pathname.toLowerCase();
+    const h = window.location.hash.toLowerCase();
+    if (!isAdminLoggedIn && (p.startsWith('/hossain') || h === '#hossain')) {
+      window.history.replaceState({}, '', '/');
+      goHome();
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,11 +47,11 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
           )
         );
       }
-    }, 400);
+    }, 300);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-fade-in">
       <div 
         className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden transform transition-all duration-300 scale-100"
         role="dialog"
@@ -52,8 +62,9 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
 
         {/* Close Button */}
         <button
-          onClick={() => setIsAdminLoginOpen(false)}
-          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          type="button"
+          onClick={handleClose}
+          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           aria-label="Close"
         >
           <X className="w-5 h-5" />

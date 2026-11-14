@@ -111,6 +111,10 @@ interface StoreContextType {
     discountAmount?: number;
     couponCode?: string;
     walletUsedAmount?: number;
+    customDeliveryFee?: number;
+    source?: 'online' | 'pos';
+    initialStatus?: OrderStatus;
+    skipAICall?: boolean;
   }) => Order;
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
   updateOrderCourier: (orderId: string, updates: Partial<Order['courier']>) => void;
@@ -125,6 +129,8 @@ interface StoreContextType {
   registerCustomer: (data: { name: string; username: string; phone: string; email?: string; password: string }) => boolean;
   logoutCustomer: () => void;
   openCustomerPortal: () => void;
+  customerAccounts: CustomerProfile[];
+  adjustSpecificCustomerBalance: (identifier: string, delta: number, reason?: string) => boolean;
   customerWalletBalance: number;
   addToWallet: (amount: number, reason?: string) => void;
   deductWallet: (amount: number) => boolean;
@@ -263,6 +269,7 @@ interface StoreContextType {
   // Store Settings
   settings: StoreSettings;
   updateSettings: (newSettings: Partial<StoreSettings>) => void;
+  clearAppCache: () => Promise<void>;
   resetAllToDefault: () => void;
 
   // Cart
@@ -371,6 +378,51 @@ function mergeSettings(raw: any): StoreSettings {
       quickLinks: Array.isArray(raw.footerSettings?.quickLinks) && raw.footerSettings.quickLinks.length > 0
         ? raw.footerSettings.quickLinks
         : INITIAL_SETTINGS.footerSettings.quickLinks
+    },
+    walletSettings: {
+      ...INITIAL_SETTINGS.walletSettings!,
+      ...(raw.walletSettings || {}),
+      methods: {
+        ...INITIAL_SETTINGS.walletSettings!.methods,
+        ...(raw.walletSettings?.methods || {})
+      }
+    },
+    smtpSettings: {
+      ...INITIAL_SETTINGS.smtpSettings!,
+      ...(raw.smtpSettings || {})
+    },
+    singleProductCms: {
+      ...INITIAL_SETTINGS.singleProductCms!,
+      ...(raw.singleProductCms || {})
+    },
+    organicMarketing: {
+      ...INITIAL_SETTINGS.organicMarketing!,
+      ...(raw.organicMarketing || {}),
+      referralProgram: {
+        ...INITIAL_SETTINGS.organicMarketing!.referralProgram,
+        ...(raw.organicMarketing?.referralProgram || {})
+      },
+      promoPopup: {
+        ...INITIAL_SETTINGS.organicMarketing!.promoPopup,
+        ...(raw.organicMarketing?.promoPopup || {})
+      },
+      socialShareDiscount: {
+        ...INITIAL_SETTINGS.organicMarketing!.socialShareDiscount,
+        ...(raw.organicMarketing?.socialShareDiscount || {})
+      },
+      vipTiers: {
+        ...INITIAL_SETTINGS.organicMarketing!.vipTiers,
+        ...(raw.organicMarketing?.vipTiers || {})
+      },
+      homeFeatureStrip: {
+        ...INITIAL_SETTINGS.organicMarketing!.homeFeatureStrip,
+        ...(raw.organicMarketing?.homeFeatureStrip || {}),
+        items:
+          Array.isArray(raw.organicMarketing?.homeFeatureStrip?.items) &&
+          raw.organicMarketing.homeFeatureStrip.items.length > 0
+            ? raw.organicMarketing.homeFeatureStrip.items
+            : INITIAL_SETTINGS.organicMarketing!.homeFeatureStrip.items
+      }
     }
   };
 }
@@ -703,10 +755,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Admin Auth (Hossain login: hossain@gmail.com / Hossain777@#$)
+  const isHossainPathInitial = () => {
+    if (typeof window === 'undefined') return false;
+    const norm = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+    const h = window.location.hash.toLowerCase();
+    return norm === '/hossain' || norm.startsWith('/hossain/') || h === '#hossain';
+  };
+
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
     return localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true';
   });
-  const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
+  const [isAdminLoginOpen, setIsAdminLoginOpen] = useState<boolean>(() => {
+    return isHossainPathInitial() && localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) !== 'true';
+  });
 
   const loginAdmin = (email: string, pass: string): boolean => {
     if (
@@ -1318,6 +1379,69 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
+  const adjustSpecificCustomerBalance = (identifier: string, delta: number, reason?: string): boolean => {
+    if (!identifier || delta === 0) return false;
+    const cleanId = identifier.trim().toLowerCase();
+    const cleanDigits = identifier.replace(/[^0-9]/g, '');
+    const nowIso = new Date().toISOString();
+
+    let found = false;
+    let updatedBalance = 0;
+    let targetName = identifier;
+
+    const nextAccounts = customerAccounts.map((acc) => {
+      const matches =
+        (acc.username && acc.username.toLowerCase() === cleanId) ||
+        (acc.email && acc.email.toLowerCase() === cleanId) ||
+        (cleanDigits && acc.phone.replace(/[^0-9]/g, '') === cleanDigits);
+      if (!matches) return acc;
+
+      found = true;
+      targetName = acc.name;
+      updatedBalance = Math.max(0, (acc.walletBalance || 0) + delta);
+      return {
+        ...acc,
+        walletBalance: updatedBalance,
+        lastWalletCreditAt: delta > 0 ? acc.lastWalletCreditAt || nowIso : acc.lastWalletCreditAt
+      };
+    });
+
+    if (!found) return false;
+
+    setCustomerAccounts(nextAccounts);
+
+    // Also sync active customer wallet if same customer is currently active in browser
+    const activeMatches =
+      (customerProfile.username && customerProfile.username.toLowerCase() === cleanId) ||
+      (customerProfile.email && customerProfile.email.toLowerCase() === cleanId) ||
+      (cleanDigits && customerProfile.phone.replace(/[^0-9]/g, '') === cleanDigits) ||
+      nextAccounts.length <= 1;
+
+    if (activeMatches) {
+      setCustomerWalletBalance(updatedBalance);
+      localStorage.setItem('buyonebd_customer_wallet_v3', updatedBalance.toString());
+      if (delta > 0 && !walletLastCreditAt) {
+        setWalletLastCreditAt(nowIso);
+        localStorage.setItem('buyonebd_wallet_last_credit_v1', nowIso);
+      }
+      setCustomerProfile((cp) => ({
+        ...cp,
+        walletBalance: updatedBalance,
+        lastWalletCreditAt: delta > 0 ? cp.lastWalletCreditAt || nowIso : cp.lastWalletCreditAt
+      }));
+    }
+
+    addToast(
+      delta > 0 ? 'success' : 'info',
+      t(
+        `${targetName}-এর ব্যালেন্স ${delta > 0 ? `+৳${delta} বাড়ানো` : `-৳${Math.abs(delta)} কমানো`} হয়েছে`,
+        `${targetName} Balance ${delta > 0 ? `+৳${delta} Credited` : `-৳${Math.abs(delta)} Deducted`}`
+      ),
+      reason || t(`বর্তমান ব্যালেন্স: ৳${updatedBalance}`, `Updated Balance: ৳${updatedBalance}`)
+    );
+    return true;
+  };
+
   // Media Library (All uploaded & store media: bulk select, bulk delete, resize)
   const buildInitialMediaFromStore = (
     prods: Product[],
@@ -1640,7 +1764,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
   const [isSpinOpen, setIsSpinOpen] = useState(false);
   const [isMobileCategoryDrawerOpen, setIsMobileCategoryDrawerOpen] = useState(false);
-  const [activeView, setActiveViewState] = useState<'store' | 'admin' | 'tracking'>('store');
+  const [activeView, setActiveViewState] = useState<'store' | 'admin' | 'tracking'>(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.replace(/\/+$/, '').toLowerCase() || '/';
+      if ((p === '/hossain' || p.startsWith('/hossain/') || window.location.hash.toLowerCase() === '#hossain') && localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true') {
+        return 'admin';
+      }
+      if (p === '/tracking') return 'tracking';
+    }
+    return 'store';
+  });
   const [trackingSearchQuery, setTrackingSearchQuery] = useState('');
 
   // Server-Side Pixel CAPI & Customer Browsing Logs
@@ -1935,36 +2068,43 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Sync URL on initial load & browser back/forward (popstate)
+  const isAdminLoggedInRef = useRef(isAdminLoggedIn);
+  isAdminLoggedInRef.current = isAdminLoggedIn;
+
   useEffect(() => {
     const applyRouteFromUrl = () => {
-      const p = window.location.pathname.replace(/\/+$/, '') || '/';
-      if (p === '/hossain') {
+      const rawPath = window.location.pathname.replace(/\/+$/, '') || '/';
+      const lowerPath = rawPath.toLowerCase();
+      const lowerHash = window.location.hash.toLowerCase();
+      if (lowerPath === '/hossain' || lowerPath.startsWith('/hossain/') || lowerHash === '#hossain') {
         if (window.location.pathname !== '/hossain' || window.location.hash !== '') {
           window.history.replaceState({}, '', '/hossain');
         }
-        if (isAdminLoggedIn) {
+        if (isAdminLoggedInRef.current) {
           setActiveViewState('admin');
+          setIsAdminLoginOpen(false);
         } else {
+          setActiveViewState('store');
           setIsAdminLoginOpen(true);
         }
         return;
       }
-      if (p === '/tracking') {
+      if (lowerPath === '/tracking') {
         setActiveViewState('tracking');
         setSelectedProductForPage(null);
         return;
       }
-      if (p === '/cart') {
+      if (lowerPath === '/cart') {
         setActiveViewState('store');
         setIsCartOpenState(true);
         return;
       }
-      if (p === '/checkout') {
+      if (lowerPath === '/checkout') {
         setActiveViewState('store');
         setIsOneClickOpen(true);
         return;
       }
-      if (p === '/products') {
+      if (lowerPath === '/products') {
         setActiveViewState('store');
         setStoreSubView('products');
         setSelectedProductForPage(null);
@@ -1972,8 +2112,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setSelectedSubcategory(null);
         return;
       }
-      if (p.startsWith('/product/')) {
-        const slugOrId = decodeURIComponent(p.replace('/product/', ''));
+      if (lowerPath.startsWith('/product/')) {
+        const slugOrId = decodeURIComponent(rawPath.replace(/^\/product\//i, ''));
         const matched = products.find((item) => item.id === slugOrId || item.seo?.slug === slugOrId);
         if (matched) {
           setActiveViewState('store');
@@ -1981,8 +2121,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return;
         }
       }
-      if (p.startsWith('/category/')) {
-        const parts = p.replace('/category/', '').split('/').filter(Boolean);
+      if (lowerPath.startsWith('/category/')) {
+        const parts = rawPath.replace(/^\/category\//i, '').split('/').filter(Boolean);
         setActiveViewState('store');
         setStoreSubView('home');
         setSelectedProductForPage(null);
@@ -2006,17 +2146,149 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => window.removeEventListener('popstate', applyRouteFromUrl);
   }, []);
 
-  // Sync key store settings/catalog to backend server (for /robots.txt & /sitemap.xml & support desk)
+  // Cross-Device Store & Order Synchronization (Pull before Push + Realtime Polling)
+  const hasHydratedFromServerRef = useRef(false);
+  const activeViewRef = useRef(activeView);
+  activeViewRef.current = activeView;
+  const knownOrderIdsRef = useRef<Set<string>>(new Set(orders.map((o) => o.id)));
+
+  const fetchStoreSnapshotFromServer = async (notifyOnNewOrders = false) => {
+    try {
+      const res = await fetch(`/api/store/sync?t=${Date.now()}`, { cache: 'no-store' });
+      const json = await res.json();
+      const data = json?.data;
+
+      if (data && typeof data === 'object') {
+        if (Array.isArray(data.orders)) {
+          const deletedSet = new Set<string>(Array.isArray(data.deletedOrderIds) ? data.deletedOrderIds : []);
+          const incomingIds = new Set<string>(data.orders.map((o: any) => o?.id).filter(Boolean));
+
+          // Identify newly placed remote orders
+          const brandNewRemoteOrders = data.orders.filter(
+            (o: any) => o && o.id && !knownOrderIdsRef.current.has(o.id)
+          );
+
+          setOrders((prev) => {
+            const map = new Map<string, Order>();
+            prev.forEach((o) => {
+              if (!deletedSet.has(o.id)) map.set(o.id, o);
+            });
+            data.orders.forEach((o: Order) => {
+              if (o && o.id && !deletedSet.has(o.id)) {
+                map.set(o.id, o);
+              }
+            });
+            const merged = Array.from(map.values()).sort(
+              (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+            );
+            const prevJson = JSON.stringify(prev.map((x) => `${x.id}:${x.status}:${x.courier?.trackingCode}`));
+            const mergedJson = JSON.stringify(merged.map((x) => `${x.id}:${x.status}:${x.courier?.trackingCode}`));
+            return prevJson === mergedJson ? prev : merged;
+          });
+
+          incomingIds.forEach((id) => knownOrderIdsRef.current.add(id));
+
+          if (notifyOnNewOrders && brandNewRemoteOrders.length > 0 && activeViewRef.current === 'admin') {
+            const latest = brandNewRemoteOrders[0];
+            addToast(
+              'success',
+              t(`নতুন অর্ডার এসেছে! #${latest.id}`, `New Order Received! #${latest.id}`),
+              `${latest.customer?.name || 'Customer'} • ৳${latest.pricing?.total || 0}`
+            );
+          }
+        }
+
+        if (!hasHydratedFromServerRef.current) {
+          if (Array.isArray(data.products) && data.products.length > 0) setProducts(data.products);
+          if (data.settings) setSettings(mergeSettings(data.settings));
+          if (Array.isArray(data.categories) && data.categories.length > 0) setCategories(data.categories);
+          if (Array.isArray(data.sliders) && data.sliders.length > 0) setSliders(data.sliders);
+          if (Array.isArray(data.customerAccounts) && data.customerAccounts.length > 0) setCustomerAccounts(data.customerAccounts);
+          if (Array.isArray(data.walletTopUps) && data.walletTopUps.length > 0) setWalletTopUps(data.walletTopUps);
+          if (Array.isArray(data.abandonedCarts) && data.abandonedCarts.length > 0) setAbandonedCarts(data.abandonedCarts);
+          if (Array.isArray(data.reviews) && data.reviews.length > 0) setReviews(data.reviews);
+          if (Array.isArray(data.priceAlerts)) setPriceAlerts(data.priceAlerts);
+          if (Array.isArray(data.users) && data.users.length > 0) setUsers(data.users);
+          if (Array.isArray(data.mediaLibrary) && data.mediaLibrary.length > 0) setMediaLibrary(data.mediaLibrary);
+        }
+      } else if (!hasHydratedFromServerRef.current) {
+        // First ever startup on empty server store: seed initial store to server
+        fetch('/api/store/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            products,
+            orders,
+            settings,
+            spinRewards,
+            categories,
+            sliders,
+            customerAccounts,
+            walletTopUps,
+            abandonedCarts,
+            reviews,
+            priceAlerts,
+            users,
+            mediaLibrary
+          })
+        }).catch(() => {});
+      }
+    } catch {
+      // keep local state seamlessly if server temporarily offline
+    } finally {
+      hasHydratedFromServerRef.current = true;
+    }
+  };
+
   useEffect(() => {
+    fetchStoreSnapshotFromServer(false);
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        fetchStoreSnapshotFromServer(true);
+      }
+    };
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    const pollInterval = setInterval(
+      () => fetchStoreSnapshotFromServer(true),
+      activeViewRef.current === 'admin' ? 3500 : 6000
+    );
+
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    };
+  }, []);
+
+  // Push store snapshot updates AFTER initial server hydration completes
+  useEffect(() => {
+    if (!hasHydratedFromServerRef.current) return;
     const syncTimer = setTimeout(() => {
       fetch('/api/store/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ products, orders, settings, spinRewards, categories })
+        body: JSON.stringify({
+          products,
+          orders,
+          settings,
+          spinRewards,
+          categories,
+          sliders,
+          customerAccounts,
+          walletTopUps,
+          abandonedCarts,
+          reviews,
+          priceAlerts,
+          users,
+          mediaLibrary
+        })
       }).catch(() => {});
-    }, 600);
+    }, 500);
     return () => clearTimeout(syncTimer);
-  }, [products, orders, settings, categories]);
+  }, [products, orders, settings, categories, sliders, customerAccounts, walletTopUps, abandonedCarts, reviews, priceAlerts, users]);
 
   // Fetch initial support state on mount + poll every 2.5s when Support Desk / Chat / Admin is open
   const fetchSupportStateFromServer = () => {
@@ -2511,25 +2783,31 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setOrders((prev) =>
         prev.map((ord) => {
           if (ord.id === orderId) {
+            const updatedCourier: Order['courier'] = {
+              ...ord.courier,
+              provider,
+              consignmentId,
+              trackingCode,
+              status: 'in_transit',
+              history: [
+                ...ord.courier.history,
+                {
+                  status: `${provider} Booked`,
+                  time: 'Just now',
+                  location: 'Dhaka Central Dispatch Hub',
+                  note: `1-Click booking confirmed via ${provider} (ID: ${consignmentId})`
+                }
+              ]
+            };
+            fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ updates: { status: 'shipped', courier: updatedCourier } })
+            }).catch(() => {});
             return {
               ...ord,
               status: 'shipped',
-              courier: {
-                ...ord.courier,
-                provider,
-                consignmentId,
-                trackingCode,
-                status: 'in_transit',
-                history: [
-                  ...ord.courier.history,
-                  {
-                    status: `${provider} Booked`,
-                    time: 'Just now',
-                    location: 'Dhaka Central Dispatch Hub',
-                    note: `1-Click booking confirmed via ${provider} (ID: ${consignmentId})`
-                  }
-                ]
-              }
+              courier: updatedCourier
             };
           }
           return ord;
@@ -2828,7 +3106,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   };
 
-  // Create Order
+  // Create Order (Online 1-Click Checkout + Backend POS System)
   const createOrder = (orderData: {
     customer: { name: string; phone: string; address: string; district: string; thana: string; note?: string };
     items: { product: Product; quantity: number; selectedColor?: string; selectedSize?: string }[];
@@ -2839,14 +3117,31 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     discountAmount?: number;
     couponCode?: string;
     walletUsedAmount?: number;
+    customDeliveryFee?: number;
+    source?: 'online' | 'pos';
+    initialStatus?: OrderStatus;
+    skipAICall?: boolean;
   }) => {
     const subtotal = orderData.items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-    const fee =
-      orderData.deliveryZone === 'dhaka_inside'
-        ? settings.deliveryFees.dhakaInside
-        : orderData.deliveryZone === 'dhaka_sub'
-        ? settings.deliveryFees.dhakaSub
-        : settings.deliveryFees.dhakaOutside;
+
+    // Per-product delivery charge calculation (freeShipping or customDeliveryFees or global default)
+    const resolveDeliveryFee = (): number => {
+      if (orderData.customDeliveryFee !== undefined) return Math.max(0, orderData.customDeliveryFee);
+      if (orderData.source === 'pos') return 0;
+      const items = orderData.items.map((i) => i.product);
+      if (items.length > 0 && items.every((p) => p.freeShipping)) return 0;
+      const zoneKey =
+        orderData.deliveryZone === 'dhaka_inside'
+          ? 'dhakaInside'
+          : orderData.deliveryZone === 'dhaka_sub'
+          ? 'dhakaSub'
+          : 'dhakaOutside';
+      const customItemFee = items.find((p) => p.customDeliveryFees && p.customDeliveryFees[zoneKey] !== undefined)?.customDeliveryFees?.[zoneKey];
+      if (customItemFee !== undefined) return Math.max(0, customItemFee);
+      return settings.deliveryFees[zoneKey];
+    };
+
+    const fee = resolveDeliveryFee();
 
     const walletUsed = orderData.walletUsedAmount || 0;
     if (walletUsed > 0) {
@@ -2855,13 +3150,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const discount = (orderData.discountAmount || 0) + walletUsed;
     const total = Math.max(0, subtotal + fee - discount);
     const orderIdNum = Math.floor(10000 + Math.random() * 90000);
-    const newOrderId = `BD-${orderIdNum}`;
+    const newOrderId = orderData.source === 'pos' ? `POS-${orderIdNum}` : `BD-${orderIdNum}`;
 
     const courierProviders: CourierProvider[] = ['Steadfast', 'Pathao', 'RedX'];
-    const chosenCourier = courierProviders[0]; // Prefer Steadfast
-    const trackingCode = `STDF-BD-${orderIdNum}`;
+    const chosenCourier = courierProviders[0];
+    const trackingCode = orderData.source === 'pos' ? `POS-INVOICE-${orderIdNum}` : `STDF-BD-${orderIdNum}`;
 
-    // Auto calculate fraud risk
     const phoneSum = orderData.customer.phone.split('').reduce((s, c) => s + (parseInt(c, 10) || 0), 0);
     const rate = phoneSum % 5 === 0 ? 55 : 94;
 
@@ -2887,27 +3181,31 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
       payment: {
         method: orderData.paymentMethod,
-        status: orderData.advancePaid ? 'advance_paid' : orderData.paymentMethod === 'cod' ? 'pending' : 'paid',
+        status: orderData.advancePaid
+          ? 'advance_paid'
+          : orderData.paymentMethod === 'cod'
+          ? 'pending'
+          : 'paid',
         trxId: orderData.paymentTrxId,
         paymentNumber: orderData.customer.phone
       },
       deliveryZone: orderData.deliveryZone,
-      status: 'pending',
+      status: orderData.initialStatus || (orderData.source === 'pos' ? 'delivered' : 'pending'),
       aiCallStatus: {
         called: false
       },
       courier: {
         provider: chosenCourier,
         trackingCode,
-        status: 'booked',
-        currentLocation: 'BuyOne Central Warehouse, Tejgaon, Dhaka',
-        estimatedDelivery: orderData.deliveryZone === 'dhaka_inside' ? '24 Hours' : '48-72 Hours',
+        status: orderData.source === 'pos' ? 'delivered' : 'booked',
+        currentLocation: orderData.source === 'pos' ? 'Store Counter POS' : 'BuyOne Central Warehouse, Tejgaon, Dhaka',
+        estimatedDelivery: orderData.source === 'pos' ? 'Instant Counter Pickup' : orderData.deliveryZone === 'dhaka_inside' ? '24 Hours' : '48-72 Hours',
         history: [
           {
-            status: 'Order Placed',
+            status: orderData.source === 'pos' ? 'POS Counter Sale' : 'Order Placed',
             time: 'Just now',
-            location: 'Online Store',
-            note: 'Order successfully created via 1-Click Express Checkout'
+            location: orderData.source === 'pos' ? 'Admin POS Terminal' : 'Online Store',
+            note: orderData.source === 'pos' ? 'Completed via Admin Barcode POS' : 'Order successfully created via 1-Click Express Checkout'
           }
         ]
       },
@@ -2920,40 +3218,87 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         riskLevel: rate >= 80 ? 'safe' : 'moderate',
         message: rate >= 80 ? 'নিরাপদ গ্রাহক।' : 'রিটার্ন ঝুঁকি রয়েছে।'
       },
+      source: orderData.source || 'online',
       createdAt: new Date().toISOString()
     };
 
+    knownOrderIdsRef.current.add(newOrder.id);
     setOrders((prev) => [newOrder, ...prev]);
 
+    // Deduct stock quantities
+    setProducts((prev) =>
+      prev.map((prod) => {
+        const orderedQty = orderData.items
+          .filter((i) => i.product.id === prod.id)
+          .reduce((acc, i) => acc + i.quantity, 0);
+        return orderedQty > 0 ? { ...prod, stock: Math.max(0, prod.stock - orderedQty) } : prod;
+      })
+    );
+
+    // Immediately persist atomically to server so all other browsers & devices receive it
+    fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order: newOrder })
+    }).catch(() => {});
+
+    // Send automatic SMTP Order Confirmation Email if configured & enabled
+    if (settings.smtpSettings?.enabled && settings.smtpSettings?.sendOnOrderConfirmation) {
+      const targetEmail =
+        customerProfile?.phone === orderData.customer.phone && customerProfile?.email
+          ? customerProfile.email
+          : settings.smtpSettings.fromEmail || settings.supportEmail;
+      if (targetEmail && targetEmail.includes('@')) {
+        fetch('/api/email/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            smtp: settings.smtpSettings,
+            to: targetEmail,
+            subject: `Order Confirmed #${newOrderId} - ${settings.storeName}`,
+            text: `Assalamu Alaikum ${orderData.customer.name},\n\nYour order #${newOrderId} for ৳${total} has been placed successfully!\nDelivery Address: ${orderData.customer.address}, ${orderData.customer.district}\nPayment: ${orderData.paymentMethod.toUpperCase()}\n\nThank you for shopping with ${settings.storeName}.`
+          })
+        }).catch(() => {});
+      }
+    }
+
     // Reset 30-day wallet inactivity clock when customer purchases a product
-    const purchaseIso = new Date().toISOString();
-    setWalletLastPurchaseAt(purchaseIso);
-    localStorage.setItem('buyonebd_wallet_last_purchase_v1', purchaseIso);
-    setCustomerProfile((cp) => ({
-      ...cp,
-      lastPurchaseAt: purchaseIso,
-      loyaltyPoints: (cp.loyaltyPoints || 0) + Math.max(5, Math.floor(total / 100))
-    }));
+    if (orderData.source !== 'pos') {
+      const purchaseIso = new Date().toISOString();
+      setWalletLastPurchaseAt(purchaseIso);
+      localStorage.setItem('buyonebd_wallet_last_purchase_v1', purchaseIso);
+      setCustomerProfile((cp) => ({
+        ...cp,
+        lastPurchaseAt: purchaseIso,
+        loyaltyPoints: (cp.loyaltyPoints || 0) + Math.max(5, Math.floor(total / 100))
+      }));
 
-    trackPixelEvent('Purchase', {
-      urlPath: '/checkout',
-      value: total,
-      contentName: orderData.items.map((i) => i.product.title).join(', ')
-    });
+      trackPixelEvent('Purchase', {
+        urlPath: '/checkout',
+        value: total,
+        contentName: orderData.items.map((i) => i.product.title).join(', ')
+      });
 
-    // If cart was checked out, clear cart
-    if (!checkoutProduct) {
-      clearCart();
+      if (!checkoutProduct) {
+        clearCart();
+      }
     }
 
     addToast(
       'success',
-      t('অর্ডার সফল হয়েছে! ৳ ' + total, 'Order Placed! ৳ ' + total),
-      t(`অর্ডার আইডি: ${newOrderId}। কিছুক্ষণের মধ্যে এআই কল আসবে।`, `Order ID: ${newOrderId}. AI auto-confirmation call is initiating.`)
+      t(`অর্ডার সফল হয়েছে! ৳ ${total}`, `Order Placed! ৳ ${total}`),
+      t(
+        orderData.source === 'pos'
+          ? `POS চালান #${newOrderId} তৈরি সম্পন্ন।`
+          : `অর্ডার আইডি: ${newOrderId}। কিছুক্ষণের মধ্যে এআই কল আসবে।`,
+        orderData.source === 'pos'
+          ? `POS Invoice #${newOrderId} completed.`
+          : `Order ID: ${newOrderId}. AI auto-confirmation call is initiating.`
+      )
     );
 
-    // Auto trigger AI Call if enabled in store settings
-    if (settings.aiCallSettings.autoCallOnOrder) {
+    // Auto trigger AI Call if enabled in store settings and not skipped
+    if (settings.aiCallSettings.autoCallOnOrder && !orderData.skipAICall && orderData.source !== 'pos') {
       setTimeout(() => {
         startAICall(newOrder);
       }, (settings.aiCallSettings.delaySeconds || 2) * 1000);
@@ -2969,21 +3314,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const updatedCourier = { ...ord.courier };
           if (status === 'shipped') {
             updatedCourier.status = 'in_transit';
-            updatedCourier.history.push({
-              status: 'In Transit',
-              time: 'Just now',
-              location: 'Hub Dispatched',
-              note: 'Dispatched to customer destination hub via Steadfast Courier'
-            });
+            updatedCourier.history = [
+              ...updatedCourier.history,
+              {
+                status: 'In Transit',
+                time: 'Just now',
+                location: 'Hub Dispatched',
+                note: 'Dispatched to customer destination hub via Steadfast Courier'
+              }
+            ];
           } else if (status === 'delivered') {
             updatedCourier.status = 'delivered';
-            updatedCourier.history.push({
-              status: 'Delivered',
-              time: 'Just now',
-              location: ord.customer.address,
-              note: 'Customer successfully received parcel and paid full COD'
-            });
+            updatedCourier.history = [
+              ...updatedCourier.history,
+              {
+                status: 'Delivered',
+                time: 'Just now',
+                location: ord.customer.address,
+                note: 'Customer successfully received parcel and paid full COD'
+              }
+            ];
           }
+          fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ updates: { status, courier: updatedCourier } })
+          }).catch(() => {});
           return {
             ...ord,
             status,
@@ -2998,17 +3354,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateOrderCourier = (orderId: string, updates: Partial<Order['courier']>) => {
     setOrders((prev) =>
-      prev.map((ord) =>
-        ord.id === orderId
-          ? {
-              ...ord,
-              courier: {
-                ...ord.courier,
-                ...updates
-              }
-            }
-          : ord
-      )
+      prev.map((ord) => {
+        if (ord.id !== orderId) return ord;
+        const nextCourier = { ...ord.courier, ...updates };
+        fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ updates: { courier: nextCourier } })
+        }).catch(() => {});
+        return {
+          ...ord,
+          courier: nextCourier
+        };
+      })
     );
   };
 
@@ -3016,11 +3374,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setOrders((prev) =>
       prev.map((ord) => (ord.id === orderId ? { ...ord, ...updates } : ord))
     );
+    fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates })
+    }).catch(() => {});
     addToast('success', t('অর্ডার তথ্য সংরক্ষিত', 'Order Saved'), t(`অর্ডার #${orderId} এর তথ্য আপডেট করা হয়েছে।`, `Order #${orderId} updated.`));
   };
 
   const deleteOrder = (orderId: string) => {
+    knownOrderIdsRef.current.delete(orderId);
     setOrders((prev) => prev.filter((ord) => ord.id !== orderId));
+    fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+      method: 'DELETE'
+    }).catch(() => {});
     addToast('info', t('অর্ডার অপসারিত', 'Order Deleted'), t('অর্ডারটি ডাটাবেজ থেকে মুছে দেওয়া হয়েছে।', 'Order removed.'));
   };
 
@@ -3195,6 +3562,39 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     addToast('success', t('সেটিংস সংরক্ষিত হয়েছে', 'Settings Saved'), t('স্টোরের সকল পরিবর্তন সফলভাবে সংরক্ষিত।', 'Configurations updated.'));
   };
 
+  // Non-Destructive Clear Cache (Clears temporary logs/audio cache ONLY; preserves all products, orders, customers, settings)
+  const clearAppCache = async () => {
+    const cacheKeys = [
+      'buyonebd_pixel_events_v3',
+      'buyonebd_browsing_logs_v3',
+      'buyonebd_wa_logs_v3',
+      'buyonebd_compare_v3'
+    ];
+    cacheKeys.forEach((k) => {
+      try {
+        localStorage.removeItem(k);
+      } catch {}
+    });
+    setServerPixelEvents([]);
+    setCustomerBrowsingLogs([]);
+    setWhatsappLogs([]);
+    setCompareList([]);
+    setSearchQuery('');
+
+    try {
+      await fetch('/api/cache/clear', { method: 'POST' });
+    } catch {}
+
+    addToast(
+      'success',
+      t('ক্যাশ পরিষ্কার সম্পন্ন!', 'Cache Cleared!'),
+      t(
+        'অস্থায়ী ক্যাশ ও লগ ক্লিয়ার করা হয়েছে — কোনো পণ্য, অর্ডার বা সেটিংস মুছে যায়নি।',
+        'Temporary caches cleared cleanly. Products, orders, customers & settings remain intact.'
+      )
+    );
+  };
+
   const resetAllToDefault = () => {
     setProducts(INITIAL_PRODUCTS);
     setOrders(INITIAL_ORDERS);
@@ -3269,6 +3669,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         registerCustomer,
         logoutCustomer,
         openCustomerPortal,
+        customerAccounts,
+        adjustSpecificCustomerBalance,
         customerWalletBalance,
         addToWallet,
         deductWallet,
@@ -3369,6 +3771,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isPlayingVoiceSample,
         settings,
         updateSettings,
+        clearAppCache,
         resetAllToDefault,
         cart,
         addToCart,

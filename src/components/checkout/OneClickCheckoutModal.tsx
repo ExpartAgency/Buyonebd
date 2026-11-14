@@ -53,12 +53,25 @@ export const OneClickCheckoutModal: React.FC = () => {
   const currentDistrictObj = BD_DISTRICTS.find((d) => d.name === selectedDistrictName) || BD_DISTRICTS[0];
   const currentZone: DeliveryZone = currentDistrictObj.zone;
 
-  const rawDeliveryFee =
+  const zoneKey =
     currentZone === 'dhaka_inside'
-      ? settings.deliveryFees.dhakaInside
+      ? 'dhakaInside'
       : currentZone === 'dhaka_sub'
-      ? settings.deliveryFees.dhakaSub
-      : settings.deliveryFees.dhakaOutside;
+      ? 'dhakaSub'
+      : 'dhakaOutside';
+
+  const activeProductsForDelivery = checkoutProduct ? [checkoutProduct] : cart.map((c) => c.product);
+  const allFreeShip =
+    activeProductsForDelivery.length > 0 && activeProductsForDelivery.every((p) => p.freeShipping);
+  const customProductFee = activeProductsForDelivery.find(
+    (p) => p.customDeliveryFees && p.customDeliveryFees[zoneKey] !== undefined
+  )?.customDeliveryFees?.[zoneKey];
+
+  const rawDeliveryFee = allFreeShip
+    ? 0
+    : customProductFee !== undefined
+    ? Math.max(0, customProductFee)
+    : settings.deliveryFees[zoneKey];
 
   const deliveryFee = appliedCoupon?.code === 'FREESHIP' ? 0 : rawDeliveryFee;
 
@@ -102,6 +115,9 @@ export const OneClickCheckoutModal: React.FC = () => {
     if (!code) return;
 
     const reward = settings.spinSettings?.rewards.find((r) => r.code.toUpperCase() === code);
+    const organicPromoCode = settings.organicMarketing?.promoPopup?.couponCode?.toUpperCase();
+    const organicShareCode = settings.organicMarketing?.socialShareDiscount?.couponCode?.toUpperCase();
+
     if (reward) {
       let amount = 0;
       if (reward.discountType === 'fixed') amount = reward.value;
@@ -119,6 +135,21 @@ export const OneClickCheckoutModal: React.FC = () => {
         t('কুপন ডিসকাউন্ট যোগ হয়েছে!', 'Coupon Applied!'),
         `${lang === 'bn' ? reward.labelBn : reward.labelEn} (${code})`
       );
+    } else if (
+      (organicPromoCode && code === organicPromoCode) ||
+      (organicShareCode && code === organicShareCode)
+    ) {
+      const amount =
+        code === organicShareCode
+          ? settings.organicMarketing?.socialShareDiscount?.discountAmount || 50
+          : 100;
+      setAppliedCoupon({
+        code,
+        label: `৳${amount} OFF`,
+        amount
+      });
+      setCouponCode(code);
+      addToast('success', t('অর্গানিক কুপন যোগ হয়েছে!', 'Organic Coupon Applied!'), `${code} (-৳${amount})`);
     } else {
       addToast(
         'warning',
@@ -195,6 +226,9 @@ export const OneClickCheckoutModal: React.FC = () => {
         paymentMethod,
         paymentTrxId: trxId.trim() || undefined,
         deliveryZone: currentZone,
+        customDeliveryFee: deliveryFee,
+        discountAmount: discountAmount > 0 ? discountAmount : undefined,
+        couponCode: appliedCoupon?.code,
         advancePaid: advanceAmount > 0 ? advanceAmount : undefined,
         walletUsedAmount: walletDeduction > 0 ? walletDeduction : undefined
       });

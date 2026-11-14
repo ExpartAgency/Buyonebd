@@ -1,4 +1,4 @@
-export type PaymentMethod = 'cod' | 'bkash' | 'nagad' | 'rocket' | 'sslcommerz';
+export type PaymentMethod = 'cod' | 'bkash' | 'nagad' | 'rocket' | 'sslcommerz' | 'cash' | 'card';
 export type PaymentStatus = 'pending' | 'paid' | 'advance_paid';
 export type OrderStatus = 'pending' | 'ai_confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
 export type CourierProvider = 'Steadfast' | 'Pathao' | 'RedX' | 'Paperfly' | 'Sundarban';
@@ -65,6 +65,13 @@ export interface Product {
   tags: string[];
   images: string[];
   sku: string;
+  barcode?: string;
+  freeShipping?: boolean;
+  customDeliveryFees?: {
+    dhakaInside?: number;
+    dhakaSub?: number;
+    dhakaOutside?: number;
+  };
   rating: number;
   reviewsCount: number;
   isFlashSale?: boolean;
@@ -161,6 +168,7 @@ export interface Order {
   aiCallStatus: AICallLog;
   courier: CourierTracking;
   fraudCheck?: OrderFraudCheck;
+  source?: 'online' | 'pos';
   createdAt: string;
 }
 
@@ -488,6 +496,99 @@ export interface StoreSettings {
   footerSettings: FooterSettings;
   seoSettings?: SEOSettings;
   walletSettings?: WalletControlSettings;
+  smtpSettings?: SMTPSettings;
+  singleProductCms?: SingleProductCMSSettings;
+  organicMarketing?: OrganicMarketingSettings;
+}
+
+export interface SMTPSettings {
+  enabled: boolean;
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass: string;
+  fromName: string;
+  fromEmail: string;
+  sendOnOrderConfirmation: boolean;
+  sendOnStatusUpdate: boolean;
+}
+
+export interface SingleProductCMSSettings {
+  showDeliveryMatrix: boolean;
+  showWarrantyBadge: boolean;
+  showReturnPolicy: boolean;
+  showFlashSaleSection: boolean;
+  showPriceAlertButton: boolean;
+  showLoyaltyBadge: boolean;
+  dhakaCityLabelBn: string;
+  dhakaCityLabelEn: string;
+  dhakaEtaBn: string;
+  dhakaEtaEn: string;
+  nationwideLabelBn: string;
+  nationwideLabelEn: string;
+  nationwideEtaBn: string;
+  nationwideEtaEn: string;
+  warrantyBadgeTitleBn: string;
+  warrantyBadgeTitleEn: string;
+  warrantyBadgeValueBn: string;
+  warrantyBadgeValueEn: string;
+  codTrustTextBn: string;
+  codTrustTextEn: string;
+  returnPolicyTitleBn: string;
+  returnPolicyTitleEn: string;
+  returnPolicyTextBn: string;
+  returnPolicyTextEn: string;
+  courierNoteTitleBn: string;
+  courierNoteTitleEn: string;
+  courierNoteTextBn: string;
+  courierNoteTextEn: string;
+}
+
+export interface HomeFeatureStripItem {
+  id: string;
+  titleBn: string;
+  titleEn: string;
+  subBn: string;
+  subEn: string;
+}
+
+export interface OrganicMarketingSettings {
+  referralProgram: {
+    enabled: boolean;
+    referrerRewardBdt: number;
+    refereeDiscountBdt: number;
+    referralCodePrefix: string;
+  };
+  promoPopup: {
+    enabled: boolean;
+    headlineBn: string;
+    headlineEn: string;
+    subtextBn: string;
+    subtextEn: string;
+    couponCode: string;
+    discountLabelBn: string;
+    discountLabelEn: string;
+    delaySeconds: number;
+  };
+  socialShareDiscount: {
+    enabled: boolean;
+    discountAmount: number;
+    couponCode: string;
+    messageBn: string;
+    messageEn: string;
+  };
+  vipTiers: {
+    enabled: boolean;
+    silverThreshold: number;
+    silverDiscountPct: number;
+    goldThreshold: number;
+    goldDiscountPct: number;
+  };
+  homeFeatureStrip: {
+    enabled: boolean;
+    items: HomeFeatureStripItem[];
+  };
 }
 
 export type StoreTheme =
