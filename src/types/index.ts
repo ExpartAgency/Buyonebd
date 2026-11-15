@@ -512,6 +512,46 @@ export interface StoreSettings {
   singleProductCms?: SingleProductCMSSettings;
   organicMarketing?: OrganicMarketingSettings;
   promoCoupons?: PromoCoupon[];
+  hostingerDbSettings?: HostingerDbSettings;
+  securitySettings?: SecuritySettings;
+}
+
+export interface HostingerDbSettings {
+  enabled: boolean;
+  mode: 'mysql_direct' | 'php_bridge';
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password: string;
+  tablePrefix: string;
+  ssl: boolean;
+  autoSyncOnOrder: boolean;
+  phpBridgeUrl?: string;
+  phpBridgeSecret?: string;
+  lastSyncedAt?: string;
+}
+
+export interface SecuritySettings {
+  loginLockoutEnabled: boolean;
+  maxLoginAttempts: number;
+  lockoutMinutes: number;
+  adminPinEnabled: boolean;
+  adminPin: string;
+  checkoutHoneypotEnabled: boolean;
+  checkoutRateLimitSeconds: number;
+  blockDuplicateOrdersMinutes: number;
+  blockedPhones: string[];
+  enableStrictHeaders: boolean;
+  maskPublicSecrets: boolean;
+}
+
+export interface SecurityLogEntry {
+  id: string;
+  event: string;
+  detail: string;
+  severity: 'info' | 'warning' | 'blocked';
+  timestamp: string;
 }
 
 export interface PromoCoupon {
@@ -625,6 +665,29 @@ export interface OrganicMarketingSettings {
   homeFeatureStrip: {
     enabled: boolean;
     items: HomeFeatureStripItem[];
+  };
+  freeShippingBar?: {
+    enabled: boolean;
+    thresholdBdt: number;
+    messageBn: string;
+    messageEn: string;
+  };
+  bundleDiscount?: {
+    enabled: boolean;
+    qty2Percent: number;
+    qty3Percent: number;
+    badgeBn: string;
+    badgeEn: string;
+  };
+  socialProofFomo?: {
+    enabled: boolean;
+    intervalSeconds: number;
+    showRealOrdersOnly: boolean;
+  };
+  checkoutGuard?: {
+    honeypotEnabled: boolean;
+    blockDuplicateOrdersMinutes: number;
+    checkoutRateLimitSeconds: number;
   };
 }
 

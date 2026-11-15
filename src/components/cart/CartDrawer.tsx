@@ -136,47 +136,99 @@ export const CartDrawer: React.FC = () => {
           </div>
 
           {/* Footer Checkout Summary */}
-          {cart.length > 0 && (
-            <div className="p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3 tabular-nums">
-              <div className="space-y-1.5 text-xs">
-                <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                  <span>{t('পণ্যের মূল্য (Subtotal):', 'Subtotal:')}</span>
-                  <span className="font-bold text-slate-900 dark:text-white">৳ {cartTotal.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-slate-500 text-[11px]">
-                  <span>{t('ডেলিভারি চার্জ (জেলা অনুযায়ী):', 'Delivery Fee (District-based):')}</span>
-                  <span>৳ {settings.deliveryFees.dhakaInside} - ৳ {settings.deliveryFees.dhakaOutside}</span>
-                </div>
-                <div className="flex justify-between font-extrabold text-sm text-slate-900 dark:text-white border-t border-slate-100 dark:border-slate-800 pt-2">
-                  <span>{t('মোট হিসাব:', 'Estimated Total:')}</span>
-                  <span className="text-emerald-600 dark:text-emerald-400">৳ {cartTotal.toLocaleString()}</span>
-                </div>
-              </div>
+          {cart.length > 0 && (() => {
+            const freeShipCfg = settings.organicMarketing?.freeShippingBar;
+            const threshold = freeShipCfg?.enabled ? Math.max(0, Number(freeShipCfg.thresholdBdt) || 0) : 0;
+            const remainingForFree = threshold > 0 ? Math.max(0, threshold - cartTotal) : 0;
+            const freeShipPct = threshold > 0 ? Math.min(100, Math.round((cartTotal / threshold) * 100)) : 0;
+            const unlockedFreeShip = threshold > 0 && cartTotal >= threshold;
 
-              <button
-                onClick={handleCheckoutAll}
-                style={{ backgroundColor: primaryColor }}
-                className="w-full hover:opacity-95 text-white font-extrabold text-xs sm:text-sm py-3.5 px-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
-              >
-                <Zap className="w-4 h-4 text-amber-300 shrink-0" />
-                <span>{t('১ ক্লিকে চেকআউট করুন (ক্যাশ অন ডেলিভারি)', '1-Click Cash on Delivery Checkout')}</span>
-                <ArrowRight className="w-4 h-4 shrink-0" />
-              </button>
+            const bundleCfg = settings.organicMarketing?.bundleDiscount;
+            const bundlePct = bundleCfg?.enabled
+              ? cartCount >= 3
+                ? Number(bundleCfg.qty3Percent) || 0
+                : cartCount >= 2
+                ? Number(bundleCfg.qty2Percent) || 0
+                : 0
+              : 0;
+            const bundleOff = bundlePct > 0 ? Math.round(cartTotal * (bundlePct / 100)) : 0;
+            const netEstimate = Math.max(0, cartTotal - bundleOff);
 
-              <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-                <span className="flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  {t('১০০% নিরাপদ ডেলিভারি', '100% Safe Delivery')}
-                </span>
+            return (
+              <div className="p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3 tabular-nums">
+                {threshold > 0 && (
+                  <div className="p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 space-y-1.5">
+                    <p className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+                      {unlockedFreeShip
+                        ? t('🎉 অভিনন্দন! আপনি ফ্রি ডেলিভারি আনলক করেছেন!', '🎉 Congrats! You unlocked FREE Delivery!')
+                        : (lang === 'bn'
+                            ? (freeShipCfg?.messageBn || 'আর মাত্র ৳{remaining} যোগ করলে ফ্রি ডেলিভারি!')
+                            : (freeShipCfg?.messageEn || 'Add ৳{remaining} more for FREE Delivery!')
+                          ).replace('{remaining}', remainingForFree.toLocaleString())}
+                    </p>
+                    <div className="w-full h-1.5 rounded-full bg-emerald-200/70 dark:bg-slate-800 overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-600 transition-all duration-300"
+                        style={{ width: `${freeShipPct}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                    <span>{t('পণ্যের মূল্য (Subtotal):', 'Subtotal:')}</span>
+                    <span className="font-bold text-slate-900 dark:text-white">৳ {cartTotal.toLocaleString()}</span>
+                  </div>
+                  {bundleOff > 0 && (
+                    <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold">
+                      <span>
+                        {t(`বান্ডিল ডিসকাউন্ট (${bundlePct}% ছাড়):`, `Bundle Discount (${bundlePct}% OFF):`)}
+                      </span>
+                      <span>- ৳ {bundleOff.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-slate-500 text-[11px]">
+                    <span>{t('ডেলিভারি চার্জ (জেলা অনুযায়ী):', 'Delivery Fee (District-based):')}</span>
+                    <span>
+                      {unlockedFreeShip ? (
+                        <span className="font-bold text-emerald-600">{t('ফ্রি ডেলিভারি', 'FREE')}</span>
+                      ) : (
+                        `৳ ${settings.deliveryFees.dhakaInside} - ৳ ${settings.deliveryFees.dhakaOutside}`
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex justify-between font-extrabold text-sm text-slate-900 dark:text-white border-t border-slate-100 dark:border-slate-800 pt-2">
+                    <span>{t('মোট হিসাব:', 'Estimated Total:')}</span>
+                    <span className="text-emerald-600 dark:text-emerald-400">৳ {netEstimate.toLocaleString()}</span>
+                  </div>
+                </div>
+
                 <button
-                  onClick={clearCart}
-                  className="text-slate-400 hover:text-rose-600 cursor-pointer"
+                  onClick={handleCheckoutAll}
+                  style={{ backgroundColor: primaryColor }}
+                  className="w-full hover:opacity-95 text-white font-extrabold text-xs sm:text-sm py-3.5 px-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
                 >
-                  {t('কার্ট খালি করুন', 'Clear Cart')}
+                  <Zap className="w-4 h-4 text-amber-300 shrink-0" />
+                  <span>{t('১ ক্লিকে চেকআউট করুন (ক্যাশ অন ডেলিভারি)', '1-Click Cash on Delivery Checkout')}</span>
+                  <ArrowRight className="w-4 h-4 shrink-0" />
                 </button>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                  <span className="flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    {t('১০০% নিরাপদ ডেলিভারি', '100% Safe Delivery')}
+                  </span>
+                  <button
+                    onClick={clearCart}
+                    className="text-slate-400 hover:text-rose-600 cursor-pointer"
+                  >
+                    {t('কার্ট খালি করুন', 'Clear Cart')}
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
     </div>

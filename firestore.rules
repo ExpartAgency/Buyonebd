@@ -50,12 +50,16 @@ service cloud.firestore {
     function isValidAdminPrivateConfig(data) {
       return data.keys().hasAll(['updatedAt'])
         && data.keys().hasOnly([
-          'smtpSettings', 'courierSettings', 'marketingSettings', 'aiSettings', 'aiKeywordRules', 'updatedByEmail', 'updatedAt'
+          'smtpSettings', 'courierSettings', 'marketingSettings', 'aiSettings',
+          'aiKeywordRules', 'hostingerDbSettings', 'securitySettings',
+          'updatedByEmail', 'updatedAt'
         ])
         && (!data.keys().hasAny(['smtpSettings']) || data.smtpSettings is map)
         && (!data.keys().hasAny(['courierSettings']) || data.courierSettings is map)
         && (!data.keys().hasAny(['marketingSettings']) || data.marketingSettings is map)
         && (!data.keys().hasAny(['aiSettings']) || data.aiSettings is map)
+        && (!data.keys().hasAny(['hostingerDbSettings']) || data.hostingerDbSettings is map)
+        && (!data.keys().hasAny(['securitySettings']) || data.securitySettings is map)
         && (!data.keys().hasAny(['aiKeywordRules']) || (data.aiKeywordRules is list && data.aiKeywordRules.size() <= 100))
         && (!data.keys().hasAny(['updatedByEmail']) || (data.updatedByEmail is string && data.updatedByEmail.size() <= 160))
         && data.updatedAt is timestamp;

@@ -434,6 +434,8 @@ export async function saveAdminPrivateConfigToFirestore(settings: StoreSettings)
       ...(settings.courierSettings ? { courierSettings: settings.courierSettings } : {}),
       ...(settings.marketingSettings ? { marketingSettings: settings.marketingSettings } : {}),
       ...(settings.aiSettings ? { aiSettings: settings.aiSettings } : {}),
+      ...(settings.hostingerDbSettings ? { hostingerDbSettings: settings.hostingerDbSettings } : {}),
+      ...(settings.securitySettings ? { securitySettings: settings.securitySettings } : {}),
       ...(Array.isArray(settings.aiKeywordRules)
         ? { aiKeywordRules: settings.aiKeywordRules.slice(0, 100) }
         : {}),

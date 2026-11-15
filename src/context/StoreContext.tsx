@@ -27,7 +27,8 @@ import {
   ServerPixelEvent,
   WalletTopUpMethod,
   WalletTopUpRequest,
-  MediaItem
+  MediaItem,
+  SecurityLogEntry
 } from '../types';
 import {
   INITIAL_PRODUCTS,
@@ -236,6 +237,11 @@ interface StoreContextType {
   deleteOrder: (orderId: string) => void;
   bulkUpdateOrders: (orderIds: string[], action: { status?: OrderStatus; deleteAll?: boolean }) => void;
   syncStoreFromServer: () => Promise<void>;
+
+  // Security Shield & Audit Logs
+  securityLogs: SecurityLogEntry[];
+  addSecurityLog: (event: string, detail: string, severity?: SecurityLogEntry['severity']) => void;
+  clearSecurityLogs: () => void;
 
   // Customer Auth, Wallet & Profile
   isCustomerLoggedIn: boolean;
@@ -564,7 +570,34 @@ function mergeSettings(raw: any): StoreSettings {
           raw.organicMarketing.homeFeatureStrip.items.length > 0
             ? raw.organicMarketing.homeFeatureStrip.items
             : INITIAL_SETTINGS.organicMarketing!.homeFeatureStrip.items
+      },
+      freeShippingBar: {
+        ...INITIAL_SETTINGS.organicMarketing!.freeShippingBar!,
+        ...(raw.organicMarketing?.freeShippingBar || {})
+      },
+      bundleDiscount: {
+        ...INITIAL_SETTINGS.organicMarketing!.bundleDiscount!,
+        ...(raw.organicMarketing?.bundleDiscount || {})
+      },
+      socialProofFomo: {
+        ...INITIAL_SETTINGS.organicMarketing!.socialProofFomo!,
+        ...(raw.organicMarketing?.socialProofFomo || {})
+      },
+      checkoutGuard: {
+        ...INITIAL_SETTINGS.organicMarketing!.checkoutGuard!,
+        ...(raw.organicMarketing?.checkoutGuard || {})
       }
+    },
+    hostingerDbSettings: {
+      ...INITIAL_SETTINGS.hostingerDbSettings!,
+      ...(raw.hostingerDbSettings || {})
+    },
+    securitySettings: {
+      ...INITIAL_SETTINGS.securitySettings!,
+      ...(raw.securitySettings || {}),
+      blockedPhones: Array.isArray(raw.securitySettings?.blockedPhones)
+        ? raw.securitySettings.blockedPhones
+        : INITIAL_SETTINGS.securitySettings!.blockedPhones
     }
   };
 }
@@ -578,6 +611,38 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const setLang = (newLang: 'bn' | 'en') => {
     setLangState(newLang);
     localStorage.setItem(LOCAL_STORAGE_LANG, newLang);
+  };
+
+  // Security Audit Logs State
+  const [securityLogs, setSecurityLogs] = useState<SecurityLogEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_security_logs_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_security_logs_v1', JSON.stringify(securityLogs.slice(0, 120)));
+    } catch {}
+  }, [securityLogs]);
+
+  const addSecurityLog = (event: string, detail: string, severity: SecurityLogEntry['severity'] = 'info') => {
+    const entry: SecurityLogEntry = {
+      id: `sec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      event,
+      detail,
+      severity,
+      timestamp: new Date().toISOString()
+    };
+    setSecurityLogs((prev) => [entry, ...prev].slice(0, 120));
+  };
+
+  const clearSecurityLogs = () => {
+    setSecurityLogs([]);
+    addToast('info', 'Security Logs Cleared', '');
   };
 
   // Admin Language
@@ -1473,9 +1538,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (window.location.pathname !== '/hossain') {
         window.history.pushState({}, '', '/hossain');
       }
+      addSecurityLog('Admin Login Success', `Authenticated as ${email.trim().toLowerCase()}`, 'info');
       addToast('success', t('অ্যাডমিন লগইন সফল!', 'Admin Logged In!'), t('স্বাগতম হোসেন ভাই, ড্যাশবোর্ডে প্রবেশের অনুমতি দেওয়া হয়েছে।', 'Welcome Hossain, dashboard unlocked.'));
       return true;
     }
+    addSecurityLog('Admin Login Failed', `Rejected attempt for ${email.trim() || 'unknown'}`, 'warning');
     addToast('error', t('ভুল ইমেইল বা পাসওয়ার্ড', 'Invalid Credentials'), t('দয়া করে সঠিক ইমেইল ও পাসওয়ার্ড প্রদান করুন।', 'Please provide correct credentials.'));
     return false;
   };
@@ -3141,7 +3208,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const fetchStoreSnapshotFromServer = async (notifyOnNewOrders = false) => {
     try {
       // 1. Pull from Express server snapshot if available
-      const res = await fetch(`/api/store/sync?t=${Date.now()}`, { cache: 'no-store' });
+      const isAdminSess = localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true';
+      const res = await fetch(`/api/store/sync?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: isAdminSess ? { 'x-admin-session': 'buyone-admin-verified' } : undefined
+      });
       if (res.ok) {
         const json = await res.json();
         const data = json?.data;
@@ -3521,9 +3592,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (!hasHydratedFromServerRef.current) return;
     const syncTimer = setTimeout(() => {
+      const isAdminSess = localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true';
       fetch('/api/store/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(isAdminSess ? { 'x-admin-session': 'buyone-admin-verified' } : {})
+        },
         body: JSON.stringify({
           products,
           orders,
@@ -4605,6 +4680,55 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     initialStatus?: OrderStatus;
     skipAICall?: boolean;
   }) => {
+    // Security Shield Enforcement for Online Checkout Orders
+    if (orderData.source !== 'pos') {
+      const normalizedPhone = String(orderData.customer.phone || '').replace(/[^0-9]/g, '').slice(-11);
+      const blockedList = settings.securitySettings?.blockedPhones || [];
+      if (
+        normalizedPhone &&
+        blockedList.some((bp) => String(bp).replace(/[^0-9]/g, '').slice(-11) === normalizedPhone)
+      ) {
+        addSecurityLog(
+          'Blocked Blacklisted Order',
+          `Phone ${normalizedPhone} rejected by Security Shield blocklist.`,
+          'blocked'
+        );
+        throw new Error(
+          t(
+            'নিরাপত্তা নীতির কারণে এই মোবাইল নম্বর থেকে অর্ডার সীমাবদ্ধ করা হয়েছে। সহায়তার জন্য হটলাইনে যোগাযোগ করুন।',
+            'Orders from this phone number are restricted by store security policy.'
+          )
+        );
+      }
+
+      const dupMins =
+        settings.securitySettings?.blockDuplicateOrdersMinutes ??
+        settings.organicMarketing?.checkoutGuard?.blockDuplicateOrdersMinutes ??
+        0;
+      if (dupMins > 0 && normalizedPhone) {
+        const cutoff = Date.now() - dupMins * 60 * 1000;
+        const recentDup = ordersRef.current.find(
+          (o) =>
+            o.source !== 'pos' &&
+            String(o.customer?.phone || '').replace(/[^0-9]/g, '').slice(-11) === normalizedPhone &&
+            new Date(o.createdAt).getTime() >= cutoff
+        );
+        if (recentDup) {
+          addSecurityLog(
+            'Duplicate Flood Prevented',
+            `Blocked rapid repeat checkout from ${normalizedPhone} within ${dupMins} min.`,
+            'warning'
+          );
+          throw new Error(
+            t(
+              `আপনি ইতিমধ্যে একটি অর্ডার করেছেন। ডুপ্লিকেট এড়াতে অনুগ্রহ করে ${dupMins} মিনিট পর আবার চেষ্টা করুন।`,
+              `Duplicate order guard active. Please wait ${dupMins} minutes before placing another order.`
+            )
+          );
+        }
+      }
+    }
+
     const subtotal = orderData.items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
 
     // Per-product delivery charge calculation (freeShipping or customDeliveryFees or global default)
@@ -4738,6 +4862,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     })
       .then((r) => r.ok)
       .catch(() => false);
+
+    // Optional Hostinger DB auto-mirror (handles both Node MySQL direct & PHP Bridge mode)
+    const hDb = settings.hostingerDbSettings;
+    if (hDb?.enabled && hDb.autoSyncOnOrder) {
+      fetch('/api/database/hostinger/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: newOrder, config: hDb })
+      }).catch(() => {
+        if (hDb.mode === 'php_bridge' && hDb.phpBridgeUrl) {
+          fetch(hDb.phpBridgeUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': hDb.phpBridgeSecret || '' },
+            body: JSON.stringify({ action: 'upsert_order', tablePrefix: hDb.tablePrefix || 'buyone_', order: newOrder })
+          }).catch(() => {});
+        }
+      });
+    }
 
     const allowAdminStatus = isFirebaseAdminConnectedRef.current;
     writeOrderToFirestore(newOrder, allowAdminStatus)
@@ -5390,6 +5532,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteOrder,
         bulkUpdateOrders,
         syncStoreFromServer: () => fetchStoreSnapshotFromServer(false),
+        securityLogs,
+        addSecurityLog,
+        clearSecurityLogs,
         bookOrderCourier,
         sendOrderToSteadfast,
         checkSteadfastDeliveryStatus,

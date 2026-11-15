@@ -77,7 +77,12 @@ import {
   ShoppingBag,
   Cloud,
   Database,
-  Server
+  Server,
+  Lock,
+  ShieldAlert,
+  FileCode2,
+  Link2,
+  Key
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BUSINESS_THEME_PRESETS } from '../../data/initialData';
@@ -206,7 +211,10 @@ export const AdminDashboard: React.FC = () => {
     testFirebaseCloudConnection,
     exportFullDatabaseBackup,
     restoreDatabaseFromBackup,
-    generateBrandColorAttributes
+    generateBrandColorAttributes,
+    securityLogs,
+    addSecurityLog,
+    clearSecurityLogs
   } = useStore();
 
   // Pure language translation helper based on admin language preference
@@ -278,6 +286,7 @@ export const AdminDashboard: React.FC = () => {
     | 'users'
     | 'design_footer'
     | 'firebase_hub'
+    | 'security'
     | 'settings';
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
@@ -323,6 +332,19 @@ export const AdminDashboard: React.FC = () => {
   const [hostingTarget, setHostingTarget] = useState<'vercel' | 'node_vps' | 'firebase_hosting'>('vercel');
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
   const [hostingStatusInfo, setHostingStatusInfo] = useState<{ checked: boolean; expressActive: boolean } | null>(null);
+
+  // Hostinger MySQL / Shared Hosting DB Console State
+  const [hostingerStatus, setHostingerStatus] = useState<{ ok: boolean; message: string; tables?: string[] } | null>(null);
+  const [isHostingerBusy, setIsHostingerBusy] = useState(false);
+
+  // Security Shield Blocklist State
+  const [newBlockedPhone, setNewBlockedPhone] = useState('');
+
+  // UTM Campaign Link Builder State
+  const [utmSource, setUtmSource] = useState('facebook');
+  const [utmMedium, setUtmMedium] = useState('social');
+  const [utmCampaign, setUtmCampaign] = useState('eid-flash-sale');
+  const [utmProductSlug, setUtmProductSlug] = useState('');
 
   // Support Desk unified customer workspace tab
   const [customerConsoleTab, setCustomerConsoleTab] = useState<'call' | 'chat' | 'orders'>('call');
@@ -1186,7 +1208,14 @@ export const AdminDashboard: React.FC = () => {
     { id: 'reviews', labelBn: 'কাস্টমার রিভিউ ও রেটিং', labelEn: 'Customer Reviews', icon: MessageCircle, badge: reviews.length },
     { id: 'users', labelBn: 'কাস্টমার ব্যালেন্স ও স্টাফ টিম', labelEn: 'Customers & Staff', icon: Users, badge: customerAccounts.length + users.length },
     { id: 'design_footer', labelBn: 'স্টোর ডিজাইন ও ফুটার', labelEn: 'Store & Footer', icon: Sliders },
-    { id: 'firebase_hub', labelBn: 'হোস্টিং ও Firebase ডাটাবেস', labelEn: 'Hosting & Firebase DB', icon: Cloud },
+    { id: 'firebase_hub', labelBn: 'হোস্টিং, Hostinger DB ও Firebase', labelEn: 'Hosting, Hostinger DB & Cloud', icon: Cloud },
+    {
+      id: 'security',
+      labelBn: 'ওয়েবসাইট সিকিউরিটি শিল্ড',
+      labelEn: 'Security Shield',
+      icon: ShieldCheck,
+      badge: securityLogs.filter((l) => l.severity === 'blocked').length || undefined
+    },
     { id: 'settings', labelBn: 'পেমেন্ট, ডেলিভারি ও SMTP', labelEn: 'Settings & SMTP', icon: Settings }
   ];
 
@@ -6325,6 +6354,394 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
+              {/* Growth Marketing Engine: Free Shipping Bar, Quantity Bundles & Social Proof FOMO */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 text-xs">
+                {/* 1. Free Shipping Progress Bar */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Truck className="w-4 h-4 text-emerald-400" />
+                      <span>{at('ফ্রি ডেলিভারি প্রোগ্রেস বার', 'Free Shipping Progress Bar')}</span>
+                    </h4>
+                    <input
+                      type="checkbox"
+                      checked={settings.organicMarketing?.freeShippingBar?.enabled ?? true}
+                      onChange={(e) =>
+                        updateSettings({
+                          organicMarketing: {
+                            ...settings.organicMarketing!,
+                            freeShippingBar: {
+                              ...(settings.organicMarketing?.freeShippingBar || {
+                                thresholdBdt: 1500,
+                                messageBn: 'আর মাত্র ৳{remaining} টাকার পণ্য যোগ করলে ফ্রি ডেলিভারি!',
+                                messageEn: 'Add ৳{remaining} more for FREE Delivery!'
+                              }),
+                              enabled: e.target.checked
+                            }
+                          }
+                        })
+                      }
+                      className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    {at('নির্দিষ্ট টাকার বেশি অর্ডার করলে অটোমেটিক ডেলিভারি চার্জ ৳০ হবে এবং কার্টে প্রোগ্রেস বার দেখাবে।', 'Unlocks ৳0 delivery automatically when cart reaches threshold & displays progress bar.')}
+                  </p>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">{at('ন্যূনতম অর্ডার সীমা (৳)', 'Minimum Order Threshold (BDT)')}</label>
+                    <input
+                      type="number"
+                      min={100}
+                      value={settings.organicMarketing?.freeShippingBar?.thresholdBdt ?? 1500}
+                      onChange={(e) =>
+                        updateSettings({
+                          organicMarketing: {
+                            ...settings.organicMarketing!,
+                            freeShippingBar: {
+                              ...(settings.organicMarketing?.freeShippingBar || {
+                                enabled: true,
+                                messageBn: 'আর মাত্র ৳{remaining} টাকার পণ্য যোগ করলে ফ্রি ডেলিভারি!',
+                                messageEn: 'Add ৳{remaining} more for FREE Delivery!'
+                              }),
+                              thresholdBdt: Math.max(100, Number(e.target.value) || 0)
+                            }
+                          }
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">{at('মেসেজ (বাংলা - {remaining} লিখুন)', 'Message BN ({remaining} placeholder)')}</label>
+                    <input
+                      type="text"
+                      value={settings.organicMarketing?.freeShippingBar?.messageBn ?? ''}
+                      onChange={(e) =>
+                        updateSettings({
+                          organicMarketing: {
+                            ...settings.organicMarketing!,
+                            freeShippingBar: {
+                              ...(settings.organicMarketing?.freeShippingBar || {
+                                enabled: true,
+                                thresholdBdt: 1500,
+                                messageEn: 'Add ৳{remaining} more for FREE Delivery!'
+                              }),
+                              messageBn: e.target.value
+                            }
+                          }
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Quantity Bundle Tier Discounts */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Percent className="w-4 h-4 text-amber-400" />
+                      <span>{at('কোয়ান্টিটি বান্ডেল ছাড়', 'Quantity Bundle Discounts')}</span>
+                    </h4>
+                    <input
+                      type="checkbox"
+                      checked={settings.organicMarketing?.bundleDiscount?.enabled ?? true}
+                      onChange={(e) =>
+                        updateSettings({
+                          organicMarketing: {
+                            ...settings.organicMarketing!,
+                            bundleDiscount: {
+                              ...(settings.organicMarketing?.bundleDiscount || {
+                                qty2Percent: 5,
+                                qty3Percent: 10,
+                                badgeBn: 'বেশি কিনলে বেশি ছাড়!',
+                                badgeEn: 'Buy More, Save More!'
+                              }),
+                              enabled: e.target.checked
+                            }
+                          }
+                        })
+                      }
+                      className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    {at('কাস্টমার ২টি বা ৩টি+ পণ্য একসাথে কিনলে অটোমেটিক কার্ট ও চেকআউটে ডিসকাউন্ট পাবে।', 'Automatically applies multi-item discount tiers inside Cart Drawer & 1-Click Checkout.')}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-[10px] text-slate-400 mb-1">{at('২টি পণ্য ছাড় (%)', 'Buy 2+ Off (%)')}</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={50}
+                        value={settings.organicMarketing?.bundleDiscount?.qty2Percent ?? 5}
+                        onChange={(e) =>
+                          updateSettings({
+                            organicMarketing: {
+                              ...settings.organicMarketing!,
+                              bundleDiscount: {
+                                ...(settings.organicMarketing?.bundleDiscount || {
+                                  enabled: true,
+                                  qty3Percent: 10,
+                                  badgeBn: 'বেশি কিনলে বেশি ছাড়!',
+                                  badgeEn: 'Buy More, Save More!'
+                                }),
+                                qty2Percent: Math.max(0, Math.min(50, Number(e.target.value) || 0))
+                              }
+                            }
+                          })
+                        }
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-400 mb-1">{at('৩+ পণ্য ছাড় (%)', 'Buy 3+ Off (%)')}</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={60}
+                        value={settings.organicMarketing?.bundleDiscount?.qty3Percent ?? 10}
+                        onChange={(e) =>
+                          updateSettings({
+                            organicMarketing: {
+                              ...settings.organicMarketing!,
+                              bundleDiscount: {
+                                ...(settings.organicMarketing?.bundleDiscount || {
+                                  enabled: true,
+                                  qty2Percent: 5,
+                                  badgeBn: 'বেশি কিনলে বেশি ছাড়!',
+                                  badgeEn: 'Buy More, Save More!'
+                                }),
+                                qty3Percent: Math.max(0, Math.min(60, Number(e.target.value) || 0))
+                              }
+                            }
+                          })
+                        }
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                      />
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200">
+                    {at(
+                      `বর্তমান নিয়ম: ২ পিসে ${settings.organicMarketing?.bundleDiscount?.qty2Percent ?? 5}% ও ৩+ পিসে ${settings.organicMarketing?.bundleDiscount?.qty3Percent ?? 10}% অটো ছাড়।`,
+                      `Live tiers: Buy 2 = ${settings.organicMarketing?.bundleDiscount?.qty2Percent ?? 5}% off, Buy 3+ = ${settings.organicMarketing?.bundleDiscount?.qty3Percent ?? 10}% off.`
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. Live Social Proof FOMO Ticker */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Flame className="w-4 h-4 text-rose-400" />
+                      <span>{at('লাইভ অর্ডার FOMO টিকার', 'Live Social Proof Ticker')}</span>
+                    </h4>
+                    <input
+                      type="checkbox"
+                      checked={settings.organicMarketing?.socialProofFomo?.enabled ?? true}
+                      onChange={(e) =>
+                        updateSettings({
+                          organicMarketing: {
+                            ...settings.organicMarketing!,
+                            socialProofFomo: {
+                              ...(settings.organicMarketing?.socialProofFomo || {
+                                intervalSeconds: 18,
+                                showRealOrdersOnly: false
+                              }),
+                              enabled: e.target.checked
+                            }
+                          }
+                        })
+                      }
+                      className="w-4 h-4 accent-rose-500 rounded cursor-pointer"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    {at('ভিজিটরদের আস্থা বাড়াতে নিচে-বামে সাম্প্রতিক অর্ডারের ছোট নোটিফিকেশন দেখাবে।', 'Shows discreet bottom-left recent order toast notifications to boost conversion.')}
+                  </p>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">{at('টিকার ইন্টারভ্যাল (সেকেন্ড)', 'Display Interval (Seconds)')}</label>
+                    <input
+                      type="number"
+                      min={6}
+                      max={120}
+                      value={settings.organicMarketing?.socialProofFomo?.intervalSeconds ?? 18}
+                      onChange={(e) =>
+                        updateSettings({
+                          organicMarketing: {
+                            ...settings.organicMarketing!,
+                            socialProofFomo: {
+                              ...(settings.organicMarketing?.socialProofFomo || {
+                                enabled: true,
+                                showRealOrdersOnly: false
+                              }),
+                              intervalSeconds: Math.max(6, Number(e.target.value) || 18)
+                            }
+                          }
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 pt-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.organicMarketing?.socialProofFomo?.showRealOrdersOnly ?? false}
+                      onChange={(e) =>
+                        updateSettings({
+                          organicMarketing: {
+                            ...settings.organicMarketing!,
+                            socialProofFomo: {
+                              ...(settings.organicMarketing?.socialProofFomo || {
+                                enabled: true,
+                                intervalSeconds: 18
+                              }),
+                              showRealOrdersOnly: e.target.checked
+                            }
+                          }
+                        })
+                      }
+                      className="w-3.5 h-3.5 accent-rose-500 rounded"
+                    />
+                    <span className="text-[11px] text-slate-300">{at('শুধুমাত্র আসল অর্ডার থেকেই টিকার দেখাও', 'Use real database orders only')}</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* UTM Campaign Link Builder & 1-Click Catalog CSV Feed */}
+              {(() => {
+                const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://buyonebd.com';
+                const targetPath = utmProductSlug ? `/product/${utmProductSlug}` : '/';
+                const utmParams = new URLSearchParams();
+                if (utmSource.trim()) utmParams.set('utm_source', utmSource.trim());
+                if (utmMedium.trim()) utmParams.set('utm_medium', utmMedium.trim());
+                if (utmCampaign.trim()) utmParams.set('utm_campaign', utmCampaign.trim());
+                const generatedCampaignUrl = `${baseOrigin}${targetPath}${utmParams.toString() ? `?${utmParams.toString()}` : ''}`;
+
+                const handleExportCatalogCsv = () => {
+                  const escapeCsv = (val: string) => `"${String(val || '').replace(/"/g, '""')}"`;
+                  const rows = [
+                    ['id', 'title', 'description', 'availability', 'condition', 'price', 'link', 'image_link', 'brand'].join(','),
+                    ...products.map((p) => {
+                      const slug = p.seo?.slug || p.id;
+                      return [
+                        escapeCsv(p.id),
+                        escapeCsv(p.title),
+                        escapeCsv(p.description || p.titleBn),
+                        p.stock > 0 ? 'in stock' : 'out of stock',
+                        'new',
+                        `${p.price} BDT`,
+                        escapeCsv(`${baseOrigin}/product/${slug}`),
+                        escapeCsv(p.images?.[0] || ''),
+                        escapeCsv(settings.storeName || 'BuyOne BD')
+                      ].join(',');
+                    })
+                  ].join('\n');
+
+                  const blob = new Blob([rows], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `buyonebd-commerce-catalog-${new Date().toISOString().split('T')[0]}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  addToast('success', at('ক্যাটালগ CSV ডাউনলোড হয়েছে!', 'Catalog CSV Exported!'), at(`${products.length}টি পণ্য Meta/Google ফিডে এক্সপোর্ট হয়েছে।`, `Exported ${products.length} products.`));
+                };
+
+                return (
+                  <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                          <Link2 className="w-4 h-4 text-sky-400" />
+                          <span>{at('UTM ক্যাম্পেইন লিংক বিল্ডার ও প্রোডাক্ট ফিড', 'UTM Campaign Link Builder & Catalog CSV Feed')}</span>
+                        </h4>
+                        <p className="text-[11px] text-slate-400">
+                          {at('ফেসবুক পেজ, ইউটিউব ও হোয়াটসঅ্যাপ ট্র্যাফিক আলাদাভাবে ট্র্যাক করুন এবং Meta/Google ক্যাটালগ ডাউনলোড করুন', 'Track exact social campaign referrals & export 1-click Meta / Google Merchant catalog CSV')}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleExportCatalogCsv}
+                        className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>{at(`ক্যাটালগ CSV ডাউনলোড (${products.length})`, `Export Catalog CSV (${products.length})`)}</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">{at('পণ্য বা হোমপেজ', 'Landing Target')}</label>
+                        <select
+                          value={utmProductSlug}
+                          onChange={(e) => setUtmProductSlug(e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                        >
+                          <option value="">{at('হোমপেজ (Storefront Home)', 'Storefront Home (/)')}</option>
+                          {products.map((p) => (
+                            <option key={p.id} value={p.seo?.slug || p.id}>
+                              {p.titleBn || p.title}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">utm_source</label>
+                        <select
+                          value={utmSource}
+                          onChange={(e) => setUtmSource(e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                        >
+                          <option value="facebook">facebook</option>
+                          <option value="whatsapp">whatsapp</option>
+                          <option value="youtube">youtube</option>
+                          <option value="tiktok">tiktok</option>
+                          <option value="instagram">instagram</option>
+                          <option value="sms">sms</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">utm_medium</label>
+                        <input
+                          type="text"
+                          value={utmMedium}
+                          onChange={(e) => setUtmMedium(e.target.value)}
+                          placeholder="social / cpc / organic"
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">utm_campaign</label>
+                        <input
+                          type="text"
+                          value={utmCampaign}
+                          onChange={(e) => setUtmCampaign(e.target.value)}
+                          placeholder="eid-flash-sale"
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                      <code className="text-[11px] font-mono text-emerald-300 break-all">{generatedCampaignUrl}</code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(generatedCampaignUrl).catch(() => {});
+                          addToast('success', at('লিংক কপি হয়েছে!', 'Campaign URL Copied!'), generatedCampaignUrl);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 shrink-0 cursor-pointer"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>{at('লিংক কপি করুন', 'Copy URL')}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <button
                 onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('মার্কেটিং টুলস সেটিংস সফলভাবে আপডেট হয়েছে।', 'Marketing settings saved.'))}
                 className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
@@ -9803,6 +10220,848 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     );
                   })()}
+                </div>
+
+                {/* Hostinger MySQL & Shared Hosting Database Setup Console */}
+                {(() => {
+                  const hDb = settings.hostingerDbSettings || {
+                    enabled: false,
+                    mode: 'mysql_direct' as const,
+                    host: 'localhost',
+                    port: 3306,
+                    database: '',
+                    username: '',
+                    password: '',
+                    tablePrefix: 'buyone_',
+                    ssl: false,
+                    autoSyncOnOrder: true,
+                    phpBridgeUrl: '',
+                    phpBridgeSecret: ''
+                  };
+
+                  const updateHostingerField = (patch: Partial<typeof hDb>) => {
+                    updateSettings({
+                      hostingerDbSettings: {
+                        ...hDb,
+                        ...patch
+                      }
+                    });
+                  };
+
+                  const generateHostingerSql = () => {
+                    const p = (hDb.tablePrefix || 'buyone_').replace(/[^a-zA-Z0-9_]/g, '') || 'buyone_';
+                    return `-- BuyOne BD Hostinger MySQL Database Schema (${new Date().toISOString()})\n` +
+                      `CREATE TABLE IF NOT EXISTS \`${p}store_kv\` (\n` +
+                      `  kv_key VARCHAR(120) PRIMARY KEY,\n` +
+                      `  kv_value LONGTEXT NOT NULL,\n` +
+                      `  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP\n` +
+                      `) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;\n\n` +
+                      `CREATE TABLE IF NOT EXISTS \`${p}orders\` (\n` +
+                      `  id VARCHAR(80) PRIMARY KEY,\n` +
+                      `  customer_name VARCHAR(160),\n` +
+                      `  customer_phone VARCHAR(32),\n` +
+                      `  district VARCHAR(120),\n` +
+                      `  total DECIMAL(12,2) DEFAULT 0,\n` +
+                      `  status VARCHAR(32),\n` +
+                      `  source VARCHAR(16),\n` +
+                      `  payload_json LONGTEXT NOT NULL,\n` +
+                      `  created_at VARCHAR(64),\n` +
+                      `  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP\n` +
+                      `) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;\n\n` +
+                      `CREATE TABLE IF NOT EXISTS \`${p}products\` (\n` +
+                      `  id VARCHAR(80) PRIMARY KEY,\n` +
+                      `  title VARCHAR(255),\n` +
+                      `  category VARCHAR(120),\n` +
+                      `  price DECIMAL(12,2) DEFAULT 0,\n` +
+                      `  stock INT DEFAULT 0,\n` +
+                      `  barcode VARCHAR(120),\n` +
+                      `  payload_json LONGTEXT NOT NULL,\n` +
+                      `  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP\n` +
+                      `) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;\n\n` +
+                      `CREATE TABLE IF NOT EXISTS \`${p}customers\` (\n` +
+                      `  phone VARCHAR(32) PRIMARY KEY,\n` +
+                      `  name VARCHAR(160),\n` +
+                      `  email VARCHAR(160),\n` +
+                      `  wallet_balance DECIMAL(12,2) DEFAULT 0,\n` +
+                      `  loyalty_points INT DEFAULT 0,\n` +
+                      `  payload_json LONGTEXT NOT NULL,\n` +
+                      `  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP\n` +
+                      `) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;\n`;
+                  };
+
+                  const generateHostingerPhpBridge = () => {
+                    const sec = hDb.phpBridgeSecret || 'change-this-secret-token-now';
+                    return `<?php
+// BuyOne BD — Hostinger Shared Hosting MySQL Bridge
+// Upload this file to public_html/api/hostinger-bridge.php via Hostinger File Manager
+header('Content-Type: application/json; charset=utf-8');
+header('X-Content-Type-Options: nosniff');
+
+$DB_HOST = ${JSON.stringify(hDb.host || 'localhost')};
+$DB_NAME = ${JSON.stringify(hDb.database || 'u123456789_buyone')};
+$DB_USER = ${JSON.stringify(hDb.username || 'u123456789_admin')};
+$DB_PASS = ${JSON.stringify(hDb.password || 'YOUR_HOSTINGER_DB_PASSWORD')};
+$BRIDGE_SECRET = ${JSON.stringify(sec)};
+
+$hdrSecret = $_SERVER['HTTP_X_BRIDGE_SECRET'] ?? '';
+if (!$BRIDGE_SECRET || !hash_equals($BRIDGE_SECRET, $hdrSecret)) {
+  http_response_code(403);
+  echo json_encode(['success' => false, 'error' => 'Unauthorized bridge secret']);
+  exit;
+}
+
+try {
+  $pdo = new PDO("mysql:host=$DB_HOST;dbname=$DB_NAME;charset=utf8mb4", $DB_USER, $DB_PASS, [
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+  ]);
+} catch (Exception $e) {
+  http_response_code(500);
+  echo json_encode(['success' => false, 'error' => 'MySQL connect failed: ' . $e->getMessage()]);
+  exit;
+}
+
+$input = json_decode(file_get_contents('php://input'), true) ?: [];
+$action = $input['action'] ?? 'ping';
+$prefix = preg_replace('/[^a-zA-Z0-9_]/', '', $input['tablePrefix'] ?? 'buyone_') ?: 'buyone_';
+
+if ($action === 'ping') {
+  $ver = $pdo->query("SELECT VERSION() AS v")->fetch()['v'] ?? 'MySQL';
+  $tables = $pdo->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+  echo json_encode(['success' => true, 'version' => $ver, 'tables' => $tables]);
+  exit;
+}
+
+if ($action === 'init_schema') {
+  $pdo->exec("CREATE TABLE IF NOT EXISTS \`{$prefix}store_kv\` (kv_key VARCHAR(120) PRIMARY KEY, kv_value LONGTEXT NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  $pdo->exec("CREATE TABLE IF NOT EXISTS \`{$prefix}orders\` (id VARCHAR(80) PRIMARY KEY, customer_name VARCHAR(160), customer_phone VARCHAR(32), district VARCHAR(120), total DECIMAL(12,2) DEFAULT 0, status VARCHAR(32), source VARCHAR(16), payload_json LONGTEXT NOT NULL, created_at VARCHAR(64), updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  $pdo->exec("CREATE TABLE IF NOT EXISTS \`{$prefix}products\` (id VARCHAR(80) PRIMARY KEY, title VARCHAR(255), category VARCHAR(120), price DECIMAL(12,2) DEFAULT 0, stock INT DEFAULT 0, barcode VARCHAR(120), payload_json LONGTEXT NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  $pdo->exec("CREATE TABLE IF NOT EXISTS \`{$prefix}customers\` (phone VARCHAR(32) PRIMARY KEY, name VARCHAR(160), email VARCHAR(160), wallet_balance DECIMAL(12,2) DEFAULT 0, loyalty_points INT DEFAULT 0, payload_json LONGTEXT NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  echo json_encode(['success' => true, 'tables' => ["{$prefix}store_kv", "{$prefix}orders", "{$prefix}products", "{$prefix}customers"]]);
+  exit;
+}
+
+if ($action === 'sync_push') {
+  $payload = $input['payload'] ?? [];
+  $stmt = $pdo->prepare("INSERT INTO \`{$prefix}store_kv\` (kv_key, kv_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE kv_value = VALUES(kv_value)");
+  $stmt->execute(['full_backup_json', json_encode($payload, JSON_UNESCAPED_UNICODE)]);
+  $oStmt = $pdo->prepare("INSERT INTO \`{$prefix}orders\` (id, customer_name, customer_phone, district, total, status, source, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name), customer_phone=VALUES(customer_phone), total=VALUES(total), status=VALUES(status), payload_json=VALUES(payload_json)");
+  foreach (($payload['orders'] ?? []) as $o) {
+    if (empty($o['id'])) continue;
+    $oStmt->execute([$o['id'], $o['customer']['name'] ?? 'Customer', $o['customer']['phone'] ?? '', $o['customer']['district'] ?? '', $o['pricing']['total'] ?? 0, $o['status'] ?? 'pending', $o['source'] ?? 'online', json_encode($o, JSON_UNESCAPED_UNICODE), $o['createdAt'] ?? date('c')]);
+  }
+  $pStmt = $pdo->prepare("INSERT INTO \`{$prefix}products\` (id, title, category, price, stock, barcode, payload_json) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE title=VALUES(title), price=VALUES(price), stock=VALUES(stock), payload_json=VALUES(payload_json)");
+  foreach (($payload['products'] ?? []) as $pr) {
+    if (empty($pr['id'])) continue;
+    $pStmt->execute([$pr['id'], $pr['title'] ?? 'Product', $pr['category'] ?? '', $pr['price'] ?? 0, $pr['stock'] ?? 0, $pr['barcode'] ?? ($pr['sku'] ?? ''), json_encode($pr, JSON_UNESCAPED_UNICODE)]);
+  }
+  echo json_encode(['success' => true, 'counts' => ['orders' => count($payload['orders'] ?? []), 'products' => count($payload['products'] ?? [])]]);
+  exit;
+}
+
+if ($action === 'sync_pull') {
+  $row = $pdo->query("SELECT kv_value FROM \`{$prefix}store_kv\` WHERE kv_key = 'full_backup_json'")->fetch();
+  $snap = $row ? json_decode($row['kv_value'], true) : [];
+  $ordRows = $pdo->query("SELECT payload_json FROM \`{$prefix}orders\` ORDER BY updated_at DESC")->fetchAll();
+  if ($ordRows) {
+    $snap['orders'] = array_map(fn($r) => json_decode($r['payload_json'], true), $ordRows);
+  }
+  echo json_encode(['success' => true, 'payload' => $snap]);
+  exit;
+}
+
+if ($action === 'upsert_order') {
+  $o = $input['order'] ?? [];
+  if (empty($o['id'])) { echo json_encode(['success' => false, 'error' => 'Missing order id']); exit; }
+  $oStmt = $pdo->prepare("INSERT INTO \`{$prefix}orders\` (id, customer_name, customer_phone, district, total, status, source, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name), status=VALUES(status), payload_json=VALUES(payload_json)");
+  $oStmt->execute([$o['id'], $o['customer']['name'] ?? 'Customer', $o['customer']['phone'] ?? '', $o['customer']['district'] ?? '', $o['pricing']['total'] ?? 0, $o['status'] ?? 'pending', $o['source'] ?? 'online', json_encode($o, JSON_UNESCAPED_UNICODE), $o['createdAt'] ?? date('c')]);
+  echo json_encode(['success' => true, 'orderId' => $o['id']]);
+  exit;
+}
+
+echo json_encode(['success' => false, 'error' => 'Unknown action']);
+`;
+                  };
+
+                  const downloadTextFile = (filename: string, content: string, mime = 'text/plain;charset=utf-8;') => {
+                    const blob = new Blob([content], { type: mime });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  };
+
+                  const runHostingerAction = async (endpoint: 'test' | 'init-schema' | 'sync-push' | 'sync-pull') => {
+                    setIsHostingerBusy(true);
+                    try {
+                      const bodyPayload: any = { config: hDb };
+                      if (endpoint === 'sync-push') {
+                        bodyPayload.payload = exportFullDatabaseBackup();
+                      }
+                      const resp = await fetch(`/api/database/hostinger/${endpoint}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(bodyPayload)
+                      });
+                      const data = await resp.json().catch(() => null);
+                      if (!resp.ok || !data?.success) {
+                        const errMsg = data?.error || `HTTP ${resp.status}`;
+                        setHostingerStatus({ ok: false, message: errMsg });
+                        addSecurityLog('Hostinger DB Action Failed', `${endpoint}: ${errMsg}`, 'warning');
+                        addToast('error', at('Hostinger DB ত্রুটি', 'Hostinger DB Error'), errMsg);
+                        return;
+                      }
+                      if (endpoint === 'test') {
+                        setHostingerStatus({
+                          ok: true,
+                          message: `${at('কানেকশন সফল!', 'Connected!')} (${data.version || 'MySQL'} — ${data.database || hDb.database})`,
+                          tables: data.tables || []
+                        });
+                        addToast('success', at('Hostinger MySQL সংযুক্ত!', 'Hostinger MySQL Connected!'), data.version || 'OK');
+                      } else if (endpoint === 'init-schema') {
+                        setHostingerStatus({
+                          ok: true,
+                          message: at('SQL টেবিল সফলভাবে তৈরি হয়েছে!', 'Hostinger MySQL tables initialized!'),
+                          tables: data.tables || []
+                        });
+                        addToast('success', at('টেবিল তৈরি সফল!', 'Tables Created!'), (data.tables || []).join(', '));
+                      } else if (endpoint === 'sync-push') {
+                        updateHostingerField({ lastSyncedAt: data.syncedAt || new Date().toISOString() });
+                        setHostingerStatus({
+                          ok: true,
+                          message: at(
+                            `সকল ডাটা Hostinger MySQL-এ সিঙ্ক হয়েছে! (অর্ডার: ${data.counts?.orders ?? orders.length}, পণ্য: ${data.counts?.products ?? products.length})`,
+                            `Pushed store data to Hostinger MySQL (Orders: ${data.counts?.orders ?? orders.length}, Products: ${data.counts?.products ?? products.length}).`
+                          )
+                        });
+                        addSecurityLog('Hostinger DB Push', `Synced ${data.counts?.orders ?? orders.length} orders to Hostinger MySQL`, 'info');
+                        addToast('success', at('Hostinger DB পুশ সফল!', 'Hostinger Push Complete!'), '');
+                      } else if (endpoint === 'sync-pull') {
+                        if (data.payload) {
+                          restoreDatabaseFromBackup(data.payload, true);
+                          setHostingerStatus({
+                            ok: true,
+                            message: at('Hostinger MySQL থেকে সকল ডাটা ড্যাশবোর্ডে লোড হয়েছে!', 'Pulled & restored live data from Hostinger MySQL!')
+                          });
+                          addSecurityLog('Hostinger DB Pull', 'Restored store snapshot from Hostinger MySQL', 'info');
+                          addToast('success', at('Hostinger থেকে ডাটা লোড সফল!', 'Restored from Hostinger!'), '');
+                        }
+                      }
+                    } catch (err: any) {
+                      const msg = err?.message || 'Network request failed';
+                      setHostingerStatus({ ok: false, message: msg });
+                      addToast('error', at('Hostinger নেটওয়ার্ক ত্রুটি', 'Hostinger Network Error'), msg);
+                    } finally {
+                      setIsHostingerBusy(false);
+                    }
+                  };
+
+                  return (
+                    <div className="p-5 rounded-2xl bg-slate-900 border border-violet-500/30 space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center">
+                            <Database className="w-5 h-5 text-violet-300" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                              <span>{at('Hostinger MySQL ও Shared Hosting ডাটাবেস সেটআপ', 'Hostinger MySQL & Shared Hosting Database')}</span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${hDb.enabled ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'}`}>
+                                {hDb.enabled ? 'ACTIVE' : 'STANDBY'}
+                              </span>
+                            </h4>
+                            <p className="text-[11px] text-slate-400">
+                              {at('আপনার Hostinger hPanel MySQL ডাটাবেসে সরাসরি (Node VPS) অথবা PHP Bridge দিয়ে সব অর্ডার ও পণ্য সেভ করুন।', 'Connect Hostinger hPanel MySQL via Direct TCP (VPS) or 1-Click Shared Hosting PHP Bridge.')}
+                            </p>
+                          </div>
+                        </div>
+
+                        <label className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer text-xs">
+                          <input
+                            type="checkbox"
+                            checked={hDb.enabled}
+                            onChange={(e) => updateHostingerField({ enabled: e.target.checked })}
+                            className="w-4 h-4 accent-violet-500 rounded"
+                          />
+                          <span className="font-bold text-white">{at('Hostinger Sync চালু', 'Enable Hostinger Sync')}</span>
+                        </label>
+                      </div>
+
+                      {/* Connection Mode Selector */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => updateHostingerField({ mode: 'mysql_direct' })}
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                            hDb.mode === 'mysql_direct'
+                              ? 'bg-violet-500/15 border-violet-500/50 text-white'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="font-bold flex items-center gap-1.5">
+                            <Server className="w-3.5 h-3.5 text-violet-400" />
+                            <span>{at('১. Direct Hostinger MySQL (Remote MySQL / VPS)', '1. Direct Hostinger MySQL (TCP / Remote MySQL)')}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            {at('hPanel > Remote MySQL চালু করে Host, DB, User ও Password দিয়ে সরাসরি কানেক্ট করুন।', 'Connect directly with MySQL Host (e.g. srvXXXX.hstgr.io), Database, User & Password.')}
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => updateHostingerField({ mode: 'php_bridge' })}
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                            hDb.mode === 'php_bridge'
+                              ? 'bg-emerald-500/15 border-emerald-500/50 text-white'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="font-bold flex items-center gap-1.5">
+                            <FileCode2 className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>{at('২. Hostinger Shared Hosting PHP Bridge (সবার জন্য সহজ)', '2. Hostinger Shared Hosting PHP Bridge (Works on Any Plan)')}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            {at('hostinger-bridge.php ডাউনলোড করে আপনার ডোমেইনের public_html/api/ ফোল্ডারে আপলোড করুন।', 'Upload downloadable hostinger-bridge.php to public_html/api/ for instant MySQL API.')}
+                          </p>
+                        </button>
+                      </div>
+
+                      {/* Credentials Form */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">{at('MySQL Host (hPanel Remote/Localhost)', 'MySQL Host')}</label>
+                          <input
+                            type="text"
+                            value={hDb.host}
+                            onChange={(e) => updateHostingerField({ host: e.target.value })}
+                            placeholder="localhost or srv1234.hstgr.io"
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">{at('Port', 'Port')}</label>
+                          <input
+                            type="number"
+                            value={hDb.port}
+                            onChange={(e) => updateHostingerField({ port: Number(e.target.value) || 3306 })}
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">{at('টেবিল প্রিফিক্স (Table Prefix)', 'Table Prefix')}</label>
+                          <input
+                            type="text"
+                            value={hDb.tablePrefix}
+                            onChange={(e) => updateHostingerField({ tablePrefix: e.target.value })}
+                            placeholder="buyone_"
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">{at('MySQL Database Name (uXXXXXX_...)', 'MySQL Database Name')}</label>
+                          <input
+                            type="text"
+                            value={hDb.database}
+                            onChange={(e) => updateHostingerField({ database: e.target.value })}
+                            placeholder="u123456789_buyone"
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">{at('MySQL Username (uXXXXXX_...)', 'MySQL Username')}</label>
+                          <input
+                            type="text"
+                            value={hDb.username}
+                            onChange={(e) => updateHostingerField({ username: e.target.value })}
+                            placeholder="u123456789_admin"
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">{at('MySQL Password', 'MySQL Password')}</label>
+                          <input
+                            type="password"
+                            value={hDb.password}
+                            onChange={(e) => updateHostingerField({ password: e.target.value })}
+                            placeholder="••••••••••••"
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      {hDb.mode === 'php_bridge' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs p-3.5 rounded-xl bg-slate-950 border border-emerald-500/30">
+                          <div>
+                            <label className="block text-[10px] text-emerald-300 font-bold mb-1">Hostinger PHP Bridge Endpoint URL</label>
+                            <input
+                              type="url"
+                              value={hDb.phpBridgeUrl || ''}
+                              onChange={(e) => updateHostingerField({ phpBridgeUrl: e.target.value })}
+                              placeholder="https://yourdomain.com/api/hostinger-bridge.php"
+                              className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-emerald-300 font-bold mb-1">Bridge Security Secret Key (X-Bridge-Secret)</label>
+                            <input
+                              type="password"
+                              value={hDb.phpBridgeSecret || ''}
+                              onChange={(e) => updateHostingerField({ phpBridgeSecret: e.target.value })}
+                              placeholder="Enter strong random secret key..."
+                              className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap items-center gap-4 text-xs">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={hDb.autoSyncOnOrder}
+                            onChange={(e) => updateHostingerField({ autoSyncOnOrder: e.target.checked })}
+                            className="w-3.5 h-3.5 accent-emerald-500 rounded"
+                          />
+                          <span className="text-slate-300">{at('প্রতিটি নতুন অর্ডার অটোমেটিক Hostinger DB-তে সেভ করো', 'Auto-Mirror New Orders to Hostinger MySQL')}</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={hDb.ssl}
+                            onChange={(e) => updateHostingerField({ ssl: e.target.checked })}
+                            className="w-3.5 h-3.5 accent-violet-500 rounded"
+                          />
+                          <span className="text-slate-300">{at('SSL (TLS) এনক্রিপ্টেড কানেকশন', 'Require MySQL SSL')}</span>
+                        </label>
+                        {hDb.lastSyncedAt && (
+                          <span className="text-[10px] font-mono text-emerald-400">
+                            Last Synced: {new Date(hDb.lastSyncedAt).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex flex-wrap items-center gap-2.5 pt-1 text-xs">
+                        <button
+                          type="button"
+                          disabled={isHostingerBusy}
+                          onClick={() => runHostingerAction('test')}
+                          className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isHostingerBusy ? 'animate-spin' : ''}`} />
+                          <span>{at('কানেকশন টেস্ট', 'Test Connection')}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isHostingerBusy}
+                          onClick={() => runHostingerAction('init-schema')}
+                          className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Database className="w-3.5 h-3.5" />
+                          <span>{at('SQL টেবিল তৈরি করুন', 'Create SQL Tables')}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isHostingerBusy}
+                          onClick={() => runHostingerAction('sync-push')}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>{at('Hostinger DB-তে সব ডাটা পাঠান', 'Push All Data to Hostinger')}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isHostingerBusy}
+                          onClick={() => runHostingerAction('sync-pull')}
+                          className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>{at('Hostinger থেকে রিস্টোর করুন', 'Pull / Restore from Hostinger')}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            downloadTextFile('hostinger-bridge.php', generateHostingerPhpBridge(), 'application/x-httpd-php');
+                            addToast('success', at('hostinger-bridge.php ডাউনলোড হয়েছে!', 'hostinger-bridge.php Downloaded!'), at('Hostinger public_html/api/ ফোল্ডারে আপলোড করুন।', 'Upload to public_html/api/hostinger-bridge.php'));
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-300 font-bold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <FileCode2 className="w-3.5 h-3.5" />
+                          <span>{at('hostinger-bridge.php ডাউনলোড', 'Download PHP Bridge')}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            downloadTextFile('hostinger-schema.sql', generateHostingerSql(), 'application/sql');
+                            addToast('success', at('hostinger-schema.sql ডাউনলোড হয়েছে!', 'SQL Schema Downloaded!'), at('phpMyAdmin > Import এ আপলোড করতে পারবেন।', 'Import directly inside Hostinger phpMyAdmin.'));
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-300 font-bold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>{at('hostinger-schema.sql ডাউনলোড', 'Download .SQL File')}</span>
+                        </button>
+                      </div>
+
+                      {hostingerStatus && (
+                        <div className={`p-3.5 rounded-xl border text-xs flex flex-col gap-1 ${
+                          hostingerStatus.ok
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                            : 'bg-rose-500/10 border-rose-500/30 text-rose-200'
+                        }`}>
+                          <div className="font-bold flex items-center gap-2">
+                            {hostingerStatus.ok ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertTriangle className="w-4 h-4 text-rose-400" />}
+                            <span>{hostingerStatus.message}</span>
+                          </div>
+                          {hostingerStatus.tables && hostingerStatus.tables.length > 0 && (
+                            <p className="text-[11px] font-mono text-slate-300 pl-6">
+                              Tables: {hostingerStatus.tables.join(', ')}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })()}
+
+          {/* TAB: WEBSITE SECURITY SHIELD & AUDIT LOG */}
+          {activeTab === 'security' && (() => {
+            const sec = settings.securitySettings || {
+              loginLockoutEnabled: true,
+              maxLoginAttempts: 5,
+              lockoutMinutes: 15,
+              adminPinEnabled: false,
+              adminPin: '',
+              checkoutHoneypotEnabled: true,
+              checkoutRateLimitSeconds: 20,
+              blockDuplicateOrdersMinutes: 5,
+              blockedPhones: [],
+              enableStrictHeaders: true,
+              maskPublicSecrets: true
+            };
+
+            const updateSec = (patch: Partial<typeof sec>) => {
+              const nextSec = { ...sec, ...patch };
+              updateSettings({
+                securitySettings: nextSec,
+                organicMarketing: {
+                  ...settings.organicMarketing!,
+                  checkoutGuard: {
+                    honeypotEnabled: nextSec.checkoutHoneypotEnabled,
+                    blockDuplicateOrdersMinutes: nextSec.blockDuplicateOrdersMinutes,
+                    checkoutRateLimitSeconds: nextSec.checkoutRateLimitSeconds
+                  }
+                }
+              });
+            };
+
+            const activeShieldsCount = [
+              sec.enableStrictHeaders,
+              sec.maskPublicSecrets,
+              sec.loginLockoutEnabled,
+              sec.adminPinEnabled && Boolean(sec.adminPin),
+              sec.checkoutHoneypotEnabled,
+              sec.blockDuplicateOrdersMinutes > 0
+            ].filter(Boolean).length;
+
+            return (
+              <div className="space-y-6 animate-fade-in">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xl font-black text-white flex items-center gap-2">
+                      <ShieldCheck className="w-6 h-6 text-emerald-400" />
+                      <span>{at('ওয়েবসাইট সিকিউরিটি শিল্ড ও ফায়ারওয়াল', 'Website Security Shield & Fraud Firewall')}</span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      {at('অ্যাডমিন ব্রুট-ফোর্স লকআউট, ২-ধাপের পিন, সিক্রেট কী মাস্কিং, বট হানিপট ও ফেক অর্ডার ব্লকলিস্ট নিয়ন্ত্রণ করুন।', 'Protect admin access, mask public API secrets, block bot checkout spam & manage blocked phone blacklist.')}
+                    </p>
+                  </div>
+                  <div className="px-4 py-2 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center gap-2 text-xs">
+                    <Lock className="w-4 h-4 text-emerald-400" />
+                    <span className="font-black text-emerald-300">
+                      {at(`সক্রিয় প্রতিরক্ষা: ${activeShieldsCount} / ৬`, `Active Defenses: ${activeShieldsCount} / 6`)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Security Matrix Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                  <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white">HTTP Security Headers</span>
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">ACTIVE</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">nosniff, XSS protection, Referrer-Policy, Permissions-Policy & powered-by hidden.</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white">API Rate Limiter</span>
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">ACTIVE</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">Sliding-window flood limits on /api/orders, /api/email, /api/database & /api/chat.</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white">Public Secret Masking</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${sec.maskPublicSecrets ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                        {sec.maskPublicSecrets ? 'LOCKED' : 'OFF'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">Hides SMTP passwords, Hostinger DB credentials, Courier secrets & AI API keys from public API.</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white">Blocked Threat Events</span>
+                      <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[10px] font-bold font-mono">
+                        {securityLogs.filter((l) => l.severity === 'blocked').length}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">Real-time count of blocked brute-force, honeypot bot, or blacklisted phone attempts.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-xs">
+                  {/* Admin Brute-Force Lockout & 2-Step PIN */}
+                  <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Key className="w-4 h-4 text-emerald-400" />
+                      <span>{at('অ্যাডমিন লগইন ও পিন সুরক্ষা', 'Admin Login Lockout & 2nd-Step PIN')}</span>
+                    </h4>
+
+                    <label className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
+                      <div>
+                        <p className="font-bold text-white">{at('ব্রুট-ফোর্স লগইন লকআউট', 'Brute-Force Login Lockout')}</p>
+                        <p className="text-[11px] text-slate-400">{at('বারবার ভুল পাসওয়ার্ড দিলে নির্দিষ্ট সময় লগইন লক হয়ে যাবে।', 'Temporarily locks admin login after repeated failed attempts.')}</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={sec.loginLockoutEnabled}
+                        onChange={(e) => updateSec({ loginLockoutEnabled: e.target.checked })}
+                        className="w-4 h-4 accent-emerald-500 rounded"
+                      />
+                    </label>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">{at('সর্বোচ্চ ভুল চেষ্টা', 'Max Failed Attempts')}</label>
+                        <input
+                          type="number"
+                          min={2}
+                          max={20}
+                          value={sec.maxLoginAttempts}
+                          onChange={(e) => updateSec({ maxLoginAttempts: Math.max(2, Number(e.target.value) || 5) })}
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">{at('লকআউট সময় (মিনিট)', 'Lockout Duration (Min)')}</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={120}
+                          value={sec.lockoutMinutes}
+                          onChange={(e) => updateSec({ lockoutMinutes: Math.max(1, Number(e.target.value) || 15) })}
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <label className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
+                      <div>
+                        <p className="font-bold text-white">{at('অতিরিক্ত অ্যাডমিন পিন ভেরিফিকেশন', 'Require Extra Admin PIN (2FA)')}</p>
+                        <p className="text-[11px] text-slate-400">{at('পাসওয়ার্ড ছাড়াও ৪-৮ ডিজিটের সিক্রেট পিন চাইবে।', 'Requires secret numeric PIN alongside password on /hossain login.')}</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={sec.adminPinEnabled}
+                        onChange={(e) => updateSec({ adminPinEnabled: e.target.checked })}
+                        className="w-4 h-4 accent-emerald-500 rounded"
+                      />
+                    </label>
+
+                    {sec.adminPinEnabled && (
+                      <div>
+                        <label className="block text-[10px] text-amber-300 font-bold mb-1">{at('অ্যাডমিন সিক্রেট পিন সেট করুন', 'Set Secret Admin PIN')}</label>
+                        <input
+                          type="password"
+                          value={sec.adminPin}
+                          onChange={(e) => updateSec({ adminPin: e.target.value })}
+                          placeholder="e.g. 246810"
+                          className="w-full px-3 py-2 bg-slate-950 border border-amber-500/40 rounded-xl text-white font-mono"
+                        />
+                      </div>
+                    )}
+
+                    <label className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
+                      <div>
+                        <p className="font-bold text-white">{at('পাবলিক API-তে পাসওয়ার্ড/কী মাস্ক রাখুন', 'Mask Private Secrets on Public Store Sync')}</p>
+                        <p className="text-[11px] text-slate-400">{at('ক্রেতাদের ব্রাউজারে SMTP পাসওয়ার্ড, কুরিয়ার কী ও MySQL পাসওয়ার্ড পাঠাবে না।', 'Strips private API tokens & DB passwords from unauthenticated GET responses.')}</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={sec.maskPublicSecrets}
+                        onChange={(e) => updateSec({ maskPublicSecrets: e.target.checked })}
+                        className="w-4 h-4 accent-emerald-500 rounded"
+                      />
+                    </label>
+                  </div>
+
+                  {/* Checkout Anti-Bot & Blacklisted Phone Firewall */}
+                  <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <ShieldAlert className="w-4 h-4 text-rose-400" />
+                      <span>{at('চেকআউট বট ফায়ারওয়াল ও ফোন ব্লকলিস্ট', 'Checkout Anti-Bot & Phone Blacklist')}</span>
+                    </h4>
+
+                    <label className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
+                      <div>
+                        <p className="font-bold text-white">{at('অদৃশ্য বট হানিপট ট্র্যাপ (Honeypot)', 'Invisible Checkout Honeypot Trap')}</p>
+                        <p className="text-[11px] text-slate-400">{at('অটোমেটেড স্প্যাম বট চেকআউট ফর্ম পূরণ করলে অর্ডার ব্লক করবে।', 'Silently detects & blocks automated spam bots filling hidden checkout fields.')}</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={sec.checkoutHoneypotEnabled}
+                        onChange={(e) => updateSec({ checkoutHoneypotEnabled: e.target.checked })}
+                        className="w-4 h-4 accent-rose-500 rounded"
+                      />
+                    </label>
+
+                    <div>
+                      <label className="block text-[10px] text-slate-400 mb-1">
+                        {at('ডুপ্লিকেট ফেক অর্ডার ফ্লাড গার্ড (মিনিট)', 'Duplicate Order Flood Guard (Minutes)')}
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={60}
+                        value={sec.blockDuplicateOrdersMinutes}
+                        onChange={(e) => updateSec({ blockDuplicateOrdersMinutes: Math.max(0, Number(e.target.value) || 0) })}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        {at('একই নাম্বার থেকে এত মিনিটের মধ্যে একাধিক অনলাইন অর্ডার ব্লক করবে (0 = বন্ধ)।', 'Prevents repeat rapid orders from the same phone within X minutes (0 = disabled).')}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2 pt-1">
+                      <label className="block text-[10px] text-rose-300 font-bold">
+                        {at('ব্লকড মোবাইল নাম্বার তালিকা (ফেক অর্ডার ব্লকলিস্ট)', 'Blacklisted Phone Numbers (Rejected at Checkout & API)')}
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="tel"
+                          value={newBlockedPhone}
+                          onChange={(e) => setNewBlockedPhone(e.target.value)}
+                          placeholder="01XXXXXXXXX"
+                          className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const clean = newBlockedPhone.replace(/[^0-9]/g, '').slice(-11);
+                            if (clean.length < 10) {
+                              addToast('error', at('সঠিক নাম্বার দিন', 'Invalid Phone'), at('কমপক্ষে ১০-১১ ডিজিটের নাম্বার লিখুন।', 'Enter a valid 11-digit phone number.'));
+                              return;
+                            }
+                            if ((sec.blockedPhones || []).includes(clean)) return;
+                            updateSec({ blockedPhones: [clean, ...(sec.blockedPhones || [])] });
+                            addSecurityLog('Phone Blacklisted', `Blocked checkout access for ${clean}`, 'blocked');
+                            setNewBlockedPhone('');
+                            addToast('success', at('নাম্বার ব্লক হয়েছে!', 'Phone Blacklisted!'), clean);
+                          }}
+                          className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>{at('ব্লক করুন', 'Block')}</span>
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {(sec.blockedPhones || []).length === 0 ? (
+                          <span className="text-[11px] text-slate-500 italic">
+                            {at('কোনো ব্লকড নাম্বার নেই', 'No phone numbers blacklisted yet.')}
+                          </span>
+                        ) : (
+                          (sec.blockedPhones || []).map((bp) => (
+                            <span
+                              key={bp}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-200 font-mono text-[11px]"
+                            >
+                              <span>{bp}</span>
+                              <button
+                                type="button"
+                                onClick={() => updateSec({ blockedPhones: (sec.blockedPhones || []).filter((x) => x !== bp) })}
+                                className="text-rose-400 hover:text-white cursor-pointer"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Live Security Audit Log */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <History className="w-4 h-4 text-sky-400" />
+                      <span>{at(`লাইভ সিকিউরিটি অডিট লগ (${securityLogs.length})`, `Live Security Audit Log (${securityLogs.length})`)}</span>
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearSecurityLogs();
+                        addToast('success', at('সিকিউরিটি লগ পরিষ্কার হয়েছে', 'Security logs cleared'), '');
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{at('লগ ক্লিয়ার করুন', 'Clear Logs')}</span>
+                    </button>
+                  </div>
+
+                  {securityLogs.length === 0 ? (
+                    <p className="text-slate-500 py-4 text-center">{at('এখনো কোনো সিকিউরিটি ইভেন্ট রেকর্ড হয়নি।', 'No security audit events recorded yet.')}</p>
+                  ) : (
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                      {securityLogs.map((log) => (
+                        <div key={log.id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                  log.severity === 'blocked'
+                                    ? 'bg-rose-500/20 text-rose-300'
+                                    : log.severity === 'warning'
+                                    ? 'bg-amber-500/20 text-amber-300'
+                                    : 'bg-emerald-500/20 text-emerald-300'
+                                }`}
+                              >
+                                {log.severity}
+                              </span>
+                              <span className="font-bold text-white truncate">{log.event}</span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-0.5">{log.detail}</p>
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                            {new Date(log.timestamp).toLocaleString()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );

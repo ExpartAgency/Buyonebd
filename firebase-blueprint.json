@@ -50,6 +50,8 @@
         "marketingSettings": { "type": "object" },
         "aiSettings": { "type": "object" },
         "aiKeywordRules": { "type": "array" },
+        "hostingerDbSettings": { "type": "object" },
+        "securitySettings": { "type": "object" },
         "updatedByEmail": { "type": "string", "maxLength": 160 },
         "updatedAt": { "type": "string", "format": "date-time" }
       },

@@ -25,6 +25,7 @@ import { Flame, PackageSearch, Clock, ShieldCheck, Truck, Award, Sparkles, X, Co
 function StoreMainContent() {
   const {
     products,
+    orders,
     categories,
     activeView,
     setActiveView,
@@ -36,6 +37,7 @@ function StoreMainContent() {
     goHome,
     selectCategoryFilter,
     openProductPage,
+    trackPixelEvent,
     settings,
     lang,
     t,
@@ -79,7 +81,7 @@ function StoreMainContent() {
     return () => clearInterval(timer);
   }, [settings.flashSale?.endsAt]);
 
-  // Organic Referral URL detection (?ref=CODE)
+  // Organic Referral URL detection (?ref=CODE) & UTM Campaign Attribution (?utm_source=...)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const refCode = params.get('ref');
@@ -87,7 +89,83 @@ function StoreMainContent() {
       setReferralBannerCode(refCode.toUpperCase());
       localStorage.setItem('buyone_referred_by', refCode.toUpperCase());
     }
+    const utmSource = params.get('utm_source');
+    const utmCampaign = params.get('utm_campaign');
+    if (utmSource || utmCampaign) {
+      sessionStorage.setItem(
+        'buyone_utm_attribution',
+        JSON.stringify({ source: utmSource || '', medium: params.get('utm_medium') || '', campaign: utmCampaign || '' })
+      );
+      trackPixelEvent('CampaignVisit', {
+        urlPath: window.location.pathname + window.location.search,
+        contentName: [utmSource, utmCampaign].filter(Boolean).join(' / ')
+      });
+    }
   }, [settings.organicMarketing?.referralProgram?.enabled]);
+
+  // Live Social Proof FOMO Ticker (Admin-controlled)
+  const [fomoToastData, setFomoToastData] = useState<{
+    buyer: string;
+    city: string;
+    productTitle: string;
+    productId?: string;
+    image: string;
+    ago: string;
+  } | null>(null);
+  const [isFomoDismissed, setIsFomoDismissed] = useState(false);
+
+  useEffect(() => {
+    const fomoCfg = settings.organicMarketing?.socialProofFomo;
+    if (!fomoCfg?.enabled || isFomoDismissed || activeView !== 'store') {
+      setFomoToastData(null);
+      return;
+    }
+    const intervalMs = Math.max(8, Number(fomoCfg.intervalSeconds) || 18) * 1000;
+    const showNext = () => {
+      const realPool = orders.filter((o) => o?.items?.[0]);
+      if (realPool.length > 0 && (fomoCfg.showRealOrdersOnly || Math.random() > 0.35)) {
+        const pick = realPool[Math.floor(Math.random() * Math.min(realPool.length, 10))];
+        const item = pick.items[0];
+        const prod = products.find((p) => p.id === item.productId);
+        setFomoToastData({
+          buyer: (pick.customer?.name || 'Customer').split(' ')[0],
+          city: pick.customer?.district?.split(' - ')[0] || 'Dhaka',
+          productTitle: lang === 'bn' ? item.productTitleBn || item.productTitle : item.productTitle,
+          productId: prod?.id,
+          image: item.image || prod?.images?.[0] || '',
+          ago: lang === 'bn' ? 'এইমাত্র অর্ডার করেছেন' : 'just ordered'
+        });
+      } else if (!fomoCfg.showRealOrdersOnly && products.length > 0) {
+        const prod = products[Math.floor(Math.random() * products.length)];
+        const names = ['তানভীর', 'সাদিয়া', 'মাহমুদ', 'নুসরাত', 'রাকিব', 'ফারহানা'];
+        const cities = ['ঢাকা', 'চট্টগ্রাম', 'সিলেট', 'রাজশাহী', 'খুলনা', 'কুমিল্লা'];
+        setFomoToastData({
+          buyer: names[Math.floor(Math.random() * names.length)],
+          city: cities[Math.floor(Math.random() * cities.length)],
+          productTitle: lang === 'bn' ? prod.titleBn : prod.title,
+          productId: prod.id,
+          image: prod.images?.[0] || '',
+          ago: lang === 'bn' ? 'অর্ডার কনফার্ম করেছেন' : 'verified COD order'
+        });
+      }
+      setTimeout(() => setFomoToastData(null), 5500);
+    };
+    const startTimer = setTimeout(showNext, 4500);
+    const intervalId = setInterval(showNext, intervalMs);
+    return () => {
+      clearTimeout(startTimer);
+      clearInterval(intervalId);
+    };
+  }, [
+    settings.organicMarketing?.socialProofFomo?.enabled,
+    settings.organicMarketing?.socialProofFomo?.intervalSeconds,
+    settings.organicMarketing?.socialProofFomo?.showRealOrdersOnly,
+    isFomoDismissed,
+    activeView,
+    products.length,
+    orders.length,
+    lang
+  ]);
 
   // Organic Promo / Exit-Intent Discount Popup trigger
   useEffect(() => {
@@ -760,6 +838,47 @@ function StoreMainContent() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Live Social Proof FOMO Notification Ticker */}
+      {fomoToastData && !isFomoDismissed && (
+        <div className="fixed bottom-20 sm:bottom-5 left-3 sm:left-5 z-40 max-w-xs bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-emerald-500/40 shadow-xl rounded-2xl p-2.5 flex items-center gap-2.5 animate-in slide-in-from-bottom-4">
+          {fomoToastData.image && (
+            <img
+              src={fomoToastData.image}
+              alt={fomoToastData.productTitle}
+              referrerPolicy="no-referrer"
+              className="w-11 h-11 rounded-xl object-cover shrink-0 border border-slate-200 dark:border-slate-700"
+            />
+          )}
+          <div className="min-w-0 flex-1 text-left">
+            <p className="text-[11px] font-extrabold text-slate-900 dark:text-white truncate">
+              {fomoToastData.buyer} ({fomoToastData.city}) ·{' '}
+              <span className="text-emerald-600 dark:text-emerald-400">{fomoToastData.ago}</span>
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                const target = products.find((p) => p.id === fomoToastData.productId);
+                if (target) openProductPage(target);
+              }}
+              className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:text-emerald-600 truncate block max-w-full text-left cursor-pointer"
+            >
+              {fomoToastData.productTitle}
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsFomoDismissed(true);
+              setFomoToastData(null);
+            }}
+            aria-label="Dismiss notification"
+            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 

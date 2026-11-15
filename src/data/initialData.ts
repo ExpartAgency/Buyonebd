@@ -1197,7 +1197,57 @@ export const INITIAL_SETTINGS: StoreSettings = {
           subEn: 'Instant chat & browser call'
         }
       ]
+    },
+    freeShippingBar: {
+      enabled: true,
+      thresholdBdt: 1500,
+      messageBn: 'আর মাত্র ৳{remaining} টাকার পণ্য যোগ করলে ফ্রি ডেলিভারি!',
+      messageEn: 'Add ৳{remaining} more for FREE Delivery!'
+    },
+    bundleDiscount: {
+      enabled: true,
+      qty2Percent: 5,
+      qty3Percent: 10,
+      badgeBn: 'বেশি কিনলে বেশি ছাড়!',
+      badgeEn: 'Buy More, Save More!'
+    },
+    socialProofFomo: {
+      enabled: true,
+      intervalSeconds: 18,
+      showRealOrdersOnly: false
+    },
+    checkoutGuard: {
+      honeypotEnabled: true,
+      blockDuplicateOrdersMinutes: 5,
+      checkoutRateLimitSeconds: 20
     }
+  },
+  hostingerDbSettings: {
+    enabled: false,
+    mode: 'mysql_direct',
+    host: 'localhost',
+    port: 3306,
+    database: '',
+    username: '',
+    password: '',
+    tablePrefix: 'buyone_',
+    ssl: false,
+    autoSyncOnOrder: true,
+    phpBridgeUrl: '',
+    phpBridgeSecret: ''
+  },
+  securitySettings: {
+    loginLockoutEnabled: true,
+    maxLoginAttempts: 5,
+    lockoutMinutes: 15,
+    adminPinEnabled: false,
+    adminPin: '',
+    checkoutHoneypotEnabled: true,
+    checkoutRateLimitSeconds: 20,
+    blockDuplicateOrdersMinutes: 5,
+    blockedPhones: [],
+    enableStrictHeaders: true,
+    maskPublicSecrets: true
   }
 };
 

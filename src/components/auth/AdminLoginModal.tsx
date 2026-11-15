@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../../context/StoreContext';
-import { Lock, Mail, Eye, EyeOff, ShieldCheck, Key, AlertCircle, X, Sparkles } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, ShieldCheck, Key, AlertCircle, X, Sparkles, ShieldAlert } from 'lucide-react';
 
 interface AdminLoginModalProps {
   onSuccessNavigate?: () => void;
 }
+
+const LOCKOUT_STORAGE_KEY = 'buyone_admin_lockout_v1';
 
 export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavigate }) => {
   const {
@@ -14,16 +16,59 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
     signInAdminWithGoogle,
     cloudSyncError,
     isAdminLoggedIn,
+    settings,
+    addSecurityLog,
     goHome,
     t
   } = useStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [securityPin, setSecurityPin] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [failedCount, setFailedCount] = useState(0);
+  const [lockoutUntil, setLockoutUntil] = useState<number>(0);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+
+  const secCfg = settings.securitySettings;
+  const lockoutEnabled = secCfg?.loginLockoutEnabled !== false;
+  const maxAttempts = Math.max(2, Number(secCfg?.maxLoginAttempts) || 5);
+  const lockoutMinutes = Math.max(1, Number(secCfg?.lockoutMinutes) || 15);
+  const pinRequired = Boolean(secCfg?.adminPinEnabled && secCfg?.adminPin?.trim());
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(LOCKOUT_STORAGE_KEY) || '{}');
+      if (saved.failedCount) setFailedCount(Number(saved.failedCount) || 0);
+      if (saved.lockoutUntil && Number(saved.lockoutUntil) > Date.now()) {
+        setLockoutUntil(Number(saved.lockoutUntil));
+      }
+    } catch {}
+  }, [isAdminLoginOpen]);
+
+  useEffect(() => {
+    if (!lockoutUntil) {
+      setSecondsLeft(0);
+      return;
+    }
+    const tick = () => {
+      const rem = Math.max(0, Math.ceil((lockoutUntil - Date.now()) / 1000));
+      setSecondsLeft(rem);
+      if (rem === 0) {
+        setLockoutUntil(0);
+        setFailedCount(0);
+        localStorage.removeItem(LOCKOUT_STORAGE_KEY);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [lockoutUntil]);
 
   if (!isAdminLoginOpen) return null;
+
+  const isLockedOut = lockoutEnabled && secondsLeft > 0;
 
   const handleClose = () => {
     setIsAdminLoginOpen(false);
@@ -35,31 +80,65 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
     }
   };
 
+  const recordFailure = (reasonBn: string, reasonEn: string) => {
+    const nextFails = failedCount + 1;
+    setFailedCount(nextFails);
+    if (lockoutEnabled && nextFails >= maxAttempts) {
+      const until = Date.now() + lockoutMinutes * 60 * 1000;
+      setLockoutUntil(until);
+      localStorage.setItem(LOCKOUT_STORAGE_KEY, JSON.stringify({ failedCount: nextFails, lockoutUntil: until }));
+      addSecurityLog(
+        'Brute-Force Lockout Triggered',
+        `${nextFails} failed admin logins. Locked for ${lockoutMinutes} minutes.`,
+        'blocked'
+      );
+      setError(
+        t(
+          `অতিরিক্ত ভুল চেষ্টার কারণে নিরাপত্তার স্বার্থে লগইন ${lockoutMinutes} মিনিটের জন্য লক করা হয়েছে।`,
+          `Too many failed attempts. Login locked for ${lockoutMinutes} minutes.`
+        )
+      );
+    } else {
+      localStorage.setItem(LOCKOUT_STORAGE_KEY, JSON.stringify({ failedCount: nextFails, lockoutUntil: 0 }));
+      const remaining = Math.max(1, maxAttempts - nextFails);
+      setError(`${t(reasonBn, reasonEn)} (${t(`আরও ${remaining} বার সুযোগ`, `${remaining} attempts left`)})`);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLockedOut) return;
     setError(null);
-    setIsLoading(true);
 
+    if (pinRequired && securityPin.trim() !== String(secCfg?.adminPin || '').trim()) {
+      recordFailure('ভুল সিকিউরিটি পিন (PIN)!', 'Invalid Admin Security PIN!');
+      addSecurityLog('Admin PIN Failed', `Incorrect 2nd-step PIN entered for ${email || 'admin'}`, 'warning');
+      return;
+    }
+
+    setIsLoading(true);
     setTimeout(() => {
       const ok = loginAdmin(email, password);
       setIsLoading(false);
       if (ok) {
+        setFailedCount(0);
+        setLockoutUntil(0);
+        localStorage.removeItem(LOCKOUT_STORAGE_KEY);
         setIsAdminLoginOpen(false);
         if (onSuccessNavigate) {
           onSuccessNavigate();
         }
       } else {
-        setError(
-          t(
-            'ভুল ইমেইল অথবা পাসওয়ার্ড! অনুগ্রহ করে সঠিক তথ্য দিন।',
-            'Invalid email or password! Please check your credentials.'
-          )
+        recordFailure(
+          'ভুল ইমেইল অথবা পাসওয়ার্ড! অনুগ্রহ করে সঠিক তথ্য দিন।',
+          'Invalid email or password! Please check your credentials.'
         );
       }
     }, 300);
   };
 
   const handleGoogleSyncLogin = async () => {
+    if (isLockedOut) return;
     setError(null);
     setIsLoading(true);
     const ok = await signInAdminWithGoogle();
@@ -71,15 +150,13 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-fade-in">
-      <div 
+      <div
         className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden transform transition-all duration-300 scale-100"
         role="dialog"
         aria-modal="true"
       >
-        {/* Top Gradient Bar */}
         <div className="h-2 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500" />
 
-        {/* Close Button */}
         <button
           type="button"
           onClick={handleClose}
@@ -90,10 +167,9 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
         </button>
 
         <div className="p-6 sm:p-8">
-          {/* Header */}
           <div className="text-center mb-6">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-white shadow-lg shadow-emerald-500/30 mb-3">
-              <Lock className="w-8 h-8" />
+              {isLockedOut ? <ShieldAlert className="w-8 h-8 text-amber-200" /> : <Lock className="w-8 h-8" />}
             </div>
             <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
               {t('এডমিন সিকিউর লগইন', 'Admin Portal Access')}
@@ -106,15 +182,25 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
             </p>
           </div>
 
-          {/* Error Banner */}
-          {(error || cloudSyncError) && (
+          {isLockedOut && (
+            <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2 font-bold">
+              <ShieldAlert className="w-4 h-4 shrink-0" />
+              <span>
+                {t(
+                  `সিকিউরিটি লক সক্রিয়: ${Math.floor(secondsLeft / 60)}মি ${secondsLeft % 60}সে পর পুনরায় চেষ্টা করুন।`,
+                  `Security Lockout Active: Try again in ${Math.floor(secondsLeft / 60)}m ${secondsLeft % 60}s.`
+                )}
+              </span>
+            </div>
+          )}
+
+          {(error || cloudSyncError) && !isLockedOut && (
             <div className="mb-4 p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 text-xs flex items-start gap-2 animate-shake">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{error || cloudSyncError}</span>
             </div>
           )}
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
@@ -127,10 +213,11 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
                 <input
                   type="email"
                   required
+                  disabled={isLockedOut}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="hossain@gmail.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all disabled:opacity-50"
                 />
               </div>
             </div>
@@ -146,10 +233,11 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
+                  disabled={isLockedOut}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full pl-10 pr-10 py-2.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                  className="w-full pl-10 pr-10 py-2.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all disabled:opacity-50"
                 />
                 <button
                   type="button"
@@ -161,10 +249,27 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
               </div>
             </div>
 
+            {pinRequired && (
+              <div>
+                <label className="block text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-1.5">
+                  {t('২-ধাপ সিকিউরিটি পিন (PIN)', '2-Step Security PIN')}
+                </label>
+                <input
+                  type="password"
+                  required
+                  disabled={isLockedOut}
+                  value={securityPin}
+                  onChange={(e) => setSecurityPin(e.target.value)}
+                  placeholder="••••"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800/70 border border-emerald-300 dark:border-emerald-700 rounded-xl text-sm font-mono tracking-widest text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+                />
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={isLoading}
-              className="w-full mt-2 py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70 cursor-pointer"
+              disabled={isLoading || isLockedOut}
+              className="w-full mt-2 py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
             >
               {isLoading ? (
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -177,13 +282,12 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
             </button>
           </form>
 
-          {/* Firebase Cloud Sync Google Sign-In */}
           <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
             <button
               type="button"
-              disabled={isLoading}
+              disabled={isLoading || isLockedOut}
               onClick={handleGoogleSyncLogin}
-              className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-md shadow-sky-600/20"
+              className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-md shadow-sky-600/20 disabled:opacity-50"
             >
               <Sparkles className="w-4 h-4 text-sky-100 shrink-0" />
               <span>
@@ -203,8 +307,8 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
             <div className="text-center">
               <span className="text-[11px] text-slate-400 dark:text-slate-500">
                 {t(
-                  'সুরক্ষিত সেশন • রিয়েল-টাইম ক্লাউড ডাটাবেস সিঙ্ক',
-                  'Protected Session • Real-Time Cloud Database Sync'
+                  'সুরক্ষিত সেশন • Brute-Force লক প্রটেকশন চালু',
+                  'Protected Session • Brute-Force Shield Active'
                 )}
               </span>
             </div>

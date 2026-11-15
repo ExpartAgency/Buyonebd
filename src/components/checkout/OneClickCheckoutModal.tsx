@@ -16,6 +16,7 @@ export const OneClickCheckoutModal: React.FC = () => {
     settings,
     setActiveView,
     setTrackingSearchQuery,
+    addSecurityLog,
     lang,
     t,
     addToast
@@ -45,6 +46,7 @@ export const OneClickCheckoutModal: React.FC = () => {
   const [advancePayFee, setAdvancePayFee] = useState(false);
   const [useWallet, setUseWallet] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [honeypotTrap, setHoneypotTrap] = useState('');
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   // Success Sheet after placing order
@@ -60,9 +62,31 @@ export const OneClickCheckoutModal: React.FC = () => {
       ? 'dhakaSub'
       : 'dhakaOutside';
 
+  // Single product vs Cart items + Marketing Boosters (Free Shipping Bar & Bundle Discount)
+  const isSingleProduct = !!checkoutProduct;
+  const singleSubtotal = checkoutProduct ? checkoutProduct.price * quantity : 0;
+  const subtotal = isSingleProduct ? singleSubtotal : cartTotal;
+  const totalQty = isSingleProduct ? quantity : cart.reduce((s, c) => s + c.quantity, 0);
+
+  const freeShipCfg = settings.organicMarketing?.freeShippingBar;
+  const freeShipThreshold = freeShipCfg?.enabled ? Math.max(0, Number(freeShipCfg.thresholdBdt) || 0) : 0;
+  const freeShipQualified = freeShipThreshold > 0 && subtotal >= freeShipThreshold;
+  const remainingForFreeShip = freeShipThreshold > 0 ? Math.max(0, freeShipThreshold - subtotal) : 0;
+
+  const bundleCfg = settings.organicMarketing?.bundleDiscount;
+  const bundlePercent = bundleCfg?.enabled
+    ? totalQty >= 3
+      ? Number(bundleCfg.qty3Percent) || 0
+      : totalQty >= 2
+      ? Number(bundleCfg.qty2Percent) || 0
+      : 0
+    : 0;
+  const bundleDiscountAmount = bundlePercent > 0 ? Math.round(subtotal * (bundlePercent / 100)) : 0;
+
   const activeProductsForDelivery = checkoutProduct ? [checkoutProduct] : cart.map((c) => c.product);
   const allFreeShip =
-    activeProductsForDelivery.length > 0 && activeProductsForDelivery.every((p) => p.freeShipping);
+    freeShipQualified ||
+    (activeProductsForDelivery.length > 0 && activeProductsForDelivery.every((p) => p.freeShipping));
   const customProductFee = activeProductsForDelivery.find(
     (p) => p.customDeliveryFees && p.customDeliveryFees[zoneKey] !== undefined
   )?.customDeliveryFees?.[zoneKey];
@@ -75,12 +99,9 @@ export const OneClickCheckoutModal: React.FC = () => {
 
   const deliveryFee = appliedCoupon?.code === 'FREESHIP' ? 0 : rawDeliveryFee;
 
-  // Single product vs Cart items
-  const isSingleProduct = !!checkoutProduct;
-  const singleSubtotal = checkoutProduct ? checkoutProduct.price * quantity : 0;
-  const subtotal = isSingleProduct ? singleSubtotal : cartTotal;
-  const discountAmount = appliedCoupon ? appliedCoupon.amount : 0;
-  const subtotalAfterCoupon = Math.max(0, subtotal + deliveryFee - discountAmount);
+  const couponDiscountAmount = appliedCoupon ? appliedCoupon.amount : 0;
+  const totalPromoDiscount = couponDiscountAmount + bundleDiscountAmount;
+  const subtotalAfterCoupon = Math.max(0, subtotal + deliveryFee - totalPromoDiscount);
   const walletDeduction = useWallet ? Math.min(customerWalletBalance, subtotalAfterCoupon) : 0;
   const advanceAmount = advancePayFee ? Math.min(settings.paymentSettings.advanceFeeAmount || 100, rawDeliveryFee) : 0;
   const grandTotal = Math.max(0, subtotalAfterCoupon - walletDeduction);
@@ -209,6 +230,12 @@ export const OneClickCheckoutModal: React.FC = () => {
 
   const handlePlaceOrder = (e: React.FormEvent) => {
     e.preventDefault();
+    // Hidden Anti-Bot Honeypot check
+    if (settings.organicMarketing?.checkoutGuard?.honeypotEnabled !== false && honeypotTrap.trim().length > 0) {
+      addSecurityLog('Checkout Bot Blocked', `Honeypot triggered during checkout (${phone || 'unknown'})`, 'blocked');
+      addToast('error', t('সুরক্ষা সতর্কতা', 'Security Check Failed'), t('অর্ডার জমা করা যায়নি।', 'Automated submission blocked.'));
+      return;
+    }
     if (!validateForm()) return;
 
     setIsSubmitting(true);
@@ -250,17 +277,21 @@ export const OneClickCheckoutModal: React.FC = () => {
         paymentTrxId: trxId.trim() || undefined,
         deliveryZone: currentZone,
         customDeliveryFee: deliveryFee,
-        discountAmount: discountAmount > 0 ? discountAmount : undefined,
-        couponCode: appliedCoupon?.code,
+        discountAmount: totalPromoDiscount > 0 ? totalPromoDiscount : undefined,
+        couponCode: appliedCoupon?.code || (bundleDiscountAmount > 0 ? `BUNDLE${bundlePercent}` : undefined),
         advancePaid: advanceAmount > 0 ? advanceAmount : undefined,
         walletUsedAmount: walletDeduction > 0 ? walletDeduction : undefined
       });
 
       // Show immediate Success Confirmation Sheet with 1-Click WhatsApp Memo
       setPlacedOrder(newOrder);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      addToast('error', t('অর্ডার করতে সমস্যা হয়েছে', 'Order Error'), t('অনুগ্রহ করে আবার চেষ্টা করুন', 'Please try again'));
+      addToast(
+        'error',
+        t('অর্ডার সম্পন্ন হয়নি', 'Order Blocked'),
+        err?.message || t('অনুগ্রহ করে আবার চেষ্টা করুন', 'Please try again')
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -420,7 +451,51 @@ export const OneClickCheckoutModal: React.FC = () => {
                   ))}
                 </div>
               )}
+
+              {/* Free Shipping Progress & Bundle Offer Bar inside Checkout */}
+              {(freeShipThreshold > 0 || bundleCfg?.enabled) && (
+                <div className="mt-2.5 pt-2.5 border-t border-slate-200/80 space-y-1.5">
+                  {freeShipThreshold > 0 && (
+                    <div className="text-[11px] font-bold text-emerald-700 flex items-center justify-between gap-2">
+                      <span>
+                        {freeShipQualified
+                          ? t('🎉 ফ্রি ডেলিভারি আনলকড!', '🎉 Free Delivery Unlocked!')
+                          : t(
+                              `আর ৳${remainingForFreeShip.toLocaleString()} যোগ করলে ফ্রি ডেলিভারি!`,
+                              `Add ৳${remainingForFreeShip.toLocaleString()} for Free Delivery`
+                            )}
+                      </span>
+                      <span className="font-mono text-[10px]">
+                        {Math.min(100, Math.round((subtotal / freeShipThreshold) * 100))}%
+                      </span>
+                    </div>
+                  )}
+                  {bundleCfg?.enabled && (
+                    <div className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 flex items-center justify-between">
+                      <span>
+                        {totalQty >= 3
+                          ? t(`🔥 ৩+ পিস বান্ডিল ${bundlePercent}% ছাড় চালু!`, `🔥 3+ Qty ${bundlePercent}% Bundle Off Active!`)
+                          : totalQty >= 2
+                          ? t(`🔥 ২ পিস বান্ডিল ${bundlePercent}% ছাড় চালু! (৩ পিসে ${bundleCfg.qty3Percent}%)`, `🔥 2 Qty ${bundlePercent}% Off Active! (3+ = ${bundleCfg.qty3Percent}%)`)
+                          : t(`💡 ২টি নিলে ${bundleCfg.qty2Percent}% ও ৩টিতে ${bundleCfg.qty3Percent}% বান্ডিল ছাড়!`, `💡 Buy 2 get ${bundleCfg.qty2Percent}% off, 3+ get ${bundleCfg.qty3Percent}% off!`)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Invisible Honeypot Input (anti-spam) */}
+            <input
+              type="text"
+              name="company_website"
+              value={honeypotTrap}
+              onChange={(e) => setHoneypotTrap(e.target.value)}
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+              className="hidden"
+            />
 
             {/* Customer Details */}
             <div className="space-y-2.5">
@@ -733,10 +808,17 @@ export const OneClickCheckoutModal: React.FC = () => {
                 </span>
               </div>
 
-              {discountAmount > 0 && (
+              {couponDiscountAmount > 0 && (
                 <div className="flex justify-between text-emerald-600 font-bold">
                   <span>{t('কুপন ডিসকাউন্ট:', 'Coupon Discount:')}</span>
-                  <span>- ৳ {discountAmount.toLocaleString()}</span>
+                  <span>- ৳ {couponDiscountAmount.toLocaleString()}</span>
+                </div>
+              )}
+
+              {bundleDiscountAmount > 0 && (
+                <div className="flex justify-between text-emerald-600 font-bold">
+                  <span>{t(`বান্ডিল ডিসকাউন্ট (${bundlePercent}%):`, `Bundle Discount (${bundlePercent}%):`)}</span>
+                  <span>- ৳ {bundleDiscountAmount.toLocaleString()}</span>
                 </div>
               )}
 

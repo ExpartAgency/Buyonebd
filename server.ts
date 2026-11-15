@@ -5,6 +5,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import nodemailer from 'nodemailer';
+import mysql from 'mysql2/promise';
 
 dotenv.config();
 
@@ -12,10 +13,53 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.disable('x-powered-by');
 const port = parseInt(process.env.PORT || '3000', 10);
 const isProd = process.env.NODE_ENV === 'production';
 
+// Security Headers Middleware (iframe-compatible for preview & hardened for production)
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
 app.use(express.json({ limit: '15mb' }));
+
+// Sliding-Window In-Memory Rate Limiter for Sensitive API Endpoints
+const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
+function createRateLimiter(bucketName: string, maxRequests: number, windowMs: number) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ip = String(req.headers['x-forwarded-for'] || req.ip || 'unknown').split(',')[0].trim();
+    const key = `${bucketName}:${ip}`;
+    const now = Date.now();
+    const entry = rateLimitBuckets.get(key);
+    if (!entry || now > entry.resetAt) {
+      rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+    if (entry.count >= maxRequests) {
+      return res.status(429).json({
+        success: false,
+        error: 'Too many requests. Please wait a moment and try again.'
+      });
+    }
+    entry.count += 1;
+    return next();
+  };
+}
+
+app.use('/api/orders', createRateLimiter('orders', 40, 60 * 1000));
+app.use('/api/email', createRateLimiter('email', 25, 60 * 1000));
+app.use('/api/database', createRateLimiter('database', 30, 60 * 1000));
+app.use('/api/steadfast', createRateLimiter('steadfast', 45, 60 * 1000));
+app.use('/api/chat', createRateLimiter('chat', 50, 60 * 1000));
+app.use('/api/tts', createRateLimiter('tts', 40, 60 * 1000));
 
 // Initialize GoogleGenAI server-side client with v1alpha for high-grade speech
 const ai = new GoogleGenAI({
@@ -297,10 +341,53 @@ function mergeOrdersById(primary: any[] = [], secondary: any[] = [], deletedIds:
   );
 }
 
-app.get('/api/store/sync', (_req, res) => {
+function redactSensitiveSettingsForPublic(rawData: any) {
+  if (!rawData || typeof rawData !== 'object') return rawData;
+  const clone = JSON.parse(JSON.stringify(rawData));
+  if (clone.settings && typeof clone.settings === 'object') {
+    const s = clone.settings;
+    if (s.smtpSettings) {
+      s.smtpSettings = { ...s.smtpSettings, pass: '' };
+    }
+    if (s.courierSettings?.steadfast) {
+      s.courierSettings.steadfast = { ...s.courierSettings.steadfast, secretKey: '' };
+    }
+    if (s.courierSettings?.pathao) {
+      s.courierSettings.pathao = { ...s.courierSettings.pathao, clientSecret: '' };
+    }
+    if (s.marketingSettings?.facebookPixel) {
+      s.marketingSettings.facebookPixel = { ...s.marketingSettings.facebookPixel, accessToken: '' };
+    }
+    if (s.marketingSettings?.whatsappCloudApi) {
+      s.marketingSettings.whatsappCloudApi = { ...s.marketingSettings.whatsappCloudApi, accessToken: '' };
+    }
+    if (s.aiSettings) {
+      s.aiSettings = { ...s.aiSettings, geminiApiKey: '', openaiApiKey: '', claudeApiKey: '' };
+    }
+    if (s.hostingerDbSettings) {
+      s.hostingerDbSettings = {
+        ...s.hostingerDbSettings,
+        password: '',
+        phpBridgeSecret: ''
+      };
+    }
+    if (s.securitySettings) {
+      s.securitySettings = {
+        ...s.securitySettings,
+        adminPin: ''
+      };
+    }
+  }
+  return clone;
+}
+
+app.get('/api/store/sync', (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   const data = loadStoreData();
-  return res.json({ success: true, data });
+  const isAdminSession = req.headers['x-admin-session'] === 'buyone-admin-verified';
+  const shouldMask = data?.settings?.securitySettings?.maskPublicSecrets !== false;
+  const responseData = !isAdminSession && shouldMask ? redactSensitiveSettingsForPublic(data) : data;
+  return res.json({ success: true, data: responseData });
 });
 
 app.post('/api/store/sync', (req, res) => {
@@ -326,11 +413,38 @@ app.post('/api/store/sync', (req, res) => {
     ? mergeOrdersById(orders, Array.isArray(current.orders) ? current.orders : [], deletedIds)
     : current.orders;
 
+  let mergedSettings = settings !== undefined ? settings : current.settings;
+  if (settings && current.settings) {
+    // Preserve server-side secrets if an incoming storefront sync passed masked empty strings
+    mergedSettings = {
+      ...settings,
+      smtpSettings: {
+        ...(current.settings.smtpSettings || {}),
+        ...(settings.smtpSettings || {}),
+        pass: settings.smtpSettings?.pass || current.settings.smtpSettings?.pass || ''
+      },
+      hostingerDbSettings: {
+        ...(current.settings.hostingerDbSettings || {}),
+        ...(settings.hostingerDbSettings || {}),
+        password: settings.hostingerDbSettings?.password || current.settings.hostingerDbSettings?.password || '',
+        phpBridgeSecret:
+          settings.hostingerDbSettings?.phpBridgeSecret ||
+          current.settings.hostingerDbSettings?.phpBridgeSecret ||
+          ''
+      },
+      securitySettings: {
+        ...(current.settings.securitySettings || {}),
+        ...(settings.securitySettings || {}),
+        adminPin: settings.securitySettings?.adminPin || current.settings.securitySettings?.adminPin || ''
+      }
+    };
+  }
+
   const updated = {
     ...current,
     products: products !== undefined ? products : current.products,
     orders: mergedOrders,
-    settings: settings !== undefined ? settings : current.settings,
+    settings: mergedSettings,
     spinRewards: spinRewards !== undefined ? spinRewards : current.spinRewards,
     categories: categories !== undefined ? categories : current.categories,
     sliders: sliders !== undefined ? sliders : current.sliders,
@@ -344,16 +458,38 @@ app.post('/api/store/sync', (req, res) => {
     lastUpdated: new Date().toISOString()
   };
   saveStoreData(updated);
-  return res.json({ success: true, message: 'Store synchronized', data: updated });
+  const isAdminSession = req.headers['x-admin-session'] === 'buyone-admin-verified';
+  const shouldMask = updated?.settings?.securitySettings?.maskPublicSecrets !== false;
+  return res.json({
+    success: true,
+    message: 'Store synchronized',
+    data: !isAdminSession && shouldMask ? redactSensitiveSettingsForPublic(updated) : updated
+  });
 });
 
-// Atomic Cross-Device Order Endpoints
-app.post('/api/orders', (req, res) => {
+// Atomic Cross-Device Order Endpoints (with Blocklist, Duplicate Flood Protection & Hostinger MySQL auto-mirror)
+app.post('/api/orders', async (req, res) => {
   const { order } = req.body || {};
   if (!order || !order.id) {
     return res.status(400).json({ success: false, error: 'Order payload with id is required.' });
   }
   const current = loadStoreData() || {};
+  const secCfg = current?.settings?.securitySettings || {};
+  const cleanPhone = String(order?.customer?.phone || '').replace(/[^0-9]/g, '').slice(-11);
+
+  if (order.source !== 'pos' && Array.isArray(secCfg.blockedPhones) && cleanPhone) {
+    const isBlocked = secCfg.blockedPhones.some(
+      (bp: string) => String(bp).replace(/[^0-9]/g, '').slice(-11) === cleanPhone
+    );
+    if (isBlocked) {
+      return res.status(403).json({
+        success: false,
+        blocked: true,
+        error: 'This phone number is restricted from placing orders due to security policy.'
+      });
+    }
+  }
+
   const existingOrders: any[] = Array.isArray(current.orders) ? current.orders : [];
   const nextOrders = [order, ...existingOrders.filter((o) => o && o.id !== order.id)];
   current.orders = nextOrders;
@@ -362,6 +498,15 @@ app.post('/api/orders', (req, res) => {
   }
   current.lastUpdated = new Date().toISOString();
   saveStoreData(current);
+
+  // If Hostinger MySQL auto-sync is enabled on backend, mirror the order automatically
+  const hCfg = resolveHostingerConfig();
+  if (hCfg.enabled && hCfg.mode === 'mysql_direct' && hCfg.autoSyncOnOrder && hCfg.database && hCfg.user) {
+    upsertOrderToHostingerMysql(hCfg, order).catch((err) => {
+      console.error('Hostinger MySQL auto-order sync error:', err?.message || err);
+    });
+  }
+
   return res.json({ success: true, order, totalOrders: nextOrders.length });
 });
 
@@ -1015,6 +1160,453 @@ app.post('/api/whatsapp/send', async (req, res) => {
   } catch (err: any) {
     console.error('WhatsApp Cloud API send error:', err);
     return res.status(500).json({ success: false, error: err?.message || 'WhatsApp dispatch failed' });
+  }
+});
+
+// ============================================================================
+// HOSTINGER MYSQL DATABASE & SHARED-HOSTING PHP BRIDGE INTEGRATION ENDPOINTS
+// ============================================================================
+function sanitizeSqlPrefix(raw?: string): string {
+  const clean = String(raw || 'buyone_').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 20);
+  return clean || 'buyone_';
+}
+
+function resolveHostingerConfig(input?: any) {
+  const saved = loadStoreData();
+  const h = { ...(saved?.settings?.hostingerDbSettings || {}), ...(input || {}) };
+  return {
+    enabled: Boolean(h.enabled),
+    mode: h.mode === 'php_bridge' ? ('php_bridge' as const) : ('mysql_direct' as const),
+    host: String(h.host || process.env.HOSTINGER_DB_HOST || 'localhost').trim(),
+    port: Number(h.port || process.env.HOSTINGER_DB_PORT || 3306) || 3306,
+    database: String(h.database || process.env.HOSTINGER_DB_NAME || '').trim(),
+    user: String(h.username || h.user || process.env.HOSTINGER_DB_USER || '').trim(),
+    password: String(h.password || process.env.HOSTINGER_DB_PASS || ''),
+    tablePrefix: sanitizeSqlPrefix(h.tablePrefix || process.env.HOSTINGER_DB_PREFIX),
+    ssl: Boolean(h.ssl),
+    autoSyncOnOrder: h.autoSyncOnOrder !== false,
+    phpBridgeUrl: String(h.phpBridgeUrl || '').trim(),
+    phpBridgeSecret: String(h.phpBridgeSecret || '').trim()
+  };
+}
+
+async function openHostingerMysqlConnection(cfg: ReturnType<typeof resolveHostingerConfig>) {
+  if (!cfg.host || !cfg.database || !cfg.user) {
+    throw new Error('Hostinger MySQL Host, Database Name, and Username are required.');
+  }
+  return mysql.createConnection({
+    host: cfg.host,
+    port: cfg.port,
+    user: cfg.user,
+    password: cfg.password,
+    database: cfg.database,
+    ssl: cfg.ssl ? { rejectUnauthorized: false } : undefined,
+    connectTimeout: 10000
+  });
+}
+
+async function ensureHostingerMysqlSchema(conn: mysql.Connection, prefix: string) {
+  const tables = {
+    kv: `${prefix}store_kv`,
+    orders: `${prefix}orders`,
+    products: `${prefix}products`,
+    customers: `${prefix}customers`
+  };
+
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS \`${tables.kv}\` (
+      \`kv_key\` VARCHAR(80) NOT NULL PRIMARY KEY,
+      \`kv_value\` LONGTEXT NOT NULL,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS \`${tables.orders}\` (
+      \`id\` VARCHAR(64) NOT NULL PRIMARY KEY,
+      \`customer_name\` VARCHAR(160) NOT NULL,
+      \`customer_phone\` VARCHAR(32) NOT NULL,
+      \`district\` VARCHAR(120) DEFAULT '',
+      \`total\` DECIMAL(12,2) DEFAULT 0,
+      \`status\` VARCHAR(32) DEFAULT 'pending',
+      \`source\` VARCHAR(16) DEFAULT 'online',
+      \`payload_json\` LONGTEXT NOT NULL,
+      \`created_at\` VARCHAR(64) DEFAULT '',
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX \`idx_phone\` (\`customer_phone\`),
+      INDEX \`idx_status\` (\`status\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS \`${tables.products}\` (
+      \`id\` VARCHAR(64) NOT NULL PRIMARY KEY,
+      \`title\` VARCHAR(255) NOT NULL,
+      \`category\` VARCHAR(120) DEFAULT '',
+      \`price\` DECIMAL(12,2) DEFAULT 0,
+      \`stock\` INT DEFAULT 0,
+      \`barcode\` VARCHAR(120) DEFAULT '',
+      \`payload_json\` LONGTEXT NOT NULL,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS \`${tables.customers}\` (
+      \`phone\` VARCHAR(32) NOT NULL PRIMARY KEY,
+      \`name\` VARCHAR(160) NOT NULL,
+      \`email\` VARCHAR(160) DEFAULT '',
+      \`wallet_balance\` DECIMAL(12,2) DEFAULT 0,
+      \`loyalty_points\` INT DEFAULT 0,
+      \`payload_json\` LONGTEXT NOT NULL,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  return Object.values(tables);
+}
+
+async function upsertOrderToHostingerMysql(cfg: ReturnType<typeof resolveHostingerConfig>, order: any) {
+  let conn: mysql.Connection | null = null;
+  try {
+    conn = await openHostingerMysqlConnection(cfg);
+    await ensureHostingerMysqlSchema(conn, cfg.tablePrefix);
+    await conn.query(
+      `INSERT INTO \`${cfg.tablePrefix}orders\` (id, customer_name, customer_phone, district, total, status, source, payload_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         customer_name = VALUES(customer_name),
+         customer_phone = VALUES(customer_phone),
+         district = VALUES(district),
+         total = VALUES(total),
+         status = VALUES(status),
+         payload_json = VALUES(payload_json)`,
+      [
+        String(order.id),
+        String(order.customer?.name || 'Customer').slice(0, 160),
+        String(order.customer?.phone || '').slice(0, 32),
+        String(order.customer?.district || '').slice(0, 120),
+        Number(order.pricing?.total || 0),
+        String(order.status || 'pending').slice(0, 32),
+        String(order.source || 'online').slice(0, 16),
+        JSON.stringify(order),
+        String(order.createdAt || new Date().toISOString()).slice(0, 64)
+      ]
+    );
+  } finally {
+    if (conn) await conn.end().catch(() => {});
+  }
+}
+
+app.post('/api/database/hostinger/test', async (req, res) => {
+  const cfg = resolveHostingerConfig(req.body?.config);
+  if (cfg.mode === 'php_bridge') {
+    if (!cfg.phpBridgeUrl) {
+      return res.status(400).json({ success: false, error: 'Hostinger PHP Bridge URL is required.' });
+    }
+    try {
+      const resp = await fetch(cfg.phpBridgeUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Bridge-Secret': cfg.phpBridgeSecret
+        },
+        body: JSON.stringify({ action: 'ping' })
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || !data?.success) {
+        return res.status(400).json({
+          success: false,
+          error: data?.error || `PHP Bridge returned HTTP ${resp.status}`
+        });
+      }
+      return res.json({
+        success: true,
+        mode: 'php_bridge',
+        version: data.mysqlVersion || 'Hostinger PHP+MySQL Bridge Connected',
+        tables: data.tables || []
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'Failed to reach PHP Bridge URL' });
+    }
+  }
+
+  let conn: mysql.Connection | null = null;
+  try {
+    conn = await openHostingerMysqlConnection(cfg);
+    const [rows] = await conn.query('SELECT VERSION() AS version, DATABASE() AS dbName');
+    const [tableRows] = await conn.query('SHOW TABLES');
+    const info = Array.isArray(rows) && rows[0] ? (rows[0] as any) : {};
+    const tableNames = Array.isArray(tableRows) ? tableRows.map((r: any) => Object.values(r)[0]) : [];
+    return res.json({
+      success: true,
+      mode: 'mysql_direct',
+      version: info.version || 'MySQL Connected',
+      database: info.dbName || cfg.database,
+      tables: tableNames
+    });
+  } catch (err: any) {
+    return res.status(400).json({
+      success: false,
+      error: err?.message || 'Hostinger MySQL connection failed'
+    });
+  } finally {
+    if (conn) await conn.end().catch(() => {});
+  }
+});
+
+app.post('/api/database/hostinger/init-schema', async (req, res) => {
+  const cfg = resolveHostingerConfig(req.body?.config);
+  if (cfg.mode === 'php_bridge') {
+    if (!cfg.phpBridgeUrl) {
+      return res.status(400).json({ success: false, error: 'Hostinger PHP Bridge URL is required.' });
+    }
+    try {
+      const resp = await fetch(cfg.phpBridgeUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': cfg.phpBridgeSecret },
+        body: JSON.stringify({ action: 'init_schema', tablePrefix: cfg.tablePrefix })
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || !data?.success) {
+        return res.status(400).json({ success: false, error: data?.error || `HTTP ${resp.status}` });
+      }
+      return res.json({ success: true, tables: data.tables || [] });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'PHP Bridge schema init failed' });
+    }
+  }
+
+  let conn: mysql.Connection | null = null;
+  try {
+    conn = await openHostingerMysqlConnection(cfg);
+    const tables = await ensureHostingerMysqlSchema(conn, cfg.tablePrefix);
+    return res.json({ success: true, tables });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err?.message || 'Schema creation failed' });
+  } finally {
+    if (conn) await conn.end().catch(() => {});
+  }
+});
+
+app.post('/api/database/hostinger/sync-push', async (req, res) => {
+  const cfg = resolveHostingerConfig(req.body?.config);
+  const payload = req.body?.payload || loadStoreData() || {};
+
+  if (cfg.mode === 'php_bridge') {
+    if (!cfg.phpBridgeUrl) {
+      return res.status(400).json({ success: false, error: 'Hostinger PHP Bridge URL is required.' });
+    }
+    try {
+      const resp = await fetch(cfg.phpBridgeUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': cfg.phpBridgeSecret },
+        body: JSON.stringify({ action: 'sync_push', tablePrefix: cfg.tablePrefix, payload })
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || !data?.success) {
+        return res.status(400).json({ success: false, error: data?.error || `HTTP ${resp.status}` });
+      }
+      return res.json({ success: true, counts: data.counts || {}, syncedAt: new Date().toISOString() });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'PHP Bridge push failed' });
+    }
+  }
+
+  let conn: mysql.Connection | null = null;
+  try {
+    conn = await openHostingerMysqlConnection(cfg);
+    await ensureHostingerMysqlSchema(conn, cfg.tablePrefix);
+
+    const p = cfg.tablePrefix;
+    const kvEntries: [string, any][] = [
+      ['full_backup_json', payload],
+      ['settings_json', payload.settings || {}],
+      ['categories_json', payload.categories || []],
+      ['sliders_json', payload.sliders || []],
+      ['reviews_json', payload.reviews || []]
+    ];
+    for (const [k, v] of kvEntries) {
+      await conn.query(
+        `INSERT INTO \`${p}store_kv\` (kv_key, kv_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE kv_value = VALUES(kv_value)`,
+        [k, JSON.stringify(v)]
+      );
+    }
+
+    const ordersArr: any[] = Array.isArray(payload.orders) ? payload.orders : [];
+    for (const ord of ordersArr) {
+      if (!ord?.id) continue;
+      await conn.query(
+        `INSERT INTO \`${p}orders\` (id, customer_name, customer_phone, district, total, status, source, payload_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           customer_name = VALUES(customer_name),
+           customer_phone = VALUES(customer_phone),
+           district = VALUES(district),
+           total = VALUES(total),
+           status = VALUES(status),
+           payload_json = VALUES(payload_json)`,
+        [
+          String(ord.id),
+          String(ord.customer?.name || 'Customer').slice(0, 160),
+          String(ord.customer?.phone || '').slice(0, 32),
+          String(ord.customer?.district || '').slice(0, 120),
+          Number(ord.pricing?.total || 0),
+          String(ord.status || 'pending').slice(0, 32),
+          String(ord.source || 'online').slice(0, 16),
+          JSON.stringify(ord),
+          String(ord.createdAt || new Date().toISOString()).slice(0, 64)
+        ]
+      );
+    }
+
+    const prodsArr: any[] = Array.isArray(payload.products) ? payload.products : [];
+    for (const prod of prodsArr) {
+      if (!prod?.id) continue;
+      await conn.query(
+        `INSERT INTO \`${p}products\` (id, title, category, price, stock, barcode, payload_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           title = VALUES(title),
+           category = VALUES(category),
+           price = VALUES(price),
+           stock = VALUES(stock),
+           barcode = VALUES(barcode),
+           payload_json = VALUES(payload_json)`,
+        [
+          String(prod.id),
+          String(prod.title || 'Product').slice(0, 255),
+          String(prod.category || '').slice(0, 120),
+          Number(prod.price || 0),
+          Number(prod.stock || 0),
+          String(prod.barcode || prod.sku || '').slice(0, 120),
+          JSON.stringify(prod)
+        ]
+      );
+    }
+
+    const custArr: any[] = Array.isArray(payload.customerAccounts) ? payload.customerAccounts : [];
+    for (const cust of custArr) {
+      if (!cust?.phone) continue;
+      await conn.query(
+        `INSERT INTO \`${p}customers\` (phone, name, email, wallet_balance, loyalty_points, payload_json)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           name = VALUES(name),
+           email = VALUES(email),
+           wallet_balance = VALUES(wallet_balance),
+           loyalty_points = VALUES(loyalty_points),
+           payload_json = VALUES(payload_json)`,
+        [
+          String(cust.phone).slice(0, 32),
+          String(cust.name || 'Customer').slice(0, 160),
+          String(cust.email || '').slice(0, 160),
+          Number(cust.walletBalance || 0),
+          Number(cust.loyaltyPoints || 0),
+          JSON.stringify(cust)
+        ]
+      );
+    }
+
+    return res.json({
+      success: true,
+      counts: {
+        orders: ordersArr.length,
+        products: prodsArr.length,
+        customers: custArr.length
+      },
+      syncedAt: new Date().toISOString()
+    });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err?.message || 'Hostinger MySQL push failed' });
+  } finally {
+    if (conn) await conn.end().catch(() => {});
+  }
+});
+
+app.post('/api/database/hostinger/sync-pull', async (req, res) => {
+  const cfg = resolveHostingerConfig(req.body?.config);
+  if (cfg.mode === 'php_bridge') {
+    if (!cfg.phpBridgeUrl) {
+      return res.status(400).json({ success: false, error: 'Hostinger PHP Bridge URL is required.' });
+    }
+    try {
+      const resp = await fetch(cfg.phpBridgeUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': cfg.phpBridgeSecret },
+        body: JSON.stringify({ action: 'sync_pull', tablePrefix: cfg.tablePrefix })
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || !data?.success) {
+        return res.status(400).json({ success: false, error: data?.error || `HTTP ${resp.status}` });
+      }
+      return res.json({ success: true, payload: data.payload });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'PHP Bridge pull failed' });
+    }
+  }
+
+  let conn: mysql.Connection | null = null;
+  try {
+    conn = await openHostingerMysqlConnection(cfg);
+    const p = cfg.tablePrefix;
+    const [kvRows] = await conn.query(`SELECT kv_key, kv_value FROM \`${p}store_kv\``);
+    let snapshot: any = {};
+    if (Array.isArray(kvRows)) {
+      const backupRow = (kvRows as any[]).find((r) => r.kv_key === 'full_backup_json');
+      if (backupRow?.kv_value) {
+        snapshot = JSON.parse(backupRow.kv_value);
+      }
+    }
+    const [ordRows] = await conn.query(`SELECT payload_json FROM \`${p}orders\` ORDER BY updated_at DESC`);
+    const [prodRows] = await conn.query(`SELECT payload_json FROM \`${p}products\``);
+    const [custRows] = await conn.query(`SELECT payload_json FROM \`${p}customers\``);
+
+    if (Array.isArray(ordRows) && ordRows.length > 0) {
+      snapshot.orders = (ordRows as any[]).map((r) => JSON.parse(r.payload_json));
+    }
+    if (Array.isArray(prodRows) && prodRows.length > 0) {
+      snapshot.products = (prodRows as any[]).map((r) => JSON.parse(r.payload_json));
+    }
+    if (Array.isArray(custRows) && custRows.length > 0) {
+      snapshot.customerAccounts = (custRows as any[]).map((r) => JSON.parse(r.payload_json));
+    }
+
+    return res.json({ success: true, payload: snapshot });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err?.message || 'Hostinger MySQL pull failed' });
+  } finally {
+    if (conn) await conn.end().catch(() => {});
+  }
+});
+
+app.post('/api/database/hostinger/order', async (req, res) => {
+  const { order, config } = req.body || {};
+  if (!order?.id) {
+    return res.status(400).json({ success: false, error: 'Order payload required.' });
+  }
+  const cfg = resolveHostingerConfig(config);
+  if (cfg.mode === 'php_bridge') {
+    if (!cfg.phpBridgeUrl) {
+      return res.status(400).json({ success: false, error: 'PHP Bridge URL not set.' });
+    }
+    try {
+      const resp = await fetch(cfg.phpBridgeUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': cfg.phpBridgeSecret },
+        body: JSON.stringify({ action: 'upsert_order', tablePrefix: cfg.tablePrefix, order })
+      });
+      const data = await resp.json().catch(() => null);
+      return res.status(resp.ok ? 200 : 400).json(data || { success: resp.ok });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'Bridge order sync failed' });
+    }
+  }
+  try {
+    await upsertOrderToHostingerMysql(cfg, order);
+    return res.json({ success: true, orderId: order.id });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err?.message || 'Hostinger order sync failed' });
   }
 });
 
