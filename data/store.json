@@ -1,10 +1,2363 @@
 {
   "pixelEvents": [],
-  "orders": [],
+  "orders": [
+    {
+      "id": "BD-89211",
+      "customer": {
+        "name": "রাফসান কবির",
+        "phone": "01899001122",
+        "address": "গ্রাম: চরকালিয়া, ডাকঘর: মির্জাপুর",
+        "district": "টাঙ্গাইল",
+        "thana": "Mirzapur"
+      },
+      "items": [
+        {
+          "productId": "prod-002",
+          "productTitle": "T9 Vintage Professional Hair Trimmer",
+          "productTitleBn": "T9 ভিন্টেজ প্রফেশনাল মেটাল হেয়ার ট্রিমার",
+          "price": 790,
+          "quantity": 1,
+          "selectedColor": "Vintage Golden",
+          "selectedSize": "Standard",
+          "image": "https://images.unsplash.com/photo-1621607512214-68297480165e?w=600"
+        }
+      ],
+      "pricing": {
+        "subtotal": 790,
+        "deliveryFee": 130,
+        "discount": 0,
+        "total": 920
+      },
+      "payment": {
+        "method": "cod",
+        "status": "pending"
+      },
+      "deliveryZone": "dhaka_outside",
+      "status": "pending",
+      "aiCallStatus": {
+        "called": false
+      },
+      "courier": {
+        "provider": "Steadfast",
+        "trackingCode": "STDF-89211",
+        "status": "booked",
+        "currentLocation": "Awaiting AI Voice Call",
+        "estimatedDelivery": "Within 48-72 hours",
+        "history": [
+          {
+            "status": "Order Received",
+            "time": "Just now",
+            "location": "Website",
+            "note": "Awaiting automated phone confirmation"
+          }
+        ]
+      },
+      "fraudCheck": {
+        "checked": true,
+        "successRate": 85,
+        "totalOrders": 6,
+        "deliveredCount": 5,
+        "cancelledCount": 1,
+        "riskLevel": "safe",
+        "message": "স্বাভাবিক নিয়মিত ক্রেতা।"
+      },
+      "createdAt": "2026-11-10T05:05:00Z"
+    },
+    {
+      "id": "BD-89210",
+      "customer": {
+        "name": "তানভীর আহমেদ",
+        "phone": "01711223344",
+        "address": "বাড়ি #১২, রোড #০৫, ব্লক #সি, বনশ্রী",
+        "district": "ঢাকা (সিটি কর্পোরেশন)",
+        "thana": "Rampura",
+        "note": "কল করে ডেলিভারি দিবেন"
+      },
+      "items": [
+        {
+          "productId": "prod-001",
+          "productTitle": "Ultra Watch 9 Pro AMOLED Display Smartwatch",
+          "productTitleBn": "আল্ট্রা ওয়াচ ৯ প্রো এমোলেড ডিসপ্লে স্মার্টওয়াচ",
+          "price": 1850,
+          "quantity": 1,
+          "selectedColor": "Titanium Silver (সিলভার)",
+          "selectedSize": "49mm Standard",
+          "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600"
+        }
+      ],
+      "pricing": {
+        "subtotal": 1850,
+        "deliveryFee": 70,
+        "discount": 100,
+        "total": 1820
+      },
+      "payment": {
+        "method": "cod",
+        "status": "pending"
+      },
+      "deliveryZone": "dhaka_inside",
+      "status": "ai_confirmed",
+      "aiCallStatus": {
+        "called": true,
+        "callTimestamp": "Today 10:15 AM",
+        "confirmedByCustomer": true,
+        "durationSeconds": 38,
+        "notes": "Customer confirmed order verbally via automated voice prompt (pressed 1)",
+        "transcript": [
+          {
+            "speaker": "ai",
+            "text": "Assalamu Alaikum Tanvir bhai, calling from BuyOne BD...",
+            "textBn": "আসসালামু আলাইকুম তানভীর ভাই, BuyOne BD থেকে বলছি...",
+            "time": "00:02"
+          },
+          {
+            "speaker": "customer",
+            "text": "Pressed [1] - Confirmed Order",
+            "textBn": "[১] চেপে অর্ডার কনফার্ম করলেন",
+            "time": "00:22"
+          }
+        ]
+      },
+      "courier": {
+        "provider": "Steadfast",
+        "trackingCode": "STDF-89210",
+        "status": "in_transit",
+        "currentLocation": "Steadfast Central Hub, Tejgaon, Dhaka",
+        "estimatedDelivery": "Tomorrow Afternoon",
+        "riderName": "জাহিদুল ইসলাম",
+        "riderPhone": "01888990011",
+        "consignmentId": "109842",
+        "history": [
+          {
+            "status": "Order Placed",
+            "time": "10:12 AM",
+            "location": "Website",
+            "note": "Customer placed 1-click order"
+          },
+          {
+            "status": "AI Call Confirmed",
+            "time": "10:15 AM",
+            "location": "System",
+            "note": "Order verified by AI Agent Sumana"
+          },
+          {
+            "status": "Steadfast Consignment Booked",
+            "time": "11:00 AM",
+            "location": "Tejgaon Hub",
+            "note": "Handed over to Steadfast courier rider"
+          }
+        ]
+      },
+      "fraudCheck": {
+        "checked": true,
+        "successRate": 98,
+        "totalOrders": 24,
+        "deliveredCount": 23,
+        "cancelledCount": 1,
+        "riskLevel": "safe",
+        "message": "গ্রাহকের পূর্ববর্তী ডেলিভারি সফলতা ৯৮%! ১০০% নিরাপদ অর্ডার।"
+      },
+      "createdAt": "2026-11-10T04:12:00Z"
+    }
+  ],
   "deletedOrderIds": [
     "BD-TEST-1794648408625",
     "BD-TEST-1794648391675"
   ],
-  "lastUpdated": "2026-11-15T16:49:19.489Z",
-  "browsingHistory": []
+  "lastUpdated": "2026-11-15T17:16:27.320Z",
+  "browsingHistory": [],
+  "products": [
+    {
+      "subcategory": "smart-watches",
+      "price": 1850,
+      "colors": [
+        "Titanium Silver (সিলভার)",
+        "Matte Black (কালো)",
+        "Deep Orange (কমলা)"
+      ],
+      "descriptionBn": "অরিজিনাল ২.১ ইঞ্চি এমোলেড ডিসপ্লে, ব্লুটুথ কল রিসিভ ও ডায়ালিং, হার্ট রেট ও স্লিপ মনিটরিং সমৃদ্ধ প্রিমিয়াম স্মার্টওয়াচ। সাথে অতিরিক্ত অরেঞ্জ সিলিকন ও ওশান স্ট্র্যাপ সম্পূর্ণ ফ্রি।",
+      "sizes": [
+        "49mm Standard"
+      ],
+      "title": "Ultra Watch 9 Pro AMOLED Display Smartwatch with Calling",
+      "sku": "WATCH9-PRO-BLK",
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1794762758,
+        "nanoseconds": 403000000
+      },
+      "categoryBn": "স্মার্ট গ্যাজেট",
+      "featuresBn": [
+        "২.১ ইঞ্চি এইচডি ক্রিস্টাল এমোলেড স্ক্রিন",
+        "সরাসরি ব্লুটুথ কলিং ও লাউডস্পিকার",
+        "ম্যাগনেটিক ফাস্ট চার্জার",
+        "আইপি৬৮ ওয়াটারপ্রুফ বডি",
+        "এক চার্জে ৫-৭ দিন দীর্ঘস্থায়ী ব্যাটারি"
+      ],
+      "description": "Next-gen flagship smartwatch with vibrant 2.1-inch Always-on AMOLED screen, wireless magnetic charging, wireless Bluetooth call answering, water-resistant zinc-alloy body, and 100+ sports modes.",
+      "id": "prod-001",
+      "stock": 35,
+      "reviewsCount": 342,
+      "warrantyInfo": "1 Year Brand Warranty & 7 Days Replacement",
+      "features": [
+        "2.1 Inch HD AMOLED Display",
+        "Direct Bluetooth Calling & Mic",
+        "Wireless Fast Magnetic Charger",
+        "IP68 Waterproof Body",
+        "7 Days Battery Backup"
+      ],
+      "images": [
+        "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80"
+      ],
+      "isFlashSale": true,
+      "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "originalPrice": 3500,
+      "category": "smart-gadgets",
+      "seo": {
+        "slug": "ultra-watch-9-pro-amoled-smartwatch",
+        "metaDescription": "Buy Ultra Watch 9 Pro AMOLED Calling Smartwatch at ৳1,850 with Cash on Delivery across Bangladesh.",
+        "metaTitle": "Ultra Watch 9 Pro AMOLED Smartwatch Price in Bangladesh | BuyOne BD",
+        "robots": "index, follow",
+        "keywords": "ultra watch 9 pro, smartwatch price bangladesh, amoled calling watch"
+      },
+      "warrantyInfoBn": "১ বছরের ব্র্যান্ড সার্ভিস ও ৭ দিনের রিপ্লেসমেন্ট গ্যারান্টি",
+      "titleBn": "আল্ট্রা ওয়াচ ৯ প্রো এমোলেড ডিসপ্লে স্মার্টওয়াচ (কলিং ও হেলথ ট্র্যাকার)",
+      "tags": [
+        "Best Seller",
+        "Hot Deal",
+        "Free Delivery"
+      ],
+      "rating": 4.9
+    },
+    {
+      "title": "T9 Vintage Professional Hair & Beard Trimmer for Men",
+      "reviewsCount": 228,
+      "originalPrice": 1400,
+      "images": [
+        "https://images.unsplash.com/photo-1621607512214-68297480165e?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=800&auto=format&fit=crop&q=80"
+      ],
+      "colors": [
+        "Vintage Golden (স্বর্ণালী)",
+        "Classic Bronze (ব্রোঞ্জ)",
+        "Silver Metallic (রুপালি)"
+      ],
+      "subcategory": "trimmers-shavers",
+      "descriptionBn": "সম্পূর্ণ মেটাল বডি ও রাজকীয় ড্রাগন খোদাই করা টি৯ হেয়ার ও দাড়ি ট্রিমার। ইউএসবি রিচার্জেবল লিথিয়াম ব্যাটারি ও ৪টি ক্লিপ কম্ব সহ।",
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1794762758,
+        "nanoseconds": 795000000
+      },
+      "description": "Heavy duty dragon carved metal hair clipper trimmer for professional styling and zero trim grooming with ultra-sharp stainless steel T-blade.",
+      "titleBn": "T9 ভিন্টেজ প্রফেশনাল মেটাল হেয়ার ও বিয়ার্ড ট্রিমার (ইউএসবি রিচার্জেবল)",
+      "categoryBn": "স্মার্ট গ্যাজেট",
+      "tags": [
+        "Mega Offer",
+        "Trending"
+      ],
+      "isFlashSale": true,
+      "seo": {
+        "slug": "t9-vintage-professional-hair-trimmer",
+        "robots": "index, follow",
+        "metaTitle": "T9 Vintage Metal Hair & Beard Trimmer | BuyOne BD",
+        "metaDescription": "Original T9 Vintage Metal Rechargeable Hair & Beard Trimmer with zero-gap blade at best price in BD.",
+        "keywords": "t9 trimmer, vintage hair trimmer bangladesh, beard clipper"
+      },
+      "sku": "T9-TRIMMER-GLD",
+      "price": 790,
+      "id": "prod-002",
+      "stock": 62,
+      "category": "smart-gadgets",
+      "featuresBn": [
+        "জিরো ট্রিম শার্প টি-ব্লেড",
+        "সম্পূর্ণ মেটাল ড্রাগন বডি",
+        "১২০০ এমএএইচ রিচার্জেবল ব্যাটারি",
+        "৪টি কাটিং কম্ব (১.৫মিমি, ২মিমি, ৩মিমি, ৪মিমি)"
+      ],
+      "rating": 4.8,
+      "features": [
+        "Zero Gapped T-Blade",
+        "Full Heavy Metal Body",
+        "1200mAh Rechargeable Battery",
+        "4 Guide Combs Included"
+      ],
+      "sizes": [
+        "Standard"
+      ]
+    },
+    {
+      "descriptionBn": "শতভাগ প্রিমিয়াম ফাইন সুতি কাপড়ে তৈরি রাজকীয় ডিজাইনের পাঞ্জাবি। নিখুঁত সুতার কাজ এবং আরামদায়ক কাট। যেকোনো উৎসবে পরার জন্য সেরা।",
+      "originalPrice": 2800,
+      "tags": [
+        "Exclusive",
+        "Eid Special"
+      ],
+      "categoryBn": "ফ্যাশন ও লাইফস্টাইল",
+      "title": "Royal Handcrafted Cotton Panjabi Set with Exclusive Embroidery",
+      "sku": "PANJABI-ROYAL-03",
+      "images": [
+        "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1598033129183-c4f50c736f10?w=800&auto=format&fit=crop&q=80"
+      ],
+      "colors": [
+        "Navy Blue (নেভি ব্লু)",
+        "Snow White (সাদা)",
+        "Olive Green (অলিভ গ্রিন)",
+        "Jet Black (কালো)"
+      ],
+      "seo": {
+        "metaDescription": "Fine cotton embroidered Panjabi set with fast home delivery all over Bangladesh.",
+        "metaTitle": "Royal Cotton Embroidered Panjabi Set | BuyOne BD",
+        "robots": "index, follow",
+        "slug": "royal-handcrafted-cotton-panjabi-set",
+        "keywords": "cotton panjabi, eid panjabi bangladesh, mens fashion dhaka"
+      },
+      "features": [
+        "100% Breathable Fine Cotton",
+        "High-Grade Thread Embroidery",
+        "Snap Metal Buttons",
+        "Color Fade Resistant"
+      ],
+      "featuresBn": [
+        "১০০% নরম ফাইন সুতি কাপড়",
+        "নিখুঁত সুতার এমব্রয়ডারি কাজ",
+        "ম্যাচিং স্ন্যাপ বাটন",
+        "রং ওঠার ভয় নেই"
+      ],
+      "sizes": [
+        "40 (M)",
+        "42 (L)",
+        "44 (XL)",
+        "46 (XXL)"
+      ],
+      "isFlashSale": false,
+      "titleBn": "রয়্যাল ফাইন কটন এমব্রয়ডারি পাঞ্জাবি ও পায়জামা সেট",
+      "price": 1850,
+      "category": "fashion",
+      "rating": 4.9,
+      "id": "prod-003",
+      "reviewsCount": 189,
+      "description": "Premium tailored formal and festive Panjabi crafted with 100% breathable organic fine cotton fabric with intricate chest embroidery.",
+      "subcategory": "panjabi-kabli",
+      "stock": 28,
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1794762759,
+        "nanoseconds": 70000000
+      }
+    },
+    {
+      "colors": [
+        "Glossy Black (কালো)"
+      ],
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1794762759,
+        "nanoseconds": 312000000
+      },
+      "images": [
+        "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=800&auto=format&fit=crop&q=80"
+      ],
+      "originalPrice": 1200,
+      "features": [
+        "9D Hi-Fi Sound",
+        "Digital Battery Level Indicator",
+        "Touch Controls",
+        "Can Charge Mobile Device"
+      ],
+      "descriptionBn": "৯ডি স্টেরিও সাউন্ড ও চমৎকার বেইস সমৃদ্ধ এম১০ ইয়ারবাডস। ডিজিটাল এলইডি পারসেন্টেজ ডিসপ্লে ও মোবাইল চার্জিং পাওয়ারব্যাংক কেস।",
+      "title": "M10 TWS Wireless Earbuds with 2000mAh Power Bank Case",
+      "categoryBn": "স্মার্ট গ্যাজেট",
+      "reviewsCount": 512,
+      "titleBn": "M10 ব্লুটুথ ৫.১ ওয়্যারলেস ইয়ারবাডস (পাওয়ারব্যাংক ডিসপ্লে সহ)",
+      "seo": {
+        "slug": "m10-tws-wireless-earbuds-powerbank",
+        "metaDescription": "Shop M10 TWS Wireless Earbuds with 2000mAh emergency powerbank case at ৳690 in Bangladesh.",
+        "metaTitle": "M10 TWS Bluetooth 5.1 Earbuds | BuyOne BD",
+        "keywords": "m10 earbuds, tws bluetooth bd, wireless earbuds price",
+        "robots": "index, follow"
+      },
+      "category": "smart-gadgets",
+      "sku": "M10-TWS-BLK",
+      "description": "Deep bass Bluetooth 5.1 earphones with 9D stereo sound, LED digital battery display case that can also charge your mobile in emergencies.",
+      "subcategory": "tws-earbuds",
+      "stock": 89,
+      "id": "prod-004",
+      "rating": 4.6,
+      "tags": [
+        "Super Deal",
+        "Power Bank Case"
+      ],
+      "price": 690,
+      "featuresBn": [
+        "হাই-ফাই ৯ডি স্টেরিও বেইস",
+        "ডিজিটাল চার্জিং পার্সেন্টেজ",
+        "ফিঙ্গারপ্রিন্ট টাচ কন্ট্রোল",
+        "জরুরি প্রয়োজনে মোবাইল চার্জ সুবিধা"
+      ],
+      "isFlashSale": true,
+      "sizes": [
+        "Standard"
+      ]
+    },
+    {
+      "reviewsCount": 97,
+      "descriptionBn": "সুন্দরবনের গভীর জঙ্গল থেকে মোয়ালদের সংগৃহীত ১০০% খাঁটি ও প্রক্রিয়াজাতহীন খলিশা ফুলের মধু। রোগ প্রতিরোধ ক্ষমতা বাড়ায়।",
+      "tags": [
+        "100% Pure",
+        "Lab Tested"
+      ],
+      "originalPrice": 1500,
+      "seo": {
+        "metaDescription": "100% pure lab-tested Sundarban Khalisha flower honey delivered fresh in glass jar.",
+        "keywords": "sundarban honey, pure honey bangladesh, khalisha honey",
+        "slug": "sundarban-khalisha-pure-honey-1kg",
+        "metaTitle": "Sundarban Pure Khalisha Honey 1Kg | BuyOne BD",
+        "robots": "index, follow"
+      },
+      "featuresBn": [
+        "সরাসরি সুন্দরবন থেকে সংগৃহীত",
+        "চিনি বা গ্লুকোজ মুক্ত শতভাগ খাঁটি",
+        "প্রাকৃতিক এনজাইম ও অ্যান্টিঅক্সিডেন্ট",
+        "সুরক্ষিত প্রিমিয়াম কাঁচের জার"
+      ],
+      "id": "prod-005",
+      "title": "Sundarban Raw Natural Khalisha Pure Honey (1 Kg)",
+      "colors": [
+        "Pure Golden Amber"
+      ],
+      "images": [
+        "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=800&auto=format&fit=crop&q=80"
+      ],
+      "isFlashSale": false,
+      "sizes": [
+        "1 Kg Glass Jar (১ কেজি)",
+        "500g Glass Jar (৫০০ গ্রাম)"
+      ],
+      "sku": "HONEY-SUNDAR-1KG",
+      "category": "organic-food",
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1794762759,
+        "nanoseconds": 649000000
+      },
+      "categoryBn": "অর্গানিক ফুড ও মধু",
+      "subcategory": "wild-raw-honey",
+      "stock": 24,
+      "rating": 5,
+      "description": "100% natural, unpasteurized, lab-tested wild honey directly sourced from Sundarban mangrove forest. Rich in antioxidants and authentic floral aroma.",
+      "titleBn": "সুন্দরবনের ১০০% খাঁটি খলিশা ফুলের প্রাকৃতিক মধু (১ কেজি)",
+      "price": 1150,
+      "features": [
+        "Directly From Sundarban",
+        "No Added Sugar Or Glucose",
+        "Rich In Natural Enzymes",
+        "Heavy Glass Jar Packaging"
+      ]
+    },
+    {
+      "price": 950,
+      "images": [
+        "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=800&auto=format&fit=crop&q=80"
+      ],
+      "titleBn": "১৪-ইন-১ মাল্টিফাংশনাল ভেজিটেবল ও কিচেন কাটার",
+      "category": "home-kitchen",
+      "colors": [
+        "Emerald Green & Grey"
+      ],
+      "featuresBn": [
+        "১৪ রকমের স্টেইনলেস স্টিল ব্লেড",
+        "ড্রেনেজ বাস্কেট সহ ১.৫ লিটার কন্টেইনার",
+        "বিপিএ-ফ্রি ফুড গ্রেড প্লাস্টিক",
+        "হাত কাটার ভয়হীন হ্যান্ডগার্ড"
+      ],
+      "stock": 55,
+      "features": [
+        "14 Interchangeable Blades",
+        "Large Catch Tray with Drain Basket",
+        "Food Grade BPA-Free Plastic",
+        "Hand Safety Guard Included"
+      ],
+      "id": "prod-006",
+      "sku": "CHOPPER-14IN1",
+      "sizes": [
+        "Standard Set"
+      ],
+      "seo": {
+        "metaDescription": "Cut cooking prep time in half with the 14-in-1 stainless blade kitchen food chopper.",
+        "keywords": "vegetable cutter, kitchen chopper bd, 14 in 1 cutter",
+        "metaTitle": "14-in-1 Smart Vegetable Cutter & Chopper | BuyOne BD",
+        "slug": "14-in-1-vegetable-cutter-chopper",
+        "robots": "index, follow"
+      },
+      "title": "14-in-1 Multifunctional Vegetable Cutter & Food Chopper",
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1794762759,
+        "nanoseconds": 879000000
+      },
+      "subcategory": "kitchen-cutters",
+      "description": "Save cooking preparation time with sharp stainless steel blades for slicing, dicing, grating onions, potatoes, carrots with drainage container basket.",
+      "rating": 4.7,
+      "tags": [
+        "Kitchen Must Have"
+      ],
+      "reviewsCount": 146,
+      "descriptionBn": "রান্নার সময় অর্ধেক করতে আল্ট্রা-শার্প স্টেইনলেস স্টিল ব্লেড সহ ১৪ ধরনের কাটিং ও ড্রেন বাস্কেট যুক্ত স্মার্ট কিচেন কাটার।",
+      "originalPrice": 1600,
+      "isFlashSale": true,
+      "categoryBn": "হোম ও কিচেন"
+    },
+    {
+      "sizes": [
+        "12ml Roll-On (১২ মিলি)",
+        "6ml Pocket (৬ মিলি)"
+      ],
+      "descriptionBn": "মদিনার ঐতিহ্যবাহী জান্নাতুল ফেরদৌস কনসেনট্রেটেড হালাল আতর। দীর্ঘ ৪৮ ঘণ্টারও বেশি সময় পর্যন্ত কাপড়ে প্রশান্তিময় সুবাস ছড়ায়।",
+      "originalPrice": 950,
+      "features": [
+        "100% Alcohol Free Pure Concentrated Oil",
+        "48+ Hours Lasting Scent",
+        "Luxurious Crystal Roll-on Bottle",
+        "Made from Natural Floral Extracts"
+      ],
+      "rating": 4.9,
+      "stock": 80,
+      "sku": "ATTAR-JANNAT-12ML",
+      "category": "islamic-lifestyle",
+      "price": 590,
+      "titleBn": "মদিনার খাঁটি জান্নাতুল ফেরদৌস এলকোহল-মুক্ত পারফিউম আতর (১২ মিলি)",
+      "categoryBn": "ইসলামিক ও আতর",
+      "tags": [
+        "Halal",
+        "Long Lasting"
+      ],
+      "featuresBn": [
+        "শতভাগ অ্যালকোহল ও কেমিক্যাল মুক্ত",
+        "৪৮+ ঘণ্টা দীর্ঘস্থায়ী সুবাস",
+        "প্রিমিয়াম ক্রিস্টাল কাঁচের শিশি",
+        "প্রাকৃতিক ফুলের নির্যাস থেকে প্রস্তুত"
+      ],
+      "isFlashSale": false,
+      "id": "prod-007",
+      "seo": {
+        "metaTitle": "Jannatul Ferdous Pure Roll-On Attar 12ml | BuyOne BD",
+        "slug": "madina-jannatul-ferdous-pure-attar-12ml",
+        "metaDescription": "Alcohol-free authentic Jannatul Ferdous concentrated attar oil with 48+ hours fragrance.",
+        "keywords": "jannatul ferdous attar, halal perfume bangladesh, attar 12ml",
+        "robots": "index, follow"
+      },
+      "reviewsCount": 310,
+      "subcategory": "roll-on-attar",
+      "colors": [
+        "Amber Crystal Glass Bottle"
+      ],
+      "description": "Long-lasting authentic oriental fragrance oil imported from holy Madinah. Free from alcohol and chemical additives with 48 hours lingering smell.",
+      "images": [
+        "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=800&auto=format&fit=crop&q=80"
+      ],
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1794762760,
+        "nanoseconds": 133000000
+      },
+      "title": "Madina Pure Jannatul Ferdous Alcohol-Free Concentrated Attar (12ml)"
+    },
+    {
+      "categoryBn": "বিউটি ও পার্সোনাল কেয়ার",
+      "title": "Rice Water Brightening Gentle Foaming Cleanser (150ml)",
+      "tags": [
+        "Natural Glow",
+        "Korean Formula"
+      ],
+      "reviewsCount": 164,
+      "sku": "CLEANSER-RICE-150",
+      "descriptionBn": "প্রাকৃতিক চালের নির্যাস ও ভিটামিন সমৃদ্ধ ফেসওয়াশ। ত্বকের গভীর থেকে ময়লা পরিষ্কার করে ইনস্ট্যান্ট উজ্জ্বলতা ফিরিয়ে আনে।",
+      "colors": [
+        "Milky White"
+      ],
+      "images": [
+        "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&auto=format&fit=crop&q=80"
+      ],
+      "titleBn": "রাইস ওয়াটার ব্রাইটেনিং ফেসওয়াশ ও ডিপ পোর ক্লিনজার (১৫০ মিলি)",
+      "id": "prod-008",
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1794762760,
+        "nanoseconds": 389000000
+      },
+      "originalPrice": 1100,
+      "stock": 40,
+      "subcategory": "herbal-skincare",
+      "description": "Deep cleansing face wash enriched with real rice water and moringa oil to gently dissolve impurities and brighten dull skin tone.",
+      "price": 750,
+      "features": [
+        "Infused with Rice Water and Moringa Oil",
+        "For All Skin Types",
+        "Sulfate and Paraben Free",
+        "Gentle Daily Use"
+      ],
+      "isFlashSale": false,
+      "sizes": [
+        "150ml"
+      ],
+      "seo": {
+        "keywords": "rice water cleanser, skincare bangladesh, brightening facewash",
+        "metaDescription": "Korean formula Rice Water & Moringa deep pore brightening cleanser in Bangladesh.",
+        "slug": "rice-water-brightening-foaming-cleanser",
+        "metaTitle": "Rice Water Brightening Foaming Cleanser 150ml | BuyOne BD",
+        "robots": "index, follow"
+      },
+      "category": "beauty-care",
+      "rating": 4.8,
+      "featuresBn": [
+        "চালের খাঁটি নির্যাস ও ভিটামিন সমৃদ্ধ",
+        "সব ধরনের ত্বকের জন্য উপযোগী",
+        "প্যারাবেন ও ক্ষতিকর কেমিক্যাল মুক্ত",
+        "নরম ও উজ্জ্বল ত্বকের নিশ্চয়তা"
+      ]
+    }
+  ],
+  "settings": {
+    "storeName": "BuyOne BD",
+    "storeNameBn": "বাইওয়ান বিডি",
+    "logoUrl": "",
+    "logoMode": "text",
+    "tagline": "Bangladesh's Most Trusted Smart Shopping Platform",
+    "taglineBn": "বাংলাদেশের বিশ্বস্ত ১-ক্লিক স্মার্ট ই-কমার্স ও অটোমেটেড এআই সাপোর্ট",
+    "hotline": "01886-BUYONE (01886-289663)",
+    "whatsappNumber": "8801886289663",
+    "supportEmail": "buyonebd@gmail.com",
+    "address": "লেভেল ৪, হাউস ১৮, রোড ১১, বনানী, ঢাকা-১২১৩, বাংলাদেশ",
+    "deliveryFees": {
+      "dhakaInside": 70,
+      "dhakaSub": 100,
+      "dhakaOutside": 130
+    },
+    "paymentSettings": {
+      "bkashMerchant": "01886289663",
+      "nagadMerchant": "01886289663",
+      "rocketMerchant": "018862896630",
+      "enableCOD": true,
+      "requireAdvanceDeliveryFee": false,
+      "advanceFeeAmount": 100
+    },
+    "aiCallSettings": {
+      "autoCallOnOrder": true,
+      "agentName": "Sumana (সুমনা)",
+      "agentGender": "female",
+      "voiceName": "Kore",
+      "humanTone": "Warm, natural, polite human Bangladeshi customer care agent with expressive intonation",
+      "delaySeconds": 3,
+      "voiceSpeed": 0.95,
+      "banglaScript": "আসসালামু আলাইকুম {customer_name} ভাই! বাইওয়ান বিডি থেকে আমি সুমনা বলছিলাম। আশা করি আপনি ভালো আছেন। আপনি আমাদের শপ থেকে {product_name}, মোট {total_amount} টাকার একটি ক্যাশ অন ডেলিভারি অর্ডার করেছিলেন। আপনার ডেলিভারি ঠিকানা হলো {customer_address}। আপনার অর্ডারটি কনফার্ম করতে চাইলে অনুগ্রহ করে নিচে ১ বাটন চাপুন। আর যদি বাতিল করতে চান তবে ২ চাপুন।"
+    },
+    "announcementBar": {
+      "enabled": true,
+      "textBn": "🚚 সারা বাংলাদেশে দ্রুততম হোম ডেলিভারি ও ক্যাশ অন ডেলিভারি সুবিধা | হেল্পলাইন: 01886-289663",
+      "textEn": "🚚 Nationwide Fast Home Delivery with Cash on Delivery | Helpline: 01886-289663"
+    },
+    "theme": "gadgets",
+    "themeColors": {
+      "primary": "#059669",
+      "secondary": "#0d9488",
+      "headerBg": "#ffffff",
+      "footerBg": "#020617",
+      "heroFrom": "#020617",
+      "heroTo": "#064e3b"
+    },
+    "cmsTexts": {
+      "trendingTitleBn": "হট ও ট্রেন্ডিং কালেকশন",
+      "trendingTitleEn": "Hot & Trending Collection",
+      "orderNowBtnBn": "অর্ডার করুন",
+      "orderNowBtnEn": "Order Now",
+      "addToCartBtnBn": "কার্টে যোগ করুন",
+      "addToCartBtnEn": "Add to Cart",
+      "allCategoriesLabelBn": "সকল পণ্য",
+      "allCategoriesLabelEn": "All Products"
+    },
+    "spinSettings": {
+      "enabled": true,
+      "headlineBn": "🎉 লাকি স্পিন হুইল! ঘুরিয়ে জিতুন আকর্ষণীয় উপহার",
+      "headlineEn": "🎉 Lucky Spin Wheel! Spin & Win Instant Rewards",
+      "spinsPerDay": 4,
+      "rewards": [
+        {
+          "color": "#f43f5e",
+          "id": "spin-1",
+          "value": 500,
+          "code": "TEMU500",
+          "isTryAgain": false,
+          "labelEn": "৳500 OFF",
+          "labelBn": "৳৫০০ ক্যাশ",
+          "discountType": "fixed"
+        },
+        {
+          "code": "FREESHIP",
+          "discountType": "free_shipping",
+          "value": 70,
+          "color": "#0284c7",
+          "id": "spin-2",
+          "labelEn": "Free Ship",
+          "labelBn": "ফ্রি ডেলিভারি",
+          "isTryAgain": false
+        },
+        {
+          "code": "MEGA250",
+          "id": "spin-3",
+          "labelEn": "৳250 OFF",
+          "labelBn": "৳২৫০ ছাড়",
+          "color": "#10b981",
+          "discountType": "fixed",
+          "value": 250,
+          "isTryAgain": false
+        },
+        {
+          "discountType": "percent",
+          "value": 50,
+          "isTryAgain": false,
+          "code": "HALFPRICE",
+          "id": "spin-4",
+          "labelEn": "50% OFF",
+          "labelBn": "৫০% মেগা",
+          "color": "#8b5cf6"
+        },
+        {
+          "isTryAgain": false,
+          "color": "#f59e0b",
+          "value": 150,
+          "labelEn": "৳150 OFF",
+          "labelBn": "৳১৫০ ক্যাশ",
+          "code": "CASH150",
+          "discountType": "fixed",
+          "id": "spin-5"
+        },
+        {
+          "code": "GIFT100",
+          "color": "#059669",
+          "value": 100,
+          "discountType": "fixed",
+          "labelEn": "৳100 OFF",
+          "labelBn": "৳১০০ ওয়ালেট",
+          "id": "spin-6",
+          "isTryAgain": false
+        },
+        {
+          "labelEn": "20% OFF",
+          "labelBn": "২০% ভাউচার",
+          "discountType": "percent",
+          "value": 20,
+          "color": "#d97706",
+          "id": "spin-7",
+          "isTryAgain": false,
+          "code": "DEAL20"
+        },
+        {
+          "isTryAgain": false,
+          "code": "BONUS300",
+          "color": "#ec4899",
+          "value": 300,
+          "discountType": "fixed",
+          "id": "spin-8",
+          "labelEn": "৳300 OFF",
+          "labelBn": "৳৩০০ বোনাস"
+        }
+      ]
+    },
+    "whatsappTemplates": {
+      "orderConfirmationMsg": "আসসালামু আলাইকুম {customer_name} ভাই/আপু, BuyOne BD থেকে আপনার অর্ডার #{order_id} সফলভাবে কনফার্ম করা হয়েছে।\nমোট বিল: ৳{total_amount} (ক্যাশ অন ডেলিভারি)\nডেলিভারি ঠিকানা: {address}, {district}\nকুরিয়ার ট্র্যাকিং কোড: {tracking_code}\nযে কোনো তথ্যে যোগাযোগ করুন: 01886-BUYONE। ধন্যবাদ!",
+      "riderDispatchMsg": "প্রিয় {customer_name}, আপনার পার্সেলটি (#{order_id}) স্টিডফাস্ট কুরিয়ারে বুকিং দেওয়া হয়েছে। ট্র্যাকিং কোড: {tracking_code}। ২-৩ দিনে আপনার ঠিকানায় পৌঁছাবে। ধন্যবাদ, BuyOne BD।",
+      "abandonedCartMsg": "আসসালামু আলাইকুম {customer_name} ভাই! আপনি BuyOne BD তে কার্টে কিছু আকর্ষণীয় পণ্য রেখে গেছেন। অর্ডারটি এখনই সম্পন্ন করলে বিশেষ কুপন [COMEBACK10] দিয়ে পাবেন অতিরিক্ত ১০% ছাড় ও ফ্রি গিফট! লিংক: {recovery_link}"
+    },
+    "marketingTemplates": {
+      "orderConfirmation": "আসসালামু আলাইকুম {customer_name}! BuyOne BD-তে আপনার অর্ডার #{order_id} সফলভাবে গ্রহণ করা হয়েছে। মোট বিল: ৳{total_amount} (COD)। ঠিকানা: {customer_address}। দ্রুততম সময়ে আপনার ঠিকানায় পৌঁছে যাবে। ধন্যবাদ!",
+      "shippingDispatched": "প্রিয় {customer_name}! আপনার অর্ডার #{order_id} কুরিয়ারে ({courier_name}) বুকিং সম্পন্ন হয়েছে। লাইভ ট্র্যাকিং কোড: {tracking_code}। পার্সেল আসার পর চেক করে মূল্য পরিশোধ করুন। ধন্যবাদ, BuyOne BD।",
+      "orderHold": "আসসালামু আলাইকুম {customer_name}! আপনার অর্ডার #{order_id}-এর জন্য ফোন নম্বর ও সঠিক ডেলিভারি ঠিকানা যাচাই প্রয়োজন। অনুগ্রহ করে আপনার সম্পূর্ণ ঠিকানা নিশ্চিত করুন। BuyOne BD হেল্পলাইন: 01886-289663।",
+      "orderCancellation": "প্রিয় {customer_name}, আপনার অনুরোধ অনুযায়ী অর্ডার #{order_id} বাতিল করা হয়েছে। ভবিষ্যতে BuyOne BD-তে আপনাকে আবার স্বাগত জানাই!",
+      "cartRecovery": "আসসালামু আলাইকুম {customer_name}! আপনি BuyOne BD-তে কার্টে পণ্য রেখে গেছেন। আজই অর্ডার নিশ্চিত করলে পাচ্ছেন বিশেষ ৳১০০ ডিসকাউন্ট! কুপন কোড: WIN100।",
+      "promotionalBroadcast": "🔥 ধামাকা অফার BuyOne BD-তে! সীমিত সময়ের জন্য ৫০% পর্যন্ত মূল্যছাড় চলছে। এখনই ভিজিট করুন এবং ক্যাশ অন ডেলিভারিতে পছন্দের পণ্য কিনুন!",
+      "autoTriggerOnOrder": true,
+      "autoTriggerOnShipped": true
+    },
+    "categories": [
+      {
+        "nameBn": "স্মার্ট গ্যাজেট",
+        "id": "smart-gadgets",
+        "iconImage": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=240&auto=format&fit=crop&q=80",
+        "slug": "smart-gadgets",
+        "order": 1,
+        "subcategories": [
+          {
+            "nameEn": "Smart Watches",
+            "slug": "smart-watches",
+            "nameBn": "স্মার্ট ওয়াচ",
+            "image": "https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=200"
+          },
+          {
+            "nameBn": "ব্লুটুথ ইয়ারবাডস",
+            "nameEn": "TWS Earbuds",
+            "slug": "tws-earbuds",
+            "image": "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=200"
+          },
+          {
+            "nameEn": "Power Banks",
+            "nameBn": "পাওয়ার ব্যাংক",
+            "image": "https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=200",
+            "slug": "power-banks"
+          },
+          {
+            "slug": "trimmers-shavers",
+            "nameBn": "ট্রিমার ও শেভার",
+            "image": "https://images.unsplash.com/photo-1621607512214-68297480165e?w=200",
+            "nameEn": "Trimmers & Shavers"
+          }
+        ],
+        "icon": "",
+        "nameEn": "Smart Gadgets",
+        "isActive": true
+      },
+      {
+        "isActive": true,
+        "icon": "",
+        "subcategories": [
+          {
+            "nameEn": "Polo & T-Shirts",
+            "nameBn": "প্রিমিয়াম টি-শার্ট",
+            "image": "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=200",
+            "slug": "polo-tshirts"
+          },
+          {
+            "nameBn": "পাঞ্জাবি ও কাবলি",
+            "slug": "panjabi-kabli",
+            "nameEn": "Panjabi & Kabli",
+            "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=200"
+          },
+          {
+            "nameEn": "Leather Wallets",
+            "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=200",
+            "slug": "leather-wallets",
+            "nameBn": "লেদার ওয়ালেট"
+          },
+          {
+            "nameEn": "Sunglasses",
+            "nameBn": "সানগ্লাস",
+            "image": "https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=200",
+            "slug": "sunglasses"
+          }
+        ],
+        "nameEn": "Fashion & Lifestyle",
+        "id": "fashion",
+        "nameBn": "ফ্যাশন ও লাইফস্টাইল",
+        "order": 2,
+        "slug": "fashion",
+        "iconImage": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=240&auto=format&fit=crop&q=80"
+      },
+      {
+        "nameBn": "অর্গানিক ফুড ও মধু",
+        "subcategories": [
+          {
+            "nameBn": "সুন্দরবনের খাঁটি মধু",
+            "nameEn": "Wild Raw Honey",
+            "slug": "wild-raw-honey",
+            "image": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=200"
+          },
+          {
+            "nameBn": "ঘানির সরিষার তেল",
+            "slug": "mustard-oil",
+            "nameEn": "Cold Pressed Mustard Oil",
+            "image": "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=200"
+          },
+          {
+            "image": "https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=200",
+            "nameEn": "Pure Desi Ghee",
+            "slug": "pure-ghee",
+            "nameBn": "খাঁটি গাওয়া ঘি"
+          },
+          {
+            "nameBn": "ড্রাই ফ্রুটস ও বাদাম",
+            "nameEn": "Dry Fruits & Nuts",
+            "slug": "dry-fruits",
+            "image": "https://images.unsplash.com/photo-1536591375315-1988d696054a?w=200"
+          }
+        ],
+        "slug": "organic-food",
+        "id": "organic-food",
+        "iconImage": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=240&auto=format&fit=crop&q=80",
+        "order": 3,
+        "isActive": true,
+        "nameEn": "Organic Foods & Honey",
+        "icon": ""
+      },
+      {
+        "subcategories": [
+          {
+            "nameEn": "Premium Roll-on Attar",
+            "nameBn": "জান্নাতুল ফেরদৌস আতর",
+            "image": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=200",
+            "slug": "roll-on-attar"
+          },
+          {
+            "slug": "digital-tasbih",
+            "image": "https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=200",
+            "nameEn": "Digital Tasbih Counter",
+            "nameBn": "ডিজিটাল তসবিহ"
+          },
+          {
+            "nameBn": "জায়নামাজ",
+            "nameEn": "Luxury Prayer Mat",
+            "slug": "prayer-mats",
+            "image": "https://images.unsplash.com/photo-1609599006353-e629aaabfeae?w=200"
+          },
+          {
+            "image": "https://images.unsplash.com/photo-1585036156171-384164a8c675?w=200",
+            "slug": "rehal-stands",
+            "nameEn": "Rehal & Stands",
+            "nameBn": "কুরআন স্ট্যান্ড"
+          }
+        ],
+        "nameBn": "ইসলামিক ও আতর",
+        "id": "islamic-lifestyle",
+        "iconImage": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=240&auto=format&fit=crop&q=80",
+        "icon": "",
+        "slug": "islamic-lifestyle",
+        "isActive": true,
+        "order": 4,
+        "nameEn": "Islamic & Attar"
+      },
+      {
+        "isActive": true,
+        "subcategories": [
+          {
+            "slug": "juicer-blenders",
+            "nameBn": "পোর্টেবল ব্লেন্ডার",
+            "nameEn": "Juicer & Blenders",
+            "image": "https://images.unsplash.com/photo-1570222094114-d054a817e56b?w=200"
+          },
+          {
+            "nameEn": "Kitchen Cutters & Accessories",
+            "nameBn": "কিচেন কাটার ও চপার",
+            "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=200",
+            "slug": "kitchen-cutters"
+          },
+          {
+            "nameBn": "স্মার্ট ক্লক ও লাইট",
+            "slug": "lamps-clocks",
+            "nameEn": "Night Lamps & Clocks",
+            "image": "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=200"
+          }
+        ],
+        "nameBn": "হোম ও কিচেন",
+        "icon": "",
+        "id": "home-kitchen",
+        "order": 5,
+        "slug": "home-kitchen",
+        "iconImage": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=240&auto=format&fit=crop&q=80",
+        "nameEn": "Home & Kitchen"
+      },
+      {
+        "icon": "",
+        "nameBn": "বিউটি ও পার্সোনাল কেয়ার",
+        "order": 6,
+        "slug": "beauty-care",
+        "isActive": true,
+        "nameEn": "Beauty & Personal Care",
+        "subcategories": [
+          {
+            "nameBn": "হেয়ার ট্রিমার ও গ্রুমিং",
+            "nameEn": "Hair Grooming Kits",
+            "slug": "hair-grooming",
+            "image": "https://images.unsplash.com/photo-1621607512214-68297480165e?w=200"
+          },
+          {
+            "nameEn": "Herbal Skincare",
+            "nameBn": "অর্গানিক স্কিনকেয়ার",
+            "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=200",
+            "slug": "herbal-skincare"
+          },
+          {
+            "slug": "body-massagers",
+            "nameBn": "বডি ম্যাসেজার",
+            "nameEn": "Body Massagers",
+            "image": "https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=200"
+          }
+        ],
+        "id": "beauty-care",
+        "iconImage": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=240&auto=format&fit=crop&q=80"
+      }
+    ],
+    "sliders": [
+      {
+        "discountBadgeEn": "65% Mega Offer",
+        "subtitleEn": "Bluetooth calling, heart-rate monitor with 65% mega discount",
+        "linkCategory": "smart-gadgets",
+        "subtitleBn": "ব্লুটুথ কলিং, হার্ট রেট ও মেটাল স্ট্র্যাপ সহ ৬৫% বিশেষ ছাড়ে কিনুন",
+        "buttonTextBn": "১ ক্লিকে এখনই কিনুন",
+        "isActive": true,
+        "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=1600&auto=format&fit=crop&q=80",
+        "buttonTextEn": "1-Click Buy Now",
+        "discountBadgeBn": "৬৫% মেগা অফার",
+        "id": "slide-1",
+        "titleEn": "Super Deal: Ultra Smartwatch & Gadgets Collection",
+        "titleBn": "সুপার ডিল: আল্ট্রা স্মার্টওয়াচ ও গ্যাজেট কালেকশন"
+      },
+      {
+        "buttonTextBn": "খাঁটি মধু অর্ডার করুন",
+        "id": "slide-2",
+        "isActive": true,
+        "discountBadgeBn": "১০০% অরিজিনাল গ্যারান্টি",
+        "subtitleBn": "কোনো প্রকার চিনি বা প্রিজারভেটিভ ছাড়া ল্যাব টেস্টে শতভাগ খাঁটি",
+        "titleBn": "সুন্দরবনের ১০০% খাঁটি প্রাকৃতিক খলিশা ফুলের মধু",
+        "linkCategory": "organic-food",
+        "titleEn": "100% Pure Raw Sundarban Wild Honey",
+        "subtitleEn": "Lab certified zero sugar wild honey directly from forest",
+        "image": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=1600&auto=format&fit=crop&q=80",
+        "discountBadgeEn": "100% Pure Guarantee",
+        "buttonTextEn": "Order Pure Honey"
+      },
+      {
+        "subtitleBn": "১০০% ফাইন সুতি কাপড়ে নিখুঁত এমব্রয়ডারি কাজ ও এলিগ্যান্ট ফিটিং",
+        "id": "slide-3",
+        "titleEn": "Premium Royal Cotton Embroidered Panjabi Set",
+        "titleBn": "প্রিমিয়াম রয়্যাল কটন এমব্রয়ডারি পাঞ্জাবি ও পায়জামা সেট",
+        "buttonTextEn": "View Collection",
+        "subtitleEn": "100% fine breathable cotton with royal handcrafted embroidery",
+        "isActive": true,
+        "discountBadgeBn": "সীমিত স্টক",
+        "linkCategory": "fashion",
+        "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1600&auto=format&fit=crop&q=80",
+        "buttonTextBn": "কালেকশন দেখুন",
+        "discountBadgeEn": "Limited Stock"
+      },
+      {
+        "titleEn": "14-in-1 Smart Multifunctional Kitchen Vegetable Cutter",
+        "titleBn": "স্মার্ট কিচেন কাটার ও ১৪-ইন-১ মাল্টি চপার গ্যাজেট",
+        "discountBadgeBn": "৳৪৫০ ছাড়",
+        "buttonTextEn": "Grab Kitchen Deal",
+        "buttonTextBn": "অফারটি লুফে নিন",
+        "isActive": true,
+        "subtitleBn": "রান্নার সময় অর্ধেক করতে আল্ট্রা শার্প স্টেইনলেস স্টিল কিচেন কাটার",
+        "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=1600&auto=format&fit=crop&q=80",
+        "linkCategory": "home-kitchen",
+        "id": "slide-4",
+        "subtitleEn": "Heavy duty blades with instant drainage container basket",
+        "discountBadgeEn": "৳450 Discount"
+      },
+      {
+        "buttonTextEn": "Explore Attar",
+        "subtitleEn": "48+ hours long lasting royal oriental alcohol-free attar",
+        "id": "slide-5",
+        "discountBadgeBn": "হট ডিল",
+        "titleEn": "Jannatul Ferdous Alcohol-Free Pure Perfume Oil (Attar)",
+        "titleBn": "মদিনার খাঁটি জান্নাতুল ফেরদৌস প্রিমিয়াম রোল-অন আতর",
+        "subtitleBn": "৪৮ ঘণ্টারও বেশি স্থায়ী সুরভিময় মিষ্টি সুগন্ধিযুক্ত ১০০% হালাল আতর",
+        "linkCategory": "islamic-lifestyle",
+        "discountBadgeEn": "Hot Deal",
+        "image": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=1600&auto=format&fit=crop&q=80",
+        "isActive": true,
+        "buttonTextBn": "আতর সংগ্রহ করুন"
+      }
+    ],
+    "flashSale": {
+      "enabled": true,
+      "headlineBn": "⚡ আজকের বিশেষ ফ্ল্যাশ সেল - ৫০% পর্যন্ত অবিশ্বাস্য মূল্যছাড়!",
+      "headlineEn": "⚡ Today's Mega Flash Sale - Up to 50% Off!",
+      "endsAt": "2026-11-16T17:05:53.783Z",
+      "discountPercentage": 50
+    },
+    "courierSettings": {
+      "steadfast": {
+        "enabled": true,
+        "apiKey": "stdf_live_api_key_buyonebd_883921",
+        "secretKey": "stdf_sec_99382173921829102",
+        "baseUrl": "https://portal.steadfast.com.bd/api/v1",
+        "autoBook": true
+      },
+      "pathao": {
+        "enabled": true,
+        "clientId": "",
+        "clientSecret": ""
+      },
+      "redx": {
+        "enabled": true,
+        "token": ""
+      },
+      "paperfly": {
+        "enabled": true,
+        "username": "",
+        "apiKey": ""
+      },
+      "sundarban": {
+        "enabled": true,
+        "branchCode": "DHK-01",
+        "apiKey": ""
+      }
+    },
+    "marketingSettings": {
+      "facebookPixel": {
+        "enabled": true,
+        "pixelId": "984029182910291",
+        "accessToken": "EAABwzL...",
+        "testEventCode": "TEST1234"
+      },
+      "googleAnalytics": {
+        "enabled": true,
+        "measurementId": "G-BUYONEBD99"
+      },
+      "whatsappCRM": {
+        "enabled": true,
+        "autoFollowupAbandoned": true,
+        "followupDelayMinutes": 30
+      },
+      "tiktokPixel": {
+        "enabled": true,
+        "pixelId": "C789TTIKTOK990"
+      },
+      "whatsappCloudApi": {
+        "enabled": false,
+        "phoneNumberId": "",
+        "wabaId": "",
+        "accessToken": "",
+        "verifyToken": "buyonebd_meta_verify_2026",
+        "apiVersion": "v21.0",
+        "defaultTemplate": "order_confirmation_bn"
+      },
+      "socialLinks": {
+        "facebookPageId": "BuyOneBD",
+        "facebookUrl": "https://facebook.com/buyonebd",
+        "instagramHandle": "@buyonebd",
+        "tiktokHandle": "@buyonebd.official",
+        "youtubeUrl": "https://youtube.com/@buyonebd"
+      }
+    },
+    "aiSettings": {
+      "geminiApiKey": "",
+      "openaiApiKey": "",
+      "claudeApiKey": "",
+      "selectedProvider": "gemini",
+      "selectedModel": "gemini-3.8-flash",
+      "autonomousAgentEnabled": true,
+      "autoRestockAlert": true,
+      "autoFraudDetection": true
+    },
+    "aiKeywordRules": [
+      {
+        "id": "kw-delivery",
+        "keywords": [
+          "ডেলিভারি",
+          "চার্জ",
+          "কুরিয়ার",
+          "কতদিন",
+          "delivery",
+          "shipping",
+          "charge",
+          "courier"
+        ],
+        "replyBn": "সারা বাংলাদেশে দ্রুত হোম ডেলিভারি চলছে! ঢাকা সিটি: ৳৭০ (২৪-৪৮ ঘণ্টা), ঢাকা উপশহর: ৳১০০, ঢাকার বাইরে: ৳১৩০ (৪৮-৭২ ঘণ্টা)। Steadfast ও Pathao-তে ক্যাশ অন ডেলিভারি সুবিধা রয়েছে।",
+        "replyEn": "Nationwide delivery across all 64 districts: Inside Dhaka ৳70 (24-48h), Sub-Dhaka ৳100, Outside Dhaka ৳130 (48-72h) via Steadfast & Pathao with Cash on Delivery.",
+        "enabled": true
+      },
+      {
+        "id": "kw-payment",
+        "keywords": [
+          "বিকাশ",
+          "নগদ",
+          "রকেট",
+          "পেমেন্ট",
+          "ক্যাশ",
+          "bkash",
+          "nagad",
+          "rocket",
+          "payment",
+          "cod"
+        ],
+        "replyBn": "আপনি পণ্য হাতে পেয়ে সম্পূর্ণ টাকা পরিশোধ (Cash on Delivery) করতে পারবেন! এছাড়া বিকাশ/নগদ/রকেট নম্বর: 01886289663।",
+        "replyEn": "Cash on Delivery (pay after checking parcel) is available everywhere. Mobile payments: bKash / Nagad / Rocket Merchant: 01886289663.",
+        "enabled": true
+      },
+      {
+        "id": "kw-return",
+        "keywords": [
+          "রিটার্ন",
+          "রিফান্ড",
+          "ওয়ারেন্টি",
+          "চেঞ্জ",
+          "ফেরত",
+          "return",
+          "refund",
+          "warranty",
+          "exchange"
+        ],
+        "replyBn": "প্রতিটি পণ্যে ৭ দিনের সহজ রিপ্লেসমেন্ট ও রিটার্ন গ্যারান্টি রয়েছে! পণ্য দেখে পছন্দ না হলে ডেলিভারি ম্যানের সামনেই রিটার্ন করতে পারবেন।",
+        "replyEn": "Every product comes with our 7-day easy replacement & return guarantee. You can inspect the parcel upon delivery.",
+        "enabled": true
+      },
+      {
+        "id": "kw-discount",
+        "keywords": [
+          "ডিসকাউন্ট",
+          "ছাড়",
+          "কুপন",
+          "স্পিন",
+          "ফ্রি",
+          "discount",
+          "coupon",
+          "offer",
+          "spin",
+          "voucher"
+        ],
+        "replyBn": "আমাদের লাকি স্পিন হুইল ঘুরিয়ে প্রতিদিন ৳৫০০ পর্যন্ত গিফট ওয়ালেট ক্যাশ এবং ফ্রি ডেলিভারি কুপন জিতে নিতে পারেন! ফ্ল্যাশ সেলে ৫০% পর্যন্ত ছাড় চলছে।",
+        "replyEn": "Spin our Lucky Spin Wheel to win up to ৳500 Gift Wallet cash or free delivery coupons! Also check Flash Sale for up to 50% off.",
+        "enabled": true
+      },
+      {
+        "id": "kw-authentic",
+        "keywords": [
+          "অরিজিনাল",
+          "আসল",
+          "মান",
+          "কোয়ালিটি",
+          "original",
+          "authentic",
+          "fake",
+          "quality"
+        ],
+        "replyBn": "BuyOne BD শতভাগ অরিজিনাল ও যাচাইকৃত পণ্য সরবরাহ করে। মধু ও অর্গানিক ফুড ল্যাব টেস্টে উত্তীর্ণ এবং গ্যাজেটে অফিশিয়াল ওয়ারেন্টি থাকে।",
+        "replyEn": "All BuyOne BD products are 100% authentic and quality checked before dispatch with official brand warranty.",
+        "enabled": true
+      },
+      {
+        "id": "kw-contact",
+        "keywords": [
+          "ঠিকানা",
+          "অফিস",
+          "শোরুম",
+          "হেল্পলাইন",
+          "ফোন",
+          "নম্বর",
+          "address",
+          "office",
+          "contact",
+          "phone",
+          "hotline"
+        ],
+        "replyBn": "আমাদের অফিস: লেভেল ৪, হাউস ১৮, রোড ১১, বনানী, ঢাকা-১২১৩। হটলাইন ও হোয়াটসঅ্যাপ: 01886-289663 (সকাল ৯টা – রাত ১১টা)।",
+        "replyEn": "Our office: Level 4, House 18, Road 11, Banani, Dhaka-1213. Hotline & WhatsApp: 01886-289663.",
+        "enabled": true
+      },
+      {
+        "id": "kw-wholesale",
+        "keywords": [
+          "পাইকারি",
+          "হোলসেল",
+          "বেশি নিলে",
+          "wholesale",
+          "bulk",
+          "reseller"
+        ],
+        "replyBn": "জ্বী! পাইকারি বা কর্পোরেট বাল্ক অর্ডারে বিশেষ ছাড় পাওয়া যায়। সরাসরি আমাদের হোয়াটসঅ্যাপে (01886289663) পণ্যের নাম ও পরিমাণ জানান।",
+        "replyEn": "Yes! We offer special wholesale and bulk pricing. Contact our WhatsApp desk (01886289663) with your required quantity.",
+        "enabled": true
+      }
+    ],
+    "seoSettings": {
+      "metaTitle": "BuyOne BD - বাংলাদেশের বিশ্বস্ত অনলাইন শপিং | Smart E-Commerce",
+      "metaDescription": "স্মার্ট গ্যাজেট, প্রিমিয়াম আতর, অর্গানিক ফুড ও লাইফস্টাইল পণ্য সারাদেশে ক্যাশ অন ডেলিভারিতে কিনুন BuyOne BD-তে। এআই কল কনফার্মেশন ও দ্রুত কুরিয়ার ডেলিভারি।",
+      "keywords": "BuyOne BD, online shopping bangladesh, smart gadgets dhaka, organic honey bangladesh, roll-on attar, cash on delivery bangladesh, steadfast courier tracking",
+      "ogImage": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=1200",
+      "canonicalUrl": "https://buyonebd.com",
+      "robots": "index, follow",
+      "twitterHandle": "@buyonebd",
+      "googleSiteVerification": "",
+      "schemaType": "Store",
+      "sitemapEnabled": true,
+      "robotsTxt": "User-agent: *\nAllow: /\nAllow: /products\nAllow: /product/\nAllow: /category/\nAllow: /tracking\nDisallow: /hossain\nDisallow: /api/\n\nSitemap: https://buyonebd.com/sitemap.xml"
+    },
+    "footerSettings": {
+      "aboutTextBn": "BuyOne BD হলো বাংলাদেশের বিশ্বস্ত অনলাইন শপিং প্ল্যাটফর্ম। সারাদেশে ক্যাশ অন ডেলিভারি, এআই অটোমেটেড ভয়েস কল কনফার্মেশন ও স্টিডফাস্ট কুরিয়ারের মাধ্যমে দ্রুততম সময়ে আসল পণ্য পৌঁছে দিতে আমরা প্রতিশ্রুতিবদ্ধ।",
+      "aboutTextEn": "BuyOne BD is Bangladesh's premier shopping destination with instant AI confirmation calls and nationwide Cash on Delivery.",
+      "hotline": "01886-BUYONE (01886-289663)",
+      "whatsappNumber": "8801886289663",
+      "email": "buyonebd@gmail.com",
+      "address": "লেভেল ৪, হাউস ১৮, রোড ১১, বনানী, ঢাকা-১২১৩, বাংলাদেশ",
+      "facebookUrl": "https://facebook.com",
+      "youtubeUrl": "https://youtube.com",
+      "instagramUrl": "https://instagram.com",
+      "tiktokUrl": "https://tiktok.com",
+      "copyrightBn": "© ২০২৬ BuyOne BD। সর্বস্বত্ব সংরক্ষিত।",
+      "copyrightEn": "© 2026 BuyOne BD. All rights reserved.",
+      "showPaymentBadges": true,
+      "showCategoriesInFooter": true,
+      "quickLinks": [
+        {
+          "labelEn": "Live Order Tracking",
+          "labelBn": "রিয়েল-টাইম অর্ডার ট্র্যাকিং",
+          "actionType": "tracking",
+          "id": "ql-1"
+        },
+        {
+          "labelEn": "Today's Flash Sale Deals",
+          "labelBn": "আজকের ফ্ল্যাশ সেল অফার",
+          "id": "ql-2",
+          "actionType": "flash_sale"
+        },
+        {
+          "actionType": "store",
+          "id": "ql-3",
+          "labelEn": "7 Days Return & Refund Policy",
+          "labelBn": "৭ দিনের রিটার্ন ও রিফান্ড নীতি"
+        },
+        {
+          "id": "ql-4",
+          "labelEn": "Terms & Privacy Policy",
+          "labelBn": "গোপনীয়তা ও শর্তাবলী",
+          "actionType": "store"
+        }
+      ]
+    },
+    "walletSettings": {
+      "enabled": true,
+      "autoApprove": false,
+      "expiryDays": 30,
+      "minTopUp": 50,
+      "maxTopUp": 50000,
+      "methods": {
+        "bkash": {
+          "enabled": true,
+          "accountType": "Personal",
+          "label": "bKash",
+          "accountNumber": "01886289663"
+        },
+        "nagad": {
+          "label": "Nagad",
+          "accountType": "Personal",
+          "accountNumber": "01886289663",
+          "enabled": true
+        },
+        "rocket": {
+          "label": "Rocket",
+          "enabled": true,
+          "accountType": "Personal",
+          "accountNumber": "018862896630"
+        },
+        "upay": {
+          "label": "Upay",
+          "accountType": "Personal",
+          "enabled": true,
+          "accountNumber": "01886289663"
+        }
+      }
+    },
+    "smtpSettings": {
+      "enabled": false,
+      "host": "smtp.gmail.com",
+      "port": 465,
+      "secure": true,
+      "user": "",
+      "pass": "",
+      "fromName": "BuyOne BD",
+      "fromEmail": "buyonebd@gmail.com",
+      "sendOnOrderConfirmation": true,
+      "sendOnStatusUpdate": false
+    },
+    "singleProductCms": {
+      "showDeliveryMatrix": true,
+      "showWarrantyBadge": true,
+      "showReturnPolicy": true,
+      "showFlashSaleSection": true,
+      "showPriceAlertButton": true,
+      "showLoyaltyBadge": true,
+      "dhakaCityLabelBn": "ঢাকা সিটি",
+      "dhakaCityLabelEn": "Dhaka City",
+      "dhakaEtaBn": "২৪ ঘন্টা",
+      "dhakaEtaEn": "24h",
+      "nationwideLabelBn": "সারাদেশে",
+      "nationwideLabelEn": "Nationwide",
+      "nationwideEtaBn": "৪৮-৭২ ঘন্টা",
+      "nationwideEtaEn": "48-72h",
+      "warrantyBadgeTitleBn": "গ্যারান্টি",
+      "warrantyBadgeTitleEn": "Warranty",
+      "warrantyBadgeValueBn": "৭ দিন রিপ্লেস",
+      "warrantyBadgeValueEn": "7-Day Replace",
+      "codTrustTextBn": "ক্যাশ অন ডেলিভারি সুবিধা",
+      "codTrustTextEn": "Pay Cash on Delivery",
+      "colorLabelBn": "রং / ভ্যারিয়েন্ট:",
+      "colorLabelEn": "Color / Variant:",
+      "sizeLabelBn": "সাইজ / এডিশন:",
+      "sizeLabelEn": "Size / Edition:",
+      "loyaltyTextBn": "এই অর্ডারে +{points} রিওয়ার্ড পয়েন্ট পাবেন",
+      "loyaltyTextEn": "Earn +{points} Loyalty Points on purchase",
+      "pointsPerOrderDivisor": 20,
+      "saveBadgeLabelBn": "সাশ্রয়",
+      "saveBadgeLabelEn": "Save",
+      "inStockLabelBn": "স্টকে আছে",
+      "inStockLabelEn": "In Stock",
+      "outOfStockLabelBn": "স্টক শেষ",
+      "outOfStockLabelEn": "Out of Stock",
+      "returnPolicyTitleBn": "সহজ রিটার্ন পলিসি",
+      "returnPolicyTitleEn": "Hassle-Free Return",
+      "returnPolicyTextBn": "ডেলিভারি ম্যানের সামনে পণ্য চেক করে নেওয়ার সুযোগ এবং যেকোনো ত্রুটিতে তাৎক্ষণিক পরিবর্তন।",
+      "returnPolicyTextEn": "Inspect item in front of the rider on delivery with instant replacement on defects.",
+      "courierNoteTitleBn": "কুরিয়ার ডেলিভারি",
+      "courierNoteTitleEn": "Express Courier",
+      "courierNoteTextBn": "Steadfast, Pathao ও RedX-এর মাধ্যমে ৬৪ জেলায় দ্রুত হোম ডেলিভারি।",
+      "courierNoteTextEn": "Fast Steadfast, Pathao & RedX delivery across all 64 districts."
+    },
+    "promoCoupons": [
+      {
+        "value": 100,
+        "discountType": "fixed",
+        "minOrder": 500,
+        "id": "cpn-welcome",
+        "code": "WELCOME100",
+        "active": true
+      },
+      {
+        "value": 15,
+        "id": "cpn-eid",
+        "minOrder": 1000,
+        "discountType": "percent",
+        "code": "BUYONE15",
+        "active": true
+      },
+      {
+        "active": true,
+        "minOrder": 800,
+        "discountType": "free_shipping",
+        "value": 0,
+        "code": "FREESHIP",
+        "id": "cpn-ship"
+      }
+    ],
+    "organicMarketing": {
+      "referralProgram": {
+        "enabled": true,
+        "referrerRewardBdt": 100,
+        "refereeDiscountBdt": 100,
+        "referralCodePrefix": "BUYONE"
+      },
+      "promoPopup": {
+        "enabled": false,
+        "headlineBn": "স্বাগতম! প্রথম অর্ডারে ৳১০০ বিশেষ ছাড়!",
+        "headlineEn": "Welcome! Get ৳100 Instant Discount!",
+        "subtextBn": "বিজ্ঞাপন ছাড়াই সরাসরি আমাদের বিশেষ কুপন ব্যবহার করে ক্যাশ অন ডেলিভারিতে অর্ডার করুন।",
+        "subtextEn": "Apply our exclusive organic member voucher at checkout for instant savings.",
+        "couponCode": "GIFT100",
+        "discountLabelBn": "৳১০০ ছাড়",
+        "discountLabelEn": "৳100 OFF",
+        "delaySeconds": 5
+      },
+      "socialShareDiscount": {
+        "enabled": true,
+        "discountAmount": 100,
+        "couponCode": "GIFT100",
+        "messageBn": "হোয়াটসঅ্যাপ বা ফেসবুকে বন্ধুদের শেয়ার করলেই পাচ্ছেন ৳১০০ বোনাস কুপন!",
+        "messageEn": "Share this product with friends on WhatsApp or Facebook to unlock an instant ৳100 coupon!"
+      },
+      "vipTiers": {
+        "enabled": true,
+        "silverThreshold": 5000,
+        "silverDiscountPct": 5,
+        "goldThreshold": 15000,
+        "goldDiscountPct": 10
+      },
+      "homeFeatureStrip": {
+        "enabled": true,
+        "items": [
+          {
+            "titleEn": "100% Cash on Delivery",
+            "id": "usp-1",
+            "titleBn": "১০০% ক্যাশ অন ডেলিভারি",
+            "subEn": "Inspect parcel before paying",
+            "subBn": "পণ্য হাতে পেয়ে চেক করে পেমেন্ট"
+          },
+          {
+            "id": "usp-2",
+            "subEn": "All 64 districts in Bangladesh",
+            "titleBn": "২৪-৭২ ঘন্টায় হোম ডেলিভারি",
+            "titleEn": "24-72h Nationwide Delivery",
+            "subBn": "Steadfast ও Pathao কুরিয়ার"
+          },
+          {
+            "titleEn": "7-Day Easy Replacement",
+            "id": "usp-3",
+            "subEn": "Instant defect exchange",
+            "titleBn": "৭ দিনের সহজ রিপ্লেসমেন্ট",
+            "subBn": "কোনো সমস্যায় ঝামেলামুক্ত বদল"
+          },
+          {
+            "subBn": "সরাসরি চ্যাট ও ব্রাউজার কল",
+            "subEn": "Instant chat & browser call",
+            "titleEn": "Live Support Desk",
+            "titleBn": "লাইভ এআই ও ভয়েস সাপোর্ট",
+            "id": "usp-4"
+          }
+        ]
+      }
+    },
+    "updatedAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1794762756,
+      "nanoseconds": 219000000
+    }
+  },
+  "spinRewards": [
+    {
+      "color": "#f43f5e",
+      "id": "spin-1",
+      "value": 500,
+      "code": "TEMU500",
+      "isTryAgain": false,
+      "labelEn": "৳500 OFF",
+      "labelBn": "৳৫০০ ক্যাশ",
+      "discountType": "fixed"
+    },
+    {
+      "code": "FREESHIP",
+      "discountType": "free_shipping",
+      "value": 70,
+      "color": "#0284c7",
+      "id": "spin-2",
+      "labelEn": "Free Ship",
+      "labelBn": "ফ্রি ডেলিভারি",
+      "isTryAgain": false
+    },
+    {
+      "code": "MEGA250",
+      "id": "spin-3",
+      "labelEn": "৳250 OFF",
+      "labelBn": "৳২৫০ ছাড়",
+      "color": "#10b981",
+      "discountType": "fixed",
+      "value": 250,
+      "isTryAgain": false
+    },
+    {
+      "discountType": "percent",
+      "value": 50,
+      "isTryAgain": false,
+      "code": "HALFPRICE",
+      "id": "spin-4",
+      "labelEn": "50% OFF",
+      "labelBn": "৫০% মেগা",
+      "color": "#8b5cf6"
+    },
+    {
+      "isTryAgain": false,
+      "color": "#f59e0b",
+      "value": 150,
+      "labelEn": "৳150 OFF",
+      "labelBn": "৳১৫০ ক্যাশ",
+      "code": "CASH150",
+      "discountType": "fixed",
+      "id": "spin-5"
+    },
+    {
+      "code": "GIFT100",
+      "color": "#059669",
+      "value": 100,
+      "discountType": "fixed",
+      "labelEn": "৳100 OFF",
+      "labelBn": "৳১০০ ওয়ালেট",
+      "id": "spin-6",
+      "isTryAgain": false
+    },
+    {
+      "labelEn": "20% OFF",
+      "labelBn": "২০% ভাউচার",
+      "discountType": "percent",
+      "value": 20,
+      "color": "#d97706",
+      "id": "spin-7",
+      "isTryAgain": false,
+      "code": "DEAL20"
+    },
+    {
+      "isTryAgain": false,
+      "code": "BONUS300",
+      "color": "#ec4899",
+      "value": 300,
+      "discountType": "fixed",
+      "id": "spin-8",
+      "labelEn": "৳300 OFF",
+      "labelBn": "৳৩০০ বোনাস"
+    }
+  ],
+  "categories": [
+    {
+      "nameBn": "স্মার্ট গ্যাজেট",
+      "id": "smart-gadgets",
+      "iconImage": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=240&auto=format&fit=crop&q=80",
+      "slug": "smart-gadgets",
+      "order": 1,
+      "subcategories": [
+        {
+          "nameEn": "Smart Watches",
+          "slug": "smart-watches",
+          "nameBn": "স্মার্ট ওয়াচ",
+          "image": "https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=200"
+        },
+        {
+          "nameBn": "ব্লুটুথ ইয়ারবাডস",
+          "nameEn": "TWS Earbuds",
+          "slug": "tws-earbuds",
+          "image": "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=200"
+        },
+        {
+          "nameEn": "Power Banks",
+          "nameBn": "পাওয়ার ব্যাংক",
+          "image": "https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=200",
+          "slug": "power-banks"
+        },
+        {
+          "slug": "trimmers-shavers",
+          "nameBn": "ট্রিমার ও শেভার",
+          "image": "https://images.unsplash.com/photo-1621607512214-68297480165e?w=200",
+          "nameEn": "Trimmers & Shavers"
+        }
+      ],
+      "icon": "",
+      "nameEn": "Smart Gadgets",
+      "isActive": true
+    },
+    {
+      "isActive": true,
+      "icon": "",
+      "subcategories": [
+        {
+          "nameEn": "Polo & T-Shirts",
+          "nameBn": "প্রিমিয়াম টি-শার্ট",
+          "image": "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=200",
+          "slug": "polo-tshirts"
+        },
+        {
+          "nameBn": "পাঞ্জাবি ও কাবলি",
+          "slug": "panjabi-kabli",
+          "nameEn": "Panjabi & Kabli",
+          "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=200"
+        },
+        {
+          "nameEn": "Leather Wallets",
+          "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=200",
+          "slug": "leather-wallets",
+          "nameBn": "লেদার ওয়ালেট"
+        },
+        {
+          "nameEn": "Sunglasses",
+          "nameBn": "সানগ্লাস",
+          "image": "https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=200",
+          "slug": "sunglasses"
+        }
+      ],
+      "nameEn": "Fashion & Lifestyle",
+      "id": "fashion",
+      "nameBn": "ফ্যাশন ও লাইফস্টাইল",
+      "order": 2,
+      "slug": "fashion",
+      "iconImage": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=240&auto=format&fit=crop&q=80"
+    },
+    {
+      "nameBn": "অর্গানিক ফুড ও মধু",
+      "subcategories": [
+        {
+          "nameBn": "সুন্দরবনের খাঁটি মধু",
+          "nameEn": "Wild Raw Honey",
+          "slug": "wild-raw-honey",
+          "image": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=200"
+        },
+        {
+          "nameBn": "ঘানির সরিষার তেল",
+          "slug": "mustard-oil",
+          "nameEn": "Cold Pressed Mustard Oil",
+          "image": "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=200"
+        },
+        {
+          "image": "https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=200",
+          "nameEn": "Pure Desi Ghee",
+          "slug": "pure-ghee",
+          "nameBn": "খাঁটি গাওয়া ঘি"
+        },
+        {
+          "nameBn": "ড্রাই ফ্রুটস ও বাদাম",
+          "nameEn": "Dry Fruits & Nuts",
+          "slug": "dry-fruits",
+          "image": "https://images.unsplash.com/photo-1536591375315-1988d696054a?w=200"
+        }
+      ],
+      "slug": "organic-food",
+      "id": "organic-food",
+      "iconImage": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=240&auto=format&fit=crop&q=80",
+      "order": 3,
+      "isActive": true,
+      "nameEn": "Organic Foods & Honey",
+      "icon": ""
+    },
+    {
+      "subcategories": [
+        {
+          "nameEn": "Premium Roll-on Attar",
+          "nameBn": "জান্নাতুল ফেরদৌস আতর",
+          "image": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=200",
+          "slug": "roll-on-attar"
+        },
+        {
+          "slug": "digital-tasbih",
+          "image": "https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=200",
+          "nameEn": "Digital Tasbih Counter",
+          "nameBn": "ডিজিটাল তসবিহ"
+        },
+        {
+          "nameBn": "জায়নামাজ",
+          "nameEn": "Luxury Prayer Mat",
+          "slug": "prayer-mats",
+          "image": "https://images.unsplash.com/photo-1609599006353-e629aaabfeae?w=200"
+        },
+        {
+          "image": "https://images.unsplash.com/photo-1585036156171-384164a8c675?w=200",
+          "slug": "rehal-stands",
+          "nameEn": "Rehal & Stands",
+          "nameBn": "কুরআন স্ট্যান্ড"
+        }
+      ],
+      "nameBn": "ইসলামিক ও আতর",
+      "id": "islamic-lifestyle",
+      "iconImage": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=240&auto=format&fit=crop&q=80",
+      "icon": "",
+      "slug": "islamic-lifestyle",
+      "isActive": true,
+      "order": 4,
+      "nameEn": "Islamic & Attar"
+    },
+    {
+      "isActive": true,
+      "subcategories": [
+        {
+          "slug": "juicer-blenders",
+          "nameBn": "পোর্টেবল ব্লেন্ডার",
+          "nameEn": "Juicer & Blenders",
+          "image": "https://images.unsplash.com/photo-1570222094114-d054a817e56b?w=200"
+        },
+        {
+          "nameEn": "Kitchen Cutters & Accessories",
+          "nameBn": "কিচেন কাটার ও চপার",
+          "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=200",
+          "slug": "kitchen-cutters"
+        },
+        {
+          "nameBn": "স্মার্ট ক্লক ও লাইট",
+          "slug": "lamps-clocks",
+          "nameEn": "Night Lamps & Clocks",
+          "image": "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=200"
+        }
+      ],
+      "nameBn": "হোম ও কিচেন",
+      "icon": "",
+      "id": "home-kitchen",
+      "order": 5,
+      "slug": "home-kitchen",
+      "iconImage": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=240&auto=format&fit=crop&q=80",
+      "nameEn": "Home & Kitchen"
+    },
+    {
+      "icon": "",
+      "nameBn": "বিউটি ও পার্সোনাল কেয়ার",
+      "order": 6,
+      "slug": "beauty-care",
+      "isActive": true,
+      "nameEn": "Beauty & Personal Care",
+      "subcategories": [
+        {
+          "nameBn": "হেয়ার ট্রিমার ও গ্রুমিং",
+          "nameEn": "Hair Grooming Kits",
+          "slug": "hair-grooming",
+          "image": "https://images.unsplash.com/photo-1621607512214-68297480165e?w=200"
+        },
+        {
+          "nameEn": "Herbal Skincare",
+          "nameBn": "অর্গানিক স্কিনকেয়ার",
+          "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=200",
+          "slug": "herbal-skincare"
+        },
+        {
+          "slug": "body-massagers",
+          "nameBn": "বডি ম্যাসেজার",
+          "nameEn": "Body Massagers",
+          "image": "https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=200"
+        }
+      ],
+      "id": "beauty-care",
+      "iconImage": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=240&auto=format&fit=crop&q=80"
+    }
+  ],
+  "sliders": [
+    {
+      "discountBadgeEn": "65% Mega Offer",
+      "subtitleEn": "Bluetooth calling, heart-rate monitor with 65% mega discount",
+      "linkCategory": "smart-gadgets",
+      "subtitleBn": "ব্লুটুথ কলিং, হার্ট রেট ও মেটাল স্ট্র্যাপ সহ ৬৫% বিশেষ ছাড়ে কিনুন",
+      "buttonTextBn": "১ ক্লিকে এখনই কিনুন",
+      "isActive": true,
+      "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=1600&auto=format&fit=crop&q=80",
+      "buttonTextEn": "1-Click Buy Now",
+      "discountBadgeBn": "৬৫% মেগা অফার",
+      "id": "slide-1",
+      "titleEn": "Super Deal: Ultra Smartwatch & Gadgets Collection",
+      "titleBn": "সুপার ডিল: আল্ট্রা স্মার্টওয়াচ ও গ্যাজেট কালেকশন"
+    },
+    {
+      "buttonTextBn": "খাঁটি মধু অর্ডার করুন",
+      "id": "slide-2",
+      "isActive": true,
+      "discountBadgeBn": "১০০% অরিজিনাল গ্যারান্টি",
+      "subtitleBn": "কোনো প্রকার চিনি বা প্রিজারভেটিভ ছাড়া ল্যাব টেস্টে শতভাগ খাঁটি",
+      "titleBn": "সুন্দরবনের ১০০% খাঁটি প্রাকৃতিক খলিশা ফুলের মধু",
+      "linkCategory": "organic-food",
+      "titleEn": "100% Pure Raw Sundarban Wild Honey",
+      "subtitleEn": "Lab certified zero sugar wild honey directly from forest",
+      "image": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=1600&auto=format&fit=crop&q=80",
+      "discountBadgeEn": "100% Pure Guarantee",
+      "buttonTextEn": "Order Pure Honey"
+    },
+    {
+      "subtitleBn": "১০০% ফাইন সুতি কাপড়ে নিখুঁত এমব্রয়ডারি কাজ ও এলিগ্যান্ট ফিটিং",
+      "id": "slide-3",
+      "titleEn": "Premium Royal Cotton Embroidered Panjabi Set",
+      "titleBn": "প্রিমিয়াম রয়্যাল কটন এমব্রয়ডারি পাঞ্জাবি ও পায়জামা সেট",
+      "buttonTextEn": "View Collection",
+      "subtitleEn": "100% fine breathable cotton with royal handcrafted embroidery",
+      "isActive": true,
+      "discountBadgeBn": "সীমিত স্টক",
+      "linkCategory": "fashion",
+      "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1600&auto=format&fit=crop&q=80",
+      "buttonTextBn": "কালেকশন দেখুন",
+      "discountBadgeEn": "Limited Stock"
+    },
+    {
+      "titleEn": "14-in-1 Smart Multifunctional Kitchen Vegetable Cutter",
+      "titleBn": "স্মার্ট কিচেন কাটার ও ১৪-ইন-১ মাল্টি চপার গ্যাজেট",
+      "discountBadgeBn": "৳৪৫০ ছাড়",
+      "buttonTextEn": "Grab Kitchen Deal",
+      "buttonTextBn": "অফারটি লুফে নিন",
+      "isActive": true,
+      "subtitleBn": "রান্নার সময় অর্ধেক করতে আল্ট্রা শার্প স্টেইনলেস স্টিল কিচেন কাটার",
+      "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=1600&auto=format&fit=crop&q=80",
+      "linkCategory": "home-kitchen",
+      "id": "slide-4",
+      "subtitleEn": "Heavy duty blades with instant drainage container basket",
+      "discountBadgeEn": "৳450 Discount"
+    },
+    {
+      "buttonTextEn": "Explore Attar",
+      "subtitleEn": "48+ hours long lasting royal oriental alcohol-free attar",
+      "id": "slide-5",
+      "discountBadgeBn": "হট ডিল",
+      "titleEn": "Jannatul Ferdous Alcohol-Free Pure Perfume Oil (Attar)",
+      "titleBn": "মদিনার খাঁটি জান্নাতুল ফেরদৌস প্রিমিয়াম রোল-অন আতর",
+      "subtitleBn": "৪৮ ঘণ্টারও বেশি স্থায়ী সুরভিময় মিষ্টি সুগন্ধিযুক্ত ১০০% হালাল আতর",
+      "linkCategory": "islamic-lifestyle",
+      "discountBadgeEn": "Hot Deal",
+      "image": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=1600&auto=format&fit=crop&q=80",
+      "isActive": true,
+      "buttonTextBn": "আতর সংগ্রহ করুন"
+    }
+  ],
+  "customerAccounts": [
+    {
+      "name": "হোসেন আহমেদ",
+      "username": "hossain",
+      "phone": "01886289663",
+      "email": "customer@buyonebd.com",
+      "address": "বাড়ি ১২, রোড ৫, ধানমন্ডি",
+      "district": "Dhaka - Inside City",
+      "password": "123456",
+      "loyaltyPoints": 120,
+      "walletBalance": 0,
+      "browsingHistory": [],
+      "savedCoupons": []
+    }
+  ],
+  "walletTopUps": [
+    {
+      "id": "TOPUP-9012",
+      "customerName": "হোসেন আহমেদ",
+      "customerPhone": "01886289663",
+      "method": "bkash",
+      "amount": 500,
+      "senderNumber": "01886289663",
+      "trxId": "BKS8890124",
+      "status": "pending",
+      "createdAt": "2026-11-13T16:38:04.277Z"
+    }
+  ],
+  "abandonedCarts": [
+    {
+      "id": "cart-ab-01",
+      "customerName": "মেহরাব হোসেন",
+      "customerPhone": "01911445566",
+      "customerDistrict": "চট্টগ্রাম",
+      "items": [
+        {
+          "product": {
+            "id": "prod-001",
+            "title": "Ultra Watch 9 Pro AMOLED Display Smartwatch with Calling",
+            "titleBn": "আল্ট্রা ওয়াচ ৯ প্রো এমোলেড ডিসপ্লে স্মার্টওয়াচ (কলিং ও হেলথ ট্র্যাকার)",
+            "description": "Next-gen flagship smartwatch with vibrant 2.1-inch Always-on AMOLED screen, wireless magnetic charging, wireless Bluetooth call answering, water-resistant zinc-alloy body, and 100+ sports modes.",
+            "descriptionBn": "অরিজিনাল ২.১ ইঞ্চি এমোলেড ডিসপ্লে, ব্লুটুথ কল রিসিভ ও ডায়ালিং, হার্ট রেট ও স্লিপ মনিটরিং সমৃদ্ধ প্রিমিয়াম স্মার্টওয়াচ। সাথে অতিরিক্ত অরেঞ্জ সিলিকন ও ওশান স্ট্র্যাপ সম্পূর্ণ ফ্রি।",
+            "price": 1850,
+            "originalPrice": 3500,
+            "stock": 35,
+            "category": "smart-gadgets",
+            "categoryBn": "স্মার্ট গ্যাজেট",
+            "subcategory": "smart-watches",
+            "tags": [
+              "Best Seller",
+              "Hot Deal",
+              "Free Delivery"
+            ],
+            "images": [
+              "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=80",
+              "https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=800&auto=format&fit=crop&q=80",
+              "https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80"
+            ],
+            "sku": "WATCH9-PRO-BLK",
+            "rating": 4.9,
+            "reviewsCount": 342,
+            "isFlashSale": true,
+            "colors": [
+              "Titanium Silver (সিলভার)",
+              "Matte Black (কালো)",
+              "Deep Orange (কমলা)"
+            ],
+            "sizes": [
+              "49mm Standard"
+            ],
+            "features": [
+              "2.1 Inch HD AMOLED Display",
+              "Direct Bluetooth Calling & Mic",
+              "Wireless Fast Magnetic Charger",
+              "IP68 Waterproof Body",
+              "7 Days Battery Backup"
+            ],
+            "featuresBn": [
+              "২.১ ইঞ্চি এইচডি ক্রিস্টাল এমোলেড স্ক্রিন",
+              "সরাসরি ব্লুটুথ কলিং ও লাউডস্পিকার",
+              "ম্যাগনেটিক ফাস্ট চার্জার",
+              "আইপি৬৮ ওয়াটারপ্রুফ বডি",
+              "এক চার্জে ৫-৭ দিন দীর্ঘস্থায়ী ব্যাটারি"
+            ],
+            "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "warrantyInfo": "1 Year Brand Warranty & 7 Days Replacement",
+            "warrantyInfoBn": "১ বছরের ব্র্যান্ড সার্ভিস ও ৭ দিনের রিপ্লেসমেন্ট গ্যারান্টি",
+            "seo": {
+              "slug": "ultra-watch-9-pro-amoled-smartwatch",
+              "metaTitle": "Ultra Watch 9 Pro AMOLED Smartwatch Price in Bangladesh | BuyOne BD",
+              "metaDescription": "Buy Ultra Watch 9 Pro AMOLED Calling Smartwatch at ৳1,850 with Cash on Delivery across Bangladesh.",
+              "keywords": "ultra watch 9 pro, smartwatch price bangladesh, amoled calling watch",
+              "robots": "index, follow"
+            }
+          },
+          "quantity": 1,
+          "selectedColor": "Titanium Silver"
+        }
+      ],
+      "total": 1920,
+      "createdAt": "2026-11-10T03:30:00Z",
+      "recovered": false,
+      "whatsappSent": false
+    },
+    {
+      "id": "cart-ab-02",
+      "customerName": "নাসরিন সুলতানা",
+      "customerPhone": "01722889900",
+      "customerDistrict": "ঢাকা (সিটি কর্পোরেশন)",
+      "items": [
+        {
+          "product": {
+            "id": "prod-005",
+            "title": "Sundarban Raw Natural Khalisha Pure Honey (1 Kg)",
+            "titleBn": "সুন্দরবনের ১০০% খাঁটি খলিশা ফুলের প্রাকৃতিক মধু (১ কেজি)",
+            "description": "100% natural, unpasteurized, lab-tested wild honey directly sourced from Sundarban mangrove forest. Rich in antioxidants and authentic floral aroma.",
+            "descriptionBn": "সুন্দরবনের গভীর জঙ্গল থেকে মোয়ালদের সংগৃহীত ১০০% খাঁটি ও প্রক্রিয়াজাতহীন খলিশা ফুলের মধু। রোগ প্রতিরোধ ক্ষমতা বাড়ায়।",
+            "price": 1150,
+            "originalPrice": 1500,
+            "stock": 24,
+            "category": "organic-food",
+            "categoryBn": "অর্গানিক ফুড ও মধু",
+            "subcategory": "wild-raw-honey",
+            "tags": [
+              "100% Pure",
+              "Lab Tested"
+            ],
+            "images": [
+              "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=800&auto=format&fit=crop&q=80"
+            ],
+            "sku": "HONEY-SUNDAR-1KG",
+            "rating": 5,
+            "reviewsCount": 97,
+            "isFlashSale": false,
+            "colors": [
+              "Pure Golden Amber"
+            ],
+            "sizes": [
+              "1 Kg Glass Jar (১ কেজি)",
+              "500g Glass Jar (৫০০ গ্রাম)"
+            ],
+            "features": [
+              "Directly From Sundarban",
+              "No Added Sugar Or Glucose",
+              "Rich In Natural Enzymes",
+              "Heavy Glass Jar Packaging"
+            ],
+            "featuresBn": [
+              "সরাসরি সুন্দরবন থেকে সংগৃহীত",
+              "চিনি বা গ্লুকোজ মুক্ত শতভাগ খাঁটি",
+              "প্রাকৃতিক এনজাইম ও অ্যান্টিঅক্সিডেন্ট",
+              "সুরক্ষিত প্রিমিয়াম কাঁচের জার"
+            ],
+            "seo": {
+              "slug": "sundarban-khalisha-pure-honey-1kg",
+              "metaTitle": "Sundarban Pure Khalisha Honey 1Kg | BuyOne BD",
+              "metaDescription": "100% pure lab-tested Sundarban Khalisha flower honey delivered fresh in glass jar.",
+              "keywords": "sundarban honey, pure honey bangladesh, khalisha honey",
+              "robots": "index, follow"
+            }
+          },
+          "quantity": 2
+        }
+      ],
+      "total": 2370,
+      "createdAt": "2026-11-10T02:15:00Z",
+      "recovered": false,
+      "whatsappSent": true
+    }
+  ],
+  "reviews": [
+    {
+      "id": "rev-01",
+      "productId": "prod-001",
+      "customerName": "সাকিব মাহমুদ, উত্তরা ঢাকা",
+      "rating": 5,
+      "comment": "অসাধারণ ওয়াচ! কলিং স্পিকার খুবই ক্লিয়ার আর ডিসপ্লে একদম স্মুথ। এআই কল এসে কনফার্ম করল, ২ দিনেই ডেলিভারি পেলাম।",
+      "date": "২ দিন আগে",
+      "verifiedPurchase": true,
+      "isApproved": true
+    },
+    {
+      "id": "rev-02",
+      "productId": "prod-001",
+      "customerName": "ডা. মাহমুদুল হাসান, সিলেট",
+      "rating": 5,
+      "comment": "ব্যাটারি ব্যাকআপ খুব ভালো দিচ্ছে। ক্যাশ অন ডেলিভারিতে কোনো ঝামেলা ছাড়াই হাতে পেয়েছি। ১০০% রেকমেন্ডেড।",
+      "date": "১ সপ্তাহ আগে",
+      "verifiedPurchase": true,
+      "isApproved": true
+    },
+    {
+      "id": "rev-03",
+      "productId": "prod-005",
+      "customerName": "আরিফুল ইসলাম, মিরপুর",
+      "rating": 5,
+      "comment": "সুন্দরবনের খাঁটি মধুর স্বাদ! ল্যাব টেস্টেও উত্তীর্ণ। কাঁচের বয়াম খুব যত্নে প্যাকিং করা ছিল।",
+      "date": "৩ দিন আগে",
+      "verifiedPurchase": true,
+      "isApproved": true
+    }
+  ],
+  "priceAlerts": [],
+  "users": [
+    {
+      "id": "user-01",
+      "name": "Md Hossain (Owner)",
+      "email": "hossain@gmail.com",
+      "phone": "01886289663",
+      "role": "super_admin",
+      "isActive": true,
+      "createdAt": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "user-02",
+      "name": "Sumana (AI Call Agent)",
+      "email": "sumana.ai@buyonebd.com",
+      "role": "support_agent",
+      "isActive": true,
+      "createdAt": "2026-02-15T00:00:00Z"
+    },
+    {
+      "id": "user-03",
+      "name": "Kamrul Islam (Order Dispatcher)",
+      "email": "kamrul@buyonebd.com",
+      "phone": "01755112233",
+      "role": "order_manager",
+      "isActive": true,
+      "createdAt": "2026-03-10T00:00:00Z"
+    }
+  ],
+  "mediaLibrary": [
+    {
+      "id": "med-1-5264",
+      "name": "SEO OG Banner",
+      "url": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=1200",
+      "source": "seo",
+      "width": 1200,
+      "height": 630,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-2-7631",
+      "name": "Super Deal: Ultra Smartwatch & Gadgets Collection",
+      "url": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=1600&auto=format&fit=crop&q=80",
+      "source": "slider",
+      "width": 1200,
+      "height": 525,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-3-7586",
+      "name": "100% Pure Raw Sundarban Wild Honey",
+      "url": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=1600&auto=format&fit=crop&q=80",
+      "source": "slider",
+      "width": 1200,
+      "height": 525,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-4-7582",
+      "name": "Premium Royal Cotton Embroidered Panjabi Set",
+      "url": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1600&auto=format&fit=crop&q=80",
+      "source": "slider",
+      "width": 1200,
+      "height": 525,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-5-7562",
+      "name": "14-in-1 Smart Multifunctional Kitchen Vegetable Cutter",
+      "url": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=1600&auto=format&fit=crop&q=80",
+      "source": "slider",
+      "width": 1200,
+      "height": 525,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-6-7772",
+      "name": "Jannatul Ferdous Alcohol-Free Pure Perfume Oil (Attar)",
+      "url": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=1600&auto=format&fit=crop&q=80",
+      "source": "slider",
+      "width": 1200,
+      "height": 525,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-7-7582",
+      "name": "Smart Gadgets",
+      "url": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=240&auto=format&fit=crop&q=80",
+      "source": "category",
+      "width": 400,
+      "height": 400,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-8-7533",
+      "name": "Fashion & Lifestyle",
+      "url": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=240&auto=format&fit=crop&q=80",
+      "source": "category",
+      "width": 400,
+      "height": 400,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-9-7537",
+      "name": "Organic Foods & Honey",
+      "url": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=240&auto=format&fit=crop&q=80",
+      "source": "category",
+      "width": 400,
+      "height": 400,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-10-7723",
+      "name": "Islamic & Attar",
+      "url": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=240&auto=format&fit=crop&q=80",
+      "source": "category",
+      "width": 400,
+      "height": 400,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-11-7513",
+      "name": "Home & Kitchen",
+      "url": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=240&auto=format&fit=crop&q=80",
+      "source": "category",
+      "width": 400,
+      "height": 400,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-12-7367",
+      "name": "Beauty & Personal Care",
+      "url": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=240&auto=format&fit=crop&q=80",
+      "source": "category",
+      "width": 400,
+      "height": 400,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-13-7584",
+      "name": "Ultra Watch 9 Pro AMOLED Display Smartwatch with Calling (Main)",
+      "url": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=80",
+      "source": "product",
+      "width": 600,
+      "height": 600,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-14-7376",
+      "name": "Ultra Watch 9 Pro AMOLED Display Smartwatch with Calling (#2)",
+      "url": "https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=800&auto=format&fit=crop&q=80",
+      "source": "product",
+      "width": 600,
+      "height": 600,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-15-7723",
+      "name": "Ultra Watch 9 Pro AMOLED Display Smartwatch with Calling (#3)",
+      "url": "https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80",
+      "source": "product",
+      "width": 600,
+      "height": 600,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-16-7430",
+      "name": "T9 Vintage Professional Hair & Beard Trimmer for Men (Main)",
+      "url": "https://images.unsplash.com/photo-1621607512214-68297480165e?w=800&auto=format&fit=crop&q=80",
+      "source": "product",
+      "width": 600,
+      "height": 600,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-17-7523",
+      "name": "T9 Vintage Professional Hair & Beard Trimmer for Men (#2)",
+      "url": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=800&auto=format&fit=crop&q=80",
+      "source": "product",
+      "width": 600,
+      "height": 600,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-18-7535",
+      "name": "Royal Handcrafted Cotton Panjabi Set with Exclusive Embroidery (Main)",
+      "url": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&auto=format&fit=crop&q=80",
+      "source": "product",
+      "width": 600,
+      "height": 600,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-19-7572",
+      "name": "Royal Handcrafted Cotton Panjabi Set with Exclusive Embroidery (#2)",
+      "url": "https://images.unsplash.com/photo-1598033129183-c4f50c736f10?w=800&auto=format&fit=crop&q=80",
+      "source": "product",
+      "width": 600,
+      "height": 600,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-20-7631",
+      "name": "M10 TWS Wireless Earbuds with 2000mAh Power Bank Case (Main)",
+      "url": "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=800&auto=format&fit=crop&q=80",
+      "source": "product",
+      "width": 600,
+      "height": 600,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-21-7539",
+      "name": "Sundarban Raw Natural Khalisha Pure Honey (1 Kg) (Main)",
+      "url": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=800&auto=format&fit=crop&q=80",
+      "source": "product",
+      "width": 600,
+      "height": 600,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-22-7515",
+      "name": "14-in-1 Multifunctional Vegetable Cutter & Food Chopper (Main)",
+      "url": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=800&auto=format&fit=crop&q=80",
+      "source": "product",
+      "width": 600,
+      "height": 600,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-23-7725",
+      "name": "Madina Pure Jannatul Ferdous Alcohol-Free Concentrated Attar (12ml) (Main)",
+      "url": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=800&auto=format&fit=crop&q=80",
+      "source": "product",
+      "width": 600,
+      "height": 600,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    },
+    {
+      "id": "med-24-7369",
+      "name": "Rice Water Brightening Gentle Foaming Cleanser (150ml) (Main)",
+      "url": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&auto=format&fit=crop&q=80",
+      "source": "product",
+      "width": 600,
+      "height": 600,
+      "sizeKb": 120,
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-11-13T17:08:04.278Z"
+    }
+  ]
 }

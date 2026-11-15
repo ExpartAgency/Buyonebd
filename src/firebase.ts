@@ -106,6 +106,11 @@ export function stripUndefinedDeep<T>(value: T): T {
     return value.map((item) => stripUndefinedDeep(item)) as unknown as T;
   }
   if (value && typeof value === 'object') {
+    const proto = Object.getPrototypeOf(value);
+    // Preserve Firestore sentinels (serverTimestamp / FieldValue), Timestamp, Date, etc.
+    if (proto !== Object.prototype && proto !== null) {
+      return value;
+    }
     const out: Record<string, any> = {};
     for (const [k, v] of Object.entries(value as Record<string, any>)) {
       if (v !== undefined) {
@@ -1274,13 +1279,56 @@ export async function runFirebaseDiagnostics(): Promise<{
   try {
     const ordSnap = await getDocs(collection(db, 'orders'));
     details.push({
-      step: 'Cross-Device Orders (/orders)',
+      step: 'Cross-Device Orders Read (/orders)',
       ok: true,
       message: `Live • ${ordSnap.size} cloud order(s) accessible.`
     });
   } catch (err) {
     details.push({
-      step: 'Cross-Device Orders (/orders)',
+      step: 'Cross-Device Orders Read (/orders)',
+      ok: false,
+      message: extractFirestoreErrorReason(err)
+    });
+  }
+
+  // Verify live order write + cleanup when signed in as Admin
+  const diagOrderId = `DIAG-PING-${Date.now()}`;
+  try {
+    await setDoc(doc(db, 'orders', diagOrderId), {
+      id: diagOrderId,
+      customer: {
+        name: 'Diagnostics Ping',
+        phone: '01700000000',
+        address: 'Dhaka',
+        district: 'Dhaka - Inside City'
+      },
+      items: [
+        {
+          productId: 'diag-item',
+          productTitle: 'Health Check Item',
+          productTitleBn: 'ডায়াগনস্টিক চেক',
+          price: 100,
+          quantity: 1,
+          image: ''
+        }
+      ],
+      pricing: { subtotal: 100, deliveryFee: 0, discount: 0, total: 100 },
+      payment: { method: 'cod', status: 'pending', dueAmount: 100 },
+      deliveryZone: 'dhaka_inside',
+      status: 'pending',
+      source: 'online',
+      createdAt: new Date().toISOString(),
+      serverCreatedAt: serverTimestamp()
+    });
+    await deleteDoc(doc(db, 'orders', diagOrderId)).catch(() => {});
+    details.push({
+      step: 'Live Order Write Test (/orders)',
+      ok: true,
+      message: 'Verified • New order writes & serverTimestamp rules pass cleanly.'
+    });
+  } catch (err) {
+    details.push({
+      step: 'Live Order Write Test (/orders)',
       ok: false,
       message: extractFirestoreErrorReason(err)
     });

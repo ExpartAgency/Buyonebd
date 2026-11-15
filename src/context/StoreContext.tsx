@@ -377,6 +377,8 @@ interface StoreContextType {
   syncAllDashboardToFirebase: (silent?: boolean) => Promise<{ ok: boolean; errors: string[] }>;
   pullAllDashboardFromFirebase: () => Promise<boolean>;
   testFirebaseCloudConnection: () => Promise<{ ok: boolean; details: FirebaseDiagnosticStep[] }>;
+  exportFullDatabaseBackup: () => Record<string, any>;
+  restoreDatabaseFromBackup: (backup: Record<string, any>, pushToCloud?: boolean) => Promise<boolean>;
 
   // Spin Rewards CRUD & Limit
   spinRewards: SpinReward[];
@@ -1200,6 +1202,117 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setLastCloudSyncAt(new Date().toLocaleTimeString());
     }
     return report;
+  };
+
+  const exportFullDatabaseBackup = () => ({
+    version: '2.0',
+    exportedAt: new Date().toISOString(),
+    firebaseProjectId: 'vital-compass-gmn89',
+    firestoreDatabaseId: 'ai-studio-buyonebdecommerc-a1b62e5b-8854-4b1d-8906-5fbaa39d4372',
+    settings: settingsRef.current,
+    categories: categoriesRef.current,
+    sliders: slidersRef.current,
+    products: productsRef.current,
+    orders: ordersRef.current,
+    reviews: reviewsRef.current,
+    mediaLibrary: mediaLibraryRef.current,
+    customerAccounts: customerAccountsRef.current,
+    walletTopUps: walletTopUpsRef.current,
+    abandonedCarts: abandonedCartsRef.current,
+    priceAlerts: priceAlertsRef.current,
+    users: usersRef.current
+  });
+
+  const restoreDatabaseFromBackup = async (
+    backup: Record<string, any>,
+    pushToCloud = true
+  ): Promise<boolean> => {
+    try {
+      if (!backup || typeof backup !== 'object') {
+        addToast('error', t('অবৈধ ব্যাকআপ ফাইল', 'Invalid Backup File'), t('সঠিক JSON ফাইল নির্বাচন করুন।', 'Please select a valid JSON backup file.'));
+        return false;
+      }
+
+      lastLocalMutationAtRef.current = Date.now();
+      const nextSettings = backup.settings ? mergeSettings(backup.settings) : settingsRef.current;
+      const nextCategories = Array.isArray(backup.categories) ? backup.categories : categoriesRef.current;
+      const nextSliders = Array.isArray(backup.sliders) ? backup.sliders : slidersRef.current;
+      const nextProducts = Array.isArray(backup.products) ? backup.products : productsRef.current;
+      const nextOrders = Array.isArray(backup.orders) ? backup.orders : ordersRef.current;
+      const nextReviews = Array.isArray(backup.reviews) ? backup.reviews : reviewsRef.current;
+      const nextMedia = Array.isArray(backup.mediaLibrary) ? backup.mediaLibrary : mediaLibraryRef.current;
+      const nextCustomers = Array.isArray(backup.customerAccounts) ? backup.customerAccounts : customerAccountsRef.current;
+      const nextTopUps = Array.isArray(backup.walletTopUps) ? backup.walletTopUps : walletTopUpsRef.current;
+      const nextCarts = Array.isArray(backup.abandonedCarts) ? backup.abandonedCarts : abandonedCartsRef.current;
+      const nextAlerts = Array.isArray(backup.priceAlerts) ? backup.priceAlerts : priceAlertsRef.current;
+      const nextUsers = Array.isArray(backup.users) ? backup.users : usersRef.current;
+
+      setSettings(nextSettings);
+      setCategories(nextCategories);
+      setSliders(nextSliders);
+      setProducts(nextProducts);
+      setOrders(nextOrders);
+      setReviews(nextReviews);
+      setMediaLibrary(nextMedia);
+      setCustomerAccounts(nextCustomers);
+      setWalletTopUps(nextTopUps);
+      setAbandonedCarts(nextCarts);
+      setPriceAlerts(nextAlerts);
+      setUsers(nextUsers);
+
+      fetch('/api/store/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings: nextSettings,
+          categories: nextCategories,
+          sliders: nextSliders,
+          products: nextProducts,
+          orders: nextOrders,
+          reviews: nextReviews,
+          mediaLibrary: nextMedia,
+          customerAccounts: nextCustomers,
+          walletTopUps: nextTopUps,
+          abandonedCarts: nextCarts,
+          priceAlerts: nextAlerts,
+          users: nextUsers
+        })
+      }).catch(() => {});
+
+      if (pushToCloud && auth.currentUser) {
+        setIsSyncingCloudAll(true);
+        try {
+          const res = await syncAllAdminDataToFirestore({
+            settings: nextSettings,
+            categories: nextCategories,
+            sliders: nextSliders,
+            products: nextProducts,
+            orders: nextOrders,
+            reviews: nextReviews,
+            mediaLibrary: nextMedia,
+            customerAccounts: nextCustomers,
+            walletTopUps: nextTopUps,
+            abandonedCarts: nextCarts,
+            priceAlerts: nextAlerts,
+            users: nextUsers
+          });
+          setLastCloudSyncAt(new Date().toLocaleTimeString());
+          if (!res.ok) setCloudSyncError(res.errors[0] || 'Partial backup push error');
+        } finally {
+          setIsSyncingCloudAll(false);
+        }
+      }
+
+      addToast(
+        'success',
+        t('ডাটাবেস ব্যাকআপ রিস্টোর সম্পন্ন!', 'Database Backup Restored!'),
+        t('সব সেটিংস, পণ্য, অর্ডার ও কাস্টমার ডাটা সফলভাবে লোড হয়েছে।', 'All settings, products, orders & customers restored.')
+      );
+      return true;
+    } catch (err) {
+      addToast('error', t('রিস্টোর ব্যর্থ', 'Restore Failed'), extractFirestoreErrorReason(err));
+      return false;
+    }
   };
 
   useEffect(() => {
@@ -4596,6 +4709,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       createdAt: new Date().toISOString()
     };
 
+    lastLocalMutationAtRef.current = Date.now();
     knownOrderIdsRef.current.add(newOrder.id);
     setOrders((prev) => [newOrder, ...prev]);
 
@@ -4605,21 +4719,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const orderedQty = orderData.items
           .filter((i) => i.product.id === prod.id)
           .reduce((acc, i) => acc + i.quantity, 0);
-        return orderedQty > 0 ? { ...prod, stock: Math.max(0, prod.stock - orderedQty) } : prod;
+        if (orderedQty > 0) {
+          const updatedProd = { ...prod, stock: Math.max(0, prod.stock - orderedQty) };
+          if (auth.currentUser) {
+            saveProductToFirestore(updatedProd).catch(() => {});
+          }
+          return updatedProd;
+        }
+        return prod;
       })
     );
 
     // Immediately persist atomically to BOTH Express API and Cloud Firestore so all devices/browsers receive it live
-    let expressSaved = false;
-    fetch('/api/orders', {
+    const expressPromise = fetch('/api/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ order: newOrder })
     })
-      .then((r) => {
-        expressSaved = r.ok;
-      })
-      .catch(() => {});
+      .then((r) => r.ok)
+      .catch(() => false);
 
     const allowAdminStatus = isFirebaseAdminConnectedRef.current;
     writeOrderToFirestore(newOrder, allowAdminStatus)
@@ -4634,15 +4752,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               setLastCloudSyncAt(new Date().toLocaleTimeString());
               setCloudSyncError(null);
             })
-            .catch((err) => {
+            .catch(async (err) => {
               const reason = extractFirestoreErrorReason(err || firstErr);
               setCloudSyncError(reason);
               console.error('Firestore order sync error:', reason);
-              if (!expressSaved) {
+              const expressSavedOk = await expressPromise;
+              if (!expressSavedOk) {
                 addToast(
                   'warning',
                   t('ক্লাউড সিঙ্ক সতর্কতা', 'Cloud Order Sync Delayed'),
-                  t(
+                  reason || t(
                     'অর্ডার লোকালভাবে সংরক্ষিত হয়েছে, তবে ক্লাউড সিঙ্কে সমস্যা হয়েছে।',
                     'Order saved locally, but cloud order sync encountered an error.'
                   )
@@ -5331,6 +5450,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         syncAllDashboardToFirebase,
         pullAllDashboardFromFirebase,
         testFirebaseCloudConnection,
+        exportFullDatabaseBackup,
+        restoreDatabaseFromBackup,
         spinRewards,
         addSpinReward,
         updateSpinReward,

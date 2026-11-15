@@ -204,6 +204,8 @@ export const AdminDashboard: React.FC = () => {
     syncAllDashboardToFirebase,
     pullAllDashboardFromFirebase,
     testFirebaseCloudConnection,
+    exportFullDatabaseBackup,
+    restoreDatabaseFromBackup,
     generateBrandColorAttributes
   } = useStore();
 
@@ -314,10 +316,13 @@ export const AdminDashboard: React.FC = () => {
   const [customerSearch, setCustomerSearch] = useState('');
   const [balanceAdjustAmounts, setBalanceAdjustAmounts] = useState<Record<string, number>>({});
 
-  // Firebase Cloud Hub Diagnostics & Domain Helper State
+  // Firebase Cloud Hub Diagnostics, Hosting Setup & Domain Helper State
   const [fbDiagnostics, setFbDiagnostics] = useState<{ ok: boolean; details: FirebaseDiagnosticStep[] } | null>(null);
   const [isRunningFbDiag, setIsRunningFbDiag] = useState(false);
   const [domainCopied, setDomainCopied] = useState(false);
+  const [hostingTarget, setHostingTarget] = useState<'vercel' | 'node_vps' | 'firebase_hosting'>('vercel');
+  const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+  const [hostingStatusInfo, setHostingStatusInfo] = useState<{ checked: boolean; expressActive: boolean } | null>(null);
 
   // Support Desk unified customer workspace tab
   const [customerConsoleTab, setCustomerConsoleTab] = useState<'call' | 'chat' | 'orders'>('call');
@@ -1181,7 +1186,7 @@ export const AdminDashboard: React.FC = () => {
     { id: 'reviews', labelBn: 'কাস্টমার রিভিউ ও রেটিং', labelEn: 'Customer Reviews', icon: MessageCircle, badge: reviews.length },
     { id: 'users', labelBn: 'কাস্টমার ব্যালেন্স ও স্টাফ টিম', labelEn: 'Customers & Staff', icon: Users, badge: customerAccounts.length + users.length },
     { id: 'design_footer', labelBn: 'স্টোর ডিজাইন ও ফুটার', labelEn: 'Store & Footer', icon: Sliders },
-    { id: 'firebase_hub', labelBn: 'Firebase সব সেটিংস হাব', labelEn: 'Firebase Cloud Hub', icon: Cloud },
+    { id: 'firebase_hub', labelBn: 'হোস্টিং ও Firebase ডাটাবেস', labelEn: 'Hosting & Firebase DB', icon: Cloud },
     { id: 'settings', labelBn: 'পেমেন্ট, ডেলিভারি ও SMTP', labelEn: 'Settings & SMTP', icon: Settings }
   ];
 
@@ -9539,6 +9544,265 @@ export const AdminDashboard: React.FC = () => {
                       </button>
                     </div>
                   </div>
+                </div>
+
+                {/* Full Database Backup Export / Import (Disaster Recovery & Host Migration) */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-black text-white flex items-center gap-2">
+                        <Database className="w-4 h-4 text-emerald-400" />
+                        <span>{at('সম্পূর্ণ ওয়েবসাইট ডাটাবেস ব্যাকআপ ও রিস্টোর (.json)', 'Full Website Database Backup & Restore (.json)')}</span>
+                      </h4>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {at(
+                          'আপনার পুরো স্টোরের সব পণ্য, অর্ডার, কাস্টমার, ওয়ালেট, রিভিউ ও সেটিংস এক ফাইলে ডাউনলোড করুন বা যেকোনো নতুন হোস্টিংয়ে আপলোড করে রিস্টোর করুন।',
+                          'Download a portable JSON snapshot of all products, orders, customers, wallets, reviews & settings, or upload a backup file on any host.'
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const data = exportFullDatabaseBackup();
+                          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          const dateStamp = new Date().toISOString().split('T')[0];
+                          a.href = url;
+                          a.download = `buyonebd-database-backup-${dateStamp}.json`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                          addToast('success', at('ব্যাকআপ ডাউনলোড শুরু হয়েছে', 'Backup Downloaded'), `buyonebd-database-backup-${dateStamp}.json`);
+                        }}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>{at('পূর্ণ ডাটাবেস ব্যাকআপ (.json)', 'Export Full Backup (.json)')}</span>
+                      </button>
+
+                      <label className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer">
+                        <Upload className="w-3.5 h-3.5 text-sky-400" />
+                        <span>{isRestoringBackup ? at('রিস্টোর হচ্ছে...', 'Restoring...') : at('ব্যাকআপ ফাইল রিস্টোর করুন', 'Import / Restore Backup')}</span>
+                        <input
+                          type="file"
+                          accept=".json,application/json"
+                          className="hidden"
+                          disabled={isRestoringBackup}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            setIsRestoringBackup(true);
+                            const reader = new FileReader();
+                            reader.onload = async (ev) => {
+                              try {
+                                const parsed = JSON.parse(String(ev.target?.result || '{}'));
+                                await restoreDatabaseFromBackup(parsed, true);
+                              } catch {
+                                addToast('error', at('অবৈধ ফাইল', 'Invalid JSON'), at('সঠিক ব্যাকআপ JSON ফাইল দিন।', 'Could not parse JSON backup file.'));
+                              } finally {
+                                setIsRestoringBackup(false);
+                                e.target.value = '';
+                              }
+                            };
+                            reader.readAsText(file);
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Hosting & Production Server Setup Guide (Vercel, Node.js VPS / cPanel, Firebase Hosting) */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-emerald-500/25 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-black text-white flex items-center gap-2">
+                        <Server className="w-4 h-4 text-emerald-400" />
+                        <span>{at('হোস্টিং ও লাইভ ওয়েবসাইট সেটআপ (Vercel / VPS / Firebase)', 'Hosting & Live Website Deployment Setup')}</span>
+                      </h4>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {at(
+                          'আপনার ডোমেইনে সম্পূর্ণ ওয়েবসাইট ও রিয়েল-টাইম Firebase ডাটাবেস লাইভ চালানোর পূর্ণ কনফিগারেশন',
+                          'Production environment setup for running the full storefront, /hossain admin portal & Firestore database on any host.'
+                        )}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const r = await fetch(`/api/store/sync?t=${Date.now()}`, { cache: 'no-store' });
+                          setHostingStatusInfo({ checked: true, expressActive: r.ok });
+                        } catch {
+                          setHostingStatusInfo({ checked: true, expressActive: false });
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 cursor-pointer shrink-0"
+                    >
+                      {at('সার্ভার ও API স্ট্যাটাস চেক', 'Check Live Host Mode')}
+                    </button>
+                  </div>
+
+                  {hostingStatusInfo?.checked && (
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2.5 h-2.5 rounded-full ${hostingStatusInfo.expressActive ? 'bg-emerald-400' : 'bg-sky-400'}`} />
+                        <span className="font-bold text-white">
+                          {hostingStatusInfo.expressActive
+                            ? at('Full-Stack Node.js + Firestore মোড সক্রিয় (Express API + Firebase উভয় চালু)', 'Full-Stack Node.js + Cloud Firestore Active')
+                            : at('Serverless / Static Hosting মোড (১০০% Cloud Firestore দ্বারা চালিত)', 'Serverless / Static Hosting Mode (Powered 100% by Cloud Firestore)')}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-mono text-slate-400">
+                        {typeof window !== 'undefined' ? window.location.origin : ''}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Hosting Platform Tabs */}
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { id: 'vercel' as const, label: at('Vercel (SPA + Firebase)', 'Vercel (Static + Firestore)') },
+                      { id: 'node_vps' as const, label: at('Node.js VPS / cPanel / Cloud Run', 'Node.js VPS / cPanel / Cloud Run') },
+                      { id: 'firebase_hosting' as const, label: at('Firebase Hosting', 'Firebase Hosting') }
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setHostingTarget(tab.id)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
+                          hostingTarget === tab.id
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-950 border border-slate-800 text-slate-300 hover:border-slate-700'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {hostingTarget === 'vercel' && (
+                    <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <p className="font-bold text-emerald-300">{at('১. SPA রাউটিং (/hossain ৪০৪ ফিক্স)', '1. Vercel SPA Rewrite (/hossain Fixed)')}</p>
+                          <p className="text-slate-400 leading-relaxed">
+                            {at(
+                              'প্রোজেক্টের vercel.json ফাইলে /hossain এবং /product/* সহ সকল পেজের জন্য SPA rewrite আগে থেকেই সেট করা আছে। শুধু git push বা vercel --prod চালান।',
+                              'vercel.json already routes /hossain, /product/*, and /category/* to /index.html cleanly so reload/direct links never 404.'
+                            )}
+                          </p>
+                        </div>
+                        <div className="space-y-1.5">
+                          <p className="font-bold text-sky-300">{at('২. Vercel-এ ডাটাবেস ও অর্ডার', '2. Cross-Device Orders on Vercel')}</p>
+                          <p className="text-slate-400 leading-relaxed">
+                            {at(
+                              'Vercel-এ কোনো আলাদা MySQL/Postgres সার্ভার লাগবে না। আপনার সব অর্ডার, পণ্য, ওয়ালেট ও সেটিংস সরাসরি Firebase Firestore-এ সেভ হয়।',
+                              'No external SQL database is needed on Vercel—customer orders, catalog products, wallets, and settings sync directly via Cloud Firestore.'
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <a
+                          href={`https://console.firebase.google.com/project/${FIREBASE_PROJECT_ID}/authentication/settings`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/40 text-sky-300 font-bold inline-flex items-center gap-1.5"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>{at('Firebase Authorized Domains খুলুন', 'Open Firebase Auth Domains')}</span>
+                        </a>
+                        <a
+                          href={`https://console.firebase.google.com/project/${FIREBASE_PROJECT_ID}/firestore/databases/${FIREBASE_DATABASE_ID}/data`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-bold inline-flex items-center gap-1.5"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>{at('লাইভ Firestore ডাটাবেস দেখুন', 'Open Live Firestore Console')}</span>
+                        </a>
+                      </div>
+                    </div>
+                  )}
+
+                  {hostingTarget === 'node_vps' && (() => {
+                    const envTemplate = [
+                      `PORT=3000`,
+                      `NODE_ENV=production`,
+                      `GEMINI_API_KEY=your_gemini_api_key_here`,
+                      `SMTP_HOST=${settings.smtpSettings?.host || 'smtp.gmail.com'}`,
+                      `SMTP_PORT=${settings.smtpSettings?.port || 465}`,
+                      `SMTP_USER=${settings.smtpSettings?.user || 'your_email@gmail.com'}`,
+                      `SMTP_PASS=your_app_password`,
+                      `STEADFAST_API_KEY=${settings.courierSettings?.steadfast?.apiKey || 'your_steadfast_api_key'}`,
+                      `STEADFAST_SECRET_KEY=${settings.courierSettings?.steadfast?.secretKey || 'your_steadfast_secret_key'}`
+                    ].join('\n');
+
+                    return (
+                      <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-emerald-300">{at('Node.js পূর্ণ সার্ভার কমান্ড (SMTP, AI ভয়েস কল ও Steadfast প্রক্সি সহ)', 'Full-Stack Node.js Server Commands (Includes SMTP, AI Voice & Steadfast API)')}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(envTemplate).catch(() => {});
+                              addToast('success', at('.env কপি হয়েছে!', '.env Template Copied!'), '');
+                            }}
+                            className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Copy className="w-3 h-3" />
+                            <span>{at('.env কপি করুন', 'Copy .env')}</span>
+                          </button>
+                        </div>
+                        <pre className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-slate-300 overflow-x-auto">{`npm install && npm run build && npm start`}</pre>
+                        <pre className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-emerald-300/90 overflow-x-auto">{envTemplate}</pre>
+                      </div>
+                    );
+                  })()}
+
+                  {hostingTarget === 'firebase_hosting' && (() => {
+                    const fbHostingJson = JSON.stringify(
+                      {
+                        hosting: {
+                          public: 'dist',
+                          ignore: ['firebase.json', '**/.*', '**/node_modules/**'],
+                          rewrites: [{ source: '**', destination: '/index.html' }]
+                        },
+                        firestore: {
+                          rules: 'firestore.rules'
+                        }
+                      },
+                      null,
+                      2
+                    );
+                    return (
+                      <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-amber-300">firebase.json ({FIREBASE_PROJECT_ID})</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(fbHostingJson).catch(() => {});
+                              addToast('success', at('firebase.json কপি হয়েছে!', 'firebase.json Copied!'), '');
+                            }}
+                            className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Copy className="w-3 h-3" />
+                            <span>{at('firebase.json কপি', 'Copy Config')}</span>
+                          </button>
+                        </div>
+                        <pre className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-slate-300 overflow-x-auto">{`npm run build && npx firebase deploy --project ${FIREBASE_PROJECT_ID} --only hosting,firestore:rules`}</pre>
+                        <pre className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-amber-200/90 overflow-x-auto">{fbHostingJson}</pre>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             );
