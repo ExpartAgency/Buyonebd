@@ -68,16 +68,19 @@ service cloud.firestore {
     function isValidCatalogProduct(data) {
       return data.keys().hasAll(['id', 'title', 'price', 'stock', 'updatedAt'])
         && data.keys().hasOnly([
-          'id', 'title', 'titleBn', 'description', 'descriptionBn', 'price', 'originalPrice',
+          'id', 'title', 'titleBn', 'description', 'descriptionBn', 'brand', 'brandBn', 'price', 'originalPrice',
           'stock', 'category', 'categoryBn', 'subcategory', 'tags', 'images', 'sku',
           'barcode', 'freeShipping', 'customDeliveryFees', 'rating', 'reviewsCount',
-          'soldCount', 'loyaltyPoints', 'isFlashSale', 'colors', 'sizes', 'features',
+          'soldCount', 'loyaltyPoints', 'isFlashSale', 'colors', 'sizes', 'attributes', 'features',
           'featuresBn', 'videoUrl', 'warrantyInfo', 'warrantyInfoBn', 'seo', 'updatedAt'
         ])
         && isValidId(data.id)
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
         && data.price is number && data.price >= 0
         && data.stock is number && data.stock >= 0
+        && (!data.keys().hasAny(['brand']) || (data.brand is string && data.brand.size() <= 120))
+        && (!data.keys().hasAny(['brandBn']) || (data.brandBn is string && data.brandBn.size() <= 140))
+        && (!data.keys().hasAny(['attributes']) || (data.attributes is list && data.attributes.size() <= 15))
         && (!data.keys().hasAny(['images']) || (data.images is list && data.images.size() <= 12))
         && data.updatedAt is timestamp;
     }
@@ -189,6 +192,19 @@ service cloud.firestore {
         && data.productId is string && data.productId.size() >= 1 && data.productId.size() <= 80
         && data.contact is string && data.contact.size() >= 3 && data.contact.size() <= 160
         && data.targetPrice is number && data.targetPrice > 0
+        && data.createdAt is timestamp;
+    }
+
+    function isValidWaitlistEntry(data) {
+      return data.keys().hasAll(['id', 'productId', 'contact', 'contactType', 'status', 'createdAt'])
+        && data.keys().hasOnly(['id', 'productId', 'productTitle', 'productTitleBn', 'contact', 'contactType', 'status', 'createdAt'])
+        && isValidId(data.id)
+        && data.productId is string && data.productId.size() >= 1 && data.productId.size() <= 80
+        && (!data.keys().hasAny(['productTitle']) || (data.productTitle is string && data.productTitle.size() <= 200))
+        && (!data.keys().hasAny(['productTitleBn']) || (data.productTitleBn is string && data.productTitleBn.size() <= 240))
+        && data.contact is string && data.contact.size() >= 5 && data.contact.size() <= 160
+        && data.contactType in ['email', 'phone']
+        && data.status in ['waiting', 'notified']
         && data.createdAt is timestamp;
     }
 
@@ -351,6 +367,22 @@ service cloud.firestore {
         && incoming().id == existing().id
         && incoming().createdAt == existing().createdAt;
       allow delete: if isAdmin() && isValidId(alertId);
+    }
+
+    match /Waitlist/{waitlistId} {
+      allow get: if isAdmin() && isValidId(waitlistId);
+      allow list: if isAdmin();
+      allow create: if isValidId(waitlistId)
+        && isValidWaitlistEntry(incoming())
+        && incoming().id == waitlistId
+        && incoming().status == 'waiting'
+        && incoming().createdAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(waitlistId)
+        && isValidWaitlistEntry(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin() && isValidId(waitlistId);
     }
 
     match /staff_users/{userId} {

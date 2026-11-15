@@ -69,6 +69,9 @@
         "originalPrice": { "type": "number" },
         "stock": { "type": "number" },
         "category": { "type": "string", "maxLength": 80 },
+        "brand": { "type": "string", "maxLength": 120 },
+        "brandBn": { "type": "string", "maxLength": 140 },
+        "attributes": { "type": "array" },
         "isFlashSale": { "type": "boolean" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -209,6 +212,22 @@
       },
       "required": ["id", "productId", "contact", "targetPrice", "createdAt"]
     },
+    "WaitlistRecord": {
+      "title": "WaitlistRecord",
+      "description": "Out-of-stock Notify Me When Available customer waitlist entry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "productId": { "type": "string", "maxLength": 80 },
+        "productTitle": { "type": "string", "maxLength": 200 },
+        "productTitleBn": { "type": "string", "maxLength": 240 },
+        "contact": { "type": "string", "maxLength": 160 },
+        "contactType": { "type": "string", "enum": ["email", "phone"] },
+        "status": { "type": "string", "enum": ["waiting", "notified"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "productId", "contact", "contactType", "status", "createdAt"]
+    },
     "StaffUserRecord": {
       "title": "StaffUserRecord",
       "description": "Admin staff/operator roster entry.",
@@ -277,6 +296,10 @@
     "/price_alerts/{alertId}": {
       "schema": { "$ref": "#/backend/entities/PriceAlertRecord" },
       "description": "Customer price drop alert subscriptions."
+    },
+    "/Waitlist/{waitlistId}": {
+      "schema": { "$ref": "#/backend/entities/WaitlistRecord" },
+      "description": "Out-of-stock Notify Me When Available customer waitlist collection."
     },
     "/staff_users/{userId}": {
       "schema": { "$ref": "#/backend/entities/StaffUserRecord" },

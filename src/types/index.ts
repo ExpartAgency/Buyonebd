@@ -51,12 +51,21 @@ export interface ProductSEO {
   ogImage?: string;
 }
 
+export interface ProductAttribute {
+  id: string;
+  name: string;
+  nameBn?: string;
+  values: string[];
+}
+
 export interface Product {
   id: string;
   title: string;
   titleBn: string;
   description: string;
   descriptionBn: string;
+  brand?: string;
+  brandBn?: string;
   price: number;
   originalPrice: number;
   stock: number;
@@ -80,6 +89,7 @@ export interface Product {
   isFlashSale?: boolean;
   colors?: string[];
   sizes?: string[];
+  attributes?: ProductAttribute[];
   features?: string[];
   featuresBn?: string[];
   videoUrl?: string;
@@ -96,6 +106,7 @@ export interface OrderItem {
   quantity: number;
   selectedColor?: string;
   selectedSize?: string;
+  selectedAttributes?: Record<string, string>;
   image: string;
 }
 
@@ -344,6 +355,16 @@ export interface StoreCMSTexts {
   addToCartBtnEn: string;
   allCategoriesLabelBn: string;
   allCategoriesLabelEn: string;
+  categoriesTitleBn?: string;
+  categoriesTitleEn?: string;
+  flashSaleTitleBn?: string;
+  flashSaleTitleEn?: string;
+  recentlyViewedTitleBn?: string;
+  recentlyViewedTitleEn?: string;
+  whyChooseTitleBn?: string;
+  whyChooseTitleEn?: string;
+  heroSecondaryBtnBn?: string;
+  heroSecondaryBtnEn?: string;
 }
 
 export interface SEOSettings {
@@ -603,6 +624,10 @@ export interface SingleProductCMSSettings {
   colorLabelEn?: string;
   sizeLabelBn?: string;
   sizeLabelEn?: string;
+  brandLabelBn?: string;
+  brandLabelEn?: string;
+  notifyMeBtnBn?: string;
+  notifyMeBtnEn?: string;
   loyaltyTextBn?: string;
   loyaltyTextEn?: string;
   pointsPerOrderDivisor?: number;
@@ -776,6 +801,17 @@ export interface PriceAlert {
   targetPrice: number;
   createdAt: string;
   status: 'active' | 'notified';
+}
+
+export interface WaitlistEntry {
+  id: string;
+  productId: string;
+  productTitle: string;
+  productTitleBn: string;
+  contact: string;
+  contactType: 'email' | 'phone';
+  status: 'waiting' | 'notified';
+  createdAt: string;
 }
 
 export type WalletTopUpMethod = 'bkash' | 'nagad' | 'rocket' | 'upay';

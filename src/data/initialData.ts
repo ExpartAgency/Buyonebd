@@ -306,11 +306,17 @@ export const INITIAL_PRODUCTS: Product[] = [
       'https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80'
     ],
     sku: 'WATCH9-PRO-BLK',
+    brand: 'BuyOne Tech',
+    brandBn: 'বাইওয়ান টেক',
     rating: 4.9,
     reviewsCount: 342,
     isFlashSale: true,
     colors: ['Titanium Silver (সিলভার)', 'Matte Black (কালো)', 'Deep Orange (কমলা)'],
     sizes: ['49mm Standard'],
+    attributes: [
+      { id: 'attr-display', name: 'Display', nameBn: 'ডিসপ্লে', values: ['2.1" AMOLED', 'Sapphire Glass'] },
+      { id: 'attr-strap', name: 'Strap Combo', nameBn: 'স্ট্র্যাপ', values: ['Alpine Loop + Silicone', 'Ocean Orange Band'] }
+    ],
     features: ['2.1 Inch HD AMOLED Display', 'Direct Bluetooth Calling & Mic', 'Wireless Fast Magnetic Charger', 'IP68 Waterproof Body', '7 Days Battery Backup'],
     featuresBn: ['২.১ ইঞ্চি এইচডি ক্রিস্টাল এমোলেড স্ক্রিন', 'সরাসরি ব্লুটুথ কলিং ও লাউডস্পিকার', 'ম্যাগনেটিক ফাস্ট চার্জার', 'আইপি৬৮ ওয়াটারপ্রুফ বডি', 'এক চার্জে ৫-৭ দিন দীর্ঘস্থায়ী ব্যাটারি'],
     videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
@@ -837,7 +843,17 @@ export const INITIAL_SETTINGS: StoreSettings = {
     addToCartBtnBn: 'কার্টে যোগ করুন',
     addToCartBtnEn: 'Add to Cart',
     allCategoriesLabelBn: 'সকল পণ্য',
-    allCategoriesLabelEn: 'All Products'
+    allCategoriesLabelEn: 'All Products',
+    categoriesTitleBn: 'জনপ্রিয় ক্যাটাগরি সমূহ',
+    categoriesTitleEn: 'Shop by Categories',
+    flashSaleTitleBn: 'ফ্ল্যাশ সেল ধামাকা',
+    flashSaleTitleEn: 'Flash Sale Deals',
+    recentlyViewedTitleBn: 'সাম্প্রতিক দেখা পণ্য',
+    recentlyViewedTitleEn: 'Recently Viewed',
+    whyChooseTitleBn: 'কেন BuyOne BD সেরা?',
+    whyChooseTitleEn: 'Why Choose BuyOne BD?',
+    heroSecondaryBtnBn: 'সব কালেকশন দেখুন',
+    heroSecondaryBtnEn: 'Explore Store'
   },
   spinSettings: {
     enabled: true,
@@ -1110,6 +1126,10 @@ export const INITIAL_SETTINGS: StoreSettings = {
     colorLabelEn: 'Color / Variant:',
     sizeLabelBn: 'সাইজ / এডিশন:',
     sizeLabelEn: 'Size / Edition:',
+    brandLabelBn: 'ব্র্যান্ড:',
+    brandLabelEn: 'Brand:',
+    notifyMeBtnBn: 'স্টকে এলে জানান (Notify Me)',
+    notifyMeBtnEn: 'Notify Me When Available',
     loyaltyTextBn: 'এই অর্ডারে +{points} রিওয়ার্ড পয়েন্ট পাবেন',
     loyaltyTextEn: 'Earn +{points} Loyalty Points on purchase',
     pointsPerOrderDivisor: 20,

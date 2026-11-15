@@ -26,6 +26,7 @@ import {
   ProductReview,
   StoreSettings,
   UserStaff,
+  WaitlistEntry,
   WalletTopUpRequest
 } from './types';
 
@@ -133,10 +134,10 @@ const ALLOWED_PUBLIC_SETTINGS_KEYS = [
 ] as const;
 
 const ALLOWED_PRODUCT_KEYS = [
-  'id', 'title', 'titleBn', 'description', 'descriptionBn', 'price', 'originalPrice',
+  'id', 'title', 'titleBn', 'description', 'descriptionBn', 'brand', 'brandBn', 'price', 'originalPrice',
   'stock', 'category', 'categoryBn', 'subcategory', 'tags', 'images', 'sku',
   'barcode', 'freeShipping', 'customDeliveryFees', 'rating', 'reviewsCount',
-  'soldCount', 'loyaltyPoints', 'isFlashSale', 'colors', 'sizes', 'features',
+  'soldCount', 'loyaltyPoints', 'isFlashSale', 'colors', 'sizes', 'attributes', 'features',
   'featuresBn', 'videoUrl', 'warrantyInfo', 'warrantyInfoBn', 'seo'
 ] as const;
 
@@ -984,6 +985,72 @@ export function mapFirestoreDocToPriceAlert(id: string, data: Record<string, any
   };
 }
 
+// ======================= OUT-OF-STOCK WAITLIST ('Waitlist' collection) =======================
+export async function saveWaitlistEntryToFirestore(entry: WaitlistEntry): Promise<void> {
+  const cleanId = sanitizeFirestoreId(entry.id, 'wait');
+  const path = `Waitlist/${cleanId}`;
+  try {
+    const ref = doc(db, 'Waitlist', cleanId);
+    const base = stripUndefinedDeep({
+      id: cleanId,
+      productId: String(entry.productId || 'prod-1').slice(0, 80),
+      productTitle: String(entry.productTitle || '').slice(0, 200),
+      productTitleBn: String(entry.productTitleBn || '').slice(0, 240),
+      contact: String(entry.contact || '').trim().slice(0, 160),
+      contactType: entry.contactType === 'email' ? 'email' : 'phone',
+      status: entry.status === 'notified' ? 'notified' : 'waiting'
+    });
+    if (!auth.currentUser) {
+      await setDoc(ref, { ...base, status: 'waiting', createdAt: serverTimestamp() });
+      return;
+    }
+    const existingSnap = await getDoc(ref);
+    if (!existingSnap.exists()) {
+      await setDoc(ref, { ...base, status: 'waiting', createdAt: serverTimestamp() });
+    } else {
+      await setDoc(ref, { ...base, createdAt: existingSnap.data().createdAt }, { merge: true });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function fetchWaitlistFromFirestore(): Promise<WaitlistEntry[]> {
+  if (!auth.currentUser) return [];
+  const path = 'Waitlist';
+  try {
+    const snap = await getDocs(collection(db, 'Waitlist'));
+    return snap.docs.map((d) => mapFirestoreDocToWaitlist(d.id, d.data()));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function deleteWaitlistEntryFromFirestore(id: string): Promise<void> {
+  if (!auth.currentUser) return;
+  const cleanId = sanitizeFirestoreId(id, 'wait');
+  const path = `Waitlist/${cleanId}`;
+  try {
+    await deleteDoc(doc(db, 'Waitlist', cleanId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export function mapFirestoreDocToWaitlist(id: string, data: Record<string, any>): WaitlistEntry {
+  const createdTs = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : undefined;
+  return {
+    id: data.id || id,
+    productId: String(data.productId || ''),
+    productTitle: String(data.productTitle || ''),
+    productTitleBn: String(data.productTitleBn || ''),
+    contact: String(data.contact || ''),
+    contactType: data.contactType === 'email' ? 'email' : 'phone',
+    status: data.status === 'notified' ? 'notified' : 'waiting',
+    createdAt: createdTs || String(data.createdAt || new Date().toISOString())
+  };
+}
+
 // ======================= STAFF USERS =======================
 export async function saveStaffUserToFirestore(user: UserStaff): Promise<void> {
   if (!auth.currentUser) return;
@@ -1072,6 +1139,7 @@ export interface FullCloudSyncPayload {
   walletTopUps: WalletTopUpRequest[];
   abandonedCarts: AbandonedCart[];
   priceAlerts: PriceAlert[];
+  waitlist?: WaitlistEntry[];
   users: UserStaff[];
 }
 
@@ -1186,6 +1254,15 @@ export async function syncAllAdminDataToFirestore(
       counts.priceAlerts += 1;
     } catch (err) {
       errors.push(`price_alert ${alert.id}: ${extractFirestoreErrorReason(err)}`);
+    }
+  }
+
+  for (const w of payload.waitlist || []) {
+    try {
+      await saveWaitlistEntryToFirestore(w);
+      counts.waitlist = (counts.waitlist || 0) + 1;
+    } catch (err) {
+      errors.push(`waitlist ${w.id}: ${extractFirestoreErrorReason(err)}`);
     }
   }
 
