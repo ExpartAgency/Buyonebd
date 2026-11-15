@@ -74,10 +74,18 @@ import {
   Megaphone,
   Award,
   Tag,
-  ShoppingBag
+  ShoppingBag,
+  Cloud,
+  Database,
+  Server
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BUSINESS_THEME_PRESETS } from '../../data/initialData';
+import {
+  FIREBASE_PROJECT_ID,
+  FIREBASE_DATABASE_ID,
+  FirebaseDiagnosticStep
+} from '../../firebase';
 import {
   Product,
   Order,
@@ -189,7 +197,13 @@ export const AdminDashboard: React.FC = () => {
     isFirebaseAdminConnected,
     cloudSyncError,
     lastCloudSyncAt,
+    isSyncingCloudAll,
+    cloudCollectionCounts,
     signInAdminWithGoogle,
+    signOutAdminFirebase,
+    syncAllDashboardToFirebase,
+    pullAllDashboardFromFirebase,
+    testFirebaseCloudConnection,
     generateBrandColorAttributes
   } = useStore();
 
@@ -261,6 +275,7 @@ export const AdminDashboard: React.FC = () => {
     | 'reviews'
     | 'users'
     | 'design_footer'
+    | 'firebase_hub'
     | 'settings';
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
@@ -298,6 +313,11 @@ export const AdminDashboard: React.FC = () => {
   // Customer Manual Wallet Balance Control State
   const [customerSearch, setCustomerSearch] = useState('');
   const [balanceAdjustAmounts, setBalanceAdjustAmounts] = useState<Record<string, number>>({});
+
+  // Firebase Cloud Hub Diagnostics & Domain Helper State
+  const [fbDiagnostics, setFbDiagnostics] = useState<{ ok: boolean; details: FirebaseDiagnosticStep[] } | null>(null);
+  const [isRunningFbDiag, setIsRunningFbDiag] = useState(false);
+  const [domainCopied, setDomainCopied] = useState(false);
 
   // Support Desk unified customer workspace tab
   const [customerConsoleTab, setCustomerConsoleTab] = useState<'call' | 'chat' | 'orders'>('call');
@@ -1161,6 +1181,7 @@ export const AdminDashboard: React.FC = () => {
     { id: 'reviews', labelBn: 'কাস্টমার রিভিউ ও রেটিং', labelEn: 'Customer Reviews', icon: MessageCircle, badge: reviews.length },
     { id: 'users', labelBn: 'কাস্টমার ব্যালেন্স ও স্টাফ টিম', labelEn: 'Customers & Staff', icon: Users, badge: customerAccounts.length + users.length },
     { id: 'design_footer', labelBn: 'স্টোর ডিজাইন ও ফুটার', labelEn: 'Store & Footer', icon: Sliders },
+    { id: 'firebase_hub', labelBn: 'Firebase সব সেটিংস হাব', labelEn: 'Firebase Cloud Hub', icon: Cloud },
     { id: 'settings', labelBn: 'পেমেন্ট, ডেলিভারি ও SMTP', labelEn: 'Settings & SMTP', icon: Settings }
   ];
 
@@ -1206,22 +1227,24 @@ export const AdminDashboard: React.FC = () => {
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Cross-Device Cloud Order Sync Status / Quick Connect */}
           {isFirebaseAdminConnected ? (
-            <span
-              title={at('রিয়েল-টাইম ক্লাউড ডাটাবেস সিঙ্ক সক্রিয়', 'Real-time Firebase Cloud Order Sync Active')}
-              className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-950/70 border border-emerald-700/60 text-emerald-300 text-[11px] font-bold"
+            <button
+              type="button"
+              onClick={() => setActiveTab('firebase_hub')}
+              title={at('রিয়েল-টাইম Firebase ক্লাউড হাব খুলুন', 'Open unified Firebase Cloud Hub')}
+              className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-950/70 hover:bg-emerald-900/80 border border-emerald-700/60 text-emerald-300 text-[11px] font-bold cursor-pointer transition-colors"
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="truncate max-w-[140px]">Cloud: {firebaseAdminUserEmail || 'Live'}</span>
-            </span>
+              <span className="truncate max-w-[140px]">Firebase: {firebaseAdminUserEmail || 'Live'}</span>
+            </button>
           ) : (
             <button
               type="button"
-              onClick={() => signInAdminWithGoogle()}
-              title={at('অন্যান্য ডিভাইস/ব্রাউজারের অর্ডার লাইভ পেতে কানেক্ট করুন', 'Connect Google Cloud Sync to receive cross-device orders live')}
+              onClick={() => setActiveTab('firebase_hub')}
+              title={at('অন্যান্য ডিভাইস/ব্রাউজারের অর্ডার ও সব সেটিংস সিঙ্ক করতে Firebase হাব খুলুন', 'Open Firebase Cloud Hub to sync all settings & cross-device orders')}
               className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-sky-950/70 hover:bg-sky-900 border border-sky-700/70 text-sky-300 text-[11px] font-bold cursor-pointer transition-colors"
             >
-              <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-              <span>{at('ক্লাউড সিঙ্ক চালু করুন', 'Connect Cloud Orders')}</span>
+              <Cloud className="w-3.5 h-3.5 text-sky-400" />
+              <span>{at('Firebase ক্লাউড হাব', 'Firebase Cloud Hub')}</span>
             </button>
           )}
 
@@ -8639,9 +8662,19 @@ export const AdminDashboard: React.FC = () => {
           {/* TAB 16: SETTINGS (PAYMENT, 64 DISTRICTS DELIVERY & 10 BUSINESS THEMES) */}
           {activeTab === 'settings' && (
             <div className="space-y-6 animate-fade-in">
-              <div>
-                <h3 className="text-xl font-black text-white">{t('পেমেন্ট, ডেলিভারি ও বিজনেস থিম সেটিংস', 'Payment, Delivery & Business Theme Settings')}</h3>
-                <p className="text-xs text-slate-400">{t('১০টি বিজনেস থিম ও অটো-ক্যাটাগরি, বিকাশ/নগদ/রকেট মার্চেন্ট ও ৬৪ জেলার ডেলিভারি রেট', '10 Business Themes with Auto-Categories, MFS accounts and 64-district delivery rates')}</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xl font-black text-white">{t('পেমেন্ট, ডেলিভারি ও বিজনেস থিম সেটিংস', 'Payment, Delivery & Business Theme Settings')}</h3>
+                  <p className="text-xs text-slate-400">{t('১০টি বিজনেস থিম ও অটো-ক্যাটাগরি, বিকাশ/নগদ/রকেট মার্চেন্ট ও ৬৪ জেলার ডেলিভারি রেট', '10 Business Themes with Auto-Categories, MFS accounts and 64-district delivery rates')}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('firebase_hub')}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-600/50 text-emerald-300 text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors shrink-0"
+                >
+                  <Cloud className="w-4 h-4 text-emerald-400" />
+                  <span>{at('সব সেটিংস Firebase এ সিঙ্ক করুন', 'Manage Unified Firebase Sync')}</span>
+                </button>
               </div>
 
               {/* 10 Business Theme Presets with Colors & Auto-Categories */}
@@ -9087,6 +9120,429 @@ export const AdminDashboard: React.FC = () => {
               </div>
             </div>
           )}
+
+          {/* TAB: UNIFIED FIREBASE CLOUD HUB (ALL DASHBOARD SETTINGS & CROSS-DEVICE SYNC IN ONE FIREBASE) */}
+          {activeTab === 'firebase_hub' && (() => {
+            const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+            const moduleMatrix = [
+              {
+                key: 'storefront',
+                titleBn: 'স্টোরফ্রন্ট, ডেলিভারি, ফ্ল্যাশ সেল ও থিম',
+                titleEn: 'Storefront, Delivery, Flash Sale & Theme',
+                path: 'storefront/public',
+                countLabel: cloudCollectionCounts.storefront ? at('সিঙ্ক করা', 'Synced') : at('অপেক্ষমাণ', 'Pending'),
+                live: Boolean(cloudCollectionCounts.storefront),
+                descBn: 'স্টোর নাম, লোগো, ব্র্যান্ড কালার, ৬৪ জেলা চার্জ, MFS নাম্বার, ফ্ল্যাশ সেল ও ফুটার',
+                descEn: 'Store info, logo, brand CSS vars, delivery zones, MFS, flash sale & footer'
+              },
+              {
+                key: 'privateConfig',
+                titleBn: 'প্রাইভেট সিক্রেট ভল্ট (SMTP, কুরিয়ার, AI ও পিক্সেল)',
+                titleEn: 'Private Vault (SMTP, Courier, Pixel & AI Keys)',
+                path: 'admin_config/private',
+                countLabel: cloudCollectionCounts.privateConfig ? at('সুরক্ষিত', 'Secured') : at('সিঙ্ক করুন', 'Needs Sync'),
+                live: Boolean(cloudCollectionCounts.privateConfig),
+                descBn: 'শুধুমাত্র অ্যাডমিন পড়তে পারবেন — ইমেইল SMTP পাসওয়ার্ড, Steadfast API ও Gemini কী',
+                descEn: 'Admin-only encrypted access — SMTP credentials, courier keys, pixel & AI tokens'
+              },
+              {
+                key: 'categories',
+                titleBn: 'ক্যাটাগরি ও সাব-ক্যাটাগরি',
+                titleEn: 'Categories & Subcategories',
+                path: 'storefront/public.categories',
+                countLabel: `${categories.length}`,
+                live: categories.length > 0,
+                descBn: 'সব ডিভাইসে তাৎক্ষণিক ক্যাটাগরি আপডেট',
+                descEn: 'Instant menu & category sync across all browsers'
+              },
+              {
+                key: 'sliders',
+                titleBn: 'হোমপেজ ব্যানার স্লাইডার',
+                titleEn: 'Hero Sliders',
+                path: 'storefront/public.sliders',
+                countLabel: `${sliders.length}`,
+                live: sliders.length > 0,
+                descBn: 'ব্যানার ছবি, হেডলাইন ও অফার লিঙ্ক লাইভ সিঙ্ক',
+                descEn: 'Live hero slides synced to all visitors'
+              },
+              {
+                key: 'products',
+                titleBn: 'প্রোডাক্ট ক্যাটালগ ও ভ্যারিয়েন্ট',
+                titleEn: 'Catalog Products & Variants',
+                path: '/products',
+                countLabel: `${cloudCollectionCounts.products ?? products.length} / ${products.length}`,
+                live: products.length > 0,
+                descBn: 'রঙ, সাইজ, বারকোড, স্টক ও ডেলিভারি অপশন',
+                descEn: 'Colors, sizes, POS barcodes, stock & delivery toggles'
+              },
+              {
+                key: 'orders',
+                titleBn: 'ক্রস-ডিভাইস অর্ডার ও POS বিলিং',
+                titleEn: 'Cross-Device Orders & POS',
+                path: '/orders',
+                countLabel: `${cloudCollectionCounts.orders ?? orders.length} / ${orders.length}`,
+                live: true,
+                descBn: 'যেকোনো ব্রাউজার বা মোবাইল থেকে আসা অর্ডার সাথে সাথে আসবে',
+                descEn: 'Real-time order listener from every mobile & desktop browser'
+              },
+              {
+                key: 'customers',
+                titleBn: 'কাস্টমার একাউন্ট ও ৩০-দিন ওয়ালেট',
+                titleEn: 'Customers & 30-Day Wallets',
+                path: '/customers',
+                countLabel: `${cloudCollectionCounts.customers ?? customerAccounts.length} / ${customerAccounts.length}`,
+                live: true,
+                descBn: 'ম্যানুয়াল ব্যালেন্স +/- এবং ৩০ দিন মেয়াদ স্ট্যাম্প ক্লাউডে সংরক্ষিত',
+                descEn: 'Wallet balances & 30-day expiry timestamps synced cleanly'
+              },
+              {
+                key: 'walletTopUps',
+                titleBn: 'MFS ওয়ালেট রিচার্জ রিকোয়েস্ট',
+                titleEn: 'MFS Wallet Top-Ups',
+                path: '/wallet_topups',
+                countLabel: `${cloudCollectionCounts.walletTopUps ?? walletTopUps.length} / ${walletTopUps.length}`,
+                live: true,
+                descBn: 'bKash / Nagad / Rocket / Upay ট্রানজেকশন অ্যাপ্রুভাল',
+                descEn: 'Mobile banking recharge claims synced in real time'
+              },
+              {
+                key: 'reviews',
+                titleBn: 'কাস্টমার রিভিউ ও রেটিং',
+                titleEn: 'Customer Reviews & Moderation',
+                path: '/reviews',
+                countLabel: `${cloudCollectionCounts.reviews ?? reviews.length} / ${reviews.length}`,
+                live: true,
+                descBn: 'ভেরিফায়েড ও অ্যাডমিন এডিট করা রিভিউ',
+                descEn: 'Approved reviews synced live to product pages'
+              },
+              {
+                key: 'media',
+                titleBn: 'মিডিয়া ও ইমেজ গ্যালারি',
+                titleEn: 'Media Library & Resized Assets',
+                path: '/media_library',
+                countLabel: `${cloudCollectionCounts.media ?? mediaLibrary.length} / ${mediaLibrary.length}`,
+                live: true,
+                descBn: 'আপলোড করা ও রিসাইজ করা ছবির মেটাডাটা',
+                descEn: 'Gallery uploads & resized thumbnails across sessions'
+              },
+              {
+                key: 'abandonedCarts',
+                titleBn: 'কার্ট রিকভারি ও প্রাইস অ্যালার্ট',
+                titleEn: 'Abandoned Carts & Price Alerts',
+                path: '/abandoned_carts + /price_alerts',
+                countLabel: `${(cloudCollectionCounts.abandonedCarts ?? abandonedCarts.length) + (cloudCollectionCounts.priceAlerts ?? 0)}`,
+                live: true,
+                descBn: 'ড্রপ-অফ লিড ও প্রাইস ড্রপ অ্যালার্ট',
+                descEn: 'Recovered checkout drafts & price drop subscribers'
+              },
+              {
+                key: 'staffUsers',
+                titleBn: 'অ্যাডমিন টিম ও স্টাফ রোল',
+                titleEn: 'Staff Team & Permissions',
+                path: '/staff_users',
+                countLabel: `${cloudCollectionCounts.staffUsers ?? users.length} / ${users.length}`,
+                live: true,
+                descBn: 'ম্যানেজার ও স্টাফ একাউন্ট অনুমতি',
+                descEn: 'Role permissions synced under admin vault'
+              }
+            ];
+
+            return (
+              <div className="space-y-6 animate-fade-in">
+                {/* Header */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div>
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold mb-2">
+                      <Database className="w-3.5 h-3.5" />
+                      <span>Unified Single-Firebase Architecture</span>
+                    </div>
+                    <h3 className="text-xl font-black text-white flex items-center gap-2">
+                      <Cloud className="w-6 h-6 text-emerald-400" />
+                      <span>{at('অল-ইন-ওয়ান Firebase ক্লাউড হাব', 'All-in-One Firebase Cloud Hub')}</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {at(
+                        'সব অ্যাডমিন সেটিংস, পণ্য, ক্রস-ডিভাইস অর্ডার, ওয়ালেট, রিভিউ ও প্রাইভেট SMTP/API কী একটি মাত্র Firebase প্রোজেক্টে রিয়েল-টাইম সিঙ্ক রাখুন।',
+                        'Manage every Admin Dashboard setting, catalog product, cross-device order, customer wallet, and private API vault inside one real-time Firebase database.'
+                      )}
+                    </p>
+                  </div>
+
+                  {/* Connection Pill */}
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {isFirebaseAdminConnected ? (
+                      <>
+                        <div className="px-3.5 py-2 rounded-xl bg-emerald-950/60 border border-emerald-600/40 text-xs">
+                          <div className="flex items-center gap-2 text-emerald-300 font-bold">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            <span>{at('সংযুক্ত:', 'Connected:')} {firebaseAdminUserEmail || 'Admin'}</span>
+                          </div>
+                          {lastCloudSyncAt && (
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              {at('শেষ সিঙ্ক:', 'Last sync:')} {new Date(lastCloudSyncAt).toLocaleTimeString()}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => signOutAdminFirebase()}
+                          className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/70 hover:text-rose-300 border border-slate-700 text-slate-300 text-xs font-bold cursor-pointer transition-colors"
+                        >
+                          {at('ডিসকানেক্ট', 'Disconnect')}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => signInAdminWithGoogle()}
+                        className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-600/25 cursor-pointer transition-colors"
+                      >
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>{at('Google দিয়ে Firebase অ্যাডমিন কানেক্ট করুন (buyonebd@gmail.com)', 'Connect Firebase Admin (buyonebd@gmail.com)')}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Error Alert if any */}
+                {cloudSyncError && (
+                  <div className="p-4 rounded-2xl bg-rose-950/50 border border-rose-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                      <div className="text-xs">
+                        <p className="font-bold text-rose-300">{at('Firebase সিঙ্ক সতর্কতা', 'Firebase Sync Notice')}</p>
+                        <p className="text-rose-200/90 mt-0.5 break-all">{cloudSyncError}</p>
+                      </div>
+                    </div>
+                    {!isFirebaseAdminConnected && (
+                      <button
+                        type="button"
+                        onClick={() => signInAdminWithGoogle()}
+                        className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shrink-0 cursor-pointer"
+                      >
+                        {at('এখনই কানেক্ট করুন', 'Connect Now')}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Firebase Project Credentials Summary & 1-Click Master Actions */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2.5">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      <Server className="w-4 h-4 text-emerald-400" />
+                      <span>{at('অ্যাক্টিভ Firebase প্রোজেক্ট', 'Active Firebase Instance')}</span>
+                    </div>
+                    <div className="space-y-1.5 text-xs">
+                      <div className="flex items-center justify-between gap-2 bg-slate-950 px-3 py-2 rounded-xl border border-slate-800">
+                        <span className="text-slate-400">Project ID</span>
+                        <span className="font-mono font-bold text-emerald-300">{FIREBASE_PROJECT_ID}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 bg-slate-950 px-3 py-2 rounded-xl border border-slate-800">
+                        <span className="text-slate-400">Firestore DB</span>
+                        <span className="font-mono text-[11px] text-slate-200 truncate max-w-[180px]" title={FIREBASE_DATABASE_ID}>
+                          {FIREBASE_DATABASE_ID}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 bg-slate-950 px-3 py-2 rounded-xl border border-slate-800">
+                        <span className="text-slate-400">Authorized Admin</span>
+                        <span className="font-mono font-bold text-sky-300">buyonebd@gmail.com</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 1-Click Master Action Card */}
+                  <div className="lg:col-span-2 p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/30 border border-emerald-500/30 flex flex-col justify-between gap-4">
+                    <div>
+                      <h4 className="text-sm font-black text-white flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-emerald-400" />
+                        <span>{at('এক ক্লিকে সম্পূর্ণ ড্যাশবোর্ড ক্লাউড কন্ট্রোল', 'One-Click Full Dashboard Cloud Controls')}</span>
+                      </h4>
+                      <p className="text-xs text-slate-300 mt-1">
+                        {at(
+                          'আপনার বর্তমান ব্রাউজারের সব সেটিংস, পণ্য, অর্ডার, কাস্টমার ওয়ালেট ও রিভিউ একসাথে Firebase-এ পুশ করুন অথবা অন্য ডিভাইসের আপডেট পুল করুন।',
+                          'Push all current dashboard settings, products, orders, wallets, and reviews into Firestore, or pull latest live state from the cloud.'
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <button
+                        type="button"
+                        disabled={isSyncingCloudAll}
+                        onClick={async () => {
+                          await syncAllDashboardToFirebase(false);
+                        }}
+                        className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors shadow-lg shadow-emerald-600/20"
+                      >
+                        <Upload className={`w-4 h-4 ${isSyncingCloudAll ? 'animate-bounce' : ''}`} />
+                        <span>
+                          {isSyncingCloudAll
+                            ? at('Firebase-এ পুশ হচ্ছে...', 'Pushing All to Firebase...')
+                            : at('সব সেটিংস ও ডাটা Firebase-এ পুশ করুন', 'Push All Settings & Data to Firebase')}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isSyncingCloudAll}
+                        onClick={async () => {
+                          await pullAllDashboardFromFirebase();
+                        }}
+                        className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>{at('Firebase থেকে সব ডাটা পুল/রিস্টোর করুন', 'Pull / Restore All from Firebase')}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isRunningFbDiag}
+                        onClick={async () => {
+                          setIsRunningFbDiag(true);
+                          try {
+                            const res = await testFirebaseCloudConnection();
+                            setFbDiagnostics(res);
+                          } finally {
+                            setIsRunningFbDiag(false);
+                          }
+                        }}
+                        className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 border border-slate-700 text-slate-200 text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors"
+                      >
+                        <Activity className={`w-4 h-4 text-amber-400 ${isRunningFbDiag ? 'animate-spin' : ''}`} />
+                        <span>{isRunningFbDiag ? at('চেক হচ্ছে...', 'Testing...') : at('লাইভ কানেকশন ডায়াগনস্টিক চালান', 'Run Live Firebase Diagnostics')}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Live Diagnostics Result Report */}
+                {fbDiagnostics && (
+                  <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        {fbDiagnostics.ok ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        )}
+                        <span>{at('Firebase লাইভ ডায়াগনস্টিক রিপোর্ট', 'Live Firebase Diagnostics Report')}</span>
+                      </h4>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                          fbDiagnostics.ok ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+                        }`}
+                      >
+                        {fbDiagnostics.ok ? at('সকল চেক পাস হয়েছে', 'All Checks Passed') : at('কিছু ধাপে মনোযোগ প্রয়োজন', 'Action Needed')}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                      {fbDiagnostics.details.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${
+                            item.ok
+                              ? 'bg-emerald-950/30 border-emerald-800/50 text-emerald-100'
+                              : 'bg-rose-950/30 border-rose-800/50 text-rose-100'
+                          }`}
+                        >
+                          {item.ok ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                          ) : (
+                            <XCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                          )}
+                          <div>
+                            <p className="font-bold">{item.step}</p>
+                            <p className="text-[11px] opacity-85 mt-0.5">{item.message}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Unified 12-Module Sync Matrix */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-black text-white">
+                        {at('সব মডিউল এক Firebase-এ সিঙ্ক ম্যাট্রিক্স (১২টি কালেকশন)', 'Unified 12-Module Firebase Sync Matrix')}
+                      </h4>
+                      <p className="text-xs text-slate-400">
+                        {at(
+                          'নিচের প্রতিটি সেকশন সরাসরি Firestore এর সাথে যুক্ত — যেকোনো পরিবর্তনে অটোমেটিক ক্লাউডে সেভ হয়।',
+                          'Every module below reads & writes directly to Cloud Firestore in real time across devices.'
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {moduleMatrix.map((mod) => (
+                      <div
+                        key={mod.key}
+                        className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col justify-between gap-2.5"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h5 className="text-xs font-bold text-white">{at(mod.titleBn, mod.titleEn)}</h5>
+                            <p className="text-[10px] font-mono text-emerald-400/90 mt-0.5">{mod.path}</p>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                              mod.live ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'
+                            }`}
+                          >
+                            {mod.countLabel}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-relaxed">{at(mod.descBn, mod.descEn)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Vercel / Custom Domain Authorized Domain Helper */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-sky-500/30 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-sky-400" />
+                        <span>{at('Vercel ও কাস্টম ডোমেইন Google Login সাপোর্ট', 'Vercel & Custom Domain Google Auth Whitelist')}</span>
+                      </h4>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {at(
+                          'আপনি যদি নতুন ডোমেইন বা Vercel লিংকে অ্যাডমিন প্যানেল চালান, তবে Firebase Console > Authentication > Settings > Authorized domains-এ বর্তমান হোস্টনেমটি যোগ করুন:',
+                          'If hosting on a custom domain or Vercel URL, make sure the current hostname is listed under Firebase Console > Authentication > Settings > Authorized domains:'
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <code className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-sky-300">
+                        {currentHostname || 'localhost'}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (currentHostname && navigator.clipboard) {
+                            navigator.clipboard.writeText(currentHostname).catch(() => {});
+                            setDomainCopied(true);
+                            setTimeout(() => setDomainCopied(false), 2000);
+                            addToast('success', at('কপি হয়েছে!', 'Copied!'), currentHostname);
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>{domainCopied ? at('কপিড', 'Copied') : at('ডোমেইন কপি', 'Copy Host')}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* TAB 17: MEDIA & GALLERY (ALL UPLOADS, BULK SELECT, BULK DELETE, IMAGE RESIZE) */}
           {activeTab === 'media_gallery' && (() => {

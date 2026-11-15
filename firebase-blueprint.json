@@ -2,21 +2,58 @@
   "entities": {
     "StorefrontSettings": {
       "title": "StorefrontSettings",
-      "description": "Public storefront configuration including brand theme colors, flash sale schedule, and CMS labels.",
+      "description": "Public storefront configuration including brand theme, categories, sliders, flash sale, delivery fees, and CMS labels.",
       "type": "object",
       "properties": {
         "storeName": { "type": "string", "maxLength": 120 },
         "storeNameBn": { "type": "string", "maxLength": 160 },
+        "logoUrl": { "type": "string", "maxLength": 200000 },
+        "logoMode": { "type": "string", "maxLength": 40 },
+        "tagline": { "type": "string", "maxLength": 240 },
+        "taglineBn": { "type": "string", "maxLength": 240 },
+        "hotline": { "type": "string", "maxLength": 40 },
+        "whatsappNumber": { "type": "string", "maxLength": 40 },
+        "supportEmail": { "type": "string", "maxLength": 160 },
+        "address": { "type": "string", "maxLength": 400 },
+        "deliveryFees": { "type": "object" },
+        "paymentSettings": { "type": "object" },
+        "aiCallSettings": { "type": "object" },
+        "announcementBar": { "type": "object" },
         "theme": { "type": "string", "maxLength": 40 },
         "themeColors": { "type": "object" },
-        "flashSale": { "type": "object" },
-        "announcementBar": { "type": "object" },
         "cmsTexts": { "type": "object" },
+        "spinSettings": { "type": "object" },
+        "whatsappTemplates": { "type": "object" },
+        "marketingTemplates": { "type": "object" },
+        "aiSettings": { "type": "object" },
+        "seoSettings": { "type": "object" },
+        "flashSale": { "type": "object" },
+        "footerSettings": { "type": "object" },
         "singleProductCms": { "type": "object" },
+        "organicMarketing": { "type": "object" },
+        "walletSettings": { "type": "object" },
         "promoCoupons": { "type": "array" },
+        "brandAttributes": { "type": "object" },
+        "categories": { "type": "array" },
+        "sliders": { "type": "array" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["storeName", "theme", "updatedAt"]
+    },
+    "AdminPrivateConfig": {
+      "title": "AdminPrivateConfig",
+      "description": "Private Admin Dashboard configuration vault holding SMTP credentials, courier API keys, marketing API tokens, and AI keyword rules.",
+      "type": "object",
+      "properties": {
+        "smtpSettings": { "type": "object" },
+        "courierSettings": { "type": "object" },
+        "marketingSettings": { "type": "object" },
+        "aiSettings": { "type": "object" },
+        "aiKeywordRules": { "type": "array" },
+        "updatedByEmail": { "type": "string", "maxLength": 160 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["updatedAt"]
     },
     "CatalogProduct": {
       "title": "CatalogProduct",
@@ -58,6 +95,134 @@
       },
       "required": ["id", "customer", "items", "pricing", "payment", "deliveryZone", "status", "createdAt", "serverCreatedAt"]
     },
+    "ProductReview": {
+      "title": "ProductReview",
+      "description": "Customer product review and rating moderated by Admin.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "productId": { "type": "string", "maxLength": 80 },
+        "customerName": { "type": "string", "maxLength": 120 },
+        "rating": { "type": "number" },
+        "comment": { "type": "string", "maxLength": 1500 },
+        "date": { "type": "string", "maxLength": 64 },
+        "verifiedPurchase": { "type": "boolean" },
+        "isApproved": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "productId", "customerName", "rating", "comment", "isApproved", "createdAt"]
+    },
+    "MediaAsset": {
+      "title": "MediaAsset",
+      "description": "Admin Media & Gallery item metadata and URL.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "name": { "type": "string", "maxLength": 160 },
+        "url": { "type": "string", "maxLength": 250000 },
+        "source": { "type": "string", "maxLength": 40 },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "sizeKb": { "type": "number" },
+        "mimeType": { "type": "string", "maxLength": 80 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "url", "updatedAt"]
+    },
+    "CustomerAccount": {
+      "title": "CustomerAccount",
+      "description": "Admin CRM customer profile with wallet balance and 30-day expiry state.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "name": { "type": "string", "maxLength": 120 },
+        "username": { "type": "string", "maxLength": 80 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "email": { "type": "string", "maxLength": 160 },
+        "address": { "type": "string", "maxLength": 400 },
+        "district": { "type": "string", "maxLength": 120 },
+        "loyaltyPoints": { "type": "number" },
+        "walletBalance": { "type": "number" },
+        "lastPurchaseAt": { "type": "string", "maxLength": 64 },
+        "lastWalletCreditAt": { "type": "string", "maxLength": 64 },
+        "browsingHistory": { "type": "array" },
+        "savedCoupons": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "phone", "walletBalance", "loyaltyPoints", "updatedAt"]
+    },
+    "WalletTopUp": {
+      "title": "WalletTopUp",
+      "description": "Customer MFS wallet top-up request approved or rejected by Admin.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "customerName": { "type": "string", "maxLength": 120 },
+        "customerPhone": { "type": "string", "maxLength": 32 },
+        "method": { "type": "string", "enum": ["bkash", "nagad", "rocket"] },
+        "amount": { "type": "number" },
+        "senderNumber": { "type": "string", "maxLength": 32 },
+        "trxId": { "type": "string", "maxLength": 80 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "submittedAt": { "type": "string", "maxLength": 64 },
+        "reviewedAt": { "type": "string", "maxLength": 64 },
+        "note": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "customerName", "customerPhone", "method", "amount", "senderNumber", "trxId", "status", "createdAt"]
+    },
+    "AbandonedCartRecord": {
+      "title": "AbandonedCartRecord",
+      "description": "Abandoned checkout recovery record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "customerName": { "type": "string", "maxLength": 120 },
+        "customerPhone": { "type": "string", "maxLength": 32 },
+        "items": { "type": "array" },
+        "totalValue": { "type": "number" },
+        "abandonedAt": { "type": "string", "maxLength": 64 },
+        "whatsappSent": { "type": "boolean" },
+        "recovered": { "type": "boolean" },
+        "recoveredAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "customerPhone", "items", "totalValue", "whatsappSent", "recovered", "createdAt"]
+    },
+    "PriceAlertRecord": {
+      "title": "PriceAlertRecord",
+      "description": "Customer price-drop notification request.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "productId": { "type": "string", "maxLength": 80 },
+        "contact": { "type": "string", "maxLength": 160 },
+        "targetPrice": { "type": "number" },
+        "dateLabel": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "productId", "contact", "targetPrice", "createdAt"]
+    },
+    "StaffUserRecord": {
+      "title": "StaffUserRecord",
+      "description": "Admin staff/operator roster entry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "name": { "type": "string", "maxLength": 120 },
+        "email": { "type": "string", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "role": { "type": "string", "enum": ["admin", "manager", "support"] },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "createdAtLabel": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "email", "role", "status", "updatedAt"]
+    },
     "AdminUser": {
       "title": "AdminUser",
       "description": "Authorized admin UID registry entry.",
@@ -73,7 +238,11 @@
   "firestore": {
     "/storefront/{configId}": {
       "schema": { "$ref": "#/backend/entities/StorefrontSettings" },
-      "description": "Public storefront configuration document ('public')."
+      "description": "Public storefront configuration, theme, categories, and sliders."
+    },
+    "/admin_config/{configId}": {
+      "schema": { "$ref": "#/backend/entities/AdminPrivateConfig" },
+      "description": "Admin-only private config vault (SMTP, Courier API keys, Marketing tokens, AI keyword rules)."
     },
     "/products/{productId}": {
       "schema": { "$ref": "#/backend/entities/CatalogProduct" },
@@ -82,6 +251,34 @@
     "/orders/{orderId}": {
       "schema": { "$ref": "#/backend/entities/StoreOrder" },
       "description": "Cross-device orders created at checkout and managed by admins."
+    },
+    "/reviews/{reviewId}": {
+      "schema": { "$ref": "#/backend/entities/ProductReview" },
+      "description": "Customer product reviews moderated by admins."
+    },
+    "/media_library/{mediaId}": {
+      "schema": { "$ref": "#/backend/entities/MediaAsset" },
+      "description": "Admin Media & Gallery items."
+    },
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/backend/entities/CustomerAccount" },
+      "description": "Admin-only customer CRM accounts and wallet balances."
+    },
+    "/wallet_topups/{topupId}": {
+      "schema": { "$ref": "#/backend/entities/WalletTopUp" },
+      "description": "Customer MFS wallet top-up requests reviewed by admins."
+    },
+    "/abandoned_carts/{cartId}": {
+      "schema": { "$ref": "#/backend/entities/AbandonedCartRecord" },
+      "description": "Abandoned cart recovery records managed by admins."
+    },
+    "/price_alerts/{alertId}": {
+      "schema": { "$ref": "#/backend/entities/PriceAlertRecord" },
+      "description": "Customer price drop alert subscriptions."
+    },
+    "/staff_users/{userId}": {
+      "schema": { "$ref": "#/backend/entities/StaffUserRecord" },
+      "description": "Admin-only staff team records."
     },
     "/admins/{uid}": {
       "schema": { "$ref": "#/backend/entities/AdminUser" },

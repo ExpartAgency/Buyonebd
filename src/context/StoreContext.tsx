@@ -48,6 +48,8 @@ import {
   googleProvider,
   collection,
   doc,
+  query,
+  where,
   OperationType,
   handleFirestoreError,
   extractFirestoreErrorReason,
@@ -55,8 +57,38 @@ import {
   updateOrderInFirestore,
   deleteOrderFromFirestore,
   saveStorefrontSettingsToFirestore,
+  saveAdminPrivateConfigToFirestore,
+  fetchAdminPrivateConfigFromFirestore,
   saveProductToFirestore,
   deleteProductFromFirestore,
+  saveReviewToFirestore,
+  deleteReviewFromFirestore,
+  fetchAllReviewsFromFirestore,
+  mapFirestoreDocToReview,
+  saveMediaItemToFirestore,
+  deleteMediaItemFromFirestore,
+  fetchMediaLibraryFromFirestore,
+  mapFirestoreDocToMedia,
+  saveCustomerToFirestore,
+  fetchCustomersFromFirestore,
+  mapFirestoreDocToCustomer,
+  getCustomerFirestoreId,
+  saveWalletTopUpToFirestore,
+  fetchWalletTopUpsFromFirestore,
+  mapFirestoreDocToWalletTopUp,
+  saveAbandonedCartToFirestore,
+  fetchAbandonedCartsFromFirestore,
+  mapFirestoreDocToAbandonedCart,
+  savePriceAlertToFirestore,
+  fetchPriceAlertsFromFirestore,
+  mapFirestoreDocToPriceAlert,
+  saveStaffUserToFirestore,
+  deleteStaffUserFromFirestore,
+  fetchStaffUsersFromFirestore,
+  mapFirestoreDocToStaffUser,
+  syncAllAdminDataToFirestore,
+  runFirebaseDiagnostics,
+  FirebaseDiagnosticStep,
   ensureAdminDocInFirestore,
   fetchStorefrontSettingsFromFirestore,
   fetchProductsFromFirestore,
@@ -338,8 +370,13 @@ interface StoreContextType {
   isFirebaseAdminConnected: boolean;
   cloudSyncError: string | null;
   lastCloudSyncAt: string | null;
+  isSyncingCloudAll: boolean;
+  cloudCollectionCounts: Record<string, number>;
   signInAdminWithGoogle: () => Promise<boolean>;
   signOutAdminFirebase: () => Promise<void>;
+  syncAllDashboardToFirebase: (silent?: boolean) => Promise<{ ok: boolean; errors: string[] }>;
+  pullAllDashboardFromFirebase: () => Promise<boolean>;
+  testFirebaseCloudConnection: () => Promise<{ ok: boolean; details: FirebaseDiagnosticStep[] }>;
 
   // Spin Rewards CRUD & Limit
   spinRewards: SpinReward[];
@@ -564,6 +601,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return INITIAL_SETTINGS;
     }
   });
+  const settingsRef = useRef<StoreSettings>(settings);
+  settingsRef.current = settings;
 
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_SETTINGS, JSON.stringify(settings));
@@ -593,6 +632,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return INITIAL_CATEGORIES;
     }
   });
+  const categoriesRef = useRef<Category[]>(categories);
+  categoriesRef.current = categories;
 
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_CATEGORIES, JSON.stringify(categories));
@@ -604,24 +645,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ...catData,
       id: catData.slug.toLowerCase().replace(/[^a-z0-9]/g, '-') || `cat-${Date.now()}`
     };
-    setCategories((prev) => [...prev, newCat]);
+    lastLocalMutationAtRef.current = Date.now();
+    const nextCats = [...categoriesRef.current, newCat];
+    setCategories(nextCats);
+    saveStorefrontSettingsToFirestore(settingsRef.current, nextCats, slidersRef.current).catch(() => {});
     addToast('success', t('ক্যাটাগরি যোগ হয়েছে!', 'Category Added!'), `'${newCat.nameBn}' ক্যাটাগরি তৈরি হয়েছে।`);
   };
 
   const updateCategory = (id: string, updates: Partial<Category>) => {
-    setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
+    lastLocalMutationAtRef.current = Date.now();
+    const nextCats = categoriesRef.current.map((c) => (c.id === id ? { ...c, ...updates } : c));
+    setCategories(nextCats);
+    saveStorefrontSettingsToFirestore(settingsRef.current, nextCats, slidersRef.current).catch(() => {});
     addToast('success', t('ক্যাটাগরি আপডেট সম্পন্ন', 'Category Updated'), t('পরিবর্তন সংরক্ষিত হয়েছে।', 'Changes saved.'));
   };
 
   const deleteCategory = (id: string) => {
-    setCategories((prev) => prev.filter((c) => c.id !== id));
+    lastLocalMutationAtRef.current = Date.now();
+    const nextCats = categoriesRef.current.filter((c) => c.id !== id);
+    setCategories(nextCats);
+    saveStorefrontSettingsToFirestore(settingsRef.current, nextCats, slidersRef.current).catch(() => {});
     addToast('info', lang === 'bn' ? 'ক্যাটাগরি মোছা হয়েছে' : 'Category Deleted', '');
   };
 
   const toggleCategoryActive = (id: string) => {
-    setCategories((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, isActive: !c.isActive } : c))
-    );
+    lastLocalMutationAtRef.current = Date.now();
+    const nextCats = categoriesRef.current.map((c) => (c.id === id ? { ...c, isActive: !c.isActive } : c));
+    setCategories(nextCats);
+    saveStorefrontSettingsToFirestore(settingsRef.current, nextCats, slidersRef.current).catch(() => {});
   };
 
   // Sliders
@@ -633,6 +684,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return INITIAL_SLIDERS;
     }
   });
+  const slidersRef = useRef<HomeSlide[]>(sliders);
+  slidersRef.current = sliders;
 
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_SLIDERS, JSON.stringify(sliders));
@@ -644,24 +697,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ...slideData,
       id: `slide-${Date.now()}`
     };
-    setSliders((prev) => [...prev, newSlide]);
+    lastLocalMutationAtRef.current = Date.now();
+    const nextSliders = [...slidersRef.current, newSlide];
+    setSliders(nextSliders);
+    saveStorefrontSettingsToFirestore(settingsRef.current, categoriesRef.current, nextSliders).catch(() => {});
     addToast('success', lang === 'bn' ? 'স্লাইড যোগ হয়েছে!' : 'Slide Added!', '');
   };
 
   const updateSlide = (id: string, updates: Partial<HomeSlide>) => {
-    setSliders((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates } : s)));
+    lastLocalMutationAtRef.current = Date.now();
+    const nextSliders = slidersRef.current.map((s) => (s.id === id ? { ...s, ...updates } : s));
+    setSliders(nextSliders);
+    saveStorefrontSettingsToFirestore(settingsRef.current, categoriesRef.current, nextSliders).catch(() => {});
     addToast('success', lang === 'bn' ? 'স্লাইড আপডেট সম্পন্ন' : 'Slide Updated', '');
   };
 
   const deleteSlide = (id: string) => {
-    setSliders((prev) => prev.filter((s) => s.id !== id));
+    lastLocalMutationAtRef.current = Date.now();
+    const nextSliders = slidersRef.current.filter((s) => s.id !== id);
+    setSliders(nextSliders);
+    saveStorefrontSettingsToFirestore(settingsRef.current, categoriesRef.current, nextSliders).catch(() => {});
     addToast('info', lang === 'bn' ? 'স্লাইড মোছা হয়েছে' : 'Slide Deleted', '');
   };
 
   const toggleSlideActive = (id: string) => {
-    setSliders((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, isActive: !s.isActive } : s))
-    );
+    lastLocalMutationAtRef.current = Date.now();
+    const nextSliders = slidersRef.current.map((s) => (s.id === id ? { ...s, isActive: !s.isActive } : s));
+    setSliders(nextSliders);
+    saveStorefrontSettingsToFirestore(settingsRef.current, categoriesRef.current, nextSliders).catch(() => {});
   };
 
   // Products (merge seo/subcategory defaults for legacy localStorage items)
@@ -688,6 +751,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return INITIAL_PRODUCTS;
     }
   });
+  const productsRef = useRef<Product[]>(products);
+  productsRef.current = products;
 
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_PRODUCTS, JSON.stringify(products));
@@ -763,21 +828,35 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return INITIAL_ABANDONED_CARTS;
     }
   });
+  const abandonedCartsRef = useRef<AbandonedCart[]>(abandonedCarts);
+  abandonedCartsRef.current = abandonedCarts;
 
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_ABANDONED, JSON.stringify(abandonedCarts));
   }, [abandonedCarts]);
 
   const markAbandonedCartWhatsAppSent = (cartId: string) => {
+    lastLocalMutationAtRef.current = Date.now();
     setAbandonedCarts((prev) =>
-      prev.map((c) => (c.id === cartId ? { ...c, whatsappSent: true } : c))
+      prev.map((c) => {
+        if (c.id !== cartId) return c;
+        const next = { ...c, whatsappSent: true };
+        saveAbandonedCartToFirestore(next).catch(() => {});
+        return next;
+      })
     );
     addToast('success', t('WhatsApp মেসেজ পাঠানো হয়েছে!', 'WhatsApp Sent!'), t('গ্রাহককে রিকভারি কুপন সহ মেসেজ পাঠানো হয়েছে।', 'Recovery promo message delivered.'));
   };
 
   const recoverAbandonedCart = (cartId: string) => {
+    lastLocalMutationAtRef.current = Date.now();
     setAbandonedCarts((prev) =>
-      prev.map((c) => (c.id === cartId ? { ...c, recovered: true, recoveredAt: new Date().toISOString() } : c))
+      prev.map((c) => {
+        if (c.id !== cartId) return c;
+        const next = { ...c, recovered: true, recoveredAt: new Date().toISOString() };
+        saveAbandonedCartToFirestore(next).catch(() => {});
+        return next;
+      })
     );
     addToast('success', t('কার্ট সফলভাবে রিকভার হয়েছে!', 'Cart Recovered!'), '');
   };
@@ -824,6 +903,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return INITIAL_REVIEWS;
     }
   });
+  const reviewsRef = useRef<ProductReview[]>(reviews);
+  reviewsRef.current = reviews;
 
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_REVIEWS, JSON.stringify(reviews));
@@ -837,31 +918,53 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       date: new Date().toLocaleDateString(),
       verifiedPurchase: true
     };
+    lastLocalMutationAtRef.current = Date.now();
     setReviews((prev) => [newRev, ...prev]);
+    saveReviewToFirestore(newRev).catch(() => {});
     addToast('success', t('রিভিউ জমা হয়েছে!', 'Review Submitted!'), t('আপনার মূল্যবান মতামতের জন্য ধন্যবাদ।', 'Thank you for your rating.'));
   };
 
   const updateProductReview = (id: string, updates: Partial<ProductReview>) => {
-    setReviews((prev) => prev.map((r) => (r.id === id ? { ...r, ...updates } : r)));
+    lastLocalMutationAtRef.current = Date.now();
+    setReviews((prev) =>
+      prev.map((r) => {
+        if (r.id !== id) return r;
+        const next = { ...r, ...updates };
+        saveReviewToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
     addToast('success', t('রিভিউ আপডেট হয়েছে!', 'Review Updated!'), '');
   };
 
   const bulkUpdateReviews = (ids: string[], updates: Partial<ProductReview>) => {
     if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
     const idSet = new Set(ids);
-    setReviews((prev) => prev.map((r) => (idSet.has(r.id) ? { ...r, ...updates } : r)));
+    setReviews((prev) =>
+      prev.map((r) => {
+        if (!idSet.has(r.id)) return r;
+        const next = { ...r, ...updates };
+        saveReviewToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
     addToast('success', t(`${ids.length}টি রিভিউ আপডেট হয়েছে`, `${ids.length} Reviews Updated`), '');
   };
 
   const bulkDeleteReviews = (ids: string[]) => {
     if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
     const idSet = new Set(ids);
+    ids.forEach((id) => deleteReviewFromFirestore(id).catch(() => {}));
     setReviews((prev) => prev.filter((r) => !idSet.has(r.id)));
     addToast('info', t(`${ids.length}টি রিভিউ মোছা হয়েছে`, `${ids.length} Reviews Deleted`), '');
   };
 
   const deleteProductReview = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
     setReviews((prev) => prev.filter((r) => r.id !== id));
+    deleteReviewFromFirestore(id).catch(() => {});
     addToast('info', t('রিভিউ মোছা হয়েছে', 'Review Removed'), '');
   };
 
@@ -874,6 +977,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return INITIAL_USERS;
     }
   });
+  const usersRef = useRef<UserStaff[]>(users);
+  usersRef.current = users;
 
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_USERS, JSON.stringify(users));
@@ -885,17 +990,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       id: `usr-${Date.now()}`,
       createdAt: new Date().toISOString()
     };
+    lastLocalMutationAtRef.current = Date.now();
     setUsers((prev) => [...prev, newUser]);
+    saveStaffUserToFirestore(newUser).catch(() => {});
     addToast('success', t('স্টাফ/ইউজার যোগ হয়েছে', 'User Added'), `'${newUser.name}' সফলভাবে তালিকাভুক্ত।`);
   };
 
   const updateUser = (id: string, updates: Partial<UserStaff>) => {
-    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...updates } : u)));
+    lastLocalMutationAtRef.current = Date.now();
+    setUsers((prev) =>
+      prev.map((u) => {
+        if (u.id !== id) return u;
+        const next = { ...u, ...updates };
+        saveStaffUserToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
     addToast('success', t('ইউজার তথ্য আপডেট সম্পন্ন', 'User Updated'), '');
   };
 
   const deleteUser = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
     setUsers((prev) => prev.filter((u) => u.id !== id));
+    deleteStaffUserFromFirestore(id).catch(() => {});
     addToast('info', t('ইউজার সরানো হয়েছে', 'User Removed'), '');
   };
 
@@ -921,9 +1038,169 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
   const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<string | null>(null);
+  const [isSyncingCloudAll, setIsSyncingCloudAll] = useState<boolean>(false);
 
   const isFirebaseAdminConnectedRef = useRef(isFirebaseAdminConnected);
   isFirebaseAdminConnectedRef.current = isFirebaseAdminConnected;
+
+  const syncAllDashboardToFirebase = async (silent = false): Promise<{ ok: boolean; errors: string[] }> => {
+    if (!auth.currentUser) {
+      const msg = t(
+        'প্রথমে buyonebd@gmail.com দিয়ে Firebase Admin কানেক্ট করুন।',
+        'Please connect Firebase Admin (buyonebd@gmail.com) first.'
+      );
+      if (!silent) addToast('warning', t('Firebase কানেক্ট নেই', 'Not Connected'), msg);
+      return { ok: false, errors: [msg] };
+    }
+    setIsSyncingCloudAll(true);
+    try {
+      const res = await syncAllAdminDataToFirestore({
+        settings: settingsRef.current,
+        categories: categoriesRef.current,
+        sliders: slidersRef.current,
+        products: productsRef.current,
+        orders: ordersRef.current,
+        reviews: reviewsRef.current,
+        mediaLibrary: mediaLibraryRef.current,
+        customerAccounts: customerAccountsRef.current,
+        walletTopUps: walletTopUpsRef.current,
+        abandonedCarts: abandonedCartsRef.current,
+        priceAlerts: priceAlertsRef.current,
+        users: usersRef.current
+      });
+      setLastCloudSyncAt(new Date().toLocaleTimeString());
+      if (res.ok) {
+        setCloudSyncError(null);
+        if (!silent) {
+          addToast(
+            'success',
+            t('সব অ্যাডমিন সেটিংস Firebase-এ সিঙ্ক সম্পন্ন!', 'All Admin Settings Synced to Firebase!'),
+            t(
+              `স্টোর সেটিংস, ভল্ট, ${res.counts.products} পণ্য, ${res.counts.orders} অর্ডার ও সকল মডিউল ক্লাউডে সংরক্ষিত হয়েছে।`,
+              `Synced storefront, private vault, ${res.counts.products} products, ${res.counts.orders} orders & all modules.`
+            )
+          );
+        }
+      } else {
+        setCloudSyncError(res.errors[0] || 'Partial sync error');
+        if (!silent) {
+          addToast(
+            'warning',
+            t('আংশিক ক্লাউড সিঙ্ক সম্পন্ন', 'Partial Firebase Sync'),
+            res.errors.slice(0, 2).join(' | ')
+          );
+        }
+      }
+      return { ok: res.ok, errors: res.errors };
+    } finally {
+      setIsSyncingCloudAll(false);
+    }
+  };
+
+  const pullAllDashboardFromFirebase = async (): Promise<boolean> => {
+    setIsSyncingCloudAll(true);
+    try {
+      const pubCfg = await fetchStorefrontSettingsFromFirestore();
+      let privCfg: Record<string, any> | null = null;
+      if (auth.currentUser) {
+        privCfg = await fetchAdminPrivateConfigFromFirestore().catch(() => null);
+      }
+
+      if (pubCfg || privCfg) {
+        setSettings((prev) =>
+          mergeSettings({
+            ...prev,
+            ...(pubCfg || {}),
+            ...(privCfg || {})
+          })
+        );
+        if (Array.isArray(pubCfg?.categories) && pubCfg.categories.length > 0) {
+          setCategories(pubCfg.categories);
+        }
+        if (Array.isArray(pubCfg?.sliders) && pubCfg.sliders.length > 0) {
+          setSliders(pubCfg.sliders);
+        }
+      }
+
+      const [fsProducts, fsMedia] = await Promise.all([
+        fetchProductsFromFirestore(),
+        fetchMediaLibraryFromFirestore().catch(() => [])
+      ]);
+      if (fsProducts.length > 0) {
+        setProducts(fsProducts);
+      }
+      if (fsMedia.length > 0) {
+        setMediaLibrary(fsMedia);
+      }
+
+      if (auth.currentUser) {
+        const [
+          fsOrders,
+          fsReviews,
+          fsCustomers,
+          fsTopUps,
+          fsCarts,
+          fsAlerts,
+          fsStaff
+        ] = await Promise.all([
+          fetchOrdersFromFirestore().catch(() => []),
+          fetchAllReviewsFromFirestore().catch(() => []),
+          fetchCustomersFromFirestore().catch(() => []),
+          fetchWalletTopUpsFromFirestore().catch(() => []),
+          fetchAbandonedCartsFromFirestore().catch(() => []),
+          fetchPriceAlertsFromFirestore().catch(() => []),
+          fetchStaffUsersFromFirestore().catch(() => [])
+        ]);
+
+        if (fsOrders.length > 0) mergeRemoteOrders(fsOrders, new Set(), false);
+        if (fsReviews.length > 0) setReviews(fsReviews);
+        if (fsCustomers.length > 0) {
+          setCustomerAccounts((prev) =>
+            fsCustomers.map((rc) => {
+              const localMatch = prev.find(
+                (lc) => lc.phone === rc.phone || (lc.username && lc.username === rc.username)
+              );
+              return localMatch
+                ? { ...rc, password: localMatch.password, checkIn: localMatch.checkIn }
+                : rc;
+            })
+          );
+        }
+        if (fsTopUps.length > 0) setWalletTopUps(fsTopUps);
+        if (fsCarts.length > 0) setAbandonedCarts(fsCarts);
+        if (fsAlerts.length > 0) setPriceAlerts(fsAlerts);
+        if (fsStaff.length > 0) setUsers(fsStaff);
+      }
+
+      setLastCloudSyncAt(new Date().toLocaleTimeString());
+      setCloudSyncError(null);
+      addToast(
+        'success',
+        t('Firebase থেকে সব ডাটা রিস্টোর হয়েছে!', 'Restored All Data from Firebase!'),
+        t('অ্যাডমিন ড্যাশবোর্ডের সকল সেটিংস ও ডাটা ক্লাউড থেকে লোড হয়েছে।', 'All settings & modules loaded from Firestore.')
+      );
+      return true;
+    } catch (err) {
+      const reason = extractFirestoreErrorReason(err);
+      setCloudSyncError(reason);
+      addToast('error', t('Firebase লোড ব্যর্থ', 'Pull Failed'), reason);
+      return false;
+    } finally {
+      setIsSyncingCloudAll(false);
+    }
+  };
+
+  const testFirebaseCloudConnection = async () => {
+    const report = await runFirebaseDiagnostics();
+    if (!report.ok) {
+      const firstFail = report.details.find((d) => !d.ok);
+      if (firstFail) setCloudSyncError(firstFail.message);
+    } else {
+      setCloudSyncError(null);
+      setLastCloudSyncAt(new Date().toLocaleTimeString());
+    }
+    return report;
+  };
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -995,9 +1272,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         let cloudCount = 0;
         try {
-          const fsOrders = await fetchOrdersFromFirestore();
+          // Check if public storefront or private admin vault is uninitialized yet; if so, bootstrap ALL local dashboard settings & modules up to Firebase
+          const [pubSnap, privSnap, fsProds, fsOrders] = await Promise.all([
+            fetchStorefrontSettingsFromFirestore().catch(() => null),
+            fetchAdminPrivateConfigFromFirestore().catch(() => null),
+            fetchProductsFromFirestore().catch(() => []),
+            fetchOrdersFromFirestore().catch(() => [])
+          ]);
+
+          if (!pubSnap || !privSnap || fsProds.length === 0) {
+            await syncAllDashboardToFirebase(true);
+          }
+
           const fsIds = new Set(fsOrders.map((o) => o.id));
-          // Push any local orders created before Cloud Sync was connected so other devices see them too
           const localOnlyOrders = ordersRef.current.filter((o) => o && o.id && !fsIds.has(o.id));
           for (const localOrd of localOnlyOrders.slice(0, 50)) {
             await writeOrderToFirestore(localOrd, true).catch(() => {});
@@ -1014,10 +1301,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         addToast(
           'success',
-          t('ক্লাউড অর্ডার সিঙ্ক সক্রিয় হয়েছে!', 'Cloud Order Sync Connected!'),
+          t('একীভূত Firebase ক্লাউড হাব সংযুক্ত!', 'Unified Firebase Admin Connected!'),
           t(
-            `Firebase সেশন: ${cred.user.email} • ক্লাউডে ${cloudCount}টি অর্ডার পাওয়া গেছে।`,
-            `Signed in as ${cred.user.email} • Loaded ${cloudCount} cloud orders.`
+            `Firebase সেশন: ${cred.user.email} • ক্লাউডে ${cloudCount}টি অর্ডার ও সব সেটিংস সিঙ্ক সক্রিয়।`,
+            `Signed in as ${cred.user.email} • All settings & ${cloudCount} cloud orders synced live.`
           )
         );
         return true;
@@ -1137,37 +1424,52 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       id: `spin-${Date.now().toString().slice(-5)}`
     };
     const updatedRewards = [...spinRewards, newReward];
-    setSettings((prev) => ({
-      ...prev,
-      spinSettings: {
-        ...prev.spinSettings,
-        rewards: updatedRewards
-      }
-    }));
+    lastLocalMutationAtRef.current = Date.now();
+    setSettings((prev) => {
+      const next: StoreSettings = {
+        ...prev,
+        spinSettings: {
+          ...prev.spinSettings,
+          rewards: updatedRewards
+        }
+      };
+      saveStorefrontSettingsToFirestore(next, categoriesRef.current, slidersRef.current).catch(() => {});
+      return next;
+    });
     addToast('success', lang === 'bn' ? 'স্পিন অফার যোগ হয়েছে!' : 'Spin Offer Added!', `'${newReward.labelBn}'`);
   };
 
   const updateSpinReward = (id: string, updates: Partial<SpinReward>) => {
     const updatedRewards = spinRewards.map((rew) => (rew.id === id ? { ...rew, ...updates } : rew));
-    setSettings((prev) => ({
-      ...prev,
-      spinSettings: {
-        ...prev.spinSettings,
-        rewards: updatedRewards
-      }
-    }));
+    lastLocalMutationAtRef.current = Date.now();
+    setSettings((prev) => {
+      const next: StoreSettings = {
+        ...prev,
+        spinSettings: {
+          ...prev.spinSettings,
+          rewards: updatedRewards
+        }
+      };
+      saveStorefrontSettingsToFirestore(next, categoriesRef.current, slidersRef.current).catch(() => {});
+      return next;
+    });
     addToast('success', lang === 'bn' ? 'স্পিন অফার আপডেট হয়েছে!' : 'Spin Offer Updated!', '');
   };
 
   const deleteSpinReward = (id: string) => {
     const updatedRewards = spinRewards.filter((rew) => rew.id !== id);
-    setSettings((prev) => ({
-      ...prev,
-      spinSettings: {
-        ...prev.spinSettings,
-        rewards: updatedRewards
-      }
-    }));
+    lastLocalMutationAtRef.current = Date.now();
+    setSettings((prev) => {
+      const next: StoreSettings = {
+        ...prev,
+        spinSettings: {
+          ...prev.spinSettings,
+          rewards: updatedRewards
+        }
+      };
+      saveStorefrontSettingsToFirestore(next, categoriesRef.current, slidersRef.current).catch(() => {});
+      return next;
+    });
     addToast('info', lang === 'bn' ? 'স্পিন অফার মোছা হয়েছে' : 'Spin Offer Deleted', '');
   };
 
@@ -1208,6 +1510,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     ];
   });
+  const customerAccountsRef = useRef<CustomerProfile[]>(customerAccounts);
+  customerAccountsRef.current = customerAccounts;
 
   useEffect(() => {
     localStorage.setItem('buyonebd_customer_accounts_v3', JSON.stringify(customerAccounts));
@@ -1326,7 +1630,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       savedCoupons: customerProfile.savedCoupons || []
     };
 
+    lastLocalMutationAtRef.current = Date.now();
     setCustomerAccounts((prev) => [...prev, newAcc]);
+    saveCustomerToFirestore(newAcc).catch(() => {});
     setCustomerProfile(newAcc);
     setIsCustomerLoggedIn(true);
     localStorage.setItem('buyonebd_customer_auth_v3', 'true');
@@ -1420,11 +1726,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateCustomerProfile = (updates: Partial<CustomerProfile>) => {
+    lastLocalMutationAtRef.current = Date.now();
     setCustomerProfile((prev) => {
       const next = { ...prev, ...updates };
       setCustomerAccounts((accs) =>
         accs.map((a) => (a.phone === prev.phone || a.username === prev.username ? next : a))
       );
+      saveCustomerToFirestore(next).catch(() => {});
       return next;
     });
     addToast('success', t('প্রোফাইল আপডেট সম্পন্ন', 'Profile Updated'), t('আপনার তথ্য সফলভাবে সংরক্ষিত হয়েছে।', 'Changes saved successfully.'));
@@ -1515,6 +1823,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     ];
   });
+  const walletTopUpsRef = useRef<WalletTopUpRequest[]>(walletTopUps);
+  walletTopUpsRef.current = walletTopUps;
 
   useEffect(() => {
     localStorage.setItem('buyonebd_wallet_topups_v1', JSON.stringify(walletTopUps));
@@ -1560,7 +1870,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const accAnchor = acc.lastPurchaseAt || acc.lastWalletCreditAt;
         if (forceExpireDemo || (accAnchor && Date.now() - new Date(accAnchor).getTime() >= expiryMs)) {
           expiredCount += 1;
-          return { ...acc, walletBalance: 0 };
+          const updated = { ...acc, walletBalance: 0 };
+          saveCustomerToFirestore(updated).catch(() => {});
+          return updated;
         }
         return acc;
       })
@@ -1684,7 +1996,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       processedAt: isAutoApprove ? nowIso : undefined
     };
 
+    lastLocalMutationAtRef.current = Date.now();
     setWalletTopUps((prev) => [newReq, ...prev]);
+    saveWalletTopUpToFirestore(newReq).catch(() => {});
 
     if (isAutoApprove) {
       addToWallet(
@@ -1709,9 +2023,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const req = walletTopUps.find((r) => r.id === requestId);
     if (!req || req.status === 'approved') return;
     const nowIso = new Date().toISOString();
+    lastLocalMutationAtRef.current = Date.now();
 
     setWalletTopUps((prev) =>
-      prev.map((r) => (r.id === requestId ? { ...r, status: 'approved', processedAt: nowIso } : r))
+      prev.map((r) => {
+        if (r.id !== requestId) return r;
+        const next = { ...r, status: 'approved' as const, processedAt: nowIso };
+        saveWalletTopUpToFirestore(next).catch(() => {});
+        return next;
+      })
     );
 
     const reqPhone = req.customerPhone.replace(/[^0-9]/g, '');
@@ -1722,17 +2042,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         req.amount,
         t(`${req.method.toUpperCase()} রিচার্জ অনুমোদিত (+৳${req.amount})`, `Top-Up Approved (+৳${req.amount})`)
       );
+      setCustomerAccounts((prev) =>
+        prev.map((acc) => {
+          if (acc.phone.replace(/[^0-9]/g, '') !== reqPhone && prev.length > 1) return acc;
+          const updated = {
+            ...acc,
+            walletBalance: (acc.walletBalance || 0) + req.amount,
+            lastWalletCreditAt: acc.lastWalletCreditAt || nowIso
+          };
+          saveCustomerToFirestore(updated).catch(() => {});
+          return updated;
+        })
+      );
     } else {
       setCustomerAccounts((prev) =>
-        prev.map((acc) =>
-          acc.phone.replace(/[^0-9]/g, '') === reqPhone
-            ? {
-                ...acc,
-                walletBalance: (acc.walletBalance || 0) + req.amount,
-                lastWalletCreditAt: acc.lastWalletCreditAt || nowIso
-              }
-            : acc
-        )
+        prev.map((acc) => {
+          if (acc.phone.replace(/[^0-9]/g, '') !== reqPhone) return acc;
+          const updated = {
+            ...acc,
+            walletBalance: (acc.walletBalance || 0) + req.amount,
+            lastWalletCreditAt: acc.lastWalletCreditAt || nowIso
+          };
+          saveCustomerToFirestore(updated).catch(() => {});
+          return updated;
+        })
       );
       addToast(
         'success',
@@ -1743,12 +2076,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const rejectWalletTopUp = (requestId: string, note?: string) => {
+    lastLocalMutationAtRef.current = Date.now();
     setWalletTopUps((prev) =>
-      prev.map((r) =>
-        r.id === requestId
-          ? { ...r, status: 'rejected', adminNote: note || 'Invalid TrxID', processedAt: new Date().toISOString() }
-          : r
-      )
+      prev.map((r) => {
+        if (r.id !== requestId) return r;
+        const next = {
+          ...r,
+          status: 'rejected' as const,
+          adminNote: note || 'Invalid TrxID',
+          processedAt: new Date().toISOString()
+        };
+        saveWalletTopUpToFirestore(next).catch(() => {});
+        return next;
+      })
     );
     addToast('info', t('রিচার্জ রিকোয়েস্ট বাতিল হয়েছে', 'Top-Up Request Rejected'), '');
   };
@@ -1756,6 +2096,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const adjustCustomerWalletByAdmin = (delta: number, reason?: string) => {
     if (delta === 0) return;
     const nowIso = new Date().toISOString();
+    lastLocalMutationAtRef.current = Date.now();
     setCustomerWalletBalance((prev) => {
       const next = Math.max(0, prev + delta);
       localStorage.setItem('buyonebd_customer_wallet_v3', next.toString());
@@ -1763,11 +2104,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setWalletLastCreditAt(nowIso);
         localStorage.setItem('buyonebd_wallet_last_credit_v1', nowIso);
       }
-      setCustomerProfile((cp) => ({
-        ...cp,
-        walletBalance: next,
-        lastWalletCreditAt: delta > 0 ? cp.lastWalletCreditAt || nowIso : cp.lastWalletCreditAt
-      }));
+      setCustomerProfile((cp) => {
+        const updatedCp = {
+          ...cp,
+          walletBalance: next,
+          lastWalletCreditAt: delta > 0 ? cp.lastWalletCreditAt || nowIso : cp.lastWalletCreditAt
+        };
+        saveCustomerToFirestore(updatedCp).catch(() => {});
+        return updatedCp;
+      });
       addToast(
         delta > 0 ? 'success' : 'info',
         t(`অ্যাডমিন ব্যালেন্স আপডেট (${delta > 0 ? '+' : ''}৳${delta})`, `Wallet Adjusted (${delta > 0 ? '+' : ''}৳${delta})`),
@@ -1786,6 +2131,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     let found = false;
     let updatedBalance = 0;
     let targetName = identifier;
+    let updatedAccount: CustomerProfile | null = null;
 
     const nextAccounts = customerAccounts.map((acc) => {
       const matches =
@@ -1797,16 +2143,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       found = true;
       targetName = acc.name;
       updatedBalance = Math.max(0, (acc.walletBalance || 0) + delta);
-      return {
+      updatedAccount = {
         ...acc,
         walletBalance: updatedBalance,
         lastWalletCreditAt: delta > 0 ? acc.lastWalletCreditAt || nowIso : acc.lastWalletCreditAt
       };
+      return updatedAccount;
     });
 
     if (!found) return false;
 
+    lastLocalMutationAtRef.current = Date.now();
     setCustomerAccounts(nextAccounts);
+    if (updatedAccount) saveCustomerToFirestore(updatedAccount).catch(() => {});
 
     // Also sync active customer wallet if same customer is currently active in browser
     const activeMatches =
@@ -1846,6 +2195,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const nowIso = new Date().toISOString();
     let found = false;
     let targetName = identifier;
+    let updatedAccount: CustomerProfile | null = null;
 
     const nextAccounts = customerAccounts.map((acc) => {
       const matches =
@@ -1855,13 +2205,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!matches) return acc;
       found = true;
       targetName = acc.name;
-      return expireNow
+      updatedAccount = expireNow
         ? { ...acc, walletBalance: 0 }
         : { ...acc, lastPurchaseAt: nowIso, lastWalletCreditAt: nowIso };
+      return updatedAccount;
     });
 
     if (!found) return false;
+    lastLocalMutationAtRef.current = Date.now();
     setCustomerAccounts(nextAccounts);
+    if (updatedAccount) saveCustomerToFirestore(updatedAccount).catch(() => {});
 
     const activeMatches =
       (customerProfile.username && customerProfile.username.toLowerCase() === cleanId) ||
@@ -1939,6 +2292,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch {}
     return buildInitialMediaFromStore(products, sliders, categories, settings);
   });
+  const mediaLibraryRef = useRef<MediaItem[]>(mediaLibrary);
+  mediaLibraryRef.current = mediaLibrary;
 
   useEffect(() => {
     try {
@@ -1952,9 +2307,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       id: `med-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       createdAt: new Date().toISOString()
     };
+    lastLocalMutationAtRef.current = Date.now();
     setMediaLibrary((prev) => {
       const existing = prev.find((m) => m.url === item.url);
       if (existing) return prev;
+      saveMediaItemToFirestore(created).catch(() => {});
       return [created, ...prev];
     });
     return created;
@@ -1963,10 +2320,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const syncStoreMediaLibrary = (): number => {
     const discovered = buildInitialMediaFromStore(products, sliders, categories, settings);
     let added = 0;
+    lastLocalMutationAtRef.current = Date.now();
     setMediaLibrary((prev) => {
       const existingUrls = new Set(prev.map((m) => m.url));
       const newOnes = discovered.filter((d) => !existingUrls.has(d.url));
       added = newOnes.length;
+      newOnes.forEach((m) => saveMediaItemToFirestore(m).catch(() => {}));
       return newOnes.length > 0 ? [...newOnes, ...prev] : prev;
     });
     return added;
@@ -1974,8 +2333,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const deleteMediaItems = (ids: string[]) => {
     if (ids.length === 0) return;
+    lastLocalMutationAtRef.current = Date.now();
     const idSet = new Set(ids);
     const urlsToRemove = new Set(mediaLibrary.filter((m) => idSet.has(m.id)).map((m) => m.url));
+    ids.forEach((id) => deleteMediaItemFromFirestore(id).catch(() => {}));
     setMediaLibrary((prev) => prev.filter((m) => !idSet.has(m.id)));
 
     // Cleanly remove deleted media URLs from products/categories/logo if referenced
@@ -1983,13 +2344,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setProducts((prev) =>
         prev.map((p) => {
           const remaining = p.images.filter((img) => !urlsToRemove.has(img));
-          return remaining.length !== p.images.length
-            ? { ...p, images: remaining.length > 0 ? remaining : p.images.slice(0, 1) }
-            : p;
+          if (remaining.length === p.images.length) return p;
+          const nextProd = { ...p, images: remaining.length > 0 ? remaining : p.images.slice(0, 1) };
+          saveProductToFirestore(nextProd).catch(() => {});
+          return nextProd;
         })
       );
       if (settings.logoUrl && urlsToRemove.has(settings.logoUrl)) {
-        setSettings((prev) => ({ ...prev, logoUrl: '' }));
+        setSettings((prev) => {
+          const next = { ...prev, logoUrl: '' };
+          saveStorefrontSettingsToFirestore(next, categoriesRef.current, slidersRef.current).catch(() => {});
+          return next;
+        });
       }
     }
     addToast(
@@ -2078,42 +2444,51 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     if (updatedMap.size === 0) return 0;
 
+    lastLocalMutationAtRef.current = Date.now();
     setMediaLibrary((prev) =>
       prev.map((m) => {
         const upd = updatedMap.get(m.id);
-        return upd ? { ...m, url: upd.url, width: upd.width, height: upd.height, sizeKb: upd.sizeKb } : m;
+        if (!upd) return m;
+        const nextItem = { ...m, url: upd.url, width: upd.width, height: upd.height, sizeKb: upd.sizeKb };
+        saveMediaItemToFirestore(nextItem).catch(() => {});
+        return nextItem;
       })
     );
 
     // Sync resized URLs wherever used across products, sliders, categories, logo & OG image
     setProducts((prev) =>
-      prev.map((p) => ({
-        ...p,
-        images: p.images.map((img) => urlMap.get(img) || img)
-      }))
+      prev.map((p) => {
+        const changed = p.images.some((img) => urlMap.has(img));
+        if (!changed) return p;
+        const nextProd = { ...p, images: p.images.map((img) => urlMap.get(img) || img) };
+        saveProductToFirestore(nextProd).catch(() => {});
+        return nextProd;
+      })
     );
-    setSliders((prev) =>
-      prev.map((s) => ({
-        ...s,
-        image: urlMap.get(s.image) || s.image
-      }))
-    );
-    setCategories((prev) =>
-      prev.map((c) => ({
-        ...c,
-        iconImage: c.iconImage ? urlMap.get(c.iconImage) || c.iconImage : c.iconImage
-      }))
-    );
-    setSettings((prev) => ({
-      ...prev,
-      logoUrl: prev.logoUrl ? urlMap.get(prev.logoUrl) || prev.logoUrl : prev.logoUrl,
-      seoSettings: prev.seoSettings
-        ? {
-            ...prev.seoSettings,
-            ogImage: prev.seoSettings.ogImage ? urlMap.get(prev.seoSettings.ogImage) || prev.seoSettings.ogImage : prev.seoSettings.ogImage
-          }
-        : prev.seoSettings
+    const nextSliders = slidersRef.current.map((s) => ({
+      ...s,
+      image: urlMap.get(s.image) || s.image
     }));
+    const nextCategories = categoriesRef.current.map((c) => ({
+      ...c,
+      iconImage: c.iconImage ? urlMap.get(c.iconImage) || c.iconImage : c.iconImage
+    }));
+    setSliders(nextSliders);
+    setCategories(nextCategories);
+    setSettings((prev) => {
+      const next = {
+        ...prev,
+        logoUrl: prev.logoUrl ? urlMap.get(prev.logoUrl) || prev.logoUrl : prev.logoUrl,
+        seoSettings: prev.seoSettings
+          ? {
+              ...prev.seoSettings,
+              ogImage: prev.seoSettings.ogImage ? urlMap.get(prev.seoSettings.ogImage) || prev.seoSettings.ogImage : prev.seoSettings.ogImage
+            }
+          : prev.seoSettings
+      };
+      saveStorefrontSettingsToFirestore(next, nextCategories, nextSliders).catch(() => {});
+      return next;
+    });
 
     addToast(
       'success',
@@ -2132,6 +2507,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return [];
     }
   });
+  const priceAlertsRef = useRef<PriceAlert[]>(priceAlerts);
+  priceAlertsRef.current = priceAlerts;
 
   const addPriceAlert = (alertData: { productId: string; contact: string; targetPrice: number }) => {
     const prod = products.find((p) => p.id === alertData.productId);
@@ -2146,11 +2523,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       createdAt: new Date().toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US'),
       status: 'active'
     };
+    lastLocalMutationAtRef.current = Date.now();
     setPriceAlerts((prev) => {
       const next = [newAlert, ...prev];
       localStorage.setItem('buyonebd_price_alerts_v3', JSON.stringify(next));
       return next;
     });
+    savePriceAlertToFirestore(newAlert).catch(() => {});
     addToast(
       'success',
       lang === 'bn' ? 'প্রাইস অ্যালার্ট সেট হয়েছে!' : 'Price Alert Activated!',
@@ -2761,7 +3140,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, [activeView]);
 
-  // Real-time Firestore Listeners for Storefront Public Config & Catalog Products (all visitors)
+  // Real-time Firestore Listeners for Storefront Public Config, Categories, Sliders, Catalog, Media & Approved Reviews
   useEffect(() => {
     const unsubSettings = onSnapshot(
       doc(db, 'storefront', 'public'),
@@ -2771,6 +3150,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const remote = snap.data();
         if (remote) {
           setSettings((prev) => mergeSettings({ ...prev, ...remote }));
+          if (Array.isArray(remote.categories) && remote.categories.length > 0) {
+            setCategories(remote.categories);
+          }
+          if (Array.isArray(remote.sliders) && remote.sliders.length > 0) {
+            setSliders(remote.sliders);
+          }
         }
       },
       (err) => {
@@ -2787,9 +3172,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       (snap) => {
         if (snap.empty) return;
         if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const removedIds = new Set(
+          snap.docChanges().filter((c) => c.type === 'removed').map((c) => c.doc.id)
+        );
         const remoteList = snap.docs.map((d) => ({ ...d.data(), id: d.id } as Product));
         setProducts((prev) => {
           const map = new Map(prev.map((p) => [p.id, p]));
+          removedIds.forEach((id) => map.delete(id));
           remoteList.forEach((p) => map.set(p.id, p));
           return Array.from(map.values());
         });
@@ -2803,24 +3192,91 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     );
 
+    const unsubMedia = onSnapshot(
+      collection(db, 'media_library'),
+      (snap) => {
+        if (snap.empty) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const removedIds = new Set(
+          snap.docChanges().filter((c) => c.type === 'removed').map((c) => c.doc.id)
+        );
+        const remoteList = snap.docs.map((d) => mapFirestoreDocToMedia(d.id, d.data()));
+        setMediaLibrary((prev) => {
+          const map = new Map(prev.map((m) => [m.id, m]));
+          removedIds.forEach((id) => map.delete(id));
+          remoteList.forEach((m) => map.set(m.id, m));
+          return Array.from(map.values());
+        });
+      },
+      () => {}
+    );
+
+    const approvedReviewsQuery = query(collection(db, 'reviews'), where('isApproved', '==', true));
+    const unsubPublicReviews = onSnapshot(
+      approvedReviewsQuery,
+      (snap) => {
+        if (isFirebaseAdminConnectedRef.current) return;
+        if (snap.empty) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const remoteRevs = snap.docs.map((d) => mapFirestoreDocToReview(d.id, d.data()));
+        setReviews((prev) => {
+          const map = new Map(prev.map((r) => [r.id, r]));
+          remoteRevs.forEach((r) => map.set(r.id, r));
+          return Array.from(map.values());
+        });
+      },
+      () => {}
+    );
+
     return () => {
       unsubSettings();
       unsubProducts();
+      unsubMedia();
+      unsubPublicReviews();
     };
   }, []);
 
-  // Real-time Firestore Listener for Orders when authenticated as Firebase Admin (works across Vercel/mobile/desktop)
+  // Real-time Firestore Listeners when authenticated as Firebase Admin (ALL Dashboard Modules Live Sync)
   useEffect(() => {
     if (!isFirebaseAdminConnected) return;
-    let isInitialBatch = true;
+    let isInitialOrderBatch = true;
+
+    const unsubPrivateConfig = onSnapshot(
+      doc(db, 'admin_config', 'private'),
+      (snap) => {
+        if (!snap.exists()) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const priv = snap.data();
+        if (priv) {
+          setSettings((prev) =>
+            mergeSettings({
+              ...prev,
+              ...(priv.smtpSettings ? { smtpSettings: priv.smtpSettings } : {}),
+              ...(priv.courierSettings ? { courierSettings: priv.courierSettings } : {}),
+              ...(priv.marketingSettings ? { marketingSettings: priv.marketingSettings } : {}),
+              ...(priv.aiSettings ? { aiSettings: priv.aiSettings } : {}),
+              ...(Array.isArray(priv.aiKeywordRules) ? { aiKeywordRules: priv.aiKeywordRules } : {})
+            })
+          );
+          setLastCloudSyncAt(new Date().toLocaleTimeString());
+        }
+      },
+      (err) => {
+        setCloudSyncError(extractFirestoreErrorReason(err));
+      }
+    );
+
     const unsubOrders = onSnapshot(
       collection(db, 'orders'),
       (snap) => {
+        const removedIds = new Set(
+          snap.docChanges().filter((c) => c.type === 'removed').map((c) => c.doc.id)
+        );
         const fsOrders = snap.docs.map((d) => ({ ...d.data(), id: d.id } as Order));
-        mergeRemoteOrders(fsOrders, new Set(), !isInitialBatch);
+        mergeRemoteOrders(fsOrders, removedIds, !isInitialOrderBatch);
         setLastCloudSyncAt(new Date().toLocaleTimeString());
         setCloudSyncError(null);
-        isInitialBatch = false;
+        isInitialOrderBatch = false;
       },
       (err) => {
         setCloudSyncError(extractFirestoreErrorReason(err));
@@ -2831,7 +3287,121 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       }
     );
-    return () => unsubOrders();
+
+    const unsubAdminReviews = onSnapshot(
+      collection(db, 'reviews'),
+      (snap) => {
+        if (snap.empty) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const removedIds = new Set(
+          snap.docChanges().filter((c) => c.type === 'removed').map((c) => c.doc.id)
+        );
+        const remoteList = snap.docs.map((d) => mapFirestoreDocToReview(d.id, d.data()));
+        setReviews((prev) => {
+          const map = new Map(prev.map((r) => [r.id, r]));
+          removedIds.forEach((id) => map.delete(id));
+          remoteList.forEach((r) => map.set(r.id, r));
+          return Array.from(map.values());
+        });
+      },
+      () => {}
+    );
+
+    const unsubCustomers = onSnapshot(
+      collection(db, 'customers'),
+      (snap) => {
+        if (snap.empty) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const remoteList = snap.docs.map((d) => mapFirestoreDocToCustomer(d.data()));
+        setCustomerAccounts((prev) => {
+          const map = new Map(prev.map((c) => [getCustomerFirestoreId(c), c]));
+          remoteList.forEach((rc) => {
+            const key = getCustomerFirestoreId(rc);
+            const existing = map.get(key);
+            map.set(key, existing ? { ...rc, password: existing.password, checkIn: existing.checkIn } : rc);
+          });
+          return Array.from(map.values());
+        });
+      },
+      () => {}
+    );
+
+    const unsubTopUps = onSnapshot(
+      collection(db, 'wallet_topups'),
+      (snap) => {
+        if (snap.empty) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const remoteList = snap.docs.map((d) => mapFirestoreDocToWalletTopUp(d.id, d.data()));
+        setWalletTopUps((prev) => {
+          const map = new Map(prev.map((w) => [w.id, w]));
+          remoteList.forEach((w) => map.set(w.id, w));
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          );
+        });
+      },
+      () => {}
+    );
+
+    const unsubCarts = onSnapshot(
+      collection(db, 'abandoned_carts'),
+      (snap) => {
+        if (snap.empty) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const remoteList = snap.docs.map((d) => mapFirestoreDocToAbandonedCart(d.id, d.data()));
+        setAbandonedCarts((prev) => {
+          const map = new Map(prev.map((c) => [c.id, c]));
+          remoteList.forEach((c) => map.set(c.id, c));
+          return Array.from(map.values());
+        });
+      },
+      () => {}
+    );
+
+    const unsubAlerts = onSnapshot(
+      collection(db, 'price_alerts'),
+      (snap) => {
+        if (snap.empty) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const remoteList = snap.docs.map((d) => mapFirestoreDocToPriceAlert(d.id, d.data()));
+        setPriceAlerts((prev) => {
+          const map = new Map(prev.map((a) => [a.id, a]));
+          remoteList.forEach((a) => map.set(a.id, a));
+          return Array.from(map.values());
+        });
+      },
+      () => {}
+    );
+
+    const unsubStaff = onSnapshot(
+      collection(db, 'staff_users'),
+      (snap) => {
+        if (snap.empty) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const removedIds = new Set(
+          snap.docChanges().filter((c) => c.type === 'removed').map((c) => c.doc.id)
+        );
+        const remoteList = snap.docs.map((d) => mapFirestoreDocToStaffUser(d.id, d.data()));
+        setUsers((prev) => {
+          const map = new Map(prev.map((u) => [u.id, u]));
+          removedIds.forEach((id) => map.delete(id));
+          remoteList.forEach((u) => map.set(u.id, u));
+          return Array.from(map.values());
+        });
+      },
+      () => {}
+    );
+
+    return () => {
+      unsubPrivateConfig();
+      unsubOrders();
+      unsubAdminReviews();
+      unsubCustomers();
+      unsubTopUps();
+      unsubCarts();
+      unsubAlerts();
+      unsubStaff();
+    };
   }, [isFirebaseAdminConnected]);
 
   // Push store snapshot updates AFTER initial server hydration completes
@@ -3630,6 +4200,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         order: idx + 1
       }));
       setCategories(mappedCats);
+      saveStorefrontSettingsToFirestore(settingsRef.current, mappedCats, slidersRef.current).catch(() => {});
     }
 
     addToast(
@@ -4491,7 +5062,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const cartTotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  // Settings
+  // Settings (persists BOTH public storefront config and private SMTP/Courier/Marketing/AI vault)
   const updateSettings = (newSettings: Partial<StoreSettings>) => {
     lastLocalMutationAtRef.current = Date.now();
     setSettings((prev) => {
@@ -4510,11 +5081,46 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           generatedAt: new Date().toISOString()
         };
       }
-      saveStorefrontSettingsToFirestore(next).catch(() => {});
+      saveStorefrontSettingsToFirestore(next, categoriesRef.current, slidersRef.current).catch(() => {});
+      if (isFirebaseAdminConnectedRef.current) {
+        saveAdminPrivateConfigToFirestore(next).catch(() => {});
+      }
       return next;
     });
     addToast('success', t('সেটিংস সংরক্ষিত হয়েছে', 'Settings Saved'), t('স্টোরের সকল পরিবর্তন সফলভাবে সংরক্ষিত।', 'Configurations updated.'));
   };
+
+  const cloudCollectionCounts = React.useMemo(
+    () => ({
+      storefront: 1,
+      privateConfig: isFirebaseAdminConnected ? 1 : 0,
+      products: products.length,
+      categories: categories.length,
+      sliders: sliders.length,
+      orders: orders.length,
+      reviews: reviews.length,
+      mediaLibrary: mediaLibrary.length,
+      customers: customerAccounts.length,
+      walletTopUps: walletTopUps.length,
+      abandonedCarts: abandonedCarts.length,
+      priceAlerts: priceAlerts.length,
+      staffUsers: users.length
+    }),
+    [
+      isFirebaseAdminConnected,
+      products.length,
+      categories.length,
+      sliders.length,
+      orders.length,
+      reviews.length,
+      mediaLibrary.length,
+      customerAccounts.length,
+      walletTopUps.length,
+      abandonedCarts.length,
+      priceAlerts.length,
+      users.length
+    ]
+  );
 
   // Non-Destructive Clear Cache (Clears temporary logs/audio cache ONLY; preserves all products, orders, customers, settings)
   const clearAppCache = async () => {
@@ -4718,8 +5324,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isFirebaseAdminConnected,
         cloudSyncError,
         lastCloudSyncAt,
+        isSyncingCloudAll,
+        cloudCollectionCounts,
         signInAdminWithGoogle,
         signOutAdminFirebase,
+        syncAllDashboardToFirebase,
+        pullAllDashboardFromFirebase,
+        testFirebaseCloudConnection,
         spinRewards,
         addSpinReward,
         updateSpinReward,

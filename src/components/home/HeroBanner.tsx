@@ -29,28 +29,28 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
     return () => clearInterval(timer);
   }, [slides.length]);
 
-  const [timeLeft, setTimeLeft] = useState({
-    hours: 5,
-    minutes: 42,
-    seconds: 19
-  });
+  const computeFlashTimeLeft = (endsAtIso?: string) => {
+    const targetMs = endsAtIso ? new Date(endsAtIso).getTime() : NaN;
+    const diffMs = Number.isFinite(targetMs) ? Math.max(0, targetMs - Date.now()) : 6 * 3600 * 1000;
+    const totalSeconds = Math.floor(diffMs / 1000);
+    return {
+      days: Math.floor(totalSeconds / 86400),
+      hours: Math.floor((totalSeconds % 86400) / 3600),
+      minutes: Math.floor((totalSeconds % 3600) / 60),
+      seconds: totalSeconds % 60
+    };
+  };
+
+  const [timeLeft, setTimeLeft] = useState(() => computeFlashTimeLeft(settings?.flashSale?.endsAt));
 
   useEffect(() => {
+    setTimeLeft(computeFlashTimeLeft(settings?.flashSale?.endsAt));
     const interval = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev.seconds > 0) {
-          return { ...prev, seconds: prev.seconds - 1 };
-        } else if (prev.minutes > 0) {
-          return { ...prev, minutes: 59, seconds: 59 };
-        } else if (prev.hours > 0) {
-          return { hours: prev.hours - 1, minutes: 59, seconds: 59 };
-        }
-        return { hours: 8, minutes: 0, seconds: 0 };
-      });
+      setTimeLeft(computeFlashTimeLeft(settings?.flashSale?.endsAt));
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [settings?.flashSale?.endsAt]);
 
   const activeSlide = slides[currentSlideIndex] || slides[0];
   const featuredProduct = products[0];
@@ -108,6 +108,12 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
                   <span>{t(settings.flashSale.headlineBn || 'ফ্ল্যাশ সেল বাকি:', 'Flash Sale Ends:')}</span>
                 </span>
                 <div className="flex items-center gap-1 font-mono font-bold text-white">
+                  {timeLeft.days > 0 && (
+                    <>
+                      <span className="bg-white/10 px-2 py-0.5 rounded">{timeLeft.days}d</span>
+                      <span>:</span>
+                    </>
+                  )}
                   <span className="bg-white/10 px-2 py-0.5 rounded">{timeLeft.hours.toString().padStart(2, '0')}h</span>
                   <span>:</span>
                   <span className="bg-white/10 px-2 py-0.5 rounded">{timeLeft.minutes.toString().padStart(2, '0')}m</span>
