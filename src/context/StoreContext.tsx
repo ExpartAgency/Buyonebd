@@ -41,20 +41,26 @@ import {
   BUSINESS_THEME_PRESETS
 } from '../data/initialData';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
-import { onSnapshot, getDoc, getDocs } from 'firebase/firestore';
+import { onSnapshot, getDoc } from 'firebase/firestore';
 import {
   db,
   auth,
   googleProvider,
   collection,
   doc,
+  OperationType,
+  handleFirestoreError,
+  extractFirestoreErrorReason,
   writeOrderToFirestore,
   updateOrderInFirestore,
   deleteOrderFromFirestore,
   saveStorefrontSettingsToFirestore,
   saveProductToFirestore,
   deleteProductFromFirestore,
-  ensureAdminDocInFirestore
+  ensureAdminDocInFirestore,
+  fetchStorefrontSettingsFromFirestore,
+  fetchProductsFromFirestore,
+  fetchOrdersFromFirestore
 } from '../firebase';
 
 function normalizeHexColor(hex?: string, fallback = '#059669'): string {
@@ -243,7 +249,9 @@ interface StoreContextType {
   customerProfile: CustomerProfile;
   updateCustomerProfile: (updates: Partial<CustomerProfile>) => void;
   saveSpinCoupon: (reward: SpinReward) => void;
+  recentlyViewedIds: string[];
   recordProductView: (productId: string) => void;
+  clearRecentlyViewed: () => void;
   claimDailyCheckIn: () => { success: boolean; amount: number; message: string };
   redeemLoyaltyPoints: (points: number) => { success: boolean; discountAmount: number };
   isCustomerDashboardOpen: boolean;
@@ -328,6 +336,8 @@ interface StoreContextType {
   logoutAdmin: () => void;
   firebaseAdminUserEmail: string | null;
   isFirebaseAdminConnected: boolean;
+  cloudSyncError: string | null;
+  lastCloudSyncAt: string | null;
   signInAdminWithGoogle: () => Promise<boolean>;
   signOutAdminFirebase: () => Promise<void>;
 
@@ -414,6 +424,7 @@ const LOCAL_STORAGE_REVIEWS = 'buyonebd_reviews_v3';
 const LOCAL_STORAGE_ADMIN_AUTH = 'buyonebd_admin_auth_v3';
 const LOCAL_STORAGE_SPIN_STATS = 'buyonebd_spin_stats_v3';
 const LOCAL_STORAGE_LANG = 'buyonebd_lang_v3';
+const LOCAL_STORAGE_RECENTLY_VIEWED = 'buyonebd_recently_viewed_v1';
 
 // Deep merger to avoid undefined properties
 function mergeSettings(raw: any): StoreSettings {
@@ -736,6 +747,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return INITIAL_ORDERS;
     }
   });
+  const ordersRef = useRef<Order[]>(orders);
+  ordersRef.current = orders;
 
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_ORDERS, JSON.stringify(orders));
@@ -904,8 +917,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return auth.currentUser?.email || null;
   });
   const [isFirebaseAdminConnected, setIsFirebaseAdminConnected] = useState<boolean>(() => {
-    return Boolean(auth.currentUser?.email === 'buyonebd@gmail.com' && auth.currentUser?.emailVerified);
+    return Boolean(auth.currentUser?.email?.toLowerCase() === 'buyonebd@gmail.com' && auth.currentUser?.emailVerified);
   });
+  const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
+  const [lastCloudSyncAt, setLastCloudSyncAt] = useState<string | null>(null);
+
+  const isFirebaseAdminConnectedRef = useRef(isFirebaseAdminConnected);
+  isFirebaseAdminConnectedRef.current = isFirebaseAdminConnected;
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -914,6 +932,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const isBootstrappedEmail = user.email.toLowerCase() === 'buyonebd@gmail.com' && user.emailVerified;
         if (isBootstrappedEmail) {
           setIsFirebaseAdminConnected(true);
+          setCloudSyncError(null);
           ensureAdminDocInFirestore().catch(() => {});
           if (isHossainPathInitial()) {
             setIsAdminLoggedIn(true);
@@ -924,9 +943,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         } else {
           try {
             const admSnap = await getDoc(doc(db, 'admins', user.uid));
-            setIsFirebaseAdminConnected(admSnap.exists());
-          } catch {
+            const allowed = admSnap.exists();
+            setIsFirebaseAdminConnected(allowed);
+            if (!allowed) {
+              setCloudSyncError(
+                t(
+                  `ইমেইল '${user.email}' অ্যাডমিন হিসেবে অনুমোদিত নয়। অনুগ্রহ করে buyonebd@gmail.com ব্যবহার করুন।`,
+                  `Signed in as '${user.email}', which is not authorized in Firestore admins. Please use buyonebd@gmail.com.`
+                )
+              );
+            } else {
+              setCloudSyncError(null);
+            }
+          } catch (err) {
             setIsFirebaseAdminConnected(false);
+            setCloudSyncError(extractFirestoreErrorReason(err));
           }
         }
       } else {
@@ -939,42 +970,84 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const signInAdminWithGoogle = async (): Promise<boolean> => {
     try {
+      setCloudSyncError(null);
       const cred = await signInWithPopup(auth, googleProvider);
       const email = cred.user?.email?.toLowerCase() || '';
       setFirebaseAdminUserEmail(cred.user?.email || null);
-      if (email === 'buyonebd@gmail.com' || email === 'hossain@gmail.com') {
+
+      const isBootstrappedAdmin = email === 'buyonebd@gmail.com' && Boolean(cred.user?.emailVerified);
+      let isAuthorizedAdmin = isBootstrappedAdmin;
+
+      if (isBootstrappedAdmin) {
         await ensureAdminDocInFirestore().catch(() => {});
+      } else {
+        const admSnap = await getDoc(doc(db, 'admins', cred.user.uid)).catch(() => null);
+        isAuthorizedAdmin = Boolean(admSnap && admSnap.exists());
+      }
+
+      if (isAuthorizedAdmin) {
         setIsFirebaseAdminConnected(true);
         setIsAdminLoggedIn(true);
         localStorage.setItem(LOCAL_STORAGE_ADMIN_AUTH, 'true');
         setIsAdminLoginOpen(false);
         setActiveView('admin');
+        setCloudSyncError(null);
+
+        let cloudCount = 0;
+        try {
+          const fsOrders = await fetchOrdersFromFirestore();
+          const fsIds = new Set(fsOrders.map((o) => o.id));
+          // Push any local orders created before Cloud Sync was connected so other devices see them too
+          const localOnlyOrders = ordersRef.current.filter((o) => o && o.id && !fsIds.has(o.id));
+          for (const localOrd of localOnlyOrders.slice(0, 50)) {
+            await writeOrderToFirestore(localOrd, true).catch(() => {});
+          }
+          const finalOrders = await fetchOrdersFromFirestore();
+          cloudCount = finalOrders.length;
+          if (finalOrders.length > 0) {
+            mergeRemoteOrders(finalOrders, new Set(), false);
+          }
+          setLastCloudSyncAt(new Date().toLocaleTimeString());
+        } catch (syncErr) {
+          setCloudSyncError(extractFirestoreErrorReason(syncErr));
+        }
+
         addToast(
           'success',
           t('ক্লাউড অর্ডার সিঙ্ক সক্রিয় হয়েছে!', 'Cloud Order Sync Connected!'),
-          t(`Firebase সেশন: ${cred.user.email} • সব ডিভাইসের অর্ডার রিয়েল-টাইম আসবে।`, `Signed in as ${cred.user.email} for live cross-device order sync.`)
+          t(
+            `Firebase সেশন: ${cred.user.email} • ক্লাউডে ${cloudCount}টি অর্ডার পাওয়া গেছে।`,
+            `Signed in as ${cred.user.email} • Loaded ${cloudCount} cloud orders.`
+          )
         );
         return true;
       }
-      // Verify if UID exists in admins collection
-      const admSnap = await getDoc(doc(db, 'admins', cred.user.uid)).catch(() => null);
-      if (admSnap && admSnap.exists()) {
-        setIsFirebaseAdminConnected(true);
-        setIsAdminLoggedIn(true);
-        localStorage.setItem(LOCAL_STORAGE_ADMIN_AUTH, 'true');
-        setIsAdminLoginOpen(false);
-        setActiveView('admin');
-        addToast('success', t('ক্লাউড সিঙ্ক সক্রিয়!', 'Cloud Sync Connected!'), cred.user.email || '');
-        return true;
-      }
-      addToast(
-        'warning',
-        t('অ্যাডমিন অনুমোদিত ইমেইল নয়', 'Non-Admin Google Account'),
-        t('ক্লাউড সিঙ্কের জন্য অনুগ্রহ করে buyonebd@gmail.com দিয়ে সাইন ইন করুন।', 'Please sign in with buyonebd@gmail.com for Firestore order streaming.')
+
+      const deniedMsg = t(
+        `ক্লাউড সিঙ্কের জন্য অনুগ্রহ করে buyonebd@gmail.com দিয়ে সাইন ইন করুন (${cred.user.email} অনুমোদিত নয়)।`,
+        `Please sign in with buyonebd@gmail.com for Firestore order streaming (${cred.user.email} is not an admin).`
       );
+      setIsFirebaseAdminConnected(false);
+      setCloudSyncError(deniedMsg);
+      addToast('warning', t('অ্যাডমিন অনুমোদিত ইমেইল নয়', 'Non-Admin Google Account'), deniedMsg);
       return false;
     } catch (err: any) {
-      addToast('error', t('Google সাইন-ইন ব্যর্থ', 'Google Sign-In Cancelled'), err?.message || 'Popup closed or blocked.');
+      const code = String(err?.code || '');
+      let friendlyMsg = err?.message || 'Popup closed or blocked.';
+      if (code === 'auth/unauthorized-domain') {
+        const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+        friendlyMsg = t(
+          `ডোমেইন '${host}' Firebase Auth-এ অনুমোদিত নয়। Firebase Console > Authentication > Settings > Authorized domains-এ '${host}' যোগ করুন।`,
+          `Domain '${host}' is not authorized in Firebase Auth. Add '${host}' in Firebase Console > Authentication > Settings > Authorized domains.`
+        );
+      } else if (code === 'auth/popup-blocked') {
+        friendlyMsg = t(
+          'ব্রাউজার পপআপ ব্লক করেছে! অ্যাড্রেস বার থেকে পপআপ Allow করে আবার চেষ্টা করুন।',
+          'Browser blocked Google sign-in popup. Allow popups for this site and click Connect again.'
+        );
+      }
+      setCloudSyncError(friendlyMsg);
+      addToast('error', t('Google সাইন-ইন ব্যর্থ', 'Google Sign-In Failed'), friendlyMsg);
       return false;
     }
   };
@@ -984,6 +1057,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await signOut(auth);
       setFirebaseAdminUserEmail(null);
       setIsFirebaseAdminConnected(false);
+      setCloudSyncError(null);
     } catch {}
   };
 
@@ -1164,6 +1238,28 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     localStorage.setItem('buyonebd_customer_profile_v3', JSON.stringify(customerProfile));
   }, [customerProfile]);
+
+  const [recentlyViewedIds, setRecentlyViewedIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_RECENTLY_VIEWED);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((id): id is string => typeof id === 'string' && id.trim().length > 0).slice(0, 5);
+        }
+      }
+      if (Array.isArray(customerProfile.browsingHistory) && customerProfile.browsingHistory.length > 0) {
+        return customerProfile.browsingHistory.slice(0, 5);
+      }
+    } catch {}
+    return [];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_RECENTLY_VIEWED, JSON.stringify(recentlyViewedIds.slice(0, 5)));
+    } catch {}
+  }, [recentlyViewedIds]);
 
   const [isCustomerDashboardOpen, setIsCustomerDashboardOpen] = useState(false);
   const [selectedProductForPage, setSelectedProductForPage] = useState<Product | null>(null);
@@ -1352,12 +1448,28 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const recordProductView = (productId: string) => {
+    if (!productId) return;
+    setRecentlyViewedIds((prev) => {
+      if (prev[0] === productId) return prev;
+      const next = [productId, ...prev.filter((id) => id !== productId)].slice(0, 5);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_RECENTLY_VIEWED, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     setCustomerProfile((prev) => {
       const history = prev.browsingHistory || [];
       if (history[0] === productId) return prev;
-      const nextHistory = [productId, ...history.filter((id) => id !== productId)].slice(0, 12);
+      const nextHistory = [productId, ...history.filter((id) => id !== productId)].slice(0, 5);
       return { ...prev, browsingHistory: nextHistory };
     });
+  };
+
+  const clearRecentlyViewed = () => {
+    setRecentlyViewedIds([]);
+    try {
+      localStorage.removeItem(LOCAL_STORAGE_RECENTLY_VIEWED);
+    } catch {}
   };
 
   const claimDailyCheckIn = () => {
@@ -2597,30 +2709,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       hasHydratedFromServerRef.current = true;
     }
 
-    // 2. Also pull from Firestore directly when admin manually requests sync or on static hosts
+    // 2. Also pull from Firestore directly so static hosts (e.g. Vercel) & multi-device deployments stay synced
     try {
-      const cfgSnap = await getDoc(doc(db, 'storefront', 'public'));
-      if (cfgSnap.exists() && Date.now() - lastLocalMutationAtRef.current >= 3000) {
-        setSettings((prev) => mergeSettings({ ...prev, ...cfgSnap.data() }));
+      const cfgData = await fetchStorefrontSettingsFromFirestore();
+      if (cfgData && Date.now() - lastLocalMutationAtRef.current >= 3000) {
+        setSettings((prev) => mergeSettings({ ...prev, ...cfgData }));
       }
-      const prodSnap = await getDocs(collection(db, 'products'));
-      if (!prodSnap.empty && Date.now() - lastLocalMutationAtRef.current >= 3000) {
-        const fsProducts = prodSnap.docs.map((d) => ({ ...d.data(), id: d.id } as Product));
+      const fsProducts = await fetchProductsFromFirestore();
+      if (fsProducts.length > 0 && Date.now() - lastLocalMutationAtRef.current >= 3000) {
         setProducts((prev) => {
           const map = new Map(prev.map((p) => [p.id, p]));
           fsProducts.forEach((p) => map.set(p.id, p));
           return Array.from(map.values());
         });
       }
-      if (isFirebaseAdminConnected) {
-        const ordSnap = await getDocs(collection(db, 'orders'));
-        if (!ordSnap.empty) {
-          const fsOrders = ordSnap.docs.map((d) => ({ ...d.data(), id: d.id } as Order));
+      if (isFirebaseAdminConnectedRef.current) {
+        const fsOrders = await fetchOrdersFromFirestore();
+        if (fsOrders.length > 0) {
           mergeRemoteOrders(fsOrders, new Set(), notifyOnNewOrders);
         }
+        setLastCloudSyncAt(new Date().toLocaleTimeString());
+        setCloudSyncError(null);
       }
-    } catch {
-      // non-fatal if not signed in as admin for orders
+    } catch (err) {
+      if (isFirebaseAdminConnectedRef.current) {
+        setCloudSyncError(extractFirestoreErrorReason(err));
+      }
     }
   };
 
@@ -2637,7 +2751,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const pollInterval = setInterval(
       () => fetchStoreSnapshotFromServer(true),
-      activeViewRef.current === 'admin' ? 3500 : 6000
+      activeView === 'admin' ? 3000 : 6000
     );
 
     return () => {
@@ -2645,7 +2759,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       window.removeEventListener('focus', handleVisibilityOrFocus);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
     };
-  }, []);
+  }, [activeView]);
 
   // Real-time Firestore Listeners for Storefront Public Config & Catalog Products (all visitors)
   useEffect(() => {
@@ -2659,7 +2773,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setSettings((prev) => mergeSettings({ ...prev, ...remote }));
         }
       },
-      () => {}
+      (err) => {
+        try {
+          handleFirestoreError(err, OperationType.GET, 'storefront/public');
+        } catch (wrappedErr) {
+          console.error(wrappedErr);
+        }
+      }
     );
 
     const unsubProducts = onSnapshot(
@@ -2674,7 +2794,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return Array.from(map.values());
         });
       },
-      () => {}
+      (err) => {
+        try {
+          handleFirestoreError(err, OperationType.LIST, 'products');
+        } catch (wrappedErr) {
+          console.error(wrappedErr);
+        }
+      }
     );
 
     return () => {
@@ -2692,10 +2818,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       (snap) => {
         const fsOrders = snap.docs.map((d) => ({ ...d.data(), id: d.id } as Order));
         mergeRemoteOrders(fsOrders, new Set(), !isInitialBatch);
+        setLastCloudSyncAt(new Date().toLocaleTimeString());
+        setCloudSyncError(null);
         isInitialBatch = false;
       },
       (err) => {
-        console.warn('Firestore orders listener warning:', err?.message || err);
+        setCloudSyncError(extractFirestoreErrorReason(err));
+        try {
+          handleFirestoreError(err, OperationType.LIST, 'orders');
+        } catch (wrappedErr) {
+          console.error(wrappedErr);
+        }
       }
     );
     return () => unsubOrders();
@@ -3815,7 +3948,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     const discount = (orderData.discountAmount || 0) + walletUsed;
     const total = Math.max(0, subtotal + fee - discount);
-    const orderIdNum = Math.floor(10000 + Math.random() * 90000);
+    const orderIdNum = `${Date.now().toString().slice(-5)}${Math.floor(100 + Math.random() * 900)}`;
     const newOrderId = orderData.source === 'pos' ? `POS-${orderIdNum}` : `BD-${orderIdNum}`;
 
     const courierProviders: CourierProvider[] = ['Steadfast', 'Pathao', 'RedX'];
@@ -3906,14 +4039,47 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
 
     // Immediately persist atomically to BOTH Express API and Cloud Firestore so all devices/browsers receive it live
+    let expressSaved = false;
     fetch('/api/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ order: newOrder })
-    }).catch(() => {});
-    writeOrderToFirestore(newOrder).catch((err) => {
-      console.warn('Firestore order sync warning:', err?.message || err);
-    });
+    })
+      .then((r) => {
+        expressSaved = r.ok;
+      })
+      .catch(() => {});
+
+    const allowAdminStatus = isFirebaseAdminConnectedRef.current;
+    writeOrderToFirestore(newOrder, allowAdminStatus)
+      .then(() => {
+        setLastCloudSyncAt(new Date().toLocaleTimeString());
+        setCloudSyncError(null);
+      })
+      .catch((firstErr) => {
+        setTimeout(() => {
+          writeOrderToFirestore(newOrder, allowAdminStatus)
+            .then(() => {
+              setLastCloudSyncAt(new Date().toLocaleTimeString());
+              setCloudSyncError(null);
+            })
+            .catch((err) => {
+              const reason = extractFirestoreErrorReason(err || firstErr);
+              setCloudSyncError(reason);
+              console.error('Firestore order sync error:', reason);
+              if (!expressSaved) {
+                addToast(
+                  'warning',
+                  t('ক্লাউড সিঙ্ক সতর্কতা', 'Cloud Order Sync Delayed'),
+                  t(
+                    'অর্ডার লোকালভাবে সংরক্ষিত হয়েছে, তবে ক্লাউড সিঙ্কে সমস্যা হয়েছে।',
+                    'Order saved locally, but cloud order sync encountered an error.'
+                  )
+                );
+              }
+            });
+        }, 1500);
+      });
 
     // Send automatic SMTP Order Confirmation Email if configured & enabled
     if (settings.smtpSettings?.enabled && settings.smtpSettings?.sendOnOrderConfirmation) {
@@ -4169,32 +4335,48 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setOrders((prev) =>
         prev.map((ord) => {
           if (ord.id === orderId) {
-            return {
-              ...ord,
-              status: confirmed ? 'ai_confirmed' : 'cancelled',
-              aiCallStatus: {
-                called: true,
-                callTimestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-                confirmedByCustomer: confirmed,
-                durationSeconds: Math.floor(25 + Math.random() * 20),
-                notes: confirmed ? 'Customer confirmed order verbally/via keypad during AI auto-call' : 'Customer cancelled order during call',
-                transcript: transcriptLog
-              },
-              courier: confirmed
-                ? {
-                    ...ord.courier,
-                    history: [
-                      ...ord.courier.history,
-                      {
-                        status: 'AI Call Verified',
-                        time: 'Just now',
-                        location: 'Automated System',
-                        note: 'Customer confirmed parcel receipt via AI Call'
-                      }
-                    ]
-                  }
-                : ord.courier
+            const nextStatus: OrderStatus = confirmed ? 'ai_confirmed' : 'cancelled';
+            const nextAiCallStatus = {
+              called: true,
+              callTimestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+              confirmedByCustomer: confirmed,
+              durationSeconds: Math.floor(25 + Math.random() * 20),
+              notes: confirmed ? 'Customer confirmed order verbally/via keypad during AI auto-call' : 'Customer cancelled order during call',
+              transcript: transcriptLog
             };
+            const nextCourier = confirmed
+              ? {
+                  ...ord.courier,
+                  history: [
+                    ...ord.courier.history,
+                    {
+                      status: 'AI Call Verified',
+                      time: 'Just now',
+                      location: 'Automated System',
+                      note: 'Customer confirmed parcel receipt via AI Call'
+                    }
+                  ]
+                }
+              : ord.courier;
+            const updatedOrder: Order = {
+              ...ord,
+              status: nextStatus,
+              aiCallStatus: nextAiCallStatus,
+              courier: nextCourier
+            };
+            fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                updates: {
+                  status: nextStatus,
+                  aiCallStatus: nextAiCallStatus,
+                  courier: nextCourier
+                }
+              })
+            }).catch(() => {});
+            updateOrderInFirestore(updatedOrder).catch(() => {});
+            return updatedOrder;
           }
           return ord;
         })
@@ -4534,6 +4716,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         logoutAdmin,
         firebaseAdminUserEmail,
         isFirebaseAdminConnected,
+        cloudSyncError,
+        lastCloudSyncAt,
         signInAdminWithGoogle,
         signOutAdminFirebase,
         spinRewards,
@@ -4587,7 +4771,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         customerProfile,
         updateCustomerProfile,
         saveSpinCoupon,
+        recentlyViewedIds,
         recordProductView,
+        clearRecentlyViewed,
         claimDailyCheckIn,
         redeemLoyaltyPoints,
         isCustomerDashboardOpen,

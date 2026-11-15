@@ -12,6 +12,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
     setIsAdminLoginOpen,
     loginAdmin,
     signInAdminWithGoogle,
+    cloudSyncError,
     isAdminLoggedIn,
     goHome,
     t
@@ -106,10 +107,10 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
           </div>
 
           {/* Error Banner */}
-          {error && (
-            <div className="mb-4 p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 text-xs flex items-center gap-2 animate-shake">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{error}</span>
+          {(error || cloudSyncError) && (
+            <div className="mb-4 p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 text-xs flex items-start gap-2 animate-shake">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{error || cloudSyncError}</span>
             </div>
           )}
 
@@ -182,16 +183,22 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
               type="button"
               disabled={isLoading}
               onClick={handleGoogleSyncLogin}
-              className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-700 text-emerald-300 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-md shadow-sky-600/20"
             >
-              <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+              <Sparkles className="w-4 h-4 text-sky-100 shrink-0" />
               <span>
                 {t(
-                  'Google Cloud Sync দিয়ে প্রবেশ করুন (সকল ডিভাইস অর্ডার)',
-                  'Connect Google Cloud Sync (buyonebd@gmail.com)'
+                  'Google Cloud Sync দিয়ে প্রবেশ করুন (buyonebd@gmail.com)',
+                  'Sign In with Google Cloud Sync (buyonebd@gmail.com)'
                 )}
               </span>
             </button>
+            <p className="text-[11px] text-center text-slate-500 dark:text-slate-400 leading-snug">
+              {t(
+                'অন্যান্য মোবাইল ও ব্রাউজারের অর্ডার লাইভ পেতে Google (buyonebd@gmail.com) সিঙ্ক করুন।',
+                'Recommended: Connect buyonebd@gmail.com to stream live orders from all phones and browsers.'
+              )}
+            </p>
 
             <div className="text-center">
               <span className="text-[11px] text-slate-400 dark:text-slate-500">

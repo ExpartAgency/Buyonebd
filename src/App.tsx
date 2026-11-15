@@ -20,7 +20,7 @@ import { LuckySpinModal, LuckySpinLeftLauncher } from './components/spin/LuckySp
 import { SingleProductView } from './components/home/SingleProductView';
 import { CustomerDashboardModal } from './components/customer/CustomerDashboardModal';
 import { Product } from './types';
-import { Flame, PackageSearch, Clock, ShieldCheck, Truck, Award, Sparkles, X, Copy, Gift } from 'lucide-react';
+import { Flame, PackageSearch, Clock, ShieldCheck, Truck, Award, Sparkles, X, Copy, Gift, History, Trash2 } from 'lucide-react';
 
 function StoreMainContent() {
   const {
@@ -46,6 +46,8 @@ function StoreMainContent() {
     setIsSpinOpen,
     isMobileCategoryDrawerOpen,
     setIsMobileCategoryDrawerOpen,
+    recentlyViewedIds,
+    clearRecentlyViewed,
     addToast
   } = useStore();
 
@@ -190,6 +192,16 @@ function StoreMainContent() {
     }
     return list;
   }, [products, searchQuery, selectedCategory, selectedSubcategory, sortBy]);
+
+  // Last 5 clicked products tracked in localStorage
+  const recentlyViewedProducts = useMemo(
+    () =>
+      recentlyViewedIds
+        .map((id) => products.find((p) => p.id === id))
+        .filter((p): p is Product => Boolean(p))
+        .slice(0, 5),
+    [recentlyViewedIds, products]
+  );
 
   // View: Admin Dashboard (strictly guarded by isAdminLoggedIn so /hossain always shows login popup first)
   if (activeView === 'admin') {
@@ -511,6 +523,65 @@ function StoreMainContent() {
             </div>
           </section>
         )}
+
+        {/* Recently Viewed Section (Last 5 clicked products from localStorage) */}
+        {storeSubView === 'home' &&
+          searchQuery.trim() === '' &&
+          selectedCategory === 'all' &&
+          recentlyViewedProducts.length > 0 && (
+            <section
+              aria-labelledby="recently-viewed-heading"
+              className="p-4 sm:p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/70 dark:border-emerald-800/50 flex items-center justify-center shrink-0">
+                    <History className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2
+                      id="recently-viewed-heading"
+                      className="font-display text-base sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight truncate"
+                    >
+                      {t('সম্প্রতি দেখা পণ্য', 'Recently Viewed')}
+                    </h2>
+                    <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                      {t(
+                        `আপনার সর্বশেষ দেখা ${recentlyViewedProducts.length}টি পণ্য (সর্বোচ্চ ৫টি সংরক্ষিত)`,
+                        `Last ${recentlyViewedProducts.length} of 5 products you clicked`
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearRecentlyViewed();
+                    addToast(
+                      'info',
+                      t('ইতিহাস মুছে ফেলা হয়েছে', 'History Cleared'),
+                      t('সম্প্রতি দেখা পণ্যের তালিকা পরিষ্কার করা হয়েছে।', 'Your recently viewed list has been cleared.')
+                    );
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>{t('তালিকা মুছুন', 'Clear History')}</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+                {recentlyViewedProducts.map((prod) => (
+                  <ProductCard
+                    key={`recent-${prod.id}`}
+                    product={prod}
+                    onViewDetails={(p) => openProductPage(p)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
 
         {/* Section Title & Filter Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">

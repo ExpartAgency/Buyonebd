@@ -187,6 +187,8 @@ export const AdminDashboard: React.FC = () => {
     clearAppCache,
     firebaseAdminUserEmail,
     isFirebaseAdminConnected,
+    cloudSyncError,
+    lastCloudSyncAt,
     signInAdminWithGoogle,
     generateBrandColorAttributes
   } = useStore();
@@ -2580,7 +2582,10 @@ export const AdminDashboard: React.FC = () => {
                   ) : (
                     <span className="px-2.5 py-1 rounded-xl bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 text-[11px] font-bold flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span>{at('লাইভ ক্লাউড সিঙ্ক চালু', 'Live Cloud Active')}</span>
+                      <span>
+                        {at('লাইভ ক্লাউড সিঙ্ক চালু', 'Live Cloud Active')}
+                        {lastCloudSyncAt ? ` • ${lastCloudSyncAt}` : ''}
+                      </span>
                     </span>
                   )}
                   <button
@@ -2590,7 +2595,22 @@ export const AdminDashboard: React.FC = () => {
                       setIsSyncingOrders(true);
                       await syncStoreFromServer();
                       setIsSyncingOrders(false);
-                      addToast('success', at('সার্ভার থেকে সিঙ্ক সম্পন্ন', 'Synced with Server'), at('সকল ডিভাইসের সর্বশেষ অর্ডার লোড হয়েছে।', 'Fetched latest cross-device orders.'));
+                      if (isFirebaseAdminConnected) {
+                        addToast(
+                          'success',
+                          at('সার্ভার ও ক্লাউড থেকে সিঙ্ক সম্পন্ন', 'Synced with Cloud & Server'),
+                          at('সকল ডিভাইসের সর্বশেষ অর্ডার লোড হয়েছে।', 'Fetched latest cross-device orders from Firestore & server.')
+                        );
+                      } else {
+                        addToast(
+                          'warning',
+                          at('শুধুমাত্র লোকাল সার্ভার চেক হয়েছে', 'Local Server Synced Only'),
+                          at(
+                            'অন্য ডিভাইস / ব্রাউজার / মোবাইল থেকে অর্ডার আনতে "অন্য ডিভাইসের অর্ডার সিঙ্ক করুন" (buyonebd@gmail.com) কানেক্ট করুন।',
+                            'Connect Google Cloud Sync (buyonebd@gmail.com) to fetch orders placed on other phones or browsers.'
+                          )
+                        );
+                      }
                     }}
                     className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-emerald-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
                   >
@@ -2607,6 +2627,54 @@ export const AdminDashboard: React.FC = () => {
                   </button>
                 </div>
               </div>
+
+              {/* Prominent Cloud Sync Required Banner when logged in with local password only */}
+              {!isFirebaseAdminConnected && (
+                <div className="p-4 rounded-2xl bg-sky-950/50 border border-sky-700/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="text-xs sm:text-sm font-extrabold text-sky-200 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-sky-400 shrink-0" />
+                      <span>
+                        {at(
+                          'অন্য ডিভাইস / মোবাইল থেকে আসা অর্ডার দেখতে Google Cloud Sync কানেক্ট করুন',
+                          'Connect Google Cloud Sync to Receive Orders from Other Devices & Mobile'
+                        )}
+                      </span>
+                    </p>
+                    <p className="text-[11px] text-sky-300/80">
+                      {at(
+                        'আপনি লোকাল পাসওয়ার্ড দিয়ে প্রবেশ করেছেন। রিয়েল-টাইম সব ডিভাইসের অর্ডার পেতে অনুমোদিত Google অ্যাকাউন্ট (buyonebd@gmail.com) দিয়ে একবার সাইন-ইন করুন।',
+                        'You are currently signed in locally. Connect buyonebd@gmail.com once to stream all live orders from phones, browsers, and Vercel.'
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => signInAdminWithGoogle()}
+                    className="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-black text-xs whitespace-nowrap flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-sky-500/20 shrink-0"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>{at('Google দিয়ে সিঙ্ক চালু করুন', 'Connect buyonebd@gmail.com')}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Cloud Sync Diagnostic Error Banner (never silent) */}
+              {cloudSyncError && (
+                <div className="p-3.5 rounded-2xl bg-rose-950/60 border border-rose-700/70 text-rose-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <span>{cloudSyncError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => signInAdminWithGoogle()}
+                    className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] whitespace-nowrap cursor-pointer shrink-0"
+                  >
+                    {at('পুনরায় কানেক্ট করুন', 'Reconnect Cloud')}
+                  </button>
+                </div>
+              )}
 
               {/* WooCommerce-Style Horizontal Status Filter Tabs with Counts */}
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs border-b border-slate-800 pb-3">
@@ -2803,8 +2871,28 @@ export const AdminDashboard: React.FC = () => {
                     <tbody className="divide-y divide-slate-800">
                       {paginatedOrders.length === 0 ? (
                         <tr>
-                          <td colSpan={11} className="py-10 text-center text-slate-500">
-                            {at('এই ফিল্টারে কোনো অর্ডার পাওয়া যায়নি।', 'No orders match the current filters.')}
+                          <td colSpan={11} className="py-10 px-4 text-center text-slate-400">
+                            <p className="font-semibold">
+                              {at('এই ফিল্টারে কোনো অর্ডার পাওয়া যায়নি।', 'No orders match the current filters.')}
+                            </p>
+                            {!isFirebaseAdminConnected && (
+                              <div className="mt-3 flex flex-col items-center gap-2">
+                                <p className="text-[11px] text-sky-300 max-w-md">
+                                  {at(
+                                    'অন্য ডিভাইস/মোবাইল থেকে আসা অর্ডার লোড করতে Google Cloud Sync চালু করুন।',
+                                    'Enable Google Cloud Sync (buyonebd@gmail.com) to load orders placed from mobile phones or other browsers.'
+                                  )}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => signInAdminWithGoogle()}
+                                  className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                  <span>{at('অন্য ডিভাইসের অর্ডার সিঙ্ক করুন', 'Connect Cloud Orders')}</span>
+                                </button>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       ) : (

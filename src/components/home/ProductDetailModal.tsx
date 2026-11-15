@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
   Star,
@@ -34,8 +34,15 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
     addToast,
     reviews,
     addProductReview,
-    addPriceAlert
+    addPriceAlert,
+    recordProductView
   } = useStore();
+
+  useEffect(() => {
+    if (product?.id) {
+      recordProductView(product.id);
+    }
+  }, [product?.id]);
 
   const [selectedImageIdx, setSelectedImageIdx] = useState(0);
   const [selectedColor, setSelectedColor] = useState<string>('');

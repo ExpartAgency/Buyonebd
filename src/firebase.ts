@@ -4,6 +4,7 @@ import {
   getFirestore,
   doc,
   getDoc,
+  getDocs,
   getDocFromServer,
   setDoc,
   deleteDoc,
@@ -116,44 +117,117 @@ const ALLOWED_PRODUCT_KEYS = [
   'featuresBn', 'videoUrl', 'warrantyInfo', 'warrantyInfoBn', 'seo'
 ] as const;
 
+function safeNum(val: unknown, fallback = 0): number {
+  const n = Number(val);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+export function extractFirestoreErrorReason(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err || 'Firestore error');
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && parsed.error) {
+      return `${parsed.error}${parsed.path ? ` (${parsed.path})` : ''}`;
+    }
+  } catch {}
+  return raw;
+}
+
 function sanitizeOrderForFirestore(order: Order) {
-  const cleanItems = (order.items || []).slice(0, 50).map((it) => ({
-    ...stripUndefinedDeep(it),
-    image: it.image && (!it.image.startsWith('data:') || it.image.length < 150000) ? it.image : ''
-  }));
+  const cleanItems = (order.items || [])
+    .filter(Boolean)
+    .slice(0, 50)
+    .map((it) => ({
+      ...stripUndefinedDeep(it),
+      productId: String(it.productId || 'prod-item').slice(0, 80),
+      productTitle: String(it.productTitle || 'Product').slice(0, 200),
+      productTitleBn: String(it.productTitleBn || it.productTitle || 'পণ্য').slice(0, 240),
+      price: safeNum(it.price, 0),
+      quantity: Math.max(1, Math.round(safeNum(it.quantity, 1))),
+      image: it.image && (!it.image.startsWith('data:') || it.image.length < 35000) ? it.image : ''
+    }));
+
+  if (cleanItems.length === 0) {
+    cleanItems.push({
+      productId: 'item-1',
+      productTitle: 'Store Order Item',
+      productTitleBn: 'স্টোর পণ্য',
+      price: safeNum(order.pricing?.total, 0),
+      quantity: 1,
+      image: ''
+    });
+  }
+
+  const rawPhone = String(order.customer?.phone || '').trim();
+  const safePhone = (rawPhone.length >= 6 ? rawPhone : '01700000000').slice(0, 32);
+  const safeName = (String(order.customer?.name || '').trim() || 'Customer').slice(0, 120);
+  const safeAddress = (String(order.customer?.address || '').trim() || 'Bangladesh').slice(0, 400);
+  const safeDistrict = (String(order.customer?.district || '').trim() || 'Dhaka').slice(0, 120);
+  const safeThana = String(order.customer?.thana || '').trim().slice(0, 120);
+  const safeNote = String(order.customer?.note || '').trim().slice(0, 300);
+
+  const validZone =
+    order.deliveryZone === 'dhaka_inside' ||
+    order.deliveryZone === 'dhaka_sub' ||
+    order.deliveryZone === 'dhaka_outside'
+      ? order.deliveryZone
+      : 'dhaka_inside';
+
+  const pricingClean = stripUndefinedDeep({
+    subtotal: safeNum(order.pricing?.subtotal, 0),
+    deliveryFee: safeNum(order.pricing?.deliveryFee, 0),
+    discount: safeNum(order.pricing?.discount, 0),
+    total: safeNum(order.pricing?.total, 0),
+    ...(order.pricing?.advancePaid !== undefined ? { advancePaid: safeNum(order.pricing.advancePaid, 0) } : {})
+  });
+
+  const paymentClean = stripUndefinedDeep({
+    ...(order.payment || {}),
+    method: String(order.payment?.method || 'cod').slice(0, 30),
+    status: String(order.payment?.status || 'pending').slice(0, 30),
+    ...(order.payment?.dueAmount !== undefined ? { dueAmount: safeNum(order.payment.dueAmount, 0) } : {})
+  });
+
+  const cleanId = String(order.id || `BD-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64);
+
   return {
-    id: order.id,
+    id: cleanId,
     customer: {
-      name: (order.customer?.name || 'Customer').slice(0, 120),
-      phone: (order.customer?.phone || '01700000000').slice(0, 32),
-      address: (order.customer?.address || 'Bangladesh').slice(0, 400),
-      district: (order.customer?.district || 'Dhaka').slice(0, 120),
-      ...(order.customer?.thana ? { thana: order.customer.thana.slice(0, 120) } : {}),
-      ...(order.customer?.note ? { note: order.customer.note.slice(0, 300) } : {})
+      name: safeName,
+      phone: safePhone,
+      address: safeAddress,
+      district: safeDistrict,
+      ...(safeThana ? { thana: safeThana } : {}),
+      ...(safeNote ? { note: safeNote } : {})
     },
     items: cleanItems,
-    pricing: stripUndefinedDeep(order.pricing),
-    payment: stripUndefinedDeep(order.payment),
-    deliveryZone: order.deliveryZone || 'dhaka_inside',
+    pricing: pricingClean,
+    payment: paymentClean,
+    deliveryZone: validZone,
     status: order.status || 'pending',
-    aiCallStatus: stripUndefinedDeep(order.aiCallStatus),
-    courier: stripUndefinedDeep(order.courier),
-    fraudCheck: stripUndefinedDeep(order.fraudCheck),
-    source: order.source || 'online',
-    createdAt: order.createdAt || new Date().toISOString()
+    aiCallStatus: stripUndefinedDeep(order.aiCallStatus || { called: false }),
+    courier: stripUndefinedDeep(order.courier || { provider: 'Steadfast', trackingCode: '', status: 'booked', currentLocation: 'Warehouse', estimatedDelivery: '24-72h', history: [] }),
+    fraudCheck: stripUndefinedDeep(order.fraudCheck || { checked: true, successRate: 90, totalOrders: 1, deliveredCount: 1, cancelledCount: 0, riskLevel: 'safe', message: '' }),
+    source: order.source === 'pos' ? 'pos' : 'online',
+    createdAt: String(order.createdAt || new Date().toISOString()).slice(0, 64)
   };
 }
 
-export async function writeOrderToFirestore(order: Order): Promise<void> {
-  const path = `orders/${order.id}`;
+export async function writeOrderToFirestore(order: Order, allowAdminStatus = false): Promise<void> {
+  const base = sanitizeOrderForFirestore(order);
+  const path = `orders/${base.id}`;
   try {
-    const base = sanitizeOrderForFirestore(order);
+    const canUseAdminStatus = allowAdminStatus && Boolean(auth.currentUser);
+    const safeStatus =
+      base.status === 'pending' || base.status === 'partial' || canUseAdminStatus
+        ? base.status
+        : 'pending';
     const payload = stripUndefinedDeep({
       ...base,
-      status: base.status === 'pending' || base.status === 'partial' || auth.currentUser ? base.status : 'pending',
+      status: safeStatus,
       serverCreatedAt: serverTimestamp()
     });
-    await setDoc(doc(db, 'orders', order.id), payload);
+    await setDoc(doc(db, 'orders', base.id), payload);
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
   }
@@ -281,6 +355,37 @@ export async function ensureAdminDocInFirestore(): Promise<void> {
     );
   } catch {
     // non-fatal if non-admin user probes
+  }
+}
+
+export async function fetchStorefrontSettingsFromFirestore(): Promise<Record<string, any> | null> {
+  const path = 'storefront/public';
+  try {
+    const snap = await getDoc(doc(db, 'storefront', 'public'));
+    return snap.exists() ? (snap.data() as Record<string, any>) : null;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+  }
+}
+
+export async function fetchProductsFromFirestore(): Promise<Product[]> {
+  const path = 'products';
+  try {
+    const snap = await getDocs(collection(db, 'products'));
+    return snap.docs.map((d) => ({ ...d.data(), id: d.id } as Product));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function fetchOrdersFromFirestore(): Promise<Order[]> {
+  if (!auth.currentUser) return [];
+  const path = 'orders';
+  try {
+    const snap = await getDocs(collection(db, 'orders'));
+    return snap.docs.map((d) => ({ ...d.data(), id: d.id } as Order));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
   }
 }
 
