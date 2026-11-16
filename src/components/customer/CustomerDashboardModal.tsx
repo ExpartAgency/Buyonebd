@@ -662,43 +662,110 @@ export const CustomerDashboardModal: React.FC = () => {
                 )}
               </div>
 
-              {/* Loyalty Points Redemption */}
-              <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Award className="w-5 h-5 text-amber-500" />
-                    <h3 className="font-black text-sm text-slate-900 dark:text-white">
-                      {t('লয়্যালটি পয়েন্টস রিডিমেশন', 'Loyalty Points Redemption')}
-                    </h3>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    {t(
-                      `আপনার আছে ${customerProfile.loyaltyPoints} পয়েন্ট। ৫০ পয়েন্ট রিডিম করে ৳৫০ গিফট ওয়ালেটে যোগ করুন।`,
-                      `You have ${customerProfile.loyaltyPoints} points. Redeem 50 points for ৳50 wallet credit.`
-                    )}
-                  </p>
-                </div>
+              {/* Loyalty Points Rewards & Ledger */}
+              {(() => {
+                const lCfg = settings.loyaltySettings;
+                const ptsPer100 = lCfg?.pointsPer100Bdt ?? 5;
+                const bdtPerPt = lCfg?.bdtPerPoint ?? 1;
+                const minReqPts = lCfg?.minRedeemPoints ?? 10;
+                const pts = customerProfile.loyaltyPoints || 0;
+                const tier =
+                  pts >= 500
+                    ? { label: t('প্লাটিনাম এলিট', 'Platinum Elite'), nextTarget: 1000, badgeClass: 'bg-sky-500/15 text-sky-600 dark:text-sky-300' }
+                    : pts >= 200
+                    ? { label: t('গোল্ড মেম্বার', 'Gold VIP'), nextTarget: 500, badgeClass: 'bg-amber-500/15 text-amber-600 dark:text-amber-300' }
+                    : { label: t('সিলভার মেম্বার', 'Silver Member'), nextTarget: 200, badgeClass: 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300' };
+                const tierPct = Math.min(100, Math.round((pts / tier.nextTarget) * 100));
+                const historyList = customerProfile.loyaltyHistory || [];
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => handleRedeemPoints(50)}
-                    disabled={customerProfile.loyaltyPoints < 50}
-                    className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black text-xs shadow-md transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Award className="w-3.5 h-3.5" />
-                    <span>{t('৫০ পয়েন্ট = ৳৫০', '50 Pts → ৳50')}</span>
-                  </button>
-                  {customerProfile.loyaltyPoints >= 100 && (
-                    <button
-                      onClick={() => handleRedeemPoints(100)}
-                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md transition-all cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                      <span>{t('১০০ পয়েন্ট = ৳১০০', '100 Pts → ৳100')}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
+                return (
+                  <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Award className="w-5 h-5 text-amber-500 shrink-0" />
+                          <h3 className="font-black text-sm text-slate-900 dark:text-white">
+                            {t('লয়্যালটি পয়েন্টস ও রিওয়ার্ডস', 'Loyalty Points & Rewards')}
+                          </h3>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${tier.badgeClass}`}>
+                            {tier.label}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 tabular-nums">
+                          {t(
+                            `বর্তমান পয়েন্ট: ${pts} pts (৳${Math.round(pts * bdtPerPt)} সমমূল্য) • প্রতি ৳১০০ শপিংয়ে +${ptsPer100} পয়েন্ট`,
+                            `Balance: ${pts} pts (Worth ৳${Math.round(pts * bdtPerPt)}) • Earn +${ptsPer100} pts per ৳100 spent`
+                          )}
+                        </p>
+                        <div className="w-full max-w-xs h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                          <div className="h-full bg-amber-500 transition-all" style={{ width: `${tierPct}%` }} />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleRedeemPoints(minReqPts)}
+                          disabled={pts < minReqPts}
+                          className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black text-xs shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Award className="w-3.5 h-3.5" />
+                          <span>{t(`${minReqPts} পয়েন্ট → ৳${Math.round(minReqPts * bdtPerPt)}`, `${minReqPts} Pts → ৳${Math.round(minReqPts * bdtPerPt)}`)}</span>
+                        </button>
+                        {pts >= 50 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRedeemPoints(50)}
+                            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                            <span>{t(`৫০ পয়েন্ট → ৳${Math.round(50 * bdtPerPt)}`, `50 Pts → ৳${Math.round(50 * bdtPerPt)}`)}</span>
+                          </button>
+                        )}
+                        {pts >= Math.max(minReqPts, 100) && (
+                          <button
+                            type="button"
+                            onClick={() => handleRedeemPoints(pts)}
+                            className="px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-amber-300 border border-amber-500/30 font-black text-xs cursor-pointer"
+                          >
+                            {t(`সবগুলো (${pts}) রিডিম`, `Convert All (${pts})`)}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {historyList.length > 0 && (
+                      <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                        <span className="text-[11px] font-bold text-slate-500 block uppercase tracking-wider">
+                          {t('লয়্যালটি পয়েন্ট হিস্ট্রি', 'Points Activity History')}
+                        </span>
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                          {historyList.slice(0, 8).map((entry) => (
+                            <div
+                              key={entry.id}
+                              className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/70 flex items-center justify-between gap-2 text-xs"
+                            >
+                              <div className="min-w-0">
+                                <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">{entry.note}</p>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  {new Date(entry.date).toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US')}
+                                </span>
+                              </div>
+                              <span
+                                className={`font-mono font-black tabular-nums shrink-0 ${
+                                  entry.points >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'
+                                }`}
+                              >
+                                {entry.points >= 0 ? `+${entry.points}` : entry.points} pts
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Buyer Protection Guarantee Badge Strip (Temu Style) */}
               <div className="grid grid-cols-3 gap-2.5 text-center text-[11px] font-bold">

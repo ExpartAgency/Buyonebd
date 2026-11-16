@@ -36,6 +36,7 @@
         "promoCoupons": { "type": "array" },
         "deliveryBoys": { "type": "array" },
         "brandAttributes": { "type": "object" },
+        "loyaltySettings": { "type": "object" },
         "categories": { "type": "array" },
         "sliders": { "type": "array" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -94,7 +95,9 @@
           "type": "string",
           "enum": ["pending", "ai_confirmed", "processing", "on_hold", "shipped", "delivered", "partial", "cancelled"]
         },
+        "aiCallStatus": { "type": "object" },
         "courier": { "type": "object" },
+        "fraudCheck": { "type": "object" },
         "source": { "type": "string", "enum": ["online", "pos"] },
         "createdAt": { "type": "string", "format": "date-time" },
         "serverCreatedAt": { "type": "string", "format": "date-time" },
@@ -156,6 +159,7 @@
         "lastWalletCreditAt": { "type": "string", "maxLength": 64 },
         "browsingHistory": { "type": "array" },
         "savedCoupons": { "type": "array" },
+        "loyaltyHistory": { "type": "array" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "name", "phone", "walletBalance", "loyaltyPoints", "updatedAt"]

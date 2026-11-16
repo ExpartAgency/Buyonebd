@@ -56,6 +56,7 @@ export const AIVoiceCallModal: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastSpokenTranscriptIdxRef = useRef<number>(-1);
   const recognitionRef = useRef<any>(null);
+  const hasSubmittedDecisionRef = useRef(false);
 
   const isBackendBrowserCall = !!activeBrowserCall && activeBrowserCall.status !== 'ended';
   const linkedBrowserOrder = activeBrowserCall?.orderId
@@ -200,11 +201,12 @@ export const AIVoiceCallModal: React.FC = () => {
     }
   }, [isCallRinging, activeCallOrder, lang]);
 
-  // AI order call active flow
+  // AI order call active flow — immediately enable keypad ('confirming') on connect so [1] Confirm always responds
   useEffect(() => {
     if (isCallActive && activeCallOrder && !isBackendBrowserCall) {
+      hasSubmittedDecisionRef.current = false;
       setCallDuration(0);
-      setCallPhase('greeting');
+      setCallPhase('confirming');
       setShowOrderDetails(true);
       timerRef.current = setInterval(() => {
         setCallDuration((prev) => prev + 1);
@@ -212,18 +214,18 @@ export const AIVoiceCallModal: React.FC = () => {
 
       const scripts = buildGreetingScripts();
 
+      setTranscript([
+        {
+          speaker: 'ai',
+          text: scripts.en,
+          textBn: scripts.bn,
+          time: '00:01'
+        }
+      ]);
+
       const speakTimer = setTimeout(() => {
         speakText(lang === 'bn' ? scripts.bn : scripts.en);
-        setTranscript([
-          {
-            speaker: 'ai',
-            text: scripts.en,
-            textBn: scripts.bn,
-            time: '00:02'
-          }
-        ]);
-        setCallPhase('confirming');
-      }, 300);
+      }, 150);
 
       return () => {
         clearTimeout(speakTimer);
@@ -231,7 +233,8 @@ export const AIVoiceCallModal: React.FC = () => {
         stopAllAudio();
       };
     }
-  }, [isCallActive, activeCallOrder, isBackendBrowserCall]);
+    hasSubmittedDecisionRef.current = false;
+  }, [isCallActive, activeCallOrder?.id, isBackendBrowserCall]);
 
   const speakText = async (text: string) => {
     if (!isSpeakerOn || !text.trim()) return;
@@ -379,6 +382,8 @@ export const AIVoiceCallModal: React.FC = () => {
   };
 
   const handleKeyPress = (digit: string) => {
+    if (hasSubmittedDecisionRef.current) return;
+    hasSubmittedDecisionRef.current = true;
     audioEngine.playDtmfTone(digit);
 
     if (digit === '1') {
@@ -405,7 +410,7 @@ export const AIVoiceCallModal: React.FC = () => {
           speaker: 'ai' as const,
           text: confMsgEn,
           textBn: confMsgBn,
-          time: formatDuration(callDuration + 2)
+          time: formatDuration(callDuration + 1)
         }
       ];
       setTranscript(updatedTranscript);
@@ -416,7 +421,7 @@ export const AIVoiceCallModal: React.FC = () => {
       setTimeout(() => {
         stopAllAudio();
         finishAICall(true, updatedTranscript);
-      }, 2800);
+      }, 1300);
     } else if (digit === '2') {
       setCallPhase('finished_cancelled');
       const timeStr = formatDuration(callDuration);
@@ -437,7 +442,7 @@ export const AIVoiceCallModal: React.FC = () => {
           speaker: 'ai' as const,
           text: cancelMsgEn,
           textBn: cancelMsgBn,
-          time: formatDuration(callDuration + 2)
+          time: formatDuration(callDuration + 1)
         }
       ];
       setTranscript(updatedTranscript);
@@ -445,7 +450,7 @@ export const AIVoiceCallModal: React.FC = () => {
       setTimeout(() => {
         stopAllAudio();
         finishAICall(false, updatedTranscript);
-      }, 2800);
+      }, 1300);
     }
   };
 

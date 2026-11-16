@@ -7,6 +7,7 @@ import {
   getDocs,
   getDocFromServer,
   setDoc,
+  updateDoc,
   deleteDoc,
   serverTimestamp,
   collection,
@@ -130,7 +131,7 @@ const ALLOWED_PUBLIC_SETTINGS_KEYS = [
   'paymentSettings', 'aiCallSettings', 'announcementBar', 'theme', 'themeColors',
   'cmsTexts', 'spinSettings', 'whatsappTemplates', 'marketingTemplates',
   'aiSettings', 'seoSettings', 'flashSale', 'footerSettings', 'singleProductCms',
-  'organicMarketing', 'walletSettings', 'promoCoupons', 'deliveryBoys', 'brandAttributes'
+  'organicMarketing', 'walletSettings', 'promoCoupons', 'deliveryBoys', 'brandAttributes', 'loyaltySettings'
 ] as const;
 
 const ALLOWED_PRODUCT_KEYS = [
@@ -218,7 +219,11 @@ function sanitizeOrderForFirestore(order: Order) {
     deliveryFee: safeNum(order.pricing?.deliveryFee, 0),
     discount: safeNum(order.pricing?.discount, 0),
     total: safeNum(order.pricing?.total, 0),
-    ...(order.pricing?.advancePaid !== undefined ? { advancePaid: safeNum(order.pricing.advancePaid, 0) } : {})
+    ...(order.pricing?.advancePaid !== undefined ? { advancePaid: safeNum(order.pricing.advancePaid, 0) } : {}),
+    ...(order.pricing?.loyaltyPointsUsed !== undefined ? { loyaltyPointsUsed: safeNum(order.pricing.loyaltyPointsUsed, 0) } : {}),
+    ...(order.pricing?.loyaltyDiscount !== undefined ? { loyaltyDiscount: safeNum(order.pricing.loyaltyDiscount, 0) } : {}),
+    ...(order.pricing?.loyaltyPointsEarned !== undefined ? { loyaltyPointsEarned: safeNum(order.pricing.loyaltyPointsEarned, 0) } : {}),
+    ...(Array.isArray(order.pricing?.paymentHistory) ? { paymentHistory: order.pricing.paymentHistory.slice(0, 30) } : {})
   });
 
   const paymentClean = stripUndefinedDeep({
@@ -290,12 +295,33 @@ export async function writeOrderToFirestore(order: Order, allowAdminStatus = fal
   }
 }
 
-export async function updateOrderInFirestore(order: Order): Promise<void> {
-  if (!auth.currentUser) return;
+export async function updateOrderInFirestore(
+  order: Order,
+  allowCustomerAiConfirm = false
+): Promise<void> {
   const base = sanitizeOrderForFirestore(order);
   const path = `orders/${base.id}`;
+  const orderRef = doc(db, 'orders', base.id);
+
+  if (!auth.currentUser) {
+    if (!allowCustomerAiConfirm || base.status !== 'ai_confirmed') return;
+    try {
+      await updateDoc(orderRef, {
+        status: 'ai_confirmed',
+        aiCallStatus: stripUndefinedDeep({
+          ...base.aiCallStatus,
+          confirmedByCustomer: true
+        }),
+        courier: base.courier,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+    return;
+  }
+
   try {
-    const orderRef = doc(db, 'orders', base.id);
     const snap = await getDoc(orderRef);
     if (!snap.exists()) {
       await setDoc(
@@ -700,6 +726,9 @@ export async function saveCustomerToFirestore(customer: CustomerProfile): Promis
       savedCoupons: Array.isArray(customer.savedCoupons)
         ? customer.savedCoupons.slice(0, 30)
         : [],
+      loyaltyHistory: Array.isArray(customer.loyaltyHistory)
+        ? customer.loyaltyHistory.slice(0, 40)
+        : [],
       updatedAt: serverTimestamp()
     });
     await setDoc(doc(db, 'customers', cleanId), payload, { merge: true });
@@ -732,7 +761,8 @@ export function mapFirestoreDocToCustomer(data: Record<string, any>): CustomerPr
     lastPurchaseAt: data.lastPurchaseAt ? String(data.lastPurchaseAt) : undefined,
     lastWalletCreditAt: data.lastWalletCreditAt ? String(data.lastWalletCreditAt) : undefined,
     browsingHistory: Array.isArray(data.browsingHistory) ? data.browsingHistory : [],
-    savedCoupons: Array.isArray(data.savedCoupons) ? data.savedCoupons : []
+    savedCoupons: Array.isArray(data.savedCoupons) ? data.savedCoupons : [],
+    loyaltyHistory: Array.isArray(data.loyaltyHistory) ? data.loyaltyHistory : []
   };
 }
 
@@ -908,6 +938,17 @@ export async function saveAbandonedCartToFirestore(cart: AbandonedCart): Promise
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteAbandonedCartFromFirestore(cartId: string): Promise<void> {
+  if (!auth.currentUser) return;
+  const cleanId = sanitizeFirestoreId(cartId, 'cart');
+  const path = `abandoned_carts/${cleanId}`;
+  try {
+    await deleteDoc(doc(db, 'abandoned_carts', cleanId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 

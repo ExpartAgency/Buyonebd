@@ -104,9 +104,13 @@ import {
   AbandonedCart,
   ProductReview,
   WalletTopUpRequest,
-  DeliveryBoy
+  DeliveryBoy,
+  CustomerProfile
 } from '../../types';
 import { CreativeMarketingStudio } from './CreativeMarketingStudio';
+import { PartialOrdersView } from './PartialOrdersView';
+import { AIWebsiteAgentView } from './AIWebsiteAgentView';
+import { LoyaltyRulesPanel } from './LoyaltyRulesPanel';
 
 const parseJsonSafe = async (res: Response): Promise<any> => {
   const txt = await res.text();
@@ -139,6 +143,7 @@ export const AdminDashboard: React.FC = () => {
     updateOrderCourier,
     assignDeliveryBoyToOrder,
     aiConfirmOrderByCustomer,
+    recordPartialPayment,
     updateOrderDetails,
     deleteOrder,
     bulkUpdateOrders,
@@ -151,6 +156,12 @@ export const AdminDashboard: React.FC = () => {
     abandonedCarts,
     markAbandonedCartWhatsAppSent,
     recoverAbandonedCart,
+    editAbandonedCart,
+    deleteAbandonedCart,
+    bulkAbandonedCartsAction,
+    adjustCustomerLoyaltyPoints,
+    setCustomerLoyaltyPoints,
+    deleteCustomerLoyaltyPoints,
     reviews,
     addProductReview,
     updateProductReview,
@@ -289,8 +300,10 @@ export const AdminDashboard: React.FC = () => {
   // Active tab state (all left-hand sidebar options)
   type AdminTab =
     | 'overview'
+    | 'ai_operator'
     | 'support_desk'
     | 'orders'
+    | 'partial_orders'
     | 'pos_system'
     | 'products'
     | 'media_gallery'
@@ -317,8 +330,10 @@ export const AdminDashboard: React.FC = () => {
   // POS & 1-Click Barcode System State
   const [posBarcodeInput, setPosBarcodeInput] = useState('');
   const [posSearch, setPosSearch] = useState('');
+  const [posCategoryFilter, setPosCategoryFilter] = useState<string>('all');
   const [posCart, setPosCart] = useState<{ product: Product; quantity: number; unitPrice?: number; selectedColor?: string; selectedSize?: string }[]>([]);
   const [posSelectedCustomerId, setPosSelectedCustomerId] = useState<string>('walk-in');
+  const [posCustomerSearch, setPosCustomerSearch] = useState('');
   const [posWalkInName, setPosWalkInName] = useState('Walk-in Customer');
   const [posWalkInPhone, setPosWalkInPhone] = useState('01700000000');
   const [posDiscount, setPosDiscount] = useState<number>(0);
@@ -326,6 +341,10 @@ export const AdminDashboard: React.FC = () => {
   const [posDeliveryFee, setPosDeliveryFee] = useState<number>(0);
   const [posPaidAmount, setPosPaidAmount] = useState<string>('');
   const [posPaymentMethod, setPosPaymentMethod] = useState<'cash' | 'bkash' | 'nagad' | 'card'>('cash');
+  const [posTrxId, setPosTrxId] = useState('');
+  const [posUseWallet, setPosUseWallet] = useState(false);
+  const [posUseLoyalty, setPosUseLoyalty] = useState(false);
+  const [posShowPastOrders, setPosShowPastOrders] = useState(false);
   const [posReceiptOrder, setPosReceiptOrder] = useState<Order | null>(null);
   const [printableBarcodeProduct, setPrintableBarcodeProduct] = useState<Product | null>(null);
   const [posCustomItemName, setPosCustomItemName] = useState('');
@@ -343,9 +362,16 @@ export const AdminDashboard: React.FC = () => {
     }[]
   >([]);
 
-  // Customer Manual Wallet Balance Control State
+  // Abandoned Carts Bulk Select & Edit State
+  const [selectedAbandonedIds, setSelectedAbandonedIds] = useState<string[]>([]);
+  const [editingAbandonedCart, setEditingAbandonedCart] = useState<AbandonedCart | null>(null);
+
+  // Loyalty Points & Customer Manual Wallet Balance Control State
   const [customerSearch, setCustomerSearch] = useState('');
   const [balanceAdjustAmounts, setBalanceAdjustAmounts] = useState<Record<string, number>>({});
+  const [loyaltyStepAmounts, setLoyaltyStepAmounts] = useState<Record<string, number>>({});
+  const [editingLoyaltyAcc, setEditingLoyaltyAcc] = useState<{ targetKey: string; name: string; points: number } | null>(null);
+  const [viewingLoyaltyHistoryAcc, setViewingLoyaltyHistoryAcc] = useState<CustomerProfile | null>(null);
 
   // Firebase Cloud Hub Diagnostics, Hosting Setup & Domain Helper State
   const [fbDiagnostics, setFbDiagnostics] = useState<{ ok: boolean; details: FirebaseDiagnosticStep[] } | null>(null);
@@ -1317,11 +1343,16 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const pendingWalletCount = walletTopUps.filter((w) => w.status === 'pending').length;
+  const partialOrdersBadge = orders.filter(
+    (o) => o.status === 'partial' || ((o.pricing?.advancePaid || 0) > 0 && (o.payment?.dueAmount || 0) > 0)
+  ).length;
 
   const sidebarItems: { id: AdminTab; labelBn: string; labelEn: string; icon: any; badge?: number }[] = [
     { id: 'overview', labelBn: 'ওভারভিউ ও অ্যানালিটিক্স', labelEn: 'Overview', icon: LayoutDashboard },
+    { id: 'ai_operator', labelBn: 'এআই ওয়েবসাইট এজেন্ট', labelEn: 'AI Website Agent', icon: Sparkles },
     { id: 'support_desk', labelBn: 'লাইভ চ্যাট ও ব্রাউজার কল', labelEn: 'Live Chat & Calls', icon: Headphones, badge: supportDeskBadge },
     { id: 'orders', labelBn: 'অর্ডার ম্যানেজমেন্ট', labelEn: 'Orders', icon: ShoppingCart, badge: orders.length },
+    { id: 'partial_orders', labelBn: 'আংশিক পেমেন্ট (Partial)', labelEn: 'Partial Orders', icon: CreditCard, badge: partialOrdersBadge || undefined },
     { id: 'pos_system', labelBn: 'পস ও ১-ক্লিক বারকোড', labelEn: 'POS & Barcode', icon: Barcode, badge: posCart.reduce((s, c) => s + c.quantity, 0) || undefined },
     { id: 'products', labelBn: 'পণ্য তালিকা ও প্রোডাক্ট যোগ', labelEn: 'Products', icon: Package, badge: products.length },
     { id: 'media_gallery', labelBn: 'মিডিয়া ও গ্যালারি', labelEn: 'Media / Gallery', icon: ImagePlus, badge: mediaLibrary.length },
@@ -1423,14 +1454,15 @@ export const AdminDashboard: React.FC = () => {
             <span>{adminLang === 'bn' ? 'English' : 'বাংলা'}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => goHome()}
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">{at('স্টোর ভিউ', 'View Store')}</span>
-          </button>
+          </a>
 
           <button
             type="button"
@@ -3430,6 +3462,17 @@ export const AdminDashboard: React.FC = () => {
                                   >
                                     <Edit className="w-3 h-3" />
                                   </button>
+                                  {(ord.status === 'pending' || ord.status === 'on_hold') && (
+                                    <button
+                                      type="button"
+                                      onClick={() => aiConfirmOrderByCustomer(ord.id, 'Admin Quick AI Confirm')}
+                                      title={at('১-ক্লিক AI কনফার্ম', '1-Click AI Confirm')}
+                                      className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Sparkles className="w-3 h-3" />
+                                      <span>AI</span>
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={() => startAICall(ord)}
@@ -3459,6 +3502,16 @@ export const AdminDashboard: React.FC = () => {
             </div>
             );
           })()}
+
+          {/* TAB 2A2: PARTIAL ORDERS DEDICATED SECTION */}
+          {activeTab === 'partial_orders' && (
+            <PartialOrdersView onOpenInvoice={(ord) => setSelectedOrderDetails(ord)} />
+          )}
+
+          {/* TAB 1B: HUMAN-LIKE FULL WEBSITE CONTROL AI AGENT */}
+          {activeTab === 'ai_operator' && (
+            <AIWebsiteAgentView onNavigateTab={(tab) => setActiveTab(tab as AdminTab)} />
+          )}
 
           {/* TAB 2B: POS & 1-CLICK BARCODE SYSTEM */}
           {activeTab === 'pos_system' && (() => {
@@ -3567,6 +3620,7 @@ export const AdminDashboard: React.FC = () => {
             };
 
             const posFilteredProducts = products.filter((p) => {
+              if (posCategoryFilter !== 'all' && p.category !== posCategoryFilter) return false;
               const q = posSearch.trim().toLowerCase();
               if (!q) return true;
               return (
@@ -3577,6 +3631,54 @@ export const AdminDashboard: React.FC = () => {
               );
             });
 
+            // Unified Customer Directory (Registered CustomerAccounts + Unique Order Customers) for Live Mobile Search
+            const posDirectory = (() => {
+              const map = new Map<string, { key: string; name: string; phone: string; walletBalance: number; loyaltyPoints: number; pastOrdersCount: number }>();
+              customerAccounts.forEach((acc) => {
+                const ph = (acc.phone || '').replace(/[^0-9]/g, '').slice(-11) || acc.phone;
+                const key = ph || acc.email || acc.username || acc.name;
+                map.set(key, {
+                  key,
+                  name: acc.name,
+                  phone: acc.phone,
+                  walletBalance: acc.walletBalance || 0,
+                  loyaltyPoints: acc.loyaltyPoints || 0,
+                  pastOrdersCount: orders.filter((o) => (o.customer.phone || '').replace(/[^0-9]/g, '').slice(-11) === ph).length
+                });
+              });
+              orders.forEach((o) => {
+                const ph = (o.customer.phone || '').replace(/[^0-9]/g, '').slice(-11) || o.customer.phone;
+                if (!ph || map.has(ph)) return;
+                map.set(ph, {
+                  key: ph,
+                  name: o.customer.name,
+                  phone: o.customer.phone,
+                  walletBalance: 0,
+                  loyaltyPoints: 0,
+                  pastOrdersCount: orders.filter((ord) => (ord.customer.phone || '').replace(/[^0-9]/g, '').slice(-11) === ph).length
+                });
+              });
+              return Array.from(map.values());
+            })();
+
+            const matchedPosCustomer =
+              posSelectedCustomerId !== 'walk-in'
+                ? posDirectory.find((c) => c.key === posSelectedCustomerId)
+                : posWalkInPhone.replace(/[^0-9]/g, '').length >= 10
+                ? posDirectory.find((c) => c.phone.replace(/[^0-9]/g, '').slice(-11) === posWalkInPhone.replace(/[^0-9]/g, '').slice(-11))
+                : undefined;
+
+            const posDirectoryHits = posCustomerSearch.trim()
+              ? posDirectory.filter((c) => {
+                  const q = posCustomerSearch.trim().toLowerCase();
+                  return c.phone.toLowerCase().includes(q) || c.name.toLowerCase().includes(q);
+                })
+              : posDirectory.slice(0, 8);
+
+            const posCustomerOrdersList = matchedPosCustomer
+              ? orders.filter((o) => (o.customer.phone || '').replace(/[^0-9]/g, '').slice(-11) === matchedPosCustomer.phone.replace(/[^0-9]/g, '').slice(-11))
+              : [];
+
             const posSubtotal = posCart.reduce(
               (sum, item) => sum + (item.unitPrice ?? item.product.price) * item.quantity,
               0
@@ -3585,7 +3687,22 @@ export const AdminDashboard: React.FC = () => {
               posDiscountType === 'percent'
                 ? Math.round(posSubtotal * (Math.min(100, Math.max(0, posDiscount || 0)) / 100))
                 : Math.max(0, posDiscount || 0);
-            const posTotal = Math.max(0, posSubtotal + (posDeliveryFee || 0) - posDiscountAmount);
+
+            const loyaltyCfg = settings.loyaltySettings;
+            const bdtPerPt = loyaltyCfg?.bdtPerPoint ?? 1;
+            const afterManualDiscount = Math.max(0, posSubtotal + (posDeliveryFee || 0) - posDiscountAmount);
+            const posLoyaltyPointsAvail = matchedPosCustomer?.loyaltyPoints || 0;
+            const posLoyaltyPointsUsed =
+              posUseLoyalty && posLoyaltyPointsAvail > 0
+                ? Math.min(posLoyaltyPointsAvail, Math.floor(afterManualDiscount / Math.max(0.1, bdtPerPt)))
+                : 0;
+            const posLoyaltyDiscount = Math.round(posLoyaltyPointsUsed * bdtPerPt);
+
+            const afterLoyalty = Math.max(0, afterManualDiscount - posLoyaltyDiscount);
+            const posWalletAvail = matchedPosCustomer?.walletBalance || 0;
+            const posWalletDeduction = posUseWallet && posWalletAvail > 0 ? Math.min(posWalletAvail, afterLoyalty) : 0;
+
+            const posTotal = Math.max(0, afterLoyalty - posWalletDeduction);
             const paidNum = posPaidAmount === '' ? posTotal : Math.max(0, Number(posPaidAmount) || 0);
             const changeReturn = Math.max(0, paidNum - posTotal);
             const dueRemaining = Math.max(0, posTotal - paidNum);
@@ -3595,9 +3712,11 @@ export const AdminDashboard: React.FC = () => {
                 addToast('warning', at('পস কার্ট খালি', 'POS Cart Empty'), at('প্রথমে বারকোড স্ক্যান করে বা ক্লিক করে পণ্য যোগ করুন।', 'Scan or click a product barcode first.'));
                 return;
               }
-              const pickedAcc = customerAccounts.find((a) => (a.phone || a.email || a.username) === posSelectedCustomerId);
-              const custName = pickedAcc ? pickedAcc.name : posWalkInName.trim() || 'Walk-in POS Customer';
-              const custPhone = pickedAcc ? pickedAcc.phone : posWalkInPhone.trim() || '01700000000';
+              const custName = matchedPosCustomer ? matchedPosCustomer.name : posWalkInName.trim() || 'Walk-in POS Customer';
+              const custPhone = matchedPosCustomer ? matchedPosCustomer.phone : posWalkInPhone.trim() || '01700000000';
+              if (posWalletDeduction > 0 && custPhone) {
+                adjustSpecificCustomerBalance(custPhone, -posWalletDeduction, 'POS Checkout Wallet Deduction');
+              }
               const newOrder = createOrder({
                 customer: {
                   name: custName,
@@ -3605,7 +3724,7 @@ export const AdminDashboard: React.FC = () => {
                   address: 'POS Counter / In-Store Pickup',
                   district: 'Dhaka - Inside City',
                   thana: 'POS Counter',
-                  note: `POS Sale (${posPaymentMethod.toUpperCase()})`
+                  note: `POS Sale (${posPaymentMethod.toUpperCase()})${posTrxId.trim() ? ` · TrxID: ${posTrxId.trim()}` : ''}`
                 },
                 items: posCart.map((c) => ({
                   product:
@@ -3618,9 +3737,13 @@ export const AdminDashboard: React.FC = () => {
                   selectedAttributes: c.product.brand ? { Brand: c.product.brand } : undefined
                 })),
                 paymentMethod: posPaymentMethod,
+                paymentTrxId: posTrxId.trim() || undefined,
                 deliveryZone: 'dhaka_inside',
                 customDeliveryFee: posDeliveryFee || 0,
                 discountAmount: posDiscountAmount,
+                walletUsedAmount: posWalletDeduction > 0 ? posWalletDeduction : undefined,
+                loyaltyPointsUsed: posLoyaltyPointsUsed > 0 ? posLoyaltyPointsUsed : undefined,
+                loyaltyDiscountAmount: posLoyaltyDiscount > 0 ? posLoyaltyDiscount : undefined,
                 advancePaid: paidNum < posTotal ? paidNum : undefined,
                 source: 'pos',
                 initialStatus: dueRemaining > 0 ? 'partial' : 'delivered',
@@ -3631,6 +3754,9 @@ export const AdminDashboard: React.FC = () => {
               setPosDiscount(0);
               setPosDeliveryFee(0);
               setPosPaidAmount('');
+              setPosTrxId('');
+              setPosUseLoyalty(false);
+              setPosUseWallet(false);
             };
 
             return (
@@ -3642,7 +3768,7 @@ export const AdminDashboard: React.FC = () => {
                       <span>{at('পস সিস্টেম ও ১-ক্লিক বারকোড বিলিং', 'Full POS & 1-Click Barcode Billing')}</span>
                     </h3>
                     <p className="text-xs text-slate-400">
-                      {at('বারকোড স্ক্যান, ভ্যারিয়েন্ট নির্বাচন, কাস্টম আইটেম, হোল্ড বিল ও ৮০মিমি প্রিন্টেবল রিসিট', 'Scan barcodes, adjust prices/variants, hold draft bills & print thermal 80mm receipts')}
+                      {at('বারকোড স্ক্যান, মোবাইল সার্চ কাস্টমার, লয়্যালটি/ওয়ালেট রিডিম, কাস্টম আইটেম ও ৮০মিমি রিসিট', 'Barcode scan, live mobile number customer search, loyalty/wallet redemption, custom items & 80mm thermal receipts')}
                     </p>
                   </div>
 
@@ -3692,38 +3818,69 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 )}
 
-                {/* Barcode Scanner + Search Bar */}
-                <div className="p-4 rounded-2xl bg-slate-900 border border-emerald-500/30 grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-emerald-400 mb-1">
-                      {at('বারকোড / SKU স্ক্যান ইনপুট (Enter চাপুন)', 'Barcode / SKU Scanner Input (Press Enter)')}
-                    </label>
-                    <div className="relative">
-                      <Barcode className="w-4 h-4 text-emerald-400 absolute left-3 top-2.5" />
-                      <input
-                        type="text"
-                        value={posBarcodeInput}
-                        onChange={(e) => setPosBarcodeInput(e.target.value)}
-                        onKeyDown={handleBarcodeEnter}
-                        placeholder={at('স্ক্যানার দিয়ে স্ক্যান করুন বা 880... / PROD-... লিখে Enter দিন', 'Scan barcode or type 880... / SKU & press Enter')}
-                        className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl text-xs text-white font-mono outline-none"
-                      />
+                {/* Barcode Scanner + Product Search + Category Filter */}
+                <div className="p-4 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-emerald-400 mb-1">
+                        {at('বারকোড / SKU স্ক্যান ইনপুট (Enter চাপুন)', 'Barcode / SKU Scanner Input (Press Enter)')}
+                      </label>
+                      <div className="relative">
+                        <Barcode className="w-4 h-4 text-emerald-400 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          value={posBarcodeInput}
+                          onChange={(e) => setPosBarcodeInput(e.target.value)}
+                          onKeyDown={handleBarcodeEnter}
+                          placeholder={at('স্ক্যানার দিয়ে স্ক্যান করুন বা 880... / PROD-... লিখে Enter দিন', 'Scan barcode or type 880... / SKU & press Enter')}
+                          className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl text-xs text-white font-mono outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        {at('দ্রুত পণ্য খুঁজুন', 'Quick Filter Products')}
+                      </label>
+                      <div className="relative">
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          value={posSearch}
+                          onChange={(e) => setPosSearch(e.target.value)}
+                          placeholder={at('নাম, SKU বা বারকোড দিয়ে খুঁজুন...', 'Search name, SKU or barcode...')}
+                          className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none"
+                        />
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                      {at('দ্রুত পণ্য খুঁজুন', 'Quick Filter Products')}
-                    </label>
-                    <div className="relative">
-                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                      <input
-                        type="text"
-                        value={posSearch}
-                        onChange={(e) => setPosSearch(e.target.value)}
-                        placeholder={at('নাম, SKU বা বারকোড দিয়ে খুঁজুন...', 'Search name, SKU or barcode...')}
-                        className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none"
-                      />
-                    </div>
+
+                  {/* Category Tabs */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-[11px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setPosCategoryFilter('all')}
+                      className={`px-3 py-1 rounded-lg border cursor-pointer shrink-0 ${
+                        posCategoryFilter === 'all'
+                          ? 'bg-emerald-600 border-emerald-500 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {at('সকল ক্যাটাগরি', 'All Categories')} ({products.length})
+                    </button>
+                    {categories.filter((c) => c.isActive).map((cat) => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setPosCategoryFilter(cat.slug)}
+                        className={`px-3 py-1 rounded-lg border cursor-pointer shrink-0 ${
+                          posCategoryFilter === cat.slug
+                            ? 'bg-emerald-600 border-emerald-500 text-white'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {at(cat.nameBn, cat.nameEn)}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -3771,7 +3928,7 @@ export const AdminDashboard: React.FC = () => {
                               <img src={prod.images[0]} alt="" className="w-14 h-14 rounded-xl object-cover bg-slate-950 border border-slate-800 shrink-0" />
                               <div className="min-w-0 flex-1">
                                 <h4 className="text-xs font-bold text-white line-clamp-1">{at(prod.titleBn, prod.title)}</h4>
-                                <div className="flex items-center gap-2 mt-0.5">
+                                <div className="flex items-center gap-2 mt-0.5 tabular-nums">
                                   <span className="text-sm font-black text-emerald-400 font-mono">৳{prod.price.toLocaleString()}</span>
                                   <span className="text-[10px] text-slate-400">Stock: {prod.stock}</span>
                                 </div>
@@ -3815,7 +3972,7 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Right 5 Cols: POS Checkout Register */}
+                  {/* Right 5 Cols: POS Checkout Register with Live Mobile Search & Loyalty/Wallet */}
                   <div className="lg:col-span-5 p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 h-fit sticky top-20">
                     <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                       <h4 className="font-black text-white text-sm flex items-center gap-2">
@@ -3842,26 +3999,142 @@ export const AdminDashboard: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Customer Picker */}
+                    {/* Smart Customer Mobile Phone / Name Search */}
                     <div className="space-y-2 text-xs">
-                      <label className="block text-slate-300 font-bold">{at('কাস্টমার নির্বাচন করুন', 'Select Customer')}</label>
-                      <select
-                        value={posSelectedCustomerId}
-                        onChange={(e) => setPosSelectedCustomerId(e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
-                      >
-                        <option value="walk-in">{at('ওয়াক-ইন কাস্টমার (Walk-in)', 'Walk-in Counter Customer')}</option>
-                        {customerAccounts.map((acc, idx) => {
-                          const key = acc.phone || acc.email || acc.username || String(idx);
-                          return (
-                            <option key={key} value={key}>
-                              {acc.name} ({acc.phone}) — ৳{acc.walletBalance}
-                            </option>
-                          );
-                        })}
-                      </select>
+                      <div className="flex items-center justify-between">
+                        <label className="block text-slate-300 font-bold">
+                          {at('মোবাইল নম্বর / নাম দিয়ে কাস্টমার খুঁজুন', 'Search Customer by Mobile / Name')}
+                        </label>
+                        {posSelectedCustomerId !== 'walk-in' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPosSelectedCustomerId('walk-in');
+                              setPosCustomerSearch('');
+                              setPosUseLoyalty(false);
+                              setPosUseWallet(false);
+                            }}
+                            className="text-[10px] font-bold text-amber-400 hover:underline cursor-pointer"
+                          >
+                            {at('ওয়াক-ইন করুন', 'Switch to Walk-in')}
+                          </button>
+                        )}
+                      </div>
 
-                      {posSelectedCustomerId === 'walk-in' && (
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          value={posCustomerSearch}
+                          onChange={(e) => setPosCustomerSearch(e.target.value)}
+                          placeholder={at('017... বা কাস্টমারের নাম লিখুন...', 'Type mobile number (017...) or name...')}
+                          className="w-full pl-8 pr-3 py-2 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl text-white font-mono text-xs outline-none"
+                        />
+                      </div>
+
+                      {posCustomerSearch.trim() && (
+                        <div className="max-h-36 overflow-y-auto rounded-xl bg-slate-950 border border-slate-700 divide-y divide-slate-800">
+                          {posDirectoryHits.length === 0 ? (
+                            <div className="p-2.5 text-[11px] text-slate-400 flex items-center justify-between">
+                              <span>{at('তালিকায় পাওয়া যায়নি — ওয়াক-ইন হিসাবে যোগ করুন', 'No existing profile — will bill as walk-in')}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (/^\d{6,}$/.test(posCustomerSearch.trim())) {
+                                    setPosWalkInPhone(posCustomerSearch.trim());
+                                  } else {
+                                    setPosWalkInName(posCustomerSearch.trim());
+                                  }
+                                  setPosSelectedCustomerId('walk-in');
+                                  setPosCustomerSearch('');
+                                }}
+                                className="px-2 py-0.5 rounded bg-sky-600 text-white font-bold text-[10px] cursor-pointer"
+                              >
+                                Use
+                              </button>
+                            </div>
+                          ) : (
+                            posDirectoryHits.map((c) => (
+                              <button
+                                key={c.key}
+                                type="button"
+                                onClick={() => {
+                                  setPosSelectedCustomerId(c.key);
+                                  setPosWalkInName(c.name);
+                                  setPosWalkInPhone(c.phone);
+                                  setPosCustomerSearch('');
+                                }}
+                                className="w-full p-2.5 text-left hover:bg-slate-900 flex items-center justify-between gap-2 cursor-pointer"
+                              >
+                                <div className="min-w-0">
+                                  <p className="font-bold text-white truncate">{c.name}</p>
+                                  <p className="font-mono text-[10px] text-emerald-400">{c.phone} · {c.pastOrdersCount} orders</p>
+                                </div>
+                                <div className="text-right text-[10px] font-mono shrink-0">
+                                  <span className="text-amber-300 block">{c.loyaltyPoints} pts</span>
+                                  <span className="text-emerald-300 block">৳{c.walletBalance}</span>
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+
+                      {matchedPosCustomer ? (
+                        <div className="p-3 rounded-xl bg-slate-950 border border-emerald-500/35 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-bold text-white truncate">{matchedPosCustomer.name}</p>
+                              <p className="font-mono text-[11px] text-emerald-400">{matchedPosCustomer.phone}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setPosShowPastOrders((v) => !v)}
+                              className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 text-[10px] font-bold cursor-pointer shrink-0"
+                            >
+                              {posShowPastOrders ? at('বন্ধ করুন', 'Hide Orders') : at(`পূর্বের অর্ডার (${posCustomerOrdersList.length})`, `History (${posCustomerOrdersList.length})`)}
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-[11px]">
+                            <label className={`p-2 rounded-lg border flex items-center justify-between gap-1.5 cursor-pointer ${posUseLoyalty ? 'bg-amber-950/50 border-amber-500/60 text-amber-200' : 'bg-slate-900 border-slate-800 text-slate-300'}`}>
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={posUseLoyalty}
+                                  disabled={posLoyaltyPointsAvail <= 0}
+                                  onChange={(e) => setPosUseLoyalty(e.target.checked)}
+                                  className="w-3.5 h-3.5 accent-amber-500 cursor-pointer"
+                                />
+                                <span className="truncate font-bold">Loyalty ({posLoyaltyPointsAvail}p)</span>
+                              </div>
+                            </label>
+                            <label className={`p-2 rounded-lg border flex items-center justify-between gap-1.5 cursor-pointer ${posUseWallet ? 'bg-emerald-950/50 border-emerald-500/60 text-emerald-200' : 'bg-slate-900 border-slate-800 text-slate-300'}`}>
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={posUseWallet}
+                                  disabled={posWalletAvail <= 0}
+                                  onChange={(e) => setPosUseWallet(e.target.checked)}
+                                  className="w-3.5 h-3.5 accent-emerald-500 cursor-pointer"
+                                />
+                                <span className="truncate font-bold">Wallet (৳{posWalletAvail})</span>
+                              </div>
+                            </label>
+                          </div>
+
+                          {posShowPastOrders && posCustomerOrdersList.length > 0 && (
+                            <div className="pt-2 border-t border-slate-800 space-y-1 max-h-28 overflow-y-auto text-[10px]">
+                              {posCustomerOrdersList.slice(0, 5).map((po) => (
+                                <div key={po.id} className="flex items-center justify-between text-slate-300 font-mono">
+                                  <span>#{po.id} ({po.status})</span>
+                                  <span className="text-emerald-400 font-bold">৳{po.pricing.total.toLocaleString()}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
                         <div className="grid grid-cols-2 gap-2">
                           <input
                             type="text"
@@ -3882,7 +4155,7 @@ export const AdminDashboard: React.FC = () => {
                     </div>
 
                     {/* Cart Items with Inline Price Edit & Variant Selectors */}
-                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                       {posCart.length === 0 ? (
                         <p className="text-xs text-slate-500 text-center py-6 border border-dashed border-slate-800 rounded-xl">
                           {at('বাম দিক থেকে বারকোড স্ক্যান বা ক্লিক করে পণ্য যোগ করুন', 'Click "+ Add" on any barcode card or scan to start billing')}
@@ -4034,8 +4307,8 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs text-slate-400 font-bold mb-1.5">{at('পেমেন্ট মেথড', 'Payment Method')}</label>
+                    <div className="space-y-2">
+                      <label className="block text-xs text-slate-400 font-bold">{at('পেমেন্ট মেথড', 'Payment Method')}</label>
                       <div className="grid grid-cols-4 gap-1.5 text-[11px] font-bold">
                         {(['cash', 'bkash', 'nagad', 'card'] as const).map((pm) => (
                           <button
@@ -4052,10 +4325,19 @@ export const AdminDashboard: React.FC = () => {
                           </button>
                         ))}
                       </div>
+                      {posPaymentMethod !== 'cash' && (
+                        <input
+                          type="text"
+                          value={posTrxId}
+                          onChange={(e) => setPosTrxId(e.target.value.toUpperCase())}
+                          placeholder={at(`${posPaymentMethod.toUpperCase()} TrxID / কার্ড রেফারেন্স`, `Enter ${posPaymentMethod.toUpperCase()} TrxID / Card Ref`)}
+                          className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono uppercase"
+                        />
+                      )}
                     </div>
 
                     {/* Totals & Change / Due Calculator */}
-                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1 text-xs font-mono">
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1 text-xs font-mono tabular-nums">
                       <div className="flex justify-between text-slate-400">
                         <span>Subtotal:</span>
                         <span>৳{posSubtotal.toLocaleString()}</span>
@@ -4068,6 +4350,18 @@ export const AdminDashboard: React.FC = () => {
                         <span>Discount {posDiscountType === 'percent' ? `(${posDiscount}%)` : ''}:</span>
                         <span>-৳{posDiscountAmount.toLocaleString()}</span>
                       </div>
+                      {posLoyaltyDiscount > 0 && (
+                        <div className="flex justify-between text-amber-400">
+                          <span>Loyalty ({posLoyaltyPointsUsed} pts):</span>
+                          <span>-৳{posLoyaltyDiscount.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {posWalletDeduction > 0 && (
+                        <div className="flex justify-between text-emerald-400">
+                          <span>Wallet Balance:</span>
+                          <span>-৳{posWalletDeduction.toLocaleString()}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-base font-black text-emerald-400 pt-1 border-t border-slate-800">
                         <span>TOTAL PAYABLE:</span>
                         <span>৳{posTotal.toLocaleString()}</span>
@@ -4115,7 +4409,7 @@ export const AdminDashboard: React.FC = () => {
                       <div className="text-xs space-y-1">
                         <p><strong>Customer:</strong> {posReceiptOrder.customer.name} ({posReceiptOrder.customer.phone})</p>
                         <p><strong>Date:</strong> {new Date(posReceiptOrder.createdAt).toLocaleString()}</p>
-                        <p><strong>Method:</strong> {posReceiptOrder.payment.method.toUpperCase()}</p>
+                        <p><strong>Method:</strong> {posReceiptOrder.payment.method.toUpperCase()} {posReceiptOrder.payment.trxId ? `(${posReceiptOrder.payment.trxId})` : ''}</p>
                       </div>
                       <div className="border-y border-dashed border-slate-300 py-2 space-y-1 text-xs">
                         {posReceiptOrder.items.map((it, idx) => (
@@ -4128,12 +4422,20 @@ export const AdminDashboard: React.FC = () => {
                           </div>
                         ))}
                       </div>
-                      <div className="text-xs font-mono space-y-1">
+                      <div className="text-xs font-mono space-y-1 tabular-nums">
                         <div className="flex justify-between"><span>Subtotal:</span><span>৳{posReceiptOrder.pricing.subtotal.toLocaleString()}</span></div>
                         <div className="flex justify-between"><span>Discount:</span><span>-৳{posReceiptOrder.pricing.discount.toLocaleString()}</span></div>
+                        {(posReceiptOrder.pricing.loyaltyDiscount || 0) > 0 && (
+                          <div className="flex justify-between text-amber-700"><span>Loyalty Redeemed:</span><span>-৳{posReceiptOrder.pricing.loyaltyDiscount?.toLocaleString()}</span></div>
+                        )}
                         <div className="flex justify-between font-black text-sm pt-1 border-t border-slate-200">
                           <span>PAID TOTAL:</span><span>৳{posReceiptOrder.pricing.total.toLocaleString()}</span>
                         </div>
+                        {(posReceiptOrder.pricing.loyaltyPointsEarned || 0) > 0 && (
+                          <div className="flex justify-between text-emerald-700 font-bold text-[11px] pt-1">
+                            <span>Loyalty Points Earned:</span><span>+{posReceiptOrder.pricing.loyaltyPointsEarned} pts</span>
+                          </div>
+                        )}
                       </div>
                       <button
                         type="button"
@@ -4415,85 +4717,191 @@ export const AdminDashboard: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 5: ABANDONED CARTS RECOVERY */}
-          {activeTab === 'abandoned_carts' && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-xl font-black text-white">{t('ড্রপ-অফ কার্ট রিকভারি', 'Abandoned Cart Recovery')}</h3>
-                  <p className="text-xs text-slate-400">{t('যেসব কাস্টমার কার্টে পণ্য যোগ করেও চেকআউট করেননি, তাদের সরাসরি WhatsApp অফার পাঠিয়ে সেলস রিকভার করুন', 'Follow up on incomplete checkouts with 1-click WhatsApp memos & discounts')}</p>
-                </div>
-              </div>
+          {/* TAB 5: ABANDONED CARTS RECOVERY (BULK SELECT, EDIT, DELETE) */}
+          {activeTab === 'abandoned_carts' && (() => {
+            const allSelected =
+              abandonedCarts.length > 0 && abandonedCarts.every((c) => selectedAbandonedIds.includes(c.id));
 
-              {/* Abandoned Carts Table */}
-              <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-sm">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs text-slate-300">
-                  <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
-                    <tr>
-                      <th className="py-3 px-4">কাস্টমার ও ফোন</th>
-                      <th className="py-3 px-4">কার্টের পণ্যসমূহ</th>
-                      <th className="py-3 px-4">কার্ট মোট মূল্য</th>
-                      <th className="py-3 px-4">ড্রপ-অফ সময়</th>
-                      <th className="py-3 px-4">হোয়াটসঅ্যাপ স্ট্যাটাস</th>
-                      <th className="py-3 px-4 text-right">১-ক্লিক রিকভারি</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {abandonedCarts.map((cart) => (
-                      <tr key={cart.id} className="hover:bg-slate-800/40">
-                        <td className="py-3.5 px-4">
-                          <div className="font-bold text-white">{cart.customerName || 'গ্রাহক'}</div>
-                          <div className="font-mono text-emerald-400 text-[11px]">{cart.customerPhone || '01886289663'}</div>
-                          <div className="text-slate-500 text-[10px]">{cart.customerDistrict || 'ঢাকা'}</div>
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <div className="space-y-0.5">
-                            {cart.items.map((it, idx) => (
-                              <div key={idx} className="text-slate-300 font-medium">
-                                {it.product.titleBn} (x{it.quantity})
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-4 font-bold text-white">৳ {cart.total.toLocaleString()}</td>
-                        <td className="py-3.5 px-4 text-slate-400">{cart.createdAt}</td>
-                        <td className="py-3.5 px-4">
-                          {cart.whatsappSent ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
-                              মেমো পাঠানো হয়েছে
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40">
-                              বাকি আছে
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => handleSendCartWhatsApp(cart)}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
-                            >
-                              <MessageCircle className="w-3.5 h-3.5" />
-                              <span>WhatsApp অফার পাঠান</span>
-                            </button>
-                            <button
-                              onClick={() => recoverAbandonedCart(cart.id)}
-                              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl"
-                            >
-                              {t('অর্ডারে রূপান্তর', 'Convert')}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            return (
+              <div className="space-y-6 animate-fade-in">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-xl font-black text-white">{at('ড্রপ-অফ কার্ট রিকভারি', 'Abandoned Cart Recovery')}</h3>
+                    <p className="text-xs text-slate-400">
+                      {at(
+                        'বাল্ক সিলেকশন, এডিট, ডিলিট এবং ১-ক্লিক WhatsApp রিকভারি মেসেজ পাঠান',
+                        'Follow up on incomplete checkouts with bulk actions, inline cart edit, delete & WhatsApp reminders'
+                      )}
+                    </p>
+                  </div>
+
+                  {selectedAbandonedIds.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 bg-slate-900 border border-emerald-500/40 px-3 py-2 rounded-2xl text-xs">
+                      <span className="font-bold text-emerald-300">
+                        {selectedAbandonedIds.length} {at('টি নির্বাচিত', 'selected')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          bulkAbandonedCartsAction(selectedAbandonedIds, 'whatsapp');
+                          setSelectedAbandonedIds([]);
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>{at('বাল্ক WhatsApp', 'Bulk WhatsApp')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          bulkAbandonedCartsAction(selectedAbandonedIds, 'recover');
+                          setSelectedAbandonedIds([]);
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{at('বাল্ক কনভার্ট', 'Bulk Convert')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          bulkAbandonedCartsAction(selectedAbandonedIds, 'delete');
+                          setSelectedAbandonedIds([]);
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{at('বাল্ক ডিলিট', 'Bulk Delete')}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Abandoned Carts Table */}
+                <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-sm">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-slate-300">
+                      <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
+                        <tr>
+                          <th className="py-3 px-4 w-10">
+                            <input
+                              type="checkbox"
+                              checked={allSelected}
+                              onChange={(e) =>
+                                setSelectedAbandonedIds(e.target.checked ? abandonedCarts.map((c) => c.id) : [])
+                              }
+                              className="w-4 h-4 accent-emerald-500 cursor-pointer"
+                            />
+                          </th>
+                          <th className="py-3 px-4">{at('কাস্টমার ও ফোন', 'Customer & Phone')}</th>
+                          <th className="py-3 px-4">{at('কার্টের পণ্যসমূহ', 'Cart Items')}</th>
+                          <th className="py-3 px-4">{at('মোট মূল্য', 'Total')}</th>
+                          <th className="py-3 px-4">{at('ড্রপ-অফ সময়', 'Time')}</th>
+                          <th className="py-3 px-4">{at('স্ট্যাটাস', 'Status')}</th>
+                          <th className="py-3 px-4 text-right">{at('এডিট / ডিলিট / রিকভারি', 'Actions')}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800 tabular-nums">
+                        {abandonedCarts.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="py-10 text-center text-slate-500">
+                              {at('কোনো ড্রপ-অফ কার্ট পাওয়া যায়নি।', 'No abandoned carts recorded yet.')}
+                            </td>
+                          </tr>
+                        ) : (
+                          abandonedCarts.map((cart) => {
+                            const isChecked = selectedAbandonedIds.includes(cart.id);
+                            return (
+                              <tr key={cart.id} className={`hover:bg-slate-800/40 ${isChecked ? 'bg-emerald-950/20' : ''}`}>
+                                <td className="py-3.5 px-4">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      setSelectedAbandonedIds((prev) =>
+                                        e.target.checked ? [...prev, cart.id] : prev.filter((id) => id !== cart.id)
+                                      );
+                                    }}
+                                    className="w-4 h-4 accent-emerald-500 cursor-pointer"
+                                  />
+                                </td>
+                                <td className="py-3.5 px-4">
+                                  <div className="font-bold text-white">{cart.customerName || 'গ্রাহক'}</div>
+                                  <div className="font-mono text-emerald-400 text-[11px]">{cart.customerPhone || '01886289663'}</div>
+                                  <div className="text-slate-500 text-[10px]">{cart.customerDistrict || 'ঢাকা'}</div>
+                                </td>
+                                <td className="py-3.5 px-4">
+                                  <div className="space-y-0.5">
+                                    {cart.items.map((it, idx) => (
+                                      <div key={idx} className="text-slate-300 font-medium">
+                                        {at(it.product.titleBn, it.product.title)} (×{it.quantity})
+                                      </div>
+                                    ))}
+                                  </div>
+                                </td>
+                                <td className="py-3.5 px-4 font-mono font-bold text-white">৳ {cart.total.toLocaleString()}</td>
+                                <td className="py-3.5 px-4 text-slate-400">{cart.createdAt}</td>
+                                <td className="py-3.5 px-4">
+                                  {cart.recovered ? (
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-sky-500/20 text-sky-300">
+                                      {at('রিকভার্ড', 'Recovered')}
+                                    </span>
+                                  ) : cart.whatsappSent ? (
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/20 text-emerald-400">
+                                      {at('মেমো পাঠানো হয়েছে', 'WhatsApp Sent')}
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-400">
+                                      {at('বাকি আছে', 'Pending')}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSendCartWhatsApp(cart)}
+                                      className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <MessageCircle className="w-3.5 h-3.5" />
+                                      <span>WhatsApp</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => recoverAbandonedCart(cart.id)}
+                                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold rounded-xl cursor-pointer"
+                                    >
+                                      {at('রূপান্তর', 'Convert')}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingAbandonedCart(JSON.parse(JSON.stringify(cart)))}
+                                      title={at('এডিট', 'Edit Cart')}
+                                      className="p-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 rounded-xl cursor-pointer"
+                                    >
+                                      <Edit className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteAbandonedCart(cart.id)}
+                                      title={at('ডিলিট', 'Delete Cart')}
+                                      className="p-1.5 bg-rose-950/70 hover:bg-rose-900 text-rose-300 rounded-xl cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* TAB 6: COURIER INTEGRATION HUB & FRAUD CHECK */}
           {activeTab === 'courier_hub' && (
@@ -8341,19 +8749,21 @@ export const AdminDashboard: React.FC = () => {
             );
           })()}
 
-          {/* TAB 14: CUSTOMERS MANUAL BALANCE CONTROL & STAFF TEAM */}
+          {/* TAB 14: LOYALTY RULES, CUSTOMERS LOYALTY/WALLET CONTROL & STAFF TEAM */}
           {activeTab === 'users' && (
             <div className="space-y-8 animate-fade-in">
-              {/* REGISTERED CUSTOMERS LIST WITH INLINE MANUAL BALANCE +/- */}
+              <LoyaltyRulesPanel />
+
+              {/* REGISTERED CUSTOMERS LIST WITH INLINE LOYALTY POINTS & WALLET CONTROL */}
               <div className="p-6 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <h3 className="text-lg font-black text-white flex items-center gap-2">
                       <Wallet className="w-5 h-5 text-emerald-400" />
-                      <span>{at('কাস্টমার তালিকা ও ম্যানুয়াল ব্যালেন্স নিয়ন্ত্রণ (+/-)', 'Customer List & Manual Balance Control (+/-)')}</span>
+                      <span>{at('কাস্টমার লয়্যালটি পয়েন্ট ও ওয়ালেট নিয়ন্ত্রণ (Edit / Delete / +/-)', 'Customer Loyalty Points & Wallet Control')}</span>
                     </h3>
                     <p className="text-xs text-slate-400">
-                      {at('প্রতিটি কাস্টমারের ওয়ালেট ব্যালেন্স এখান থেকেই সরাসরি কমান বা বাড়ান', 'Increase or decrease any customer wallet balance directly from this list')}
+                      {at('প্রতিটি কাস্টমারের লয়্যালটি পয়েন্ট ও ওয়ালেট ব্যালেন্স এডিট, প্লাস/মাইনাস বা ডিলিট করুন', 'Edit, increment/decrement, view ledger or reset loyalty points & wallet balances per customer')}
                     </p>
                   </div>
                   <div className="relative w-full sm:w-64">
@@ -8374,12 +8784,12 @@ export const AdminDashboard: React.FC = () => {
                       <tr>
                         <th className="py-3 px-4">{at('কাস্টমার', 'Customer')}</th>
                         <th className="py-3 px-4">{at('ফোন ও ইমেইল', 'Phone & Email')}</th>
-                        <th className="py-3 px-4">{at('পয়েন্ট', 'Points')}</th>
+                        <th className="py-3 px-4">{at('লয়্যালটি পয়েন্ট (Edit/Del)', 'Loyalty Points')}</th>
                         <th className="py-3 px-4">{at('বর্তমান ব্যালেন্স', 'Wallet Balance')}</th>
-                        <th className="py-3 px-4 text-right">{at('ব্যালেন্স কমান / বাড়ান', 'Increase / Decrease')}</th>
+                        <th className="py-3 px-4 text-right">{at('ব্যালেন্স কমান / বাড়ান', 'Wallet +/-')}</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800">
+                    <tbody className="divide-y divide-slate-800 tabular-nums">
                       {customerAccounts
                         .filter((acc) => {
                           const q = customerSearch.trim().toLowerCase();
@@ -8394,6 +8804,7 @@ export const AdminDashboard: React.FC = () => {
                         .map((acc, idx) => {
                           const targetKey = acc.phone || acc.email || acc.username || String(idx);
                           const stepAmt = balanceAdjustAmounts[targetKey] ?? 50;
+                          const ptsStep = loyaltyStepAmounts[targetKey] ?? 10;
                           return (
                             <tr key={targetKey} className="hover:bg-slate-800/40">
                               <td className="py-3 px-4">
@@ -8404,7 +8815,73 @@ export const AdminDashboard: React.FC = () => {
                                 <p className="text-emerald-400">{acc.phone || '—'}</p>
                                 <p className="text-slate-400">{acc.email || '—'}</p>
                               </td>
-                              <td className="py-3 px-4 font-mono text-amber-400 font-bold">{acc.loyaltyPoints || 0} pts</td>
+                              <td className="py-3 px-4">
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-amber-400 font-black text-sm">
+                                      {acc.loyaltyPoints || 0} pts
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setViewingLoyaltyHistoryAcc(acc)}
+                                      title={at('পয়েন্ট হিস্ট্রি দেখুন', 'View Loyalty History')}
+                                      className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                                    >
+                                      <History className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setEditingLoyaltyAcc({
+                                          targetKey,
+                                          name: acc.name,
+                                          points: acc.loyaltyPoints || 0
+                                        })
+                                      }
+                                      title={at('সঠিক পয়েন্ট এডিট', 'Edit Exact Points')}
+                                      className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 cursor-pointer"
+                                    >
+                                      <Edit className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteCustomerLoyaltyPoints(targetKey)}
+                                      title={at('পয়েন্ট ডিলিট/রিসেট (0)', 'Delete / Clear Points')}
+                                      className="p-1 rounded bg-rose-950/70 hover:bg-rose-900 text-rose-300 cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={ptsStep}
+                                      onChange={(e) =>
+                                        setLoyaltyStepAmounts((prev) => ({
+                                          ...prev,
+                                          [targetKey]: Math.max(1, Number(e.target.value))
+                                        }))
+                                      }
+                                      className="w-14 px-1.5 py-0.5 bg-slate-950 border border-slate-700 rounded text-white font-mono text-[10px] text-center"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => adjustCustomerLoyaltyPoints(targetKey, -Math.abs(ptsStep), 'Admin Points Deducted')}
+                                      className="px-1.5 py-0.5 rounded bg-rose-950/70 border border-rose-700 text-rose-200 font-bold text-[10px] cursor-pointer"
+                                    >
+                                      -{ptsStep}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => adjustCustomerLoyaltyPoints(targetKey, Math.abs(ptsStep), 'Admin Bonus Points')}
+                                      className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-black text-[10px] cursor-pointer"
+                                    >
+                                      +{ptsStep}
+                                    </button>
+                                  </div>
+                                </div>
+                              </td>
                               <td className="py-3 px-4 font-mono font-black text-base text-emerald-400">
                                 ৳{(acc.walletBalance || 0).toLocaleString()}
                               </td>
@@ -14844,6 +15321,180 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                   <p className="text-[10px] text-slate-500">By: {log.actor}</p>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT ABANDONED CART MODAL */}
+      {editingAbandonedCart && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <button
+              type="button"
+              onClick={() => setEditingAbandonedCart(null)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h3 className="text-base font-black text-white">
+              {at('ড্রপ-অফ কার্ট এডিট করুন', 'Edit Abandoned Cart')}
+            </h3>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const recomputedTotal = editingAbandonedCart.items.reduce(
+                  (sum, it) => sum + (it.product.price || 0) * Math.max(1, it.quantity || 1),
+                  0
+                );
+                editAbandonedCart(editingAbandonedCart.id, {
+                  customerName: editingAbandonedCart.customerName,
+                  customerPhone: editingAbandonedCart.customerPhone,
+                  customerDistrict: editingAbandonedCart.customerDistrict,
+                  items: editingAbandonedCart.items,
+                  total: recomputedTotal
+                });
+                setEditingAbandonedCart(null);
+              }}
+              className="space-y-3 text-xs"
+            >
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">{at('কাস্টমারের নাম', 'Customer Name')}</label>
+                <input
+                  type="text"
+                  required
+                  value={editingAbandonedCart.customerName || ''}
+                  onChange={(e) => setEditingAbandonedCart({ ...editingAbandonedCart, customerName: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('মোবাইল নম্বর', 'Phone')}</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingAbandonedCart.customerPhone || ''}
+                    onChange={(e) => setEditingAbandonedCart({ ...editingAbandonedCart, customerPhone: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('জেলা', 'District')}</label>
+                  <input
+                    type="text"
+                    value={editingAbandonedCart.customerDistrict || ''}
+                    onChange={(e) => setEditingAbandonedCart({ ...editingAbandonedCart, customerDistrict: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-slate-300 font-bold">{at('আইটেম পরিমাণ', 'Cart Item Quantities')}</label>
+                {editingAbandonedCart.items.map((it, idx) => (
+                  <div key={idx} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-950 border border-slate-800">
+                    <span className="truncate flex-1 text-slate-200">{at(it.product.titleBn, it.product.title)}</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={it.quantity}
+                      onChange={(e) => {
+                        const qty = Math.max(1, Number(e.target.value) || 1);
+                        setEditingAbandonedCart({
+                          ...editingAbandonedCart,
+                          items: editingAbandonedCart.items.map((row, rIdx) => (rIdx === idx ? { ...row, quantity: qty } : row))
+                        });
+                      }}
+                      className="w-16 px-2 py-1 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-center"
+                    />
+                  </div>
+                ))}
+              </div>
+              <button type="submit" className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl cursor-pointer">
+                {at('পরিবর্তন সেভ করুন', 'Save Cart Updates')}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT EXACT LOYALTY POINTS MODAL */}
+      {editingLoyaltyAcc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-sm bg-slate-900 border border-amber-500/40 rounded-3xl p-6 shadow-2xl space-y-4">
+            <button
+              type="button"
+              onClick={() => setEditingLoyaltyAcc(null)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div>
+              <h3 className="text-base font-black text-white">{at('লয়্যালটি পয়েন্ট এডিট করুন', 'Edit Loyalty Points')}</h3>
+              <p className="text-xs text-slate-400">{editingLoyaltyAcc.name} ({editingLoyaltyAcc.targetKey})</p>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setCustomerLoyaltyPoints(editingLoyaltyAcc.targetKey, Math.max(0, Number(editingLoyaltyAcc.points) || 0), 'Admin Direct Points Update');
+                setEditingLoyaltyAcc(null);
+              }}
+              className="space-y-3 text-xs"
+            >
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">{at('নতুন মোট পয়েন্ট', 'Exact Loyalty Points')}</label>
+                <input
+                  type="number"
+                  min={0}
+                  required
+                  value={editingLoyaltyAcc.points}
+                  onChange={(e) => setEditingLoyaltyAcc({ ...editingLoyaltyAcc, points: Math.max(0, Number(e.target.value) || 0) })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-amber-400 font-mono text-base font-black"
+                />
+              </div>
+              <button type="submit" className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl cursor-pointer">
+                {at('পয়েন্ট আপডেট করুন', 'Update Loyalty Points')}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW CUSTOMER LOYALTY HISTORY MODAL */}
+      {viewingLoyaltyHistoryAcc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <button
+              type="button"
+              onClick={() => setViewingLoyaltyHistoryAcc(null)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div>
+              <h3 className="text-base font-black text-white">{viewingLoyaltyHistoryAcc.name}</h3>
+              <p className="text-xs text-amber-400 font-mono font-bold">
+                Current Points: {viewingLoyaltyHistoryAcc.loyaltyPoints || 0} pts
+              </p>
+            </div>
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {(viewingLoyaltyHistoryAcc.loyaltyHistory || []).length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-6">
+                  {at('এখনও কোনো পয়েন্ট হিস্ট্রি নেই।', 'No loyalty history entries yet.')}
+                </p>
+              ) : (
+                (viewingLoyaltyHistoryAcc.loyaltyHistory || []).map((log) => (
+                  <div key={log.id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2 text-xs">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-200 truncate">{log.note}</p>
+                      <span className="text-[10px] font-mono text-slate-500">{new Date(log.date).toLocaleString()}</span>
+                    </div>
+                    <span className={`font-mono font-black shrink-0 ${log.points >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {log.points >= 0 ? `+${log.points}` : log.points} pts
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

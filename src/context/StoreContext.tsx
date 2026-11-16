@@ -30,7 +30,8 @@ import {
   MediaItem,
   SecurityLogEntry,
   WaitlistEntry,
-  DeliveryBoy
+  DeliveryBoy,
+  LoyaltyHistoryItem
 } from '../types';
 import {
   INITIAL_PRODUCTS,
@@ -81,6 +82,7 @@ import {
   fetchWalletTopUpsFromFirestore,
   mapFirestoreDocToWalletTopUp,
   saveAbandonedCartToFirestore,
+  deleteAbandonedCartFromFirestore,
   fetchAbandonedCartsFromFirestore,
   mapFirestoreDocToAbandonedCart,
   savePriceAlertToFirestore,
@@ -250,6 +252,8 @@ interface StoreContextType {
     discountAmount?: number;
     couponCode?: string;
     walletUsedAmount?: number;
+    loyaltyPointsUsed?: number;
+    loyaltyDiscountAmount?: number;
     customDeliveryFee?: number;
     source?: 'online' | 'pos';
     initialStatus?: OrderStatus;
@@ -259,6 +263,7 @@ interface StoreContextType {
   updateOrderCourier: (orderId: string, updates: Partial<Order['courier']>) => void;
   assignDeliveryBoyToOrder: (orderId: string, boy: DeliveryBoy | null) => void;
   aiConfirmOrderByCustomer: (orderId: string, sourceLabel?: string) => boolean;
+  recordPartialPayment: (orderId: string, amountPaidNow: number, markCompleted?: boolean, note?: string) => void;
   updateOrderDetails: (orderId: string, updates: Partial<Order>) => void;
   deleteOrder: (orderId: string) => void;
   bulkUpdateOrders: (orderIds: string[], action: { status?: OrderStatus; deleteAll?: boolean }) => void;
@@ -321,6 +326,9 @@ interface StoreContextType {
   clearRecentlyViewed: () => void;
   claimDailyCheckIn: () => { success: boolean; amount: number; message: string };
   redeemLoyaltyPoints: (points: number) => { success: boolean; discountAmount: number };
+  adjustCustomerLoyaltyPoints: (identifier: string, delta: number, reason?: string) => boolean;
+  setCustomerLoyaltyPoints: (identifier: string, exactPoints: number, reason?: string) => boolean;
+  deleteCustomerLoyaltyPoints: (identifier: string) => boolean;
   isCustomerDashboardOpen: boolean;
   setIsCustomerDashboardOpen: (open: boolean) => void;
 
@@ -376,6 +384,17 @@ interface StoreContextType {
   abandonedCarts: AbandonedCart[];
   markAbandonedCartWhatsAppSent: (cartId: string) => void;
   recoverAbandonedCart: (cartId: string) => void;
+  editAbandonedCart: (cartId: string, updates: Partial<AbandonedCart>) => void;
+  deleteAbandonedCart: (cartId: string) => void;
+  bulkAbandonedCartsAction: (cartIds: string[], action: 'whatsapp' | 'recover' | 'delete') => void;
+
+  // Autonomous Human-Like Website Control AI Agent
+  agentActionLogs: { id: string; time: string; instruction: string; reply: string; actions: string[]; mode: string }[];
+  executeAIAgentCommand: (
+    instruction: string,
+    role?: 'admin' | 'customer',
+    adminTabSetter?: (tab: string) => void
+  ) => Promise<{ reply: string; executed: string[]; mode: string }>;
 
   // Product Comparison (up to 3 products)
   compareList: string[];
@@ -650,6 +669,10 @@ function mergeSettings(raw: any): StoreSettings {
       blockedPhones: Array.isArray(raw.securitySettings?.blockedPhones)
         ? raw.securitySettings.blockedPhones
         : INITIAL_SETTINGS.securitySettings!.blockedPhones
+    },
+    loyaltySettings: {
+      ...INITIAL_SETTINGS.loyaltySettings!,
+      ...(raw.loyaltySettings || {})
     }
   };
 }
@@ -978,6 +1001,71 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       })
     );
     addToast('success', t('কার্ট সফলভাবে রিকভার হয়েছে!', 'Cart Recovered!'), '');
+  };
+
+  const editAbandonedCart = (cartId: string, updates: Partial<AbandonedCart>) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setAbandonedCarts((prev) =>
+      prev.map((c) => {
+        if (c.id !== cartId) return c;
+        const nextItems = updates.items ?? c.items;
+        const recomputedTotal = Array.isArray(nextItems)
+          ? nextItems.reduce((sum, it) => sum + (Number(it.product?.price) || 0) * Math.max(1, Number(it.quantity) || 1), 0)
+          : updates.total ?? c.total;
+        const next: AbandonedCart = {
+          ...c,
+          ...updates,
+          items: nextItems,
+          total: updates.total !== undefined && updates.items === undefined ? updates.total : recomputedTotal
+        };
+        saveAbandonedCartToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
+    addToast('success', t('কার্ট তথ্য আপডেট সম্পন্ন!', 'Abandoned Cart Updated!'), '');
+  };
+
+  const deleteAbandonedCart = (cartId: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setAbandonedCarts((prev) => prev.filter((c) => c.id !== cartId));
+    deleteAbandonedCartFromFirestore(cartId).catch(() => {});
+    addToast('info', t('কার্ট রেকর্ড মুছে ফেলা হয়েছে', 'Abandoned Cart Deleted'), '');
+  };
+
+  const bulkAbandonedCartsAction = (cartIds: string[], action: 'whatsapp' | 'recover' | 'delete') => {
+    if (!cartIds.length) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const idSet = new Set(cartIds);
+    if (action === 'delete') {
+      cartIds.forEach((id) => deleteAbandonedCartFromFirestore(id).catch(() => {}));
+      setAbandonedCarts((prev) => prev.filter((c) => !idSet.has(c.id)));
+      addToast('info', t(`${cartIds.length}টি কার্ট ডিলিট সম্পন্ন`, `Deleted ${cartIds.length} Carts`), '');
+      return;
+    }
+    if (action === 'whatsapp') {
+      setAbandonedCarts((prev) =>
+        prev.map((c) => {
+          if (!idSet.has(c.id)) return c;
+          const next = { ...c, whatsappSent: true };
+          saveAbandonedCartToFirestore(next).catch(() => {});
+          return next;
+        })
+      );
+      addToast('success', t(`${cartIds.length}জনকে WhatsApp পাঠানো হয়েছে`, `Bulk WhatsApp Sent (${cartIds.length})`), '');
+      return;
+    }
+    if (action === 'recover') {
+      const nowIso = new Date().toISOString();
+      setAbandonedCarts((prev) =>
+        prev.map((c) => {
+          if (!idSet.has(c.id)) return c;
+          const next = { ...c, recovered: true, recoveredAt: nowIso };
+          saveAbandonedCartToFirestore(next).catch(() => {});
+          return next;
+        })
+      );
+      addToast('success', t(`${cartIds.length}টি কার্ট রিকভার চিহ্নিত হয়েছে`, `Recovered ${cartIds.length} Carts`), '');
+    }
   };
 
   // Product Comparison (up to 3)
@@ -2136,31 +2224,213 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [customerWalletBalance, walletLastPurchaseAt, walletLastCreditAt, expiryDaysSetting]);
 
   const redeemLoyaltyPoints = (points: number) => {
-    if (customerProfile.loyaltyPoints < points) {
+    const cfg = settings.loyaltySettings;
+    const minReq = cfg?.minRedeemPoints ?? 10;
+    const bdtRate = cfg?.bdtPerPoint ?? 1;
+    if (points < minReq || customerProfile.loyaltyPoints < points) {
       return { success: false, discountAmount: 0 };
     }
-    const discountAmount = Math.floor(points);
-    const nextPoints = customerProfile.loyaltyPoints - points;
+    const discountAmount = Math.max(1, Math.round(points * bdtRate));
+    const nextPoints = Math.max(0, customerProfile.loyaltyPoints - points);
     const nextBal = customerWalletBalance + discountAmount;
     const nowIso = new Date().toISOString();
+    const ledgerEntry = {
+      id: `loy-${Date.now()}`,
+      type: 'redeem' as const,
+      points: -points,
+      note: `Converted ${points} pts to ৳${discountAmount} wallet balance`,
+      date: nowIso
+    };
     setCustomerWalletBalance(nextBal);
     localStorage.setItem('buyonebd_customer_wallet_v3', nextBal.toString());
     if (!walletLastCreditAt) {
       setWalletLastCreditAt(nowIso);
       localStorage.setItem('buyonebd_wallet_last_credit_v1', nowIso);
     }
-    setCustomerProfile((cp) => ({
-      ...cp,
-      loyaltyPoints: nextPoints,
-      walletBalance: nextBal,
-      lastWalletCreditAt: cp.lastWalletCreditAt || nowIso
-    }));
+    const cleanPhone = (customerProfile.phone || '').replace(/[^0-9]/g, '');
+    setCustomerProfile((cp) => {
+      const updated = {
+        ...cp,
+        loyaltyPoints: nextPoints,
+        walletBalance: nextBal,
+        lastWalletCreditAt: cp.lastWalletCreditAt || nowIso,
+        loyaltyHistory: [ledgerEntry, ...(cp.loyaltyHistory || [])].slice(0, 40)
+      };
+      saveCustomerToFirestore(updated).catch(() => {});
+      return updated;
+    });
+    setCustomerAccounts((prev) =>
+      prev.map((acc) => {
+        if (cleanPhone && acc.phone.replace(/[^0-9]/g, '') === cleanPhone) {
+          const updated = {
+            ...acc,
+            loyaltyPoints: nextPoints,
+            walletBalance: nextBal,
+            loyaltyHistory: [ledgerEntry, ...(acc.loyaltyHistory || [])].slice(0, 40)
+          };
+          saveCustomerToFirestore(updated).catch(() => {});
+          return updated;
+        }
+        return acc;
+      })
+    );
     addToast(
       'success',
       lang === 'bn' ? `${points} পয়েন্ট রিডিম সম্পন্ন!` : `${points} Points Redeemed!`,
       lang === 'bn' ? `৳${discountAmount} আপনার ব্যালেন্সে যোগ করা হয়েছে।` : `৳${discountAmount} converted to wallet balance.`
     );
     return { success: true, discountAmount };
+  };
+
+  const adjustCustomerLoyaltyPoints = (identifier: string, delta: number, reason?: string): boolean => {
+    if (!identifier || delta === 0) return false;
+    const cleanId = identifier.trim().toLowerCase();
+    const cleanDigits = identifier.replace(/[^0-9]/g, '').slice(-11);
+    const nowIso = new Date().toISOString();
+    let found = false;
+    let updatedPoints = 0;
+    let targetName = identifier;
+    const ledgerEntry = {
+      id: `loy-${Date.now()}`,
+      type: 'adjust' as const,
+      points: delta,
+      note: reason || `Admin adjustment (${delta > 0 ? '+' : ''}${delta} pts)`,
+      date: nowIso
+    };
+
+    const nextAccounts = customerAccounts.map((acc) => {
+      const accDigits = acc.phone.replace(/[^0-9]/g, '').slice(-11);
+      const matches =
+        (acc.username && acc.username.toLowerCase() === cleanId) ||
+        (acc.email && acc.email.toLowerCase() === cleanId) ||
+        (cleanDigits && accDigits === cleanDigits) ||
+        acc.name.toLowerCase() === cleanId;
+      if (!matches) return acc;
+      found = true;
+      targetName = acc.name;
+      updatedPoints = Math.max(0, Math.round((acc.loyaltyPoints || 0) + delta));
+      const updated = {
+        ...acc,
+        loyaltyPoints: updatedPoints,
+        loyaltyHistory: [ledgerEntry, ...(acc.loyaltyHistory || [])].slice(0, 40)
+      };
+      saveCustomerToFirestore(updated).catch(() => {});
+      return updated;
+    });
+
+    if (!found) return false;
+    lastLocalMutationAtRef.current = Date.now();
+    setCustomerAccounts(nextAccounts);
+
+    const activeDigits = (customerProfile.phone || '').replace(/[^0-9]/g, '').slice(-11);
+    if (
+      (cleanDigits && activeDigits === cleanDigits) ||
+      (customerProfile.email && customerProfile.email.toLowerCase() === cleanId)
+    ) {
+      setCustomerProfile((cp) => ({
+        ...cp,
+        loyaltyPoints: updatedPoints,
+        loyaltyHistory: [ledgerEntry, ...(cp.loyaltyHistory || [])].slice(0, 40)
+      }));
+    }
+
+    addToast(
+      delta > 0 ? 'success' : 'info',
+      t(`${targetName}: ${delta > 0 ? '+' : ''}${delta} পয়েন্ট`, `${targetName}: ${delta > 0 ? '+' : ''}${delta} Points`),
+      t(`মোট পয়েন্ট: ${updatedPoints}`, `New Total: ${updatedPoints} pts`)
+    );
+    return true;
+  };
+
+  const setCustomerLoyaltyPoints = (identifier: string, exactPoints: number, reason?: string): boolean => {
+    const cleanPts = Math.max(0, Math.round(exactPoints));
+    const cleanId = identifier.trim().toLowerCase();
+    const cleanDigits = identifier.replace(/[^0-9]/g, '').slice(-11);
+    const nowIso = new Date().toISOString();
+    let found = false;
+    let targetName = identifier;
+
+    const nextAccounts = customerAccounts.map((acc) => {
+      const accDigits = acc.phone.replace(/[^0-9]/g, '').slice(-11);
+      const matches =
+        (acc.username && acc.username.toLowerCase() === cleanId) ||
+        (acc.email && acc.email.toLowerCase() === cleanId) ||
+        (cleanDigits && accDigits === cleanDigits) ||
+        acc.name.toLowerCase() === cleanId;
+      if (!matches) return acc;
+      found = true;
+      targetName = acc.name;
+      const diff = cleanPts - (acc.loyaltyPoints || 0);
+      const ledgerEntry = {
+        id: `loy-${Date.now()}`,
+        type: 'adjust' as const,
+        points: diff,
+        note: reason || `Admin set points to ${cleanPts}`,
+        date: nowIso
+      };
+      const updated = {
+        ...acc,
+        loyaltyPoints: cleanPts,
+        loyaltyHistory: [ledgerEntry, ...(acc.loyaltyHistory || [])].slice(0, 40)
+      };
+      saveCustomerToFirestore(updated).catch(() => {});
+      return updated;
+    });
+
+    if (!found) return false;
+    lastLocalMutationAtRef.current = Date.now();
+    setCustomerAccounts(nextAccounts);
+    const activeDigits = (customerProfile.phone || '').replace(/[^0-9]/g, '').slice(-11);
+    if (cleanDigits && activeDigits === cleanDigits) {
+      setCustomerProfile((cp) => ({ ...cp, loyaltyPoints: cleanPts }));
+    }
+    addToast('success', t(`${targetName}-এর পয়েন্ট আপডেট!`, `Updated Points for ${targetName}`), `${cleanPts} pts`);
+    return true;
+  };
+
+  const deleteCustomerLoyaltyPoints = (identifier: string): boolean => {
+    const cleanId = identifier.trim().toLowerCase();
+    const cleanDigits = identifier.replace(/[^0-9]/g, '').slice(-11);
+    const nowIso = new Date().toISOString();
+    let found = false;
+    let targetName = identifier;
+
+    const nextAccounts = customerAccounts.map((acc) => {
+      const accDigits = acc.phone.replace(/[^0-9]/g, '').slice(-11);
+      const matches =
+        (acc.username && acc.username.toLowerCase() === cleanId) ||
+        (acc.email && acc.email.toLowerCase() === cleanId) ||
+        (cleanDigits && accDigits === cleanDigits) ||
+        acc.name.toLowerCase() === cleanId;
+      if (!matches) return acc;
+      found = true;
+      targetName = acc.name;
+      const prevPts = acc.loyaltyPoints || 0;
+      const ledgerEntry = {
+        id: `loy-${Date.now()}`,
+        type: 'delete' as const,
+        points: -prevPts,
+        note: 'Points deleted / reset to 0 by Admin',
+        date: nowIso
+      };
+      const updated = {
+        ...acc,
+        loyaltyPoints: 0,
+        loyaltyHistory: [ledgerEntry, ...(acc.loyaltyHistory || [])].slice(0, 40)
+      };
+      saveCustomerToFirestore(updated).catch(() => {});
+      return updated;
+    });
+
+    if (!found) return false;
+    lastLocalMutationAtRef.current = Date.now();
+    setCustomerAccounts(nextAccounts);
+    const activeDigits = (customerProfile.phone || '').replace(/[^0-9]/g, '').slice(-11);
+    if (cleanDigits && activeDigits === cleanDigits) {
+      setCustomerProfile((cp) => ({ ...cp, loyaltyPoints: 0 }));
+    }
+    addToast('info', t(`${targetName}-এর সকল পয়েন্ট মুছে ফেলা হয়েছে`, `Reset Loyalty Points for ${targetName}`), '0 pts');
+    return true;
   };
 
   const addToWallet = (amount: number, reason?: string) => {
@@ -3368,6 +3638,51 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       (o: any) => o && o.id && !knownOrderIdsRef.current.has(o.id)
     );
 
+    const stagePriority: Record<string, number> = {
+      pending: 1,
+      on_hold: 2,
+      partial: 3,
+      ai_confirmed: 4,
+      processing: 5,
+      shipped: 6,
+      delivered: 7,
+      cancelled: 7
+    };
+
+    const mergePair = (existing: Order | undefined, incoming: Order): Order => {
+      if (!existing) return incoming;
+      const exTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+      const inTime = new Date(incoming.updatedAt || incoming.createdAt || 0).getTime();
+      const exStage = stagePriority[existing.status] || 0;
+      const inStage = stagePriority[incoming.status] || 0;
+
+      // Never downgrade an already confirmed/processing/shipped/delivered order back to pending
+      const preferIncoming =
+        inTime > exTime + 500 ||
+        (inTime === exTime && inStage >= exStage) ||
+        (inStage > exStage && existing.status === 'pending');
+
+      const winner = preferIncoming ? incoming : existing;
+      const loser = preferIncoming ? existing : incoming;
+      const confirmedByCustomer =
+        Boolean(winner.aiCallStatus?.confirmedByCustomer) || Boolean(loser.aiCallStatus?.confirmedByCustomer);
+
+      return {
+        ...loser,
+        ...winner,
+        status: winner.status === 'pending' && confirmedByCustomer ? 'ai_confirmed' : winner.status,
+        aiCallStatus: {
+          ...(loser.aiCallStatus || {}),
+          ...(winner.aiCallStatus || {}),
+          confirmedByCustomer
+        },
+        courier: {
+          ...(loser.courier || {}),
+          ...(winner.courier || {})
+        }
+      };
+    };
+
     setOrders((prev) => {
       const map = new Map<string, Order>();
       prev.forEach((o) => {
@@ -3375,7 +3690,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
       incomingOrders.forEach((o: Order) => {
         if (o && o.id && !deletedSet.has(o.id)) {
-          map.set(o.id, o);
+          map.set(o.id, mergePair(map.get(o.id), o));
         }
       });
       const merged = Array.from(map.values()).sort(
@@ -3385,7 +3700,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         JSON.stringify(
           list.map(
             (x) =>
-              `${x.id}:${x.status}:${x.courier?.provider}:${x.courier?.status}:${x.courier?.trackingCode}:${x.pricing?.total}:${x.payment?.dueAmount}:${x.fraudCheck?.successRate}`
+              `${x.id}:${x.status}:${x.updatedAt || ''}:${x.aiCallStatus?.confirmedByCustomer}:${x.courier?.provider}:${x.courier?.status}:${x.courier?.trackingCode}:${x.pricing?.total}:${x.payment?.dueAmount}:${x.fraudCheck?.successRate}`
           )
         );
       return fingerprint(prev) === fingerprint(merged) ? prev : merged;
@@ -4986,6 +5301,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     discountAmount?: number;
     couponCode?: string;
     walletUsedAmount?: number;
+    loyaltyPointsUsed?: number;
+    loyaltyDiscountAmount?: number;
     customDeliveryFee?: number;
     source?: 'online' | 'pos';
     initialStatus?: OrderStatus;
@@ -5065,10 +5382,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (walletUsed > 0) {
       deductWallet(walletUsed);
     }
-    const discount = (orderData.discountAmount || 0) + walletUsed;
+    const loyaltyPointsUsed = Math.max(0, Math.round(orderData.loyaltyPointsUsed || 0));
+    const loyaltyDiscount = Math.max(0, Math.round(orderData.loyaltyDiscountAmount || 0));
+    const discount = (orderData.discountAmount || 0) + walletUsed + loyaltyDiscount;
     const total = Math.max(0, subtotal + fee - discount);
     const orderIdNum = `${Date.now().toString().slice(-5)}${Math.floor(100 + Math.random() * 900)}`;
     const newOrderId = orderData.source === 'pos' ? `POS-${orderIdNum}` : `BD-${orderIdNum}`;
+
+    // Loyalty Points Earned calculation (per-product override or store settings rule)
+    const loyCfg = settings.loyaltySettings || INITIAL_SETTINGS.loyaltySettings!;
+    const explicitProdPts = orderData.items.reduce(
+      (sum, it) => sum + ((it.product.loyaltyPoints || 0) > 0 ? (it.product.loyaltyPoints || 0) * it.quantity : 0),
+      0
+    );
+    const pointsEarned =
+      loyCfg.enabled !== false && total > 0
+        ? explicitProdPts > 0
+          ? explicitProdPts
+          : Math.max(1, Math.floor((total / 100) * (loyCfg.pointsPer100Bdt || 5)))
+        : 0;
 
     const courierProviders: CourierProvider[] = ['Steadfast', 'Pathao', 'RedX'];
     const chosenCourier = courierProviders[0];
@@ -5076,6 +5408,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const phoneSum = orderData.customer.phone.split('').reduce((s, c) => s + (parseInt(c, 10) || 0), 0);
     const rate = phoneSum % 5 === 0 ? 55 : 94;
+    const nowIso = new Date().toISOString();
+
+    const dueAmountCalc =
+      orderData.advancePaid !== undefined && orderData.advancePaid > 0 && orderData.advancePaid < total
+        ? Math.max(0, total - orderData.advancePaid)
+        : orderData.paymentMethod === 'cod'
+        ? total
+        : 0;
+
+    const initialPaymentHistory =
+      orderData.advancePaid && orderData.advancePaid > 0
+        ? [
+            {
+              id: `pay-${Date.now()}`,
+              amount: orderData.advancePaid,
+              method: orderData.paymentMethod,
+              note: orderData.source === 'pos' ? 'POS Initial Advance' : 'Checkout Advance Payment',
+              date: nowIso
+            }
+          ]
+        : undefined;
 
     const newOrder: Order = {
       id: newOrderId,
@@ -5098,24 +5451,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deliveryFee: fee,
         discount,
         total,
-        advancePaid: orderData.advancePaid
+        advancePaid: orderData.advancePaid,
+        ...(loyaltyPointsUsed > 0 ? { loyaltyPointsUsed } : {}),
+        ...(loyaltyDiscount > 0 ? { loyaltyDiscount } : {}),
+        ...(pointsEarned > 0 ? { loyaltyPointsEarned: pointsEarned } : {}),
+        ...(initialPaymentHistory ? { paymentHistory: initialPaymentHistory } : {})
       },
       payment: {
         method: orderData.paymentMethod,
-        status: orderData.advancePaid
-          ? 'advance_paid'
-          : orderData.paymentMethod === 'cod'
-          ? 'pending'
-          : 'paid',
+        status:
+          orderData.advancePaid && orderData.advancePaid > 0 && dueAmountCalc > 0
+            ? 'advance_paid'
+            : orderData.paymentMethod === 'cod'
+            ? 'pending'
+            : 'paid',
         trxId: orderData.paymentTrxId,
         paymentNumber: orderData.customer.phone,
-        dueAmount:
-          orderData.paymentMethod === 'cod' || (orderData.advancePaid && orderData.advancePaid < total)
-            ? Math.max(0, total - (orderData.advancePaid || 0))
-            : 0
+        dueAmount: dueAmountCalc
       },
       deliveryZone: orderData.deliveryZone,
-      status: orderData.initialStatus || (orderData.source === 'pos' ? 'delivered' : 'pending'),
+      status:
+        orderData.initialStatus ||
+        (orderData.advancePaid && orderData.advancePaid > 0 && dueAmountCalc > 0
+          ? 'partial'
+          : orderData.source === 'pos'
+          ? 'delivered'
+          : 'pending'),
       aiCallStatus: {
         called: false
       },
@@ -5144,7 +5505,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         message: rate >= 80 ? 'নিরাপদ গ্রাহক।' : 'রিটার্ন ঝুঁকি রয়েছে।'
       },
       source: orderData.source || 'online',
-      createdAt: new Date().toISOString()
+      createdAt: nowIso,
+      updatedAt: nowIso
     };
 
     lastLocalMutationAtRef.current = Date.now();
@@ -5257,16 +5619,86 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     }
 
-    // Reset 30-day wallet inactivity clock when customer purchases a product
+    // Reset 30-day wallet clock & sync Customer Loyalty Points (both Earned & Redeemed across Customer + Admin CRM)
+    const custDigits = String(orderData.customer.phone || '').replace(/[^0-9]/g, '').slice(-11);
+    const loyLedgerUpdates: LoyaltyHistoryItem[] = [];
+    if (loyaltyPointsUsed > 0) {
+      loyLedgerUpdates.push({
+        id: `loy-use-${Date.now()}`,
+        type: 'redeem',
+        points: -loyaltyPointsUsed,
+        note: `Redeemed on Order #${newOrderId} (-৳${loyaltyDiscount})`,
+        orderId: newOrderId,
+        date: nowIso
+      });
+    }
+    if (pointsEarned > 0) {
+      loyLedgerUpdates.push({
+        id: `loy-earn-${Date.now() + 1}`,
+        type: 'earn',
+        points: pointsEarned,
+        note: `Earned from Order #${newOrderId} (৳${total})`,
+        orderId: newOrderId,
+        date: nowIso
+      });
+    }
+
+    if (custDigits.length >= 8) {
+      setCustomerAccounts((prev) => {
+        const idx = prev.findIndex((a) => String(a.phone || '').replace(/[^0-9]/g, '').slice(-11) === custDigits);
+        if (idx >= 0) {
+          const updatedList = [...prev];
+          const existingAcc = updatedList[idx];
+          const nextPts = Math.max(0, (existingAcc.loyaltyPoints || 0) - loyaltyPointsUsed + pointsEarned);
+          const nextAcc: CustomerProfile = {
+            ...existingAcc,
+            loyaltyPoints: nextPts,
+            lastPurchaseAt: nowIso,
+            loyaltyHistory: [...loyLedgerUpdates, ...(existingAcc.loyaltyHistory || [])].slice(0, 40)
+          };
+          updatedList[idx] = nextAcc;
+          saveCustomerToFirestore(nextAcc).catch(() => {});
+          return updatedList;
+        } else if (pointsEarned > 0) {
+          const welcomeBonus = loyCfg.welcomeBonusPoints || 0;
+          const createdAcc: CustomerProfile = {
+            name: orderData.customer.name || 'Customer',
+            phone: orderData.customer.phone,
+            email: '',
+            address: orderData.customer.address || '',
+            district: orderData.customer.district || 'Dhaka - Inside City',
+            loyaltyPoints: pointsEarned + welcomeBonus,
+            walletBalance: 0,
+            lastPurchaseAt: nowIso,
+            loyaltyHistory: [
+              ...loyLedgerUpdates,
+              ...(welcomeBonus > 0
+                ? [{ id: `loy-wel-${Date.now()}`, type: 'earn' as const, points: welcomeBonus, note: 'Loyalty Welcome Bonus', date: nowIso }]
+                : [])
+            ]
+          };
+          saveCustomerToFirestore(createdAcc).catch(() => {});
+          return [createdAcc, ...prev];
+        }
+        return prev;
+      });
+    }
+
     if (orderData.source !== 'pos') {
       const purchaseIso = new Date().toISOString();
       setWalletLastPurchaseAt(purchaseIso);
       localStorage.setItem('buyonebd_wallet_last_purchase_v1', purchaseIso);
-      setCustomerProfile((cp) => ({
-        ...cp,
-        lastPurchaseAt: purchaseIso,
-        loyaltyPoints: (cp.loyaltyPoints || 0) + Math.max(5, Math.floor(total / 100))
-      }));
+      setCustomerProfile((cp) => {
+        const activeDigits = String(cp.phone || '').replace(/[^0-9]/g, '').slice(-11);
+        const matchesOrGuest = !custDigits || !activeDigits || activeDigits === custDigits;
+        if (!matchesOrGuest) return cp;
+        return {
+          ...cp,
+          lastPurchaseAt: purchaseIso,
+          loyaltyPoints: Math.max(0, (cp.loyaltyPoints || 0) - loyaltyPointsUsed + pointsEarned),
+          loyaltyHistory: [...loyLedgerUpdates, ...(cp.loyaltyHistory || [])].slice(0, 40)
+        };
+      });
 
       trackPixelEvent('Purchase', {
         urlPath: '/checkout',
@@ -5410,6 +5842,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const aiConfirmOrderByCustomer = (orderId: string, sourceLabel = 'AI Chat Agent'): boolean => {
     const found = ordersRef.current.find((o) => o.id.toLowerCase() === orderId.toLowerCase());
     if (!found) return false;
+    lastLocalMutationAtRef.current = Date.now();
+    const nowIso = new Date().toISOString();
+    let finalizedOrder: Order | null = null;
     setOrders((prev) =>
       prev.map((ord) => {
         if (ord.id !== found.id) return ord;
@@ -5423,7 +5858,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const nextCourier = {
           ...ord.courier,
           history: [
-            ...ord.courier.history,
+            ...(ord.courier?.history || []),
             {
               status: 'AI Verified & Confirmed',
               time: new Date().toLocaleTimeString(),
@@ -5436,14 +5871,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           ...ord,
           status: 'ai_confirmed',
           aiCallStatus: nextAiCallStatus,
-          courier: nextCourier
+          courier: nextCourier,
+          updatedAt: nowIso
         };
+        finalizedOrder = updatedOrder;
         fetch(`/api/orders/${encodeURIComponent(ord.id)}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ updates: { status: 'ai_confirmed', aiCallStatus: nextAiCallStatus, courier: nextCourier } })
+          body: JSON.stringify({
+            updates: {
+              status: 'ai_confirmed',
+              aiCallStatus: nextAiCallStatus,
+              courier: nextCourier,
+              updatedAt: nowIso
+            }
+          })
         }).catch(() => {});
-        updateOrderInFirestore(updatedOrder).catch(() => {});
+        updateOrderInFirestore(updatedOrder, true).catch(() => {});
         return updatedOrder;
       })
     );
@@ -5452,7 +5896,110 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       t(`অর্ডার #${found.id} এআই-তে কনফার্ম!`, `Order #${found.id} AI Confirmed!`),
       t('অর্ডারটি এখন ডেলিভারির জন্য প্রস্তুত।', 'Ready for Steadfast / Delivery Boy dispatch.')
     );
+    // Optional Steadfast auto-book when explicitly configured
+    if (
+      finalizedOrder &&
+      settingsRef.current.courierSettings?.steadfast?.enabled &&
+      settingsRef.current.courierSettings?.steadfast?.autoBook &&
+      settingsRef.current.courierSettings?.steadfast?.apiKey &&
+      settingsRef.current.courierSettings?.steadfast?.secretKey &&
+      !found.courier?.consignmentId
+    ) {
+      bookOrderCourier(found.id, 'Steadfast').catch(() => {});
+    }
     return true;
+  };
+
+  const recordPartialPayment = (
+    orderId: string,
+    amountPaidNow: number,
+    markCompleted = false,
+    note?: string
+  ) => {
+    const cleanPay = Math.max(0, Math.round(amountPaidNow));
+    if (cleanPay <= 0 && !markCompleted) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const nowIso = new Date().toISOString();
+
+    setOrders((prev) =>
+      prev.map((ord) => {
+        if (ord.id !== orderId) return ord;
+        const total = Number(ord.pricing?.total || 0);
+        const prevPaid = Number(ord.pricing?.advancePaid || 0);
+        const nextPaid = markCompleted ? Math.max(total, prevPaid + cleanPay) : Math.min(total, prevPaid + cleanPay);
+        const nextDue = Math.max(0, total - nextPaid);
+        const nextStatus: OrderStatus =
+          markCompleted || nextDue === 0 ? 'delivered' : 'partial';
+        const nextPayStatus: Order['payment']['status'] =
+          nextDue === 0 ? 'paid' : 'advance_paid';
+
+        const nextHistory = [
+          ...(ord.pricing?.paymentHistory || []),
+          {
+            id: `pay-${Date.now()}`,
+            amount: cleanPay > 0 ? cleanPay : nextDue,
+            method: ord.payment?.method || 'cash',
+            note: note || (markCompleted ? 'Final settlement collected' : 'Partial installment collected'),
+            date: nowIso
+          }
+        ];
+
+        const nextCourier: Order['courier'] = {
+          ...ord.courier,
+          status: nextDue === 0 ? 'delivered' : ord.courier.status,
+          history: [
+            ...(ord.courier?.history || []),
+            {
+              status: nextDue === 0 ? 'Full Paid & Delivered' : `Partial Paid (+৳${cleanPay})`,
+              time: new Date().toLocaleTimeString(),
+              location: 'Admin Billing Desk',
+              note: note || `Collected ৳${cleanPay} • Remaining Due: ৳${nextDue}`
+            }
+          ]
+        };
+
+        const nextPricing = {
+          ...ord.pricing,
+          advancePaid: nextPaid,
+          paymentHistory: nextHistory
+        };
+        const nextPayment = {
+          ...ord.payment,
+          status: nextPayStatus,
+          dueAmount: nextDue
+        };
+        const updatedOrder: Order = {
+          ...ord,
+          status: nextStatus,
+          pricing: nextPricing,
+          payment: nextPayment,
+          courier: nextCourier,
+          updatedAt: nowIso
+        };
+
+        fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            updates: {
+              status: nextStatus,
+              pricing: nextPricing,
+              payment: nextPayment,
+              courier: nextCourier,
+              updatedAt: nowIso
+            }
+          })
+        }).catch(() => {});
+        updateOrderInFirestore(updatedOrder).catch(() => {});
+        return updatedOrder;
+      })
+    );
+
+    addToast(
+      'success',
+      t(`অর্ডার #${orderId} পেমেন্ট আপডেট!`, `Payment Updated #${orderId}`),
+      t(`৳${cleanPay.toLocaleString()} জমা হয়েছে।`, `Recorded ৳${cleanPay.toLocaleString()} collected.`)
+    );
   };
 
   const updateOrderDetails = (orderId: string, updates: Partial<Order>) => {
@@ -5577,6 +6124,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const finishAICall = (confirmed: boolean, transcriptLog?: { speaker: 'ai' | 'customer'; text: string; textBn: string; time: string }[]) => {
     if (activeCallOrder) {
       const orderId = activeCallOrder.id;
+      const nowIso = new Date().toISOString();
+      lastLocalMutationAtRef.current = Date.now();
       setOrders((prev) =>
         prev.map((ord) => {
           if (ord.id === orderId) {
@@ -5593,7 +6142,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               ? {
                   ...ord.courier,
                   history: [
-                    ...ord.courier.history,
+                    ...(ord.courier?.history || []),
                     {
                       status: 'AI Call Verified',
                       time: 'Just now',
@@ -5607,7 +6156,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               ...ord,
               status: nextStatus,
               aiCallStatus: nextAiCallStatus,
-              courier: nextCourier
+              courier: nextCourier,
+              updatedAt: nowIso
             };
             fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
               method: 'PATCH',
@@ -5616,11 +6166,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 updates: {
                   status: nextStatus,
                   aiCallStatus: nextAiCallStatus,
-                  courier: nextCourier
+                  courier: nextCourier,
+                  updatedAt: nowIso
                 }
               })
             }).catch(() => {});
-            updateOrderInFirestore(updatedOrder).catch(() => {});
+            updateOrderInFirestore(updatedOrder, confirmed).catch(() => {});
             return updatedOrder;
           }
           return ord;
@@ -5633,6 +6184,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           t('অর্ডার এআই দ্বারা নিশ্চিত হয়েছে!', 'AI Order Confirmed!'),
           t(`অর্ডার #${orderId} সফলভাবে ভেরিফাই করা হয়েছে। স্টিডফাস্ট কুরিয়ারে বুকিংয়ের জন্য প্রস্তুত।`, `Order #${orderId} verified by AI. Ready for dispatch.`)
         );
+        if (
+          settingsRef.current.courierSettings?.steadfast?.enabled &&
+          settingsRef.current.courierSettings?.steadfast?.autoBook &&
+          settingsRef.current.courierSettings?.steadfast?.apiKey &&
+          settingsRef.current.courierSettings?.steadfast?.secretKey &&
+          !activeCallOrder.courier?.consignmentId
+        ) {
+          bookOrderCourier(orderId, 'Steadfast').catch(() => {});
+        }
       } else {
         addToast(
           'error',
@@ -5921,6 +6481,263 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
+  // Autonomous Human-Like Website Control AI Agent Log & Dispatcher
+  const [agentActionLogs, setAgentActionLogs] = useState<
+    { id: string; time: string; instruction: string; reply: string; actions: string[]; mode: string }[]
+  >([]);
+
+  const executeAIAgentCommand = async (
+    instruction: string,
+    role: 'admin' | 'customer' = 'admin',
+    adminTabSetter?: (tab: string) => void
+  ): Promise<{ reply: string; executed: string[]; mode: string }> => {
+    const contextPayload = {
+      storeName: settingsRef.current.storeName,
+      orders: ordersRef.current.slice(0, 30),
+      products: productsRef.current.slice(0, 35),
+      customers: customerAccounts.slice(0, 30),
+      abandonedCarts: abandonedCartsRef.current.slice(0, 20),
+      deliveryFees: settingsRef.current.deliveryFees,
+      flashSaleEnabled: settingsRef.current.flashSale?.enabled
+    };
+
+    const res = await fetch('/api/agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instruction,
+        role,
+        lang: role === 'admin' ? adminLang : lang,
+        context: contextPayload
+      })
+    });
+    const data = (await safeParseJson<{ reply?: string; commands?: any[]; mode?: string }>(res)) || {};
+    const commands: any[] = Array.isArray(data.commands) ? data.commands : [];
+    const executed: string[] = [];
+
+    for (const cmd of commands) {
+      const p = cmd.payload || {};
+      switch (cmd.type) {
+        case 'ai_confirm_order': {
+          if (p.orderId && aiConfirmOrderByCustomer(String(p.orderId), 'Human-AI Website Controller')) {
+            executed.push(`AI Confirmed #${p.orderId}`);
+          }
+          break;
+        }
+        case 'update_order_status': {
+          if (p.orderId && p.status) {
+            updateOrderStatus(String(p.orderId), p.status as OrderStatus);
+            executed.push(`Updated #${p.orderId} → ${p.status}`);
+          }
+          break;
+        }
+        case 'book_courier': {
+          if (p.orderId) {
+            await bookOrderCourier(String(p.orderId), (p.provider || 'Steadfast') as CourierProvider);
+            executed.push(`Courier Booked #${p.orderId} (${p.provider || 'Steadfast'})`);
+          }
+          break;
+        }
+        case 'record_partial_payment': {
+          if (p.orderId) {
+            recordPartialPayment(String(p.orderId), Number(p.amount) || 0, Boolean(p.markDelivered), 'Collected via AI Agent');
+            executed.push(`Partial Payment ৳${p.amount} on #${p.orderId}`);
+          }
+          break;
+        }
+        case 'update_product': {
+          const target =
+            productsRef.current.find((pr) => pr.id === p.productId) ||
+            productsRef.current.find((pr) =>
+              p.query ? `${pr.title} ${pr.titleBn}`.toLowerCase().includes(String(p.query).toLowerCase()) : false
+            );
+          if (target) {
+            const patch: Partial<Product> = {};
+            if (typeof p.price === 'number') patch.price = p.price;
+            if (typeof p.originalPrice === 'number') patch.originalPrice = p.originalPrice;
+            if (typeof p.stock === 'number') patch.stock = p.stock;
+            if (typeof p.isFlashSale === 'boolean') patch.isFlashSale = p.isFlashSale;
+            updateProduct(target.id, patch);
+            executed.push(`Updated Product "${target.title.slice(0, 24)}"`);
+          }
+          break;
+        }
+        case 'create_coupon': {
+          if (p.code) {
+            const code = String(p.code).toUpperCase().trim();
+            const existing = settingsRef.current.promoCoupons || [];
+            const nextCoupon = {
+              id: `cpn-${Date.now()}`,
+              code,
+              discountType: (p.discountType || 'fixed') as 'fixed' | 'percent' | 'free_shipping',
+              value: Math.max(0, Number(p.value) || 100),
+              minOrder: Math.max(0, Number(p.minOrder) || 0),
+              active: true
+            };
+            updateSettings({
+              promoCoupons: [nextCoupon, ...existing.filter((c) => c.code !== code)]
+            });
+            executed.push(`Created Coupon ${code}`);
+          }
+          break;
+        }
+        case 'toggle_flash_sale': {
+          updateSettings({
+            flashSale: {
+              ...settingsRef.current.flashSale,
+              enabled: Boolean(p.enabled)
+            }
+          });
+          executed.push(`Flash Sale ${p.enabled ? 'ON' : 'OFF'}`);
+          break;
+        }
+        case 'adjust_loyalty_points': {
+          if (p.identifier) {
+            if (p.mode === 'delete') {
+              if (deleteCustomerLoyaltyPoints(String(p.identifier))) {
+                executed.push(`Deleted Loyalty Points (${p.identifier})`);
+              }
+            } else if (p.mode === 'set' && typeof p.exactPoints === 'number') {
+              if (setCustomerLoyaltyPoints(String(p.identifier), p.exactPoints, p.note)) {
+                executed.push(`Set ${p.exactPoints} Loyalty Pts (${p.identifier})`);
+              }
+            } else if (typeof p.delta === 'number') {
+              if (adjustCustomerLoyaltyPoints(String(p.identifier), p.delta, p.note)) {
+                executed.push(`${p.delta > 0 ? '+' : ''}${p.delta} Loyalty Pts (${p.identifier})`);
+              }
+            }
+          }
+          break;
+        }
+        case 'adjust_wallet': {
+          if (p.identifier && typeof p.delta === 'number') {
+            if (adjustSpecificCustomerBalance(String(p.identifier), p.delta, p.note)) {
+              executed.push(`${p.delta > 0 ? '+' : ''}৳${p.delta} Wallet (${p.identifier})`);
+            }
+          }
+          break;
+        }
+        case 'recover_abandoned_cart': {
+          if (p.cartId === 'all_pending') {
+            const pendingIds = abandonedCartsRef.current.filter((c) => !c.recovered).map((c) => c.id);
+            if (pendingIds.length > 0) {
+              bulkAbandonedCartsAction(pendingIds, 'whatsapp');
+              executed.push(`Sent Recovery to ${pendingIds.length} Carts`);
+            }
+          } else if (p.cartId) {
+            markAbandonedCartWhatsAppSent(String(p.cartId));
+            executed.push(`Recovered Cart ${p.cartId}`);
+          }
+          break;
+        }
+        case 'update_store_settings': {
+          const patch: Partial<StoreSettings> = {};
+          if (
+            typeof p.dhakaInsideFee === 'number' ||
+            typeof p.dhakaSubFee === 'number' ||
+            typeof p.dhakaOutsideFee === 'number'
+          ) {
+            patch.deliveryFees = {
+              dhakaInside: p.dhakaInsideFee ?? settingsRef.current.deliveryFees.dhakaInside,
+              dhakaSub: p.dhakaSubFee ?? settingsRef.current.deliveryFees.dhakaSub,
+              dhakaOutside: p.dhakaOutsideFee ?? settingsRef.current.deliveryFees.dhakaOutside
+            };
+          }
+          if (
+            p.announcementTextBn !== undefined ||
+            p.announcementTextEn !== undefined ||
+            typeof p.announcementEnabled === 'boolean'
+          ) {
+            patch.announcementBar = {
+              enabled: p.announcementEnabled ?? settingsRef.current.announcementBar.enabled,
+              textBn: p.announcementTextBn ?? settingsRef.current.announcementBar.textBn,
+              textEn: p.announcementTextEn ?? settingsRef.current.announcementBar.textEn
+            };
+          }
+          if (
+            typeof p.loyaltyEnabled === 'boolean' ||
+            typeof p.loyaltyPointsPer100 === 'number' ||
+            typeof p.loyaltyBdtPerPoint === 'number'
+          ) {
+            patch.loyaltySettings = {
+              ...(settingsRef.current.loyaltySettings || INITIAL_SETTINGS.loyaltySettings!),
+              ...(typeof p.loyaltyEnabled === 'boolean' ? { enabled: p.loyaltyEnabled } : {}),
+              ...(typeof p.loyaltyPointsPer100 === 'number' ? { pointsPer100Bdt: p.loyaltyPointsPer100 } : {}),
+              ...(typeof p.loyaltyBdtPerPoint === 'number' ? { bdtPerPoint: p.loyaltyBdtPerPoint } : {})
+            };
+          }
+          if (Object.keys(patch).length > 0) {
+            updateSettings(patch);
+            executed.push('Updated Store Settings');
+          }
+          break;
+        }
+        case 'navigate_admin_tab': {
+          if (p.tab && adminTabSetter) {
+            adminTabSetter(String(p.tab));
+            executed.push(`Opened ${p.tab}`);
+          }
+          break;
+        }
+        case 'add_to_cart': {
+          const prod = productsRef.current.find((pr) => pr.id === p.productId);
+          if (prod) {
+            addToCart(prod, Math.max(1, Number(p.quantity) || 1));
+            executed.push(`Added ${prod.title} to Cart`);
+          }
+          break;
+        }
+        case 'open_checkout': {
+          const prod = productsRef.current.find((pr) => pr.id === p.productId);
+          if (prod) {
+            openOneClickCheckout(prod);
+            executed.push(`Opened 1-Click Checkout`);
+          }
+          break;
+        }
+        case 'track_order': {
+          if (p.orderId) {
+            setTrackingSearchQuery(String(p.orderId));
+            setActiveView('tracking');
+            executed.push(`Tracking #${p.orderId}`);
+          }
+          break;
+        }
+        case 'navigate_store': {
+          if (p.category) {
+            selectCategoryFilter(String(p.category));
+          } else if (p.view === 'tracking') {
+            setActiveView('tracking');
+          } else {
+            goHome();
+          }
+          executed.push(`Navigated Store`);
+          break;
+        }
+      }
+    }
+
+    const reply =
+      data.reply ||
+      (executed.length > 0
+        ? executed.join(', ')
+        : t('কমান্ড সম্পন্ন হয়েছে।', 'Command processed.'));
+
+    setAgentActionLogs((prev) => [
+      {
+        id: `agl-${Date.now()}`,
+        time: new Date().toLocaleTimeString(),
+        instruction,
+        reply,
+        actions: executed,
+        mode: data.mode || 'gemini_live'
+      },
+      ...prev
+    ].slice(0, 30));
+
+    return { reply, executed, mode: data.mode || 'gemini_live' };
+  };
+
   const closeOneClickCheckout = () => {
     setIsOneClickOpen(false);
     setCheckoutProduct(null);
@@ -6014,6 +6831,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateOrderCourier,
         assignDeliveryBoyToOrder,
         aiConfirmOrderByCustomer,
+        recordPartialPayment,
         updateOrderDetails,
         deleteOrder,
         bulkUpdateOrders,
@@ -6049,6 +6867,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         abandonedCarts,
         markAbandonedCartWhatsAppSent,
         recoverAbandonedCart,
+        editAbandonedCart,
+        deleteAbandonedCart,
+        bulkAbandonedCartsAction,
+        agentActionLogs,
+        executeAIAgentCommand,
         compareList,
         toggleCompare,
         isComparing,
@@ -6139,6 +6962,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         clearRecentlyViewed,
         claimDailyCheckIn,
         redeemLoyaltyPoints,
+        adjustCustomerLoyaltyPoints,
+        setCustomerLoyaltyPoints,
+        deleteCustomerLoyaltyPoints,
         isCustomerDashboardOpen,
         setIsCustomerDashboardOpen,
         selectedProductForPage,

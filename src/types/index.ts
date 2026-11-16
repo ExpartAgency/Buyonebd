@@ -182,6 +182,16 @@ export interface Order {
     discount: number;
     total: number;
     advancePaid?: number;
+    loyaltyPointsUsed?: number;
+    loyaltyDiscount?: number;
+    loyaltyPointsEarned?: number;
+    paymentHistory?: {
+      id: string;
+      amount: number;
+      method: string;
+      note?: string;
+      date: string;
+    }[];
   };
   payment: {
     method: PaymentMethod;
@@ -197,6 +207,7 @@ export interface Order {
   fraudCheck?: OrderFraudCheck;
   source?: 'online' | 'pos';
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface AbandonedCart {
@@ -553,6 +564,25 @@ export interface StoreSettings {
   deliveryBoys?: DeliveryBoy[];
   hostingerDbSettings?: HostingerDbSettings;
   securitySettings?: SecuritySettings;
+  loyaltySettings?: LoyaltySettings;
+}
+
+export interface LoyaltySettings {
+  enabled: boolean;
+  pointsPer100Bdt: number;
+  bdtPerPoint: number;
+  minRedeemPoints: number;
+  maxRedeemPercent: number;
+  welcomeBonusPoints: number;
+}
+
+export interface LoyaltyHistoryItem {
+  id: string;
+  type: 'earn' | 'redeem' | 'adjust' | 'delete';
+  points: number;
+  note: string;
+  orderId?: string;
+  date: string;
 }
 
 export interface HostingerDbSettings {
@@ -778,6 +808,7 @@ export interface CustomerProfile {
   browsingHistory?: string[];
   savedCoupons?: CustomerCoupon[];
   checkIn?: DailyCheckInState;
+  loyaltyHistory?: LoyaltyHistoryItem[];
 }
 
 export interface WhatsAppMarketingTemplates {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Copy, ShieldCheck, Truck, Sparkles, ShoppingBag, Tag, MessageCircle, ArrowRight, PhoneCall, Wallet } from 'lucide-react';
+import { X, Check, Copy, ShieldCheck, Truck, Sparkles, ShoppingBag, Tag, MessageCircle, PhoneCall, Wallet, Award } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BD_DISTRICTS } from '../../data/initialData';
 import { PaymentMethod, DeliveryZone, Order } from '../../types';
@@ -13,6 +13,8 @@ export const OneClickCheckoutModal: React.FC = () => {
     cartTotal,
     createOrder,
     customerWalletBalance,
+    customerProfile,
+    customerAccounts,
     settings,
     setActiveView,
     setTrackingSearchQuery,
@@ -46,6 +48,8 @@ export const OneClickCheckoutModal: React.FC = () => {
   const [copiedNumber, setCopiedNumber] = useState(false);
   const [advancePayFee, setAdvancePayFee] = useState(false);
   const [useWallet, setUseWallet] = useState(false);
+  const [useLoyaltyPoints, setUseLoyaltyPoints] = useState(false);
+  const [loyaltyPointsInput, setLoyaltyPointsInput] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [honeypotTrap, setHoneypotTrap] = useState('');
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
@@ -103,9 +107,37 @@ export const OneClickCheckoutModal: React.FC = () => {
   const couponDiscountAmount = appliedCoupon ? appliedCoupon.amount : 0;
   const totalPromoDiscount = couponDiscountAmount + bundleDiscountAmount;
   const subtotalAfterCoupon = Math.max(0, subtotal + deliveryFee - totalPromoDiscount);
-  const walletDeduction = useWallet ? Math.min(customerWalletBalance, subtotalAfterCoupon) : 0;
+
+  // Loyalty Points lookup (phone match in customerAccounts OR active customerProfile)
+  const cleanCheckoutPhone = phone.replace(/[^0-9]/g, '').slice(-11);
+  const matchedCustomerAccount =
+    cleanCheckoutPhone.length >= 10
+      ? customerAccounts.find((a) => (a.phone || '').replace(/[^0-9]/g, '').slice(-11) === cleanCheckoutPhone)
+      : undefined;
+  const availableLoyaltyPoints =
+    matchedCustomerAccount?.loyaltyPoints ??
+    (!cleanCheckoutPhone || cleanCheckoutPhone === (customerProfile.phone || '').replace(/[^0-9]/g, '').slice(-11)
+      ? customerProfile.loyaltyPoints || 0
+      : 0);
+  const loyaltyCfg = settings.loyaltySettings;
+  const loyaltyEnabled = loyaltyCfg?.enabled !== false;
+  const minRedeemPts = loyaltyCfg?.minRedeemPoints ?? 10;
+  const bdtPerPoint = loyaltyCfg?.bdtPerPoint ?? 1;
+  const maxRedeemPct = loyaltyCfg?.maxRedeemPercent ?? 50;
+  const pointsPer100 = loyaltyCfg?.pointsPer100Bdt ?? 5;
+  const maxPointsBySubtotal = Math.floor((subtotalAfterCoupon * (maxRedeemPct / 100)) / Math.max(0.1, bdtPerPoint));
+  const maxRedeemablePoints = Math.min(availableLoyaltyPoints, maxPointsBySubtotal);
+  const effectiveLoyaltyPoints =
+    loyaltyEnabled && useLoyaltyPoints && availableLoyaltyPoints >= minRedeemPts && maxRedeemablePoints >= minRedeemPts
+      ? Math.max(minRedeemPts, Math.min(maxRedeemablePoints, loyaltyPointsInput || maxRedeemablePoints))
+      : 0;
+  const loyaltyDiscountAmount = Math.round(effectiveLoyaltyPoints * bdtPerPoint);
+
+  const subtotalAfterLoyalty = Math.max(0, subtotalAfterCoupon - loyaltyDiscountAmount);
+  const walletDeduction = useWallet ? Math.min(customerWalletBalance, subtotalAfterLoyalty) : 0;
   const advanceAmount = advancePayFee ? Math.min(settings.paymentSettings.advanceFeeAmount || 100, rawDeliveryFee) : 0;
-  const grandTotal = Math.max(0, subtotalAfterCoupon - walletDeduction);
+  const grandTotal = Math.max(0, subtotalAfterLoyalty - walletDeduction);
+  const estimatedPointsEarned = loyaltyEnabled ? Math.floor((grandTotal / 100) * pointsPer100) : 0;
   const payableOnDelivery = Math.max(0, grandTotal - advanceAmount);
 
   // Initialize single product defaults
@@ -288,7 +320,9 @@ export const OneClickCheckoutModal: React.FC = () => {
         discountAmount: totalPromoDiscount > 0 ? totalPromoDiscount : undefined,
         couponCode: appliedCoupon?.code || (bundleDiscountAmount > 0 ? `BUNDLE${bundlePercent}` : undefined),
         advancePaid: advanceAmount > 0 ? advanceAmount : undefined,
-        walletUsedAmount: walletDeduction > 0 ? walletDeduction : undefined
+        walletUsedAmount: walletDeduction > 0 ? walletDeduction : undefined,
+        loyaltyPointsUsed: effectiveLoyaltyPoints > 0 ? effectiveLoyaltyPoints : undefined,
+        loyaltyDiscountAmount: loyaltyDiscountAmount > 0 ? loyaltyDiscountAmount : undefined
       });
 
       // Show immediate Success Confirmation Sheet with 1-Click WhatsApp Memo
@@ -365,6 +399,24 @@ export const OneClickCheckoutModal: React.FC = () => {
                 {t('কিছুক্ষণের মধ্যে আমাদের এআই প্রতিনিধি আপনার মোবাইলে স্বয়ংক্রিয়ভাবে ফোন করে ডেলিভারি কনফার্ম করবে।', 'Our AI voice agent will call your phone shortly to confirm delivery details.')}
               </p>
             </div>
+
+            {((placedOrder.pricing.loyaltyPointsEarned || 0) > 0 || (placedOrder.pricing.loyaltyPointsUsed || 0) > 0) && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-left flex items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 text-amber-900 font-bold">
+                  <Award className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>
+                    {(placedOrder.pricing.loyaltyPointsEarned || 0) > 0
+                      ? t(`এই অর্ডারে +${placedOrder.pricing.loyaltyPointsEarned} লয়্যালটি পয়েন্ট যোগ হয়েছে!`, `Earned +${placedOrder.pricing.loyaltyPointsEarned} Loyalty Points!`)
+                      : t('লয়্যালটি পয়েন্ট রিডিম হয়েছে', 'Loyalty Points Redeemed')}
+                  </span>
+                </div>
+                {(placedOrder.pricing.loyaltyDiscount || 0) > 0 && (
+                  <span className="font-mono font-black text-emerald-700">
+                    -৳{placedOrder.pricing.loyaltyDiscount?.toLocaleString()}
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* ONE CLICK WHATSAPP MESSAGE BUTTON */}
             <div className="space-y-2 pt-1">
@@ -814,6 +866,82 @@ export const OneClickCheckoutModal: React.FC = () => {
               )}
             </div>
 
+            {/* Loyalty Points Redemption Toggle & Quick Selector */}
+            {loyaltyEnabled && availableLoyaltyPoints > 0 && (
+              <div className="p-3 rounded-2xl border border-amber-200 bg-amber-50/75 space-y-2">
+                <label className="flex items-center justify-between gap-2 cursor-pointer">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={useLoyaltyPoints}
+                      disabled={availableLoyaltyPoints < minRedeemPts || maxRedeemablePoints < minRedeemPts}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setUseLoyaltyPoints(checked);
+                        if (checked && loyaltyPointsInput < minRedeemPts) {
+                          setLoyaltyPointsInput(maxRedeemablePoints);
+                        }
+                      }}
+                      className="w-4 h-4 text-amber-600 rounded cursor-pointer shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                        <Award className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>{t('লয়্যালটি পয়েন্ট দিয়ে ডিসকাউন্ট নিন', 'Redeem Loyalty Points for Discount')}</span>
+                      </span>
+                      <p className="text-[10px] text-slate-600 tabular-nums mt-0.5">
+                        {t(
+                          `আপনার আছে: ${availableLoyaltyPoints} পয়েন্ট (১ পয়েন্ট = ৳${bdtPerPoint})`,
+                          `Available: ${availableLoyaltyPoints} pts (1 pt = ৳${bdtPerPoint}, min ${minRedeemPts} pts)`
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  {loyaltyDiscountAmount > 0 && (
+                    <span className="font-mono tabular-nums font-bold text-xs text-amber-800 bg-amber-200/70 px-2 py-0.5 rounded shrink-0">
+                      - ৳ {loyaltyDiscountAmount.toLocaleString()}
+                    </span>
+                  )}
+                </label>
+
+                {useLoyaltyPoints && maxRedeemablePoints >= minRedeemPts && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-amber-200/80">
+                    <div className="flex items-center gap-1.5">
+                      {[
+                        { label: '25%', val: Math.max(minRedeemPts, Math.round(maxRedeemablePoints * 0.25)) },
+                        { label: '50%', val: Math.max(minRedeemPts, Math.round(maxRedeemablePoints * 0.5)) },
+                        { label: 'MAX', val: maxRedeemablePoints }
+                      ].map((preset) => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => setLoyaltyPointsInput(Math.min(maxRedeemablePoints, preset.val))}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer border ${
+                            effectiveLoyaltyPoints === Math.min(maxRedeemablePoints, preset.val)
+                              ? 'bg-amber-500 text-slate-950 border-amber-600'
+                              : 'bg-white text-slate-700 border-amber-300'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={minRedeemPts}
+                        max={maxRedeemablePoints}
+                        value={effectiveLoyaltyPoints}
+                        onChange={(e) => setLoyaltyPointsInput(Number(e.target.value) || 0)}
+                        className="w-20 px-2 py-1 rounded-lg bg-white border border-amber-300 text-xs font-mono font-bold text-slate-900 text-center"
+                      />
+                      <span className="text-[10px] font-semibold text-amber-900">pts</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Gift Wallet deduction toggle */}
             {customerWalletBalance > 0 && (
               <label className="flex items-center justify-between gap-2 p-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 cursor-pointer transition-colors hover:bg-emerald-50 min-w-0">
@@ -869,6 +997,13 @@ export const OneClickCheckoutModal: React.FC = () => {
                 </div>
               )}
 
+              {loyaltyDiscountAmount > 0 && (
+                <div className="flex justify-between text-amber-700 font-bold">
+                  <span>{t(`লয়্যালটি পয়েন্ট ডিসকাউন্ট (${effectiveLoyaltyPoints} পয়েন্ট):`, `Loyalty Discount (${effectiveLoyaltyPoints} pts):`)}</span>
+                  <span>- ৳ {loyaltyDiscountAmount.toLocaleString()}</span>
+                </div>
+              )}
+
               {walletDeduction > 0 && (
                 <div className="flex justify-between text-emerald-600 font-bold">
                   <span>{t('ওয়ালেট ডিসকাউন্ট:', 'Wallet Discount:')}</span>
@@ -882,6 +1017,16 @@ export const OneClickCheckoutModal: React.FC = () => {
                   ৳ {grandTotal.toLocaleString()}
                 </span>
               </div>
+
+              {estimatedPointsEarned > 0 && (
+                <div className="flex items-center justify-between text-[11px] text-amber-700 font-bold pt-1 border-t border-slate-200/70">
+                  <span className="flex items-center gap-1">
+                    <Award className="w-3.5 h-3.5 text-amber-600" />
+                    {t('এই অর্ডারে অর্জিত লয়্যালটি পয়েন্ট:', 'Loyalty Points You Will Earn:')}
+                  </span>
+                  <span className="font-mono">+{estimatedPointsEarned} pts</span>
+                </div>
+              )}
             </div>
 
             {/* Submission Button */}

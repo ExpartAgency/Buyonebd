@@ -1268,6 +1268,14 @@ export const INITIAL_SETTINGS: StoreSettings = {
     blockedPhones: [],
     enableStrictHeaders: true,
     maskPublicSecrets: true
+  },
+  loyaltySettings: {
+    enabled: true,
+    pointsPer100Bdt: 5,
+    bdtPerPoint: 1,
+    minRedeemPoints: 10,
+    maxRedeemPercent: 50,
+    welcomeBonusPoints: 25
   }
 };
 

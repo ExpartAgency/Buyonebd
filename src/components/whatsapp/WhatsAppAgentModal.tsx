@@ -44,6 +44,7 @@ export const WhatsAppAgentModal: React.FC = () => {
     aiConfirmOrderByCustomer,
     goHome,
     openAllProductsPage,
+    executeAIAgentCommand,
     addToast,
     customerProfile,
     lang,
@@ -78,6 +79,9 @@ export const WhatsAppAgentModal: React.FC = () => {
     setIsSending(true);
     try {
       await sendCustomerChatMessage(query);
+      if (/(confirm|কনফার্ম|add to cart|কার্ট|checkout|চেকআউট|track|ট্র্যাক)/i.test(query)) {
+        executeAIAgentCommand(query, 'customer').catch(() => {});
+      }
     } finally {
       setIsSending(false);
     }

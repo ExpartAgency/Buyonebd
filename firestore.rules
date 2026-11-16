@@ -37,7 +37,7 @@ service cloud.firestore {
           'cmsTexts', 'spinSettings', 'whatsappTemplates', 'marketingTemplates',
           'aiSettings', 'seoSettings', 'flashSale', 'footerSettings', 'singleProductCms',
           'organicMarketing', 'walletSettings', 'promoCoupons', 'deliveryBoys', 'brandAttributes',
-          'categories', 'sliders', 'updatedAt'
+          'loyaltySettings', 'categories', 'sliders', 'updatedAt'
         ])
         && data.storeName is string && data.storeName.size() >= 1 && data.storeName.size() <= 120
         && data.theme is string && data.theme.size() >= 1 && data.theme.size() <= 40
@@ -140,7 +140,7 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'id', 'name', 'username', 'phone', 'email', 'address', 'district',
           'loyaltyPoints', 'walletBalance', 'lastPurchaseAt', 'lastWalletCreditAt',
-          'browsingHistory', 'savedCoupons', 'updatedAt'
+          'browsingHistory', 'savedCoupons', 'loyaltyHistory', 'updatedAt'
         ])
         && isValidId(data.id)
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
@@ -151,6 +151,7 @@ service cloud.firestore {
         && (!data.keys().hasAny(['address']) || (data.address is string && data.address.size() <= 400))
         && (!data.keys().hasAny(['browsingHistory']) || (data.browsingHistory is list && data.browsingHistory.size() <= 20))
         && (!data.keys().hasAny(['savedCoupons']) || (data.savedCoupons is list && data.savedCoupons.size() <= 30))
+        && (!data.keys().hasAny(['loyaltyHistory']) || (data.loyaltyHistory is list && data.loyaltyHistory.size() <= 50))
         && data.updatedAt is timestamp;
     }
 
@@ -269,16 +270,26 @@ service cloud.firestore {
         && incoming().id == orderId
         && (incoming().status in ['pending', 'partial'] || isAdmin())
         && incoming().serverCreatedAt == request.time;
-      allow update: if isAdmin()
-        && isValidId(orderId)
+      allow update: if isValidId(orderId)
         && isValidOrderPayload(incoming())
         && incoming().id == existing().id
         && incoming().createdAt == existing().createdAt
         && incoming().serverCreatedAt == existing().serverCreatedAt
         && incoming().updatedAt == request.time
         && (
-          existing().status != 'cancelled' ||
-          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'courier', 'fraudCheck', 'updatedAt'])
+          (
+            isAdmin()
+            && (
+              existing().status != 'cancelled' ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['status', 'courier', 'fraudCheck', 'updatedAt'])
+            )
+          ) || (
+            existing().status in ['pending', 'on_hold']
+            && incoming().status == 'ai_confirmed'
+            && incoming().aiCallStatus is map
+            && incoming().aiCallStatus.confirmedByCustomer == true
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'aiCallStatus', 'courier', 'updatedAt'])
+          )
         );
       allow delete: if isAdmin() && isValidId(orderId);
     }
