@@ -28,7 +28,9 @@ import {
   WalletTopUpMethod,
   WalletTopUpRequest,
   MediaItem,
-  SecurityLogEntry
+  SecurityLogEntry,
+  WaitlistEntry,
+  DeliveryBoy
 } from '../types';
 import {
   INITIAL_PRODUCTS,
@@ -75,6 +77,7 @@ import {
   mapFirestoreDocToCustomer,
   getCustomerFirestoreId,
   saveWalletTopUpToFirestore,
+  deleteWalletTopUpFromFirestore,
   fetchWalletTopUpsFromFirestore,
   mapFirestoreDocToWalletTopUp,
   saveAbandonedCartToFirestore,
@@ -83,6 +86,10 @@ import {
   savePriceAlertToFirestore,
   fetchPriceAlertsFromFirestore,
   mapFirestoreDocToPriceAlert,
+  saveWaitlistEntryToFirestore,
+  fetchWaitlistFromFirestore,
+  deleteWaitlistEntryFromFirestore,
+  mapFirestoreDocToWaitlist,
   saveStaffUserToFirestore,
   deleteStaffUserFromFirestore,
   fetchStaffUsersFromFirestore,
@@ -95,6 +102,16 @@ import {
   fetchProductsFromFirestore,
   fetchOrdersFromFirestore
 } from '../firebase';
+
+async function safeParseJson<T = any>(res: Response): Promise<T | null> {
+  try {
+    const text = await res.text();
+    if (!text) return null;
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
 
 function normalizeHexColor(hex?: string, fallback = '#059669'): string {
   const clean = String(hex || '').trim();
@@ -161,6 +178,7 @@ interface CartItem {
   quantity: number;
   selectedColor?: string;
   selectedSize?: string;
+  selectedAttributes?: Record<string, string>;
 }
 
 interface ToastMessage {
@@ -218,7 +236,13 @@ interface StoreContextType {
   orders: Order[];
   createOrder: (orderData: {
     customer: { name: string; phone: string; address: string; district: string; thana: string; note?: string };
-    items: { product: Product; quantity: number; selectedColor?: string; selectedSize?: string }[];
+    items: {
+      product: Product;
+      quantity: number;
+      selectedColor?: string;
+      selectedSize?: string;
+      selectedAttributes?: Record<string, string>;
+    }[];
     paymentMethod: PaymentMethod;
     paymentTrxId?: string;
     deliveryZone: DeliveryZone;
@@ -233,6 +257,8 @@ interface StoreContextType {
   }) => Order;
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
   updateOrderCourier: (orderId: string, updates: Partial<Order['courier']>) => void;
+  assignDeliveryBoyToOrder: (orderId: string, boy: DeliveryBoy | null) => void;
+  aiConfirmOrderByCustomer: (orderId: string, sourceLabel?: string) => boolean;
   updateOrderDetails: (orderId: string, updates: Partial<Order>) => void;
   deleteOrder: (orderId: string) => void;
   bulkUpdateOrders: (orderIds: string[], action: { status?: OrderStatus; deleteAll?: boolean }) => void;
@@ -271,6 +297,9 @@ interface StoreContextType {
   }) => { success: boolean; status: 'pending' | 'approved' };
   approveWalletTopUp: (requestId: string) => void;
   rejectWalletTopUp: (requestId: string, note?: string) => void;
+  editWalletTopUp: (requestId: string, updates: Partial<WalletTopUpRequest>) => void;
+  deleteWalletTopUp: (requestId: string) => void;
+  bulkActionWalletTopUps: (requestIds: string[], action: 'approve' | 'reject' | 'delete') => void;
   adjustCustomerWalletByAdmin: (delta: number, reason?: string) => void;
   runWalletExpirySweep: (forceExpireDemo?: boolean) => number;
   mediaLibrary: MediaItem[];
@@ -299,9 +328,13 @@ interface StoreContextType {
   selectedProductForPage: Product | null;
   setSelectedProductForPage: (product: Product | null) => void;
 
-  // Price Alerts
+  // Price Alerts & Out-of-Stock Waitlist
   priceAlerts: PriceAlert[];
   addPriceAlert: (alertData: { productId: string; contact: string; targetPrice: number }) => void;
+  waitlistEntries: WaitlistEntry[];
+  addWaitlistEntry: (payload: { product: Product; contact: string }) => WaitlistEntry;
+  markWaitlistNotified: (id: string) => void;
+  deleteWaitlistEntry: (id: string) => void;
 
   // Steadfast & Multi-Courier Hub
   bookOrderCourier: (orderId: string, provider: CourierProvider) => Promise<{ success: boolean; trackingCode?: string; consignmentId?: string; error?: string }>;
@@ -318,7 +351,7 @@ interface StoreContextType {
   // Server-Side Pixel CAPI & Customer Browsing Logs
   serverPixelEvents: ServerPixelEvent[];
   customerBrowsingLogs: CustomerBrowsingEvent[];
-  trackPixelEvent: (eventName: string, extras?: { urlPath?: string; value?: number; contentName?: string }) => void;
+  trackPixelEvent: (eventName: string, extras?: { urlPath?: string; value?: number; contentName?: string }) => Promise<ServerPixelEvent | null>;
   recordPageVisit: (urlPath: string, pageTitle: string, product?: Product | null, categorySlug?: string) => void;
 
   // Live Support Chats & Backend Browser Call Desk
@@ -421,9 +454,26 @@ interface StoreContextType {
 
   // Cart
   cart: CartItem[];
-  addToCart: (product: Product, quantity?: number, color?: string, size?: string) => void;
-  removeFromCart: (productId: string, color?: string, size?: string) => void;
-  updateCartQuantity: (productId: string, delta: number, color?: string, size?: string) => void;
+  addToCart: (
+    product: Product,
+    quantity?: number,
+    color?: string,
+    size?: string,
+    selectedAttributes?: Record<string, string>
+  ) => void;
+  removeFromCart: (
+    productId: string,
+    color?: string,
+    size?: string,
+    selectedAttributes?: Record<string, string>
+  ) => void;
+  updateCartQuantity: (
+    productId: string,
+    delta: number,
+    color?: string,
+    size?: string,
+    selectedAttributes?: Record<string, string>
+  ) => void;
   clearCart: () => void;
   cartTotal: number;
   cartCount: number;
@@ -512,9 +562,11 @@ function mergeSettings(raw: any): StoreSettings {
       googleAnalytics: { ...INITIAL_SETTINGS.marketingSettings.googleAnalytics, ...(raw.marketingSettings?.googleAnalytics || {}) },
       whatsappCRM: { ...INITIAL_SETTINGS.marketingSettings.whatsappCRM, ...(raw.marketingSettings?.whatsappCRM || {}) },
       tiktokPixel: { ...INITIAL_SETTINGS.marketingSettings.tiktokPixel!, ...(raw.marketingSettings?.tiktokPixel || {}) },
+      clarity: { enabled: false, projectId: '', ...(raw.marketingSettings?.clarity || {}) },
       whatsappCloudApi: { ...INITIAL_SETTINGS.marketingSettings.whatsappCloudApi!, ...(raw.marketingSettings?.whatsappCloudApi || {}) },
       socialLinks: { ...INITIAL_SETTINGS.marketingSettings.socialLinks!, ...(raw.marketingSettings?.socialLinks || {}) }
     },
+    deliveryBoys: Array.isArray(raw.deliveryBoys) ? raw.deliveryBoys : (INITIAL_SETTINGS.deliveryBoys || []),
     aiSettings: { ...INITIAL_SETTINGS.aiSettings, ...(raw.aiSettings || {}) },
     aiKeywordRules:
       Array.isArray(raw.aiKeywordRules) && raw.aiKeywordRules.length > 0
@@ -1133,6 +1185,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         walletTopUps: walletTopUpsRef.current,
         abandonedCarts: abandonedCartsRef.current,
         priceAlerts: priceAlertsRef.current,
+        waitlist: waitlistEntriesRef.current,
         users: usersRef.current
       });
       setLastCloudSyncAt(new Date().toLocaleTimeString());
@@ -1208,6 +1261,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           fsTopUps,
           fsCarts,
           fsAlerts,
+          fsWaitlist,
           fsStaff
         ] = await Promise.all([
           fetchOrdersFromFirestore().catch(() => []),
@@ -1216,6 +1270,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           fetchWalletTopUpsFromFirestore().catch(() => []),
           fetchAbandonedCartsFromFirestore().catch(() => []),
           fetchPriceAlertsFromFirestore().catch(() => []),
+          fetchWaitlistFromFirestore().catch(() => []),
           fetchStaffUsersFromFirestore().catch(() => [])
         ]);
 
@@ -1236,6 +1291,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (fsTopUps.length > 0) setWalletTopUps(fsTopUps);
         if (fsCarts.length > 0) setAbandonedCarts(fsCarts);
         if (fsAlerts.length > 0) setPriceAlerts(fsAlerts);
+        if (fsWaitlist.length > 0) setWaitlistEntries(fsWaitlist);
         if (fsStaff.length > 0) setUsers(fsStaff);
       }
 
@@ -1285,6 +1341,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     walletTopUps: walletTopUpsRef.current,
     abandonedCarts: abandonedCartsRef.current,
     priceAlerts: priceAlertsRef.current,
+    waitlist: waitlistEntriesRef.current,
     users: usersRef.current
   });
 
@@ -1310,6 +1367,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const nextTopUps = Array.isArray(backup.walletTopUps) ? backup.walletTopUps : walletTopUpsRef.current;
       const nextCarts = Array.isArray(backup.abandonedCarts) ? backup.abandonedCarts : abandonedCartsRef.current;
       const nextAlerts = Array.isArray(backup.priceAlerts) ? backup.priceAlerts : priceAlertsRef.current;
+      const nextWaitlist = Array.isArray(backup.waitlist) ? backup.waitlist : waitlistEntriesRef.current;
       const nextUsers = Array.isArray(backup.users) ? backup.users : usersRef.current;
 
       setSettings(nextSettings);
@@ -2208,7 +2266,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setWalletTopUps((prev) =>
       prev.map((r) => {
         if (r.id !== requestId) return r;
-        const next = { ...r, status: 'approved' as const, processedAt: nowIso };
+        const nextLog = [
+          {
+            time: nowIso,
+            actor: 'Admin',
+            action: 'Approved',
+            note: `Credited ৳${r.amount} via ${r.method.toUpperCase()}`
+          },
+          ...(r.activityLog || [])
+        ].slice(0, 30);
+        const next = { ...r, status: 'approved' as const, processedAt: nowIso, activityLog: nextLog };
         saveWalletTopUpToFirestore(next).catch(() => {});
         return next;
       })
@@ -2256,21 +2323,85 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const rejectWalletTopUp = (requestId: string, note?: string) => {
+    const nowIso = new Date().toISOString();
     lastLocalMutationAtRef.current = Date.now();
     setWalletTopUps((prev) =>
       prev.map((r) => {
         if (r.id !== requestId) return r;
+        const nextLog = [
+          {
+            time: nowIso,
+            actor: 'Admin',
+            action: 'Rejected',
+            note: note || 'Invalid TrxID'
+          },
+          ...(r.activityLog || [])
+        ].slice(0, 30);
         const next = {
           ...r,
           status: 'rejected' as const,
           adminNote: note || 'Invalid TrxID',
-          processedAt: new Date().toISOString()
+          processedAt: nowIso,
+          activityLog: nextLog
         };
         saveWalletTopUpToFirestore(next).catch(() => {});
         return next;
       })
     );
     addToast('info', t('রিচার্জ রিকোয়েস্ট বাতিল হয়েছে', 'Top-Up Request Rejected'), '');
+  };
+
+  const editWalletTopUp = (requestId: string, updates: Partial<WalletTopUpRequest>) => {
+    const nowIso = new Date().toISOString();
+    lastLocalMutationAtRef.current = Date.now();
+    setWalletTopUps((prev) =>
+      prev.map((r) => {
+        if (r.id !== requestId) return r;
+        const nextLog = [
+          {
+            time: nowIso,
+            actor: 'Admin',
+            action: 'Edited Record',
+            note: updates.adminNote || `Updated details (৳${updates.amount ?? r.amount})`
+          },
+          ...(r.activityLog || [])
+        ].slice(0, 30);
+        const next: WalletTopUpRequest = {
+          ...r,
+          ...updates,
+          activityLog: nextLog
+        };
+        saveWalletTopUpToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
+    addToast('success', t('রিচার্জ রিকোয়েস্ট আপডেট হয়েছে', 'Top-Up Record Updated'), '');
+  };
+
+  const deleteWalletTopUp = (requestId: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setWalletTopUps((prev) => prev.filter((r) => r.id !== requestId));
+    deleteWalletTopUpFromFirestore(requestId).catch(() => {});
+    addToast('info', t('রিচার্জ রিকোয়েস্ট মুছে ফেলা হয়েছে', 'Top-Up Record Deleted'), '');
+  };
+
+  const bulkActionWalletTopUps = (requestIds: string[], action: 'approve' | 'reject' | 'delete') => {
+    if (!requestIds.length) return;
+    if (action === 'delete') {
+      const idSet = new Set(requestIds);
+      lastLocalMutationAtRef.current = Date.now();
+      requestIds.forEach((id) => deleteWalletTopUpFromFirestore(id).catch(() => {}));
+      setWalletTopUps((prev) => prev.filter((r) => !idSet.has(r.id)));
+      addToast('info', t(`${requestIds.length}টি এন্ট্রি মোছা হয়েছে`, `Deleted ${requestIds.length} entries`), '');
+      return;
+    }
+    if (action === 'approve') {
+      requestIds.forEach((id) => approveWalletTopUp(id));
+      return;
+    }
+    if (action === 'reject') {
+      requestIds.forEach((id) => rejectWalletTopUp(id, 'Bulk rejected by Admin'));
+    }
   };
 
   const adjustCustomerWalletByAdmin = (delta: number, reason?: string) => {
@@ -2719,6 +2850,76 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   };
 
+  // Out-of-Stock Waitlist ('Waitlist' collection in Firestore)
+  const [waitlistEntries, setWaitlistEntries] = useState<WaitlistEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_waitlist_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const waitlistEntriesRef = useRef<WaitlistEntry[]>(waitlistEntries);
+  waitlistEntriesRef.current = waitlistEntries;
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_waitlist_v1', JSON.stringify(waitlistEntries));
+    } catch {}
+  }, [waitlistEntries]);
+
+  const addWaitlistEntry = (payload: { product: Product; contact: string }): WaitlistEntry => {
+    const cleanContact = payload.contact.trim();
+    const isEmail = cleanContact.includes('@');
+    const newEntry: WaitlistEntry = {
+      id: `wait-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      productId: payload.product.id,
+      productTitle: payload.product.title,
+      productTitleBn: payload.product.titleBn || payload.product.title,
+      contact: cleanContact,
+      contactType: isEmail ? 'email' : 'phone',
+      status: 'waiting',
+      createdAt: new Date().toISOString()
+    };
+    lastLocalMutationAtRef.current = Date.now();
+    setWaitlistEntries((prev) => [newEntry, ...prev]);
+    saveWaitlistEntryToFirestore(newEntry).catch(() => {});
+    fetch('/api/waitlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entry: newEntry })
+    }).catch(() => {});
+    addToast(
+      'success',
+      t('অপেক্ষমাণ তালিকায় যুক্ত হয়েছেন!', 'Added to Restock Waitlist!'),
+      t(
+        `"${payload.product.titleBn}" স্টকে আসলে ${cleanContact}-এ জানানো হবে।`,
+        `We'll notify ${cleanContact} as soon as "${payload.product.title}" is back in stock.`
+      )
+    );
+    return newEntry;
+  };
+
+  const markWaitlistNotified = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setWaitlistEntries((prev) =>
+      prev.map((w) => {
+        if (w.id !== id) return w;
+        const next: WaitlistEntry = { ...w, status: 'notified' };
+        saveWaitlistEntryToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
+    addToast('success', t('নোটিফাইড হিসেবে চিহ্নিত হয়েছে', 'Marked as Notified'), '');
+  };
+
+  const deleteWaitlistEntry = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setWaitlistEntries((prev) => prev.filter((w) => w.id !== id));
+    deleteWaitlistEntryFromFirestore(id).catch(() => {});
+    addToast('info', t('ওয়েটলিস্ট এন্ট্রি মোছা হয়েছে', 'Waitlist Entry Removed'), '');
+  };
+
   // Wishlist
   const [wishlist, setWishlist] = useState<string[]>(() => {
     try {
@@ -2872,16 +3073,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Server-Side Meta Pixel + Google Analytics 4 Dispatcher
-  const trackPixelEvent = (
+  const trackPixelEvent = async (
     eventName: string,
     extras?: { urlPath?: string; value?: number; contentName?: string }
-  ) => {
+  ): Promise<ServerPixelEvent | null> => {
     const urlPath = extras?.urlPath || window.location.pathname || '/';
     const sourceUrl = window.location.href;
     const pixelCfg = settings.marketingSettings?.facebookPixel;
     const gaCfg = settings.marketingSettings?.googleAnalytics;
 
-    // Client-side gtag / fbq hooks if present on window
     try {
       const w = window as any;
       if (pixelCfg?.enabled && typeof w.fbq === 'function') {
@@ -2901,33 +3101,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     } catch {}
 
-    // Server-side Pixel Conversions API dispatch & logging
-    fetch('/api/tracking/pixel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        eventName,
-        urlPath,
-        sourceUrl,
-        value: extras?.value,
-        currency: 'BDT',
-        contentName: extras?.contentName,
-        pixelId: pixelCfg?.enabled ? pixelCfg.pixelId : undefined,
-        accessToken: pixelCfg?.enabled ? pixelCfg.accessToken : undefined,
-        testEventCode: pixelCfg?.testEventCode
-      })
-    })
-      .then((r) => r.json())
-      .then((res) => {
-        if (res?.event) {
-          setServerPixelEvents((prev) => {
-            const next = [res.event, ...prev].slice(0, 100);
-            localStorage.setItem('buyonebd_pixel_events_v3', JSON.stringify(next));
-            return next;
-          });
-        }
-      })
-      .catch(() => {});
+    try {
+      const resp = await fetch('/api/tracking/pixel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventName,
+          urlPath,
+          sourceUrl,
+          value: extras?.value,
+          currency: 'BDT',
+          contentName: extras?.contentName,
+          pixelId: pixelCfg?.enabled ? pixelCfg.pixelId : undefined,
+          accessToken: pixelCfg?.enabled ? pixelCfg.accessToken : undefined,
+          testEventCode: pixelCfg?.testEventCode
+        })
+      });
+      const res = await safeParseJson<{ event?: ServerPixelEvent }>(resp);
+      if (res?.event) {
+        setServerPixelEvents((prev) => {
+          const next = [res.event!, ...prev].slice(0, 100);
+          localStorage.setItem('buyonebd_pixel_events_v3', JSON.stringify(next));
+          return next;
+        });
+        return res.event;
+      }
+    } catch {}
+    return null;
   };
 
   // Customer Browsing History Recorder (visible on backend)
@@ -3214,7 +3414,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         headers: isAdminSess ? { 'x-admin-session': 'buyone-admin-verified' } : undefined
       });
       if (res.ok) {
-        const json = await res.json();
+        const json = await safeParseJson<{ data?: any }>(res);
         const data = json?.data;
 
         if (data && typeof data === 'object') {
@@ -3272,7 +3472,37 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       hasHydratedFromServerRef.current = true;
     }
 
-    // 2. Also pull from Firestore directly so static hosts (e.g. Vercel) & multi-device deployments stay synced
+    // 2. Also pull from Hostinger DB / PHP Bridge when enabled (works cross-device without Express)
+    try {
+      const hDb = settingsRef.current.hostingerDbSettings;
+      if (hDb?.enabled) {
+        let hostingerOrders: Order[] = [];
+        const hRes = await fetch('/api/database/hostinger/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: hDb })
+        }).catch(() => null);
+        if (hRes && hRes.ok) {
+          const hJson = await safeParseJson<{ orders?: Order[] }>(hRes);
+          if (Array.isArray(hJson?.orders)) hostingerOrders = hJson.orders;
+        } else if (hDb.mode === 'php_bridge' && hDb.phpBridgeUrl) {
+          const phpRes = await fetch(hDb.phpBridgeUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': hDb.phpBridgeSecret || '' },
+            body: JSON.stringify({ action: 'list_orders', tablePrefix: hDb.tablePrefix || 'buyone_' })
+          }).catch(() => null);
+          if (phpRes && phpRes.ok) {
+            const pJson = await safeParseJson<{ orders?: Order[] }>(phpRes);
+            if (Array.isArray(pJson?.orders)) hostingerOrders = pJson.orders;
+          }
+        }
+        if (hostingerOrders.length > 0) {
+          mergeRemoteOrders(hostingerOrders, new Set(), notifyOnNewOrders);
+        }
+      }
+    } catch {}
+
+    // 3. Also pull from Firestore directly so static hosts (e.g. Vercel) & multi-device deployments stay synced
     try {
       const cfgData = await fetchStorefrontSettingsFromFirestore();
       if (cfgData && Date.now() - lastLocalMutationAtRef.current >= 3000) {
@@ -3557,6 +3787,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       () => {}
     );
 
+    const unsubWaitlist = onSnapshot(
+      collection(db, 'Waitlist'),
+      (snap) => {
+        if (snap.empty) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const removedIds = new Set(
+          snap.docChanges().filter((c) => c.type === 'removed').map((c) => c.doc.id)
+        );
+        const remoteList = snap.docs.map((d) => mapFirestoreDocToWaitlist(d.id, d.data()));
+        setWaitlistEntries((prev) => {
+          const map = new Map(prev.map((w) => [w.id, w]));
+          removedIds.forEach((id) => map.delete(id));
+          remoteList.forEach((w) => map.set(w.id, w));
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          );
+        });
+      },
+      () => {}
+    );
+
     const unsubStaff = onSnapshot(
       collection(db, 'staff_users'),
       (snap) => {
@@ -3584,6 +3835,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       unsubTopUps();
       unsubCarts();
       unsubAlerts();
+      unsubWaitlist();
       unsubStaff();
     };
   }, [isFirebaseAdminConnected]);
@@ -3622,7 +3874,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Fetch initial support state on mount + poll every 2.5s when Support Desk / Chat / Admin is open
   const fetchSupportStateFromServer = () => {
     fetch('/api/support/state')
-      .then((r) => r.json())
+      .then((r) => safeParseJson<any>(r))
       .then((data) => {
         if (!data?.success) return;
         if (Array.isArray(data.browsingHistory) && data.browsingHistory.length > 0) {
@@ -3671,7 +3923,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }).catch(() => {});
   };
 
-  // Bidirectional Chat Actions (Customer + Backend Assistant + Auto Keyword/AI)
+  // Bidirectional Chat Actions (Customer + Backend Assistant + A-to-Z AI Order & Shopping Control)
   const sendCustomerChatMessage = async (rawText: string) => {
     const query = rawText.trim();
     if (!query) return;
@@ -3733,28 +3985,38 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     const q = query.toLowerCase();
-    const orderMatch = query.match(/BD-\d{5}/i);
+    const orderMatch = query.match(/(BD-[A-Z0-9-]+|POS-[A-Z0-9-]+)/i);
     const phoneMatch = query.match(/01[3-9]\d{8}/);
 
-    // 1. Order Lookup Match
-    if (orderMatch || phoneMatch || q.includes('track') || q.includes('ট্র্যাক') || q.includes('অর্ডার') || q.includes('parcel')) {
+    // 1. Order Lookup & 1-Click AI Confirmation
+    if (orderMatch || phoneMatch || q.includes('track') || q.includes('ট্র্যাক') || q.includes('confirm') || q.includes('কনফার্ম')) {
       const searchTarget = orderMatch ? orderMatch[0].toUpperCase() : phoneMatch ? phoneMatch[0] : '';
-      const matchedOrder = orders.find(
-        (o) =>
-          o.id.toUpperCase() === searchTarget ||
-          (phoneMatch && o.customer.phone.includes(phoneMatch[0]))
-      );
+      const matchedOrder =
+        orders.find(
+          (o) =>
+            (searchTarget && o.id.toUpperCase() === searchTarget) ||
+            (phoneMatch && o.customer.phone.includes(phoneMatch[0]))
+        ) || (q.includes('confirm') || q.includes('কনফার্ম') ? orders.find((o) => o.status === 'pending' || o.status === 'on_hold') : undefined);
+
       if (matchedOrder) {
+        const canConfirm = matchedOrder.status === 'pending' || matchedOrder.status === 'on_hold';
+        const actions: { label: string; action: string }[] = [
+          { label: t('📍 লাইভ ট্র্যাক করুন', '📍 Track Order Live'), action: `view_track_${matchedOrder.id}` },
+          { label: t('📞 ব্রাউজার কল করুন', '📞 Call Support'), action: `call_order_${matchedOrder.id}` }
+        ];
+        if (canConfirm) {
+          actions.unshift({
+            label: t(`✅ অর্ডার #${matchedOrder.id} কনফার্ম করুন`, `✅ Confirm Order #${matchedOrder.id}`),
+            action: `confirm_order_${matchedOrder.id}`
+          });
+        }
         appendBotMsg({
           id: `bot-${Date.now()}`,
           sender: 'bot',
-          text: `Order #${matchedOrder.id} found!\nStatus: ${matchedOrder.status.toUpperCase()}\nCourier: ${matchedOrder.courier.provider} (${matchedOrder.courier.trackingCode})\nLocation: ${matchedOrder.courier.currentLocation}`,
-          textBn: `অর্ডার #${matchedOrder.id} পাওয়া গেছে!\nস্ট্যাটাস: ${matchedOrder.status}\nকুরিয়ার: ${matchedOrder.courier.provider} (${matchedOrder.courier.trackingCode})\nঅবস্থান: ${matchedOrder.courier.currentLocation}`,
+          text: `Order #${matchedOrder.id} (${matchedOrder.customer.name})\nStatus: ${matchedOrder.status.toUpperCase()}\nTotal: ৳${matchedOrder.pricing.total}\nCourier: ${matchedOrder.courier.provider} (${matchedOrder.courier.trackingCode})`,
+          textBn: `অর্ডার #${matchedOrder.id} (${matchedOrder.customer.name})\nস্ট্যাটাস: ${matchedOrder.status.toUpperCase()}\nমোট বিল: ৳${matchedOrder.pricing.total}\nকুরিয়ার: ${matchedOrder.courier.provider} (${matchedOrder.courier.trackingCode})`,
           time,
-          quickActions: [
-            { label: '📍 লাইভ ট্র্যাকিং দেখুন', action: `view_track_${matchedOrder.id}` },
-            { label: '📞 ব্রাউজার কল করুন', action: `call_order_${matchedOrder.id}` }
-          ]
+          quickActions: actions
         });
         return;
       }
@@ -3778,7 +4040,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
 
-    // 3. Hot Deals Shortcut
+    // 3. Hot Deals / Store Product Catalog Search directly in Chat
+    const matchedProducts = products
+      .filter((p) => {
+        const hay = `${p.title} ${p.titleBn} ${p.category} ${p.brand || ''} ${p.tags.join(' ')}`.toLowerCase();
+        return q.split(/\s+/).some((tok) => tok.length >= 2 && hay.includes(tok));
+      })
+      .slice(0, 3);
+
     if (q.includes('deal') || q.includes('offer') || q.includes('অফার') || q.includes('হট ডিল')) {
       const topProducts = products.slice(0, 3);
       appendBotMsg({
@@ -3789,13 +4058,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         time,
         quickActions: topProducts.map((p) => ({
           label: `🛒 ${p.titleBn.slice(0, 14)}...`,
-          action: `buy_${p.id}`
+          action: p.stock > 0 ? `buy_${p.id}` : `view_${p.id}`
         }))
       });
       return;
     }
 
-    // 4. Live Gemini AI Endpoint (with backend keyword fallback)
+    // 4. Full-Control AI Server Endpoint (/api/chat -> gemini-4-hydrogen + Free Auto AI fallback)
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -3804,33 +4073,70 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           message: query,
           history: sessionHistory.slice(-6),
           keywordRules: rules,
-          lang
+          lang,
+          catalogSummary: products.slice(0, 20).map((p) => ({
+            id: p.id,
+            title: p.title,
+            titleBn: p.titleBn,
+            price: p.price,
+            stock: p.stock,
+            category: p.category,
+            brand: p.brand,
+            tags: p.tags
+          })),
+          recentOrdersSummary: orders.slice(0, 15).map((o) => ({
+            id: o.id,
+            status: o.status,
+            customer: { name: o.customer.name, phone: o.customer.phone },
+            pricing: { total: o.pricing.total }
+          }))
         })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.reply) {
-          appendBotMsg({
-            id: `bot-${Date.now()}`,
-            sender: 'bot',
-            text: data.reply,
-            textBn: data.reply,
-            time
-          });
-          return;
-        }
+      const data = await safeParseJson<any>(res);
+      if (res.ok && data?.reply) {
+        appendBotMsg({
+          id: `bot-${Date.now()}`,
+          sender: 'bot',
+          text: data.reply,
+          textBn: data.reply,
+          time,
+          quickActions: Array.isArray(data.quickActions) && data.quickActions.length > 0
+            ? data.quickActions
+            : matchedProducts.map((p) => ({
+                label: p.stock > 0 ? `⚡ 1-Click Order: ${p.titleBn.slice(0, 14)}` : `🔔 স্টক অ্যালার্ট`,
+                action: p.stock > 0 ? `buy_${p.id}` : `view_${p.id}`
+              }))
+        });
+        return;
       }
     } catch {}
+
+    // 5. Guaranteed Local A-to-Z Agent Response (when offline/static)
+    if (matchedProducts.length > 0) {
+      appendBotMsg({
+        id: `bot-${Date.now()}`,
+        sender: 'bot',
+        text: `Matching products:\n${matchedProducts.map((p, i) => `${i + 1}. ${p.title} - ৳${p.price}`).join('\n')}`,
+        textBn: `আপনার পছন্দের পণ্যসমূহ:\n${matchedProducts.map((p, i) => `${i + 1}. ${p.titleBn} - ৳${p.price}`).join('\n')}`,
+        time,
+        quickActions: matchedProducts.map((p) => ({
+          label: p.stock > 0 ? `⚡ ১-ক্লিক অর্ডার: ${p.titleBn.slice(0, 14)}` : `🔔 স্টক অ্যালার্ট`,
+          action: p.stock > 0 ? `buy_${p.id}` : `view_${p.id}`
+        }))
+      });
+      return;
+    }
 
     appendBotMsg({
       id: `bot-${Date.now()}`,
       sender: 'bot',
-      text: `Thank you for messaging ${settings.storeName}! A support agent from our backend desk has received your chat and will assist shortly.`,
-      textBn: `ধন্যবাদ! আপনার মেসেজটি আমাদের ব্যাকএন্ড সাপোর্ট ডেস্কে পৌঁছেছে। সাপোর্ট এজেন্ট অথবা এআই থেকে দ্রুত উত্তর দেওয়া হচ্ছে।`,
+      text: `Thank you for messaging ${settings.storeName}! A support agent has received your message, or pick a quick action below to shop, confirm, or track an order A-to-Z.`,
+      textBn: `ধন্যবাদ! ${settings.storeName}-এর এআই অ্যাসিস্ট্যান্ট আপনার মেসেজ পেয়েছে। পণ্য অর্ডার, কনফার্ম বা ট্র্যাক করতে নিচের বাটন ব্যবহার করুন।`,
       time,
       quickActions: [
         { label: '📞 ব্রাউজার কল করুন', action: 'tab_call' },
-        { label: '🔥 ফ্ল্যাশ সেল', action: 'tab_flash' }
+        { label: '🔥 ফ্ল্যাশ সেল', action: 'tab_flash' },
+        { label: '📦 অর্ডার ট্র্যাক', action: 'track' }
       ]
     });
   };
@@ -3877,10 +4183,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           assistantDraft: true
         })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.reply) return String(data.reply);
-      }
+      const data = await safeParseJson<{ reply?: string }>(res);
+      if (res.ok && data?.reply) return String(data.reply);
     } catch {}
     return adminLang === 'en'
       ? `Assalamu Alaikum ${session.customerName}, thank you for contacting ${settings.storeName}! Your inquiry has been received and we are checking it right now. Delivery takes 24-48h inside Dhaka (৳${settings.deliveryFees.dhakaInside}) and 48-72h nationwide (৳${settings.deliveryFees.dhakaOutside}).`
@@ -4155,9 +4459,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             note: targetOrder.customer.note || `Items: ${targetOrder.items.map((i) => `${i.productTitle} x${i.quantity}`).join(', ')}`
           })
         });
-        const data = await res.json();
+        const data = await safeParseJson<any>(res);
         if (!res.ok || !data?.success) {
-          const errMsg = data?.error || 'Steadfast API rejected request. Check API Key & Secret Key in Courier Hub.';
+          const errMsg = data?.error || `Steadfast API returned HTTP ${res.status}. Check API Key & Secret Key in Courier Hub.`;
           addToast('error', t('Steadfast API ব্যর্থ', 'Steadfast Booking Failed'), errMsg);
           return { success: false, error: errMsg };
         }
@@ -4249,9 +4553,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           trackingCode: ord.courier?.trackingCode
         })
       });
-      const data = await res.json();
+      const data = await safeParseJson<any>(res);
       if (!res.ok || !data?.success) {
-        const msg = data?.error || 'Could not fetch live Steadfast status';
+        const msg = data?.error || `Could not fetch live Steadfast status (HTTP ${res.status})`;
         addToast('error', t('স্ট্যাটাস চেক ব্যর্থ', 'Status Check Failed'), msg);
         return { success: false, error: msg };
       }
@@ -4330,7 +4634,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           apiVersion: cloudCfg?.apiVersion || 'v21.0'
         })
       });
-      const data = await res.json();
+      const data = (await safeParseJson<any>(res)) || { success: false, error: `HTTP ${res.status}` };
       const logItem: WhatsAppCloudLog = {
         id: `walog-${Date.now()}`,
         phone: payload.to,
@@ -4609,7 +4913,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         body: JSON.stringify({ phone })
       });
       if (res.ok) {
-        const data = await res.json();
+        const raw = await res.text();
+        const data = raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null;
         if (data?.success) {
           return {
             checked: true,
@@ -4667,7 +4972,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Create Order (Online 1-Click Checkout + Backend POS System)
   const createOrder = (orderData: {
     customer: { name: string; phone: string; address: string; district: string; thana: string; note?: string };
-    items: { product: Product; quantity: number; selectedColor?: string; selectedSize?: string }[];
+    items: {
+      product: Product;
+      quantity: number;
+      selectedColor?: string;
+      selectedSize?: string;
+      selectedAttributes?: Record<string, string>;
+    }[];
     paymentMethod: PaymentMethod;
     paymentTrxId?: string;
     deliveryZone: DeliveryZone;
@@ -4777,6 +5088,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         quantity: i.quantity,
         selectedColor: i.selectedColor,
         selectedSize: i.selectedSize,
+        ...(i.selectedAttributes && Object.keys(i.selectedAttributes).length > 0
+          ? { selectedAttributes: i.selectedAttributes }
+          : {}),
         image: i.product.images[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600'
       })),
       pricing: {
@@ -4863,22 +5177,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       .then((r) => r.ok)
       .catch(() => false);
 
-    // Optional Hostinger DB auto-mirror (handles both Node MySQL direct & PHP Bridge mode)
+    // Optional Hostinger DB auto-mirror (handles both Node MySQL direct & PHP Bridge mode + 404 direct fallback)
     const hDb = settings.hostingerDbSettings;
     if (hDb?.enabled && hDb.autoSyncOnOrder) {
       fetch('/api/database/hostinger/order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order: newOrder, config: hDb })
-      }).catch(() => {
-        if (hDb.mode === 'php_bridge' && hDb.phpBridgeUrl) {
-          fetch(hDb.phpBridgeUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': hDb.phpBridgeSecret || '' },
-            body: JSON.stringify({ action: 'upsert_order', tablePrefix: hDb.tablePrefix || 'buyone_', order: newOrder })
-          }).catch(() => {});
-        }
-      });
+      })
+        .then((resp) => {
+          if (!resp.ok && hDb.mode === 'php_bridge' && hDb.phpBridgeUrl) {
+            fetch(hDb.phpBridgeUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': hDb.phpBridgeSecret || '' },
+              body: JSON.stringify({ action: 'upsert_order', tablePrefix: hDb.tablePrefix || 'buyone_', order: newOrder })
+            }).catch(() => {});
+          }
+        })
+        .catch(() => {
+          if (hDb.mode === 'php_bridge' && hDb.phpBridgeUrl) {
+            fetch(hDb.phpBridgeUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': hDb.phpBridgeSecret || '' },
+              body: JSON.stringify({ action: 'upsert_order', tablePrefix: hDb.tablePrefix || 'buyone_', order: newOrder })
+            }).catch(() => {});
+          }
+        });
     }
 
     const allowAdminStatus = isFirebaseAdminConnectedRef.current;
@@ -5040,6 +5364,95 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return updatedOrder;
       })
     );
+  };
+
+  const assignDeliveryBoyToOrder = (orderId: string, boy: DeliveryBoy | null) => {
+    setOrders((prev) =>
+      prev.map((ord) => {
+        if (ord.id !== orderId) return ord;
+        const nextCourier: Order['courier'] = {
+          ...ord.courier,
+          deliveryBoyId: boy ? boy.id : undefined,
+          deliveryBoyName: boy ? boy.name : undefined,
+          deliveryBoyPhone: boy ? boy.phone : undefined,
+          riderName: boy ? boy.name : ord.courier.riderName,
+          riderPhone: boy ? boy.phone : ord.courier.riderPhone,
+          status: boy && ord.courier.status === 'booked' ? 'out_for_delivery' : ord.courier.status,
+          history: boy
+            ? [
+                ...ord.courier.history,
+                {
+                  status: 'Delivery Boy Assigned',
+                  time: new Date().toLocaleTimeString(),
+                  location: boy.zone || ord.customer.district,
+                  note: `Assigned to ${boy.name} (${boy.phone})`
+                }
+              ]
+            : ord.courier.history
+        };
+        const updatedOrder: Order = { ...ord, courier: nextCourier };
+        fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ updates: { courier: nextCourier } })
+        }).catch(() => {});
+        updateOrderInFirestore(updatedOrder).catch(() => {});
+        return updatedOrder;
+      })
+    );
+    addToast(
+      boy ? 'success' : 'info',
+      boy ? t(`রাইডার অ্যাসাইন: ${boy.name}`, `Assigned Rider: ${boy.name}`) : t('রাইডার সরানো হয়েছে', 'Delivery Boy Unassigned'),
+      boy ? `${boy.phone} (${boy.zone})` : ''
+    );
+  };
+
+  const aiConfirmOrderByCustomer = (orderId: string, sourceLabel = 'AI Chat Agent'): boolean => {
+    const found = ordersRef.current.find((o) => o.id.toLowerCase() === orderId.toLowerCase());
+    if (!found) return false;
+    setOrders((prev) =>
+      prev.map((ord) => {
+        if (ord.id !== found.id) return ord;
+        const nextAiCallStatus = {
+          ...ord.aiCallStatus,
+          called: true,
+          callTimestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          confirmedByCustomer: true,
+          notes: `Confirmed A-to-Z via ${sourceLabel}`
+        };
+        const nextCourier = {
+          ...ord.courier,
+          history: [
+            ...ord.courier.history,
+            {
+              status: 'AI Verified & Confirmed',
+              time: new Date().toLocaleTimeString(),
+              location: sourceLabel,
+              note: `Customer confirmed order #${ord.id} via ${sourceLabel}`
+            }
+          ]
+        };
+        const updatedOrder: Order = {
+          ...ord,
+          status: 'ai_confirmed',
+          aiCallStatus: nextAiCallStatus,
+          courier: nextCourier
+        };
+        fetch(`/api/orders/${encodeURIComponent(ord.id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ updates: { status: 'ai_confirmed', aiCallStatus: nextAiCallStatus, courier: nextCourier } })
+        }).catch(() => {});
+        updateOrderInFirestore(updatedOrder).catch(() => {});
+        return updatedOrder;
+      })
+    );
+    addToast(
+      'success',
+      t(`অর্ডার #${found.id} এআই-তে কনফার্ম!`, `Order #${found.id} AI Confirmed!`),
+      t('অর্ডারটি এখন ডেলিভারির জন্য প্রস্তুত।', 'Ready for Steadfast / Delivery Boy dispatch.')
+    );
+    return true;
   };
 
   const updateOrderDetails = (orderId: string, updates: Partial<Order>) => {
@@ -5240,7 +5653,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setActiveCallOrder(null);
   };
 
-  // Play voice sample to test audio live
+  // Play voice sample to test audio live (Gemini Neural TTS + guaranteed Free Browser Speech fallback)
   const playVoiceSample = async () => {
     if (sampleAudioRef.current) {
       sampleAudioRef.current.pause();
@@ -5249,11 +5662,35 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
 
+    const sampleScript =
+      settings.aiCallSettings.banglaScript ||
+      'আসসালামু আলাইকুম! বাইওয়ান বিডি থেকে আমি সুমনা বলছি। আপনার অর্ডারটি নিশ্চিত করতে অনুগ্রহ করে এক চাপুন।';
+
+    const speakWithBrowserFallback = () => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+          const u = new SpeechSynthesisUtterance(sampleScript);
+          const voices = window.speechSynthesis.getVoices();
+          const bnVoice =
+            voices.find((v) => v.lang.includes('bn') || v.name.includes('Bangla') || v.name.includes('Bengali')) ||
+            voices[0];
+          if (bnVoice) u.voice = bnVoice;
+          u.rate = 0.94;
+          u.onend = () => setIsPlayingVoiceSample(false);
+          u.onerror = () => setIsPlayingVoiceSample(false);
+          window.speechSynthesis.speak(u);
+          return;
+        } catch {}
+      }
+      setIsPlayingVoiceSample(false);
+    };
+
     try {
       setIsPlayingVoiceSample(true);
       const res = await fetch('/api/tts/sample');
-      const data = await res.json();
-      if (data?.audioUrl) {
+      const data = await safeParseJson<{ audioUrl?: string }>(res);
+      if (res.ok && data?.audioUrl) {
         const audio = new Audio(data.audioUrl);
         sampleAudioRef.current = audio;
         audio.onended = () => {
@@ -5261,30 +5698,44 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           sampleAudioRef.current = null;
         };
         audio.onerror = () => {
-          setIsPlayingVoiceSample(false);
           sampleAudioRef.current = null;
+          speakWithBrowserFallback();
         };
         await audio.play();
       } else {
-        setIsPlayingVoiceSample(false);
+        speakWithBrowserFallback();
       }
     } catch {
-      setIsPlayingVoiceSample(false);
+      speakWithBrowserFallback();
     }
   };
 
   // Cart operations
-  const addToCart = (product: Product, quantity = 1, color?: string, size?: string) => {
+  const attrKey = (attrs?: Record<string, string>) =>
+    attrs && Object.keys(attrs).length > 0 ? JSON.stringify(attrs) : '';
+
+  const addToCart = (
+    product: Product,
+    quantity = 1,
+    color?: string,
+    size?: string,
+    selectedAttributes?: Record<string, string>
+  ) => {
+    const incomingKey = attrKey(selectedAttributes);
     setCart((prev) => {
       const existingIndex = prev.findIndex(
-        (i) => i.product.id === product.id && i.selectedColor === color && i.selectedSize === size
+        (i) =>
+          i.product.id === product.id &&
+          i.selectedColor === color &&
+          i.selectedSize === size &&
+          attrKey(i.selectedAttributes) === incomingKey
       );
       if (existingIndex > -1) {
         const next = [...prev];
         next[existingIndex].quantity += quantity;
         return next;
       }
-      return [...prev, { product, quantity, selectedColor: color, selectedSize: size }];
+      return [...prev, { product, quantity, selectedColor: color, selectedSize: size, selectedAttributes }];
     });
     trackPixelEvent('AddToCart', {
       urlPath: window.location.pathname || '/',
@@ -5298,17 +5749,43 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   };
 
-  const removeFromCart = (productId: string, color?: string, size?: string) => {
+  const removeFromCart = (
+    productId: string,
+    color?: string,
+    size?: string,
+    selectedAttributes?: Record<string, string>
+  ) => {
+    const k = attrKey(selectedAttributes);
     setCart((prev) =>
-      prev.filter((i) => !(i.product.id === productId && i.selectedColor === color && i.selectedSize === size))
+      prev.filter(
+        (i) =>
+          !(
+            i.product.id === productId &&
+            i.selectedColor === color &&
+            i.selectedSize === size &&
+            attrKey(i.selectedAttributes) === k
+          )
+      )
     );
   };
 
-  const updateCartQuantity = (productId: string, delta: number, color?: string, size?: string) => {
+  const updateCartQuantity = (
+    productId: string,
+    delta: number,
+    color?: string,
+    size?: string,
+    selectedAttributes?: Record<string, string>
+  ) => {
+    const k = attrKey(selectedAttributes);
     setCart((prev) =>
       prev
         .map((i) => {
-          if (i.product.id === productId && i.selectedColor === color && i.selectedSize === size) {
+          if (
+            i.product.id === productId &&
+            i.selectedColor === color &&
+            i.selectedSize === size &&
+            attrKey(i.selectedAttributes) === k
+          ) {
             const newQty = i.quantity + delta;
             return newQty > 0 ? { ...i, quantity: newQty } : null;
           }
@@ -5505,6 +5982,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         requestWalletTopUp,
         approveWalletTopUp,
         rejectWalletTopUp,
+        editWalletTopUp,
+        deleteWalletTopUp,
+        bulkActionWalletTopUps,
         adjustCustomerWalletByAdmin,
         runWalletExpirySweep,
         mediaLibrary,
@@ -5514,6 +5994,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         syncStoreMediaLibrary,
         priceAlerts,
         addPriceAlert,
+        waitlistEntries,
+        addWaitlistEntry,
+        markWaitlistNotified,
+        deleteWaitlistEntry,
         categories,
         addCategory,
         updateCategory,
@@ -5528,6 +6012,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         createOrder,
         updateOrderStatus,
         updateOrderCourier,
+        assignDeliveryBoyToOrder,
+        aiConfirmOrderByCustomer,
         updateOrderDetails,
         deleteOrder,
         bulkUpdateOrders,

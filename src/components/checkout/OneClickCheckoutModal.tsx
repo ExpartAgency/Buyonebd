@@ -34,6 +34,7 @@ export const OneClickCheckoutModal: React.FC = () => {
   const [quantity, setQuantity] = useState(1);
   const [selectedColor, setSelectedColor] = useState<string>('');
   const [selectedSize, setSelectedSize] = useState<string>('');
+  const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({});
 
   // Coupon / Temu voucher state
   const [couponCode, setCouponCode] = useState('');
@@ -113,6 +114,11 @@ export const OneClickCheckoutModal: React.FC = () => {
       setQuantity(1);
       setSelectedColor(checkoutProduct.colors?.[0] || '');
       setSelectedSize(checkoutProduct.sizes?.[0] || '');
+      const attrs: Record<string, string> = {};
+      (checkoutProduct.attributes || []).forEach((a) => {
+        if (a.name && a.values?.[0]) attrs[a.name] = a.values[0];
+      });
+      setSelectedAttributes(attrs);
     }
     setPlacedOrder(null);
   }, [checkoutProduct, isOneClickOpen]);
@@ -247,14 +253,16 @@ export const OneClickCheckoutModal: React.FC = () => {
               product: checkoutProduct,
               quantity,
               selectedColor,
-              selectedSize
+              selectedSize,
+              selectedAttributes: Object.keys(selectedAttributes).length > 0 ? selectedAttributes : undefined
             }
           ]
         : cart.map((c) => ({
             product: c.product,
             quantity: c.quantity,
             selectedColor: c.selectedColor,
-            selectedSize: c.selectedSize
+            selectedSize: c.selectedSize,
+            selectedAttributes: c.selectedAttributes
           }));
 
       if (itemsToOrder.length === 0) {
@@ -451,6 +459,45 @@ export const OneClickCheckoutModal: React.FC = () => {
                   ))}
                 </div>
               )}
+
+              {isSingleProduct && checkoutProduct && (checkoutProduct.colors?.length || checkoutProduct.sizes?.length || checkoutProduct.attributes?.length) ? (
+                <div className="mt-2.5 pt-2 border-t border-slate-200/80 flex flex-wrap gap-2">
+                  {checkoutProduct.colors && checkoutProduct.colors.length > 0 && (
+                    <select
+                      value={selectedColor}
+                      onChange={(e) => setSelectedColor(e.target.value)}
+                      className="px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-semibold"
+                    >
+                      {checkoutProduct.colors.map((c) => (
+                        <option key={c} value={c}>{t('রং:', 'Color:')} {c}</option>
+                      ))}
+                    </select>
+                  )}
+                  {checkoutProduct.sizes && checkoutProduct.sizes.length > 0 && (
+                    <select
+                      value={selectedSize}
+                      onChange={(e) => setSelectedSize(e.target.value)}
+                      className="px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-semibold"
+                    >
+                      {checkoutProduct.sizes.map((s) => (
+                        <option key={s} value={s}>{t('সাইজ:', 'Size:')} {s}</option>
+                      ))}
+                    </select>
+                  )}
+                  {(checkoutProduct.attributes || []).map((attr) => (
+                    <select
+                      key={attr.id || attr.name}
+                      value={selectedAttributes[attr.name] || attr.values?.[0] || ''}
+                      onChange={(e) => setSelectedAttributes((prev) => ({ ...prev, [attr.name]: e.target.value }))}
+                      className="px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-semibold"
+                    >
+                      {(attr.values || []).map((val) => (
+                        <option key={val} value={val}>{attr.name}: {val}</option>
+                      ))}
+                    </select>
+                  ))}
+                </div>
+              ) : null}
 
               {/* Free Shipping Progress & Bundle Offer Bar inside Checkout */}
               {(freeShipThreshold > 0 || bundleCfg?.enabled) && (

@@ -125,12 +125,12 @@ export function stripUndefinedDeep<T>(value: T): T {
 
 // Public settings only (secrets are strictly isolated in /admin_config/private)
 const ALLOWED_PUBLIC_SETTINGS_KEYS = [
-  'storeName', 'storeNameBn', 'logoUrl', 'logoMode', 'tagline', 'taglineBn',
+  'storeName', 'storeNameBn', 'logoUrl', 'faviconUrl', 'logoMode', 'tagline', 'taglineBn',
   'hotline', 'whatsappNumber', 'supportEmail', 'address', 'deliveryFees',
   'paymentSettings', 'aiCallSettings', 'announcementBar', 'theme', 'themeColors',
   'cmsTexts', 'spinSettings', 'whatsappTemplates', 'marketingTemplates',
   'aiSettings', 'seoSettings', 'flashSale', 'footerSettings', 'singleProductCms',
-  'organicMarketing', 'walletSettings', 'promoCoupons', 'brandAttributes'
+  'organicMarketing', 'walletSettings', 'promoCoupons', 'deliveryBoys', 'brandAttributes'
 ] as const;
 
 const ALLOWED_PRODUCT_KEYS = [
@@ -355,7 +355,7 @@ export async function saveStorefrontSettingsToFirestore(
     for (const key of ALLOWED_PUBLIC_SETTINGS_KEYS) {
       const val = (settings as any)[key];
       if (val !== undefined) {
-        if (key === 'logoUrl' && typeof val === 'string' && val.startsWith('data:') && val.length > 200000) {
+        if ((key === 'logoUrl' || key === 'faviconUrl') && typeof val === 'string' && val.startsWith('data:') && val.length > 200000) {
           continue;
         }
         if (key === 'aiSettings' && val && typeof val === 'object') {
@@ -769,7 +769,8 @@ function sanitizeWalletTopUpBase(req: WalletTopUpRequest) {
         : 'pending',
     submittedAt: String(req.createdAt || new Date().toISOString()).slice(0, 64),
     ...(req.processedAt ? { reviewedAt: String(req.processedAt).slice(0, 64) } : {}),
-    ...(req.adminNote ? { note: String(req.adminNote).slice(0, 300) } : {})
+    ...(req.adminNote ? { note: String(req.adminNote).slice(0, 300) } : {}),
+    ...(Array.isArray(req.activityLog) ? { activityLog: req.activityLog.slice(0, 50) } : {})
   });
 }
 
@@ -805,6 +806,17 @@ export async function saveWalletTopUpToFirestore(req: WalletTopUpRequest): Promi
   }
 }
 
+export async function deleteWalletTopUpFromFirestore(topUpId: string): Promise<void> {
+  if (!auth.currentUser) return;
+  const cleanId = sanitizeFirestoreId(topUpId, 'TOPUP');
+  const path = `wallet_topups/${cleanId}`;
+  try {
+    await deleteDoc(doc(db, 'wallet_topups', cleanId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
 export async function fetchWalletTopUpsFromFirestore(): Promise<WalletTopUpRequest[]> {
   if (!auth.currentUser) return [];
   const path = 'wallet_topups';
@@ -828,7 +840,8 @@ export function mapFirestoreDocToWalletTopUp(id: string, data: Record<string, an
     status: (data.status || 'pending') as WalletTopUpRequest['status'],
     adminNote: data.note ? String(data.note) : undefined,
     createdAt: String(data.submittedAt || new Date().toISOString()),
-    processedAt: data.reviewedAt ? String(data.reviewedAt) : undefined
+    processedAt: data.reviewedAt ? String(data.reviewedAt) : undefined,
+    activityLog: Array.isArray(data.activityLog) ? data.activityLog : undefined
   };
 }
 

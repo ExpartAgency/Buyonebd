@@ -31,12 +31,12 @@ service cloud.firestore {
     function isValidStorefrontSettings(data) {
       return data.keys().hasAll(['storeName', 'theme', 'updatedAt'])
         && data.keys().hasOnly([
-          'storeName', 'storeNameBn', 'logoUrl', 'logoMode', 'tagline', 'taglineBn',
+          'storeName', 'storeNameBn', 'logoUrl', 'faviconUrl', 'logoMode', 'tagline', 'taglineBn',
           'hotline', 'whatsappNumber', 'supportEmail', 'address', 'deliveryFees',
           'paymentSettings', 'aiCallSettings', 'announcementBar', 'theme', 'themeColors',
           'cmsTexts', 'spinSettings', 'whatsappTemplates', 'marketingTemplates',
           'aiSettings', 'seoSettings', 'flashSale', 'footerSettings', 'singleProductCms',
-          'organicMarketing', 'walletSettings', 'promoCoupons', 'brandAttributes',
+          'organicMarketing', 'walletSettings', 'promoCoupons', 'deliveryBoys', 'brandAttributes',
           'categories', 'sliders', 'updatedAt'
         ])
         && data.storeName is string && data.storeName.size() >= 1 && data.storeName.size() <= 120
@@ -44,6 +44,7 @@ service cloud.firestore {
         && (!data.keys().hasAny(['categories']) || (data.categories is list && data.categories.size() <= 60))
         && (!data.keys().hasAny(['sliders']) || (data.sliders is list && data.sliders.size() <= 30))
         && (!data.keys().hasAny(['promoCoupons']) || (data.promoCoupons is list && data.promoCoupons.size() <= 100))
+        && (!data.keys().hasAny(['deliveryBoys']) || (data.deliveryBoys is list && data.deliveryBoys.size() <= 100))
         && data.updatedAt is timestamp;
     }
 
@@ -157,7 +158,7 @@ service cloud.firestore {
       return data.keys().hasAll(['id', 'customerName', 'customerPhone', 'method', 'amount', 'senderNumber', 'trxId', 'status', 'createdAt'])
         && data.keys().hasOnly([
           'id', 'customerName', 'customerPhone', 'method', 'amount', 'senderNumber',
-          'trxId', 'status', 'submittedAt', 'reviewedAt', 'note', 'createdAt', 'updatedAt'
+          'trxId', 'status', 'submittedAt', 'reviewedAt', 'note', 'activityLog', 'createdAt', 'updatedAt'
         ])
         && isValidId(data.id)
         && data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120
@@ -167,6 +168,7 @@ service cloud.firestore {
         && data.senderNumber is string && data.senderNumber.size() >= 6 && data.senderNumber.size() <= 32
         && data.trxId is string && data.trxId.size() >= 2 && data.trxId.size() <= 80
         && data.status in ['pending', 'approved', 'rejected']
+        && (!data.keys().hasAny(['activityLog']) || (data.activityLog is list && data.activityLog.size() <= 50))
         && data.createdAt is timestamp;
     }
 

@@ -133,6 +133,15 @@ export interface AICallLog {
   }[];
 }
 
+export interface DeliveryBoy {
+  id: string;
+  name: string;
+  phone: string;
+  zone: string;
+  vehicleType?: 'Bike' | 'Bicycle' | 'Van' | 'Walk';
+  active: boolean;
+}
+
 export interface CourierTracking {
   provider: CourierProvider;
   trackingCode: string;
@@ -141,6 +150,9 @@ export interface CourierTracking {
   estimatedDelivery: string;
   riderName?: string;
   riderPhone?: string;
+  deliveryBoyId?: string;
+  deliveryBoyName?: string;
+  deliveryBoyPhone?: string;
   consignmentId?: string;
   history: {
     status: string;
@@ -273,6 +285,10 @@ export interface MarketingSettings {
   tiktokPixel?: {
     enabled: boolean;
     pixelId: string;
+  };
+  clarity?: {
+    enabled: boolean;
+    projectId: string;
   };
   whatsappCloudApi?: {
     enabled: boolean;
@@ -460,6 +476,7 @@ export interface StoreSettings {
   storeName: string;
   storeNameBn: string;
   logoUrl?: string;
+  faviconUrl?: string;
   logoMode?: 'text' | 'image' | 'both';
   tagline: string;
   taglineBn: string;
@@ -533,6 +550,7 @@ export interface StoreSettings {
   singleProductCms?: SingleProductCMSSettings;
   organicMarketing?: OrganicMarketingSettings;
   promoCoupons?: PromoCoupon[];
+  deliveryBoys?: DeliveryBoy[];
   hostingerDbSettings?: HostingerDbSettings;
   securitySettings?: SecuritySettings;
 }
@@ -832,6 +850,13 @@ export interface WalletControlSettings {
   methods: Record<WalletTopUpMethod, WalletMethodConfig>;
 }
 
+export interface WalletTopUpActivity {
+  time: string;
+  actor: string;
+  action: string;
+  note?: string;
+}
+
 export interface WalletTopUpRequest {
   id: string;
   customerName: string;
@@ -844,6 +869,7 @@ export interface WalletTopUpRequest {
   adminNote?: string;
   createdAt: string;
   processedAt?: string;
+  activityLog?: WalletTopUpActivity[];
 }
 
 export interface MediaItem {

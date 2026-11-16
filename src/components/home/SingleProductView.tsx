@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   RotateCcw,
   Bell,
+  BellRing,
   Heart,
   Share2,
   Check,
@@ -20,11 +21,13 @@ import {
   ChevronRight,
   Award,
   PlayCircle,
-  MessageSquarePlus
+  MessageSquarePlus,
+  Tag
 } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
 import { ProductCard } from './ProductCard';
+import { WaitlistModal } from '../common/WaitlistModal';
 
 interface SingleProductViewProps {
   product: Product;
@@ -57,6 +60,11 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
     setSelectedImageIndex(0);
     setSelectedColor(product.colors?.[0] || '');
     setSelectedSize(product.sizes?.[0] || '');
+    const initAttrs: Record<string, string> = {};
+    (product.attributes || []).forEach((attr) => {
+      if (attr.name && attr.values?.[0]) initAttrs[attr.name] = attr.values[0];
+    });
+    setSelectedAttributes(initAttrs);
     setQuantity(1);
     setMediaMode('images');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -66,6 +74,14 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
   const [mediaMode, setMediaMode] = useState<'images' | 'video'>('images');
   const [selectedColor, setSelectedColor] = useState(product.colors?.[0] || '');
   const [selectedSize, setSelectedSize] = useState(product.sizes?.[0] || '');
+  const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    (product.attributes || []).forEach((attr) => {
+      if (attr.name && attr.values?.[0]) map[attr.name] = attr.values[0];
+    });
+    return map;
+  });
+  const [waitlistProduct, setWaitlistProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [activeDetailTab, setActiveDetailTab] = useState<'overview' | 'reviews' | 'shipping'>('overview');
 
@@ -84,9 +100,20 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
 
+  const parseFlashDateMs = (raw?: string): number => {
+    if (!raw) return NaN;
+    const trimmed = String(raw).trim();
+    const dmy = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
+    if (dmy) {
+      const [, dd, mm, yyyy, hh = '23', min = '59'] = dmy;
+      return new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(min), 59).getTime();
+    }
+    return new Date(trimmed).getTime();
+  };
+
   // Live Flash Sale Countdown Timer computed from Admin settings.flashSale.endsAt
   const computeFlashTimeLeft = (endsAtIso?: string) => {
-    const targetMs = endsAtIso ? new Date(endsAtIso).getTime() : NaN;
+    const targetMs = parseFlashDateMs(endsAtIso);
     const diffMs = Number.isFinite(targetMs) ? Math.max(0, targetMs - Date.now()) : 6 * 3600 * 1000;
     const totalSeconds = Math.floor(diffMs / 1000);
     return {
@@ -498,6 +525,13 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                       {product.subcategory}
                     </button>
                   )}
+                  {(product.brand || product.brandBn) && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <Tag className="w-3 h-3 text-emerald-500" />
+                      <span>{t(cms?.brandLabelBn || 'ব্র্যান্ড', cms?.brandLabelEn || 'Brand')}:</span>
+                      <span>{lang === 'bn' ? product.brandBn || product.brand : product.brand || product.brandBn}</span>
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2.5 text-xs tabular-nums">
@@ -632,6 +666,39 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 </div>
               ) : null}
 
+              {/* Dynamic Backend Product Attributes */}
+              {product.attributes && product.attributes.length > 0 && (
+                <div className="space-y-3">
+                  {product.attributes.map((attr) => (
+                    <div key={attr.id || attr.name} className="space-y-1.5">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                        {lang === 'bn' ? attr.nameBn || attr.name : attr.name}:
+                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {(attr.values || []).map((val) => {
+                          const isSelected = (selectedAttributes[attr.name] || attr.values[0]) === val;
+                          return (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => setSelectedAttributes((prev) => ({ ...prev, [attr.name]: val }))}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                                isSelected
+                                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-600 dark:border-emerald-600 shadow-xs'
+                                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-400'
+                              }`}
+                            >
+                              {isSelected && <Check className="w-3 h-3" />}
+                              <span>{val}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Quantity Stepper + Live Call Question CTA */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                 <div className="flex items-center gap-3">
@@ -673,28 +740,45 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
             {/* Primary Checkout Stack */}
             <div className="space-y-3 pt-2">
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => openOneClickCheckout(product)}
-                  style={{ backgroundColor: settings.themeColors?.primary || '#059669' }}
-                  className="flex-1 py-3.5 sm:py-4 px-5 hover:opacity-95 text-white font-black text-sm rounded-2xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
-                >
-                  <Zap className="w-5 h-5 text-amber-300 fill-amber-300 shrink-0" />
-                  <span>{t('১ ক্লিকে অর্ডার করুন (COD)', '1-Click Order Now (COD)')}</span>
-                </button>
+                {(product.stock ?? 0) <= 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setWaitlistProduct(product)}
+                    className="flex-1 py-3.5 sm:py-4 px-5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm rounded-2xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
+                  >
+                    <BellRing className="w-5 h-5 shrink-0" />
+                    <span>
+                      {t(
+                        cms?.notifyMeBtnBn || 'স্টকে এলে আমাকে জানান (Notify Me)',
+                        cms?.notifyMeBtnEn || 'Notify Me When Available'
+                      )}
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => openOneClickCheckout(product)}
+                    style={{ backgroundColor: settings.themeColors?.primary || '#059669' }}
+                    className="flex-1 py-3.5 sm:py-4 px-5 hover:opacity-95 text-white font-black text-sm rounded-2xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
+                  >
+                    <Zap className="w-5 h-5 text-amber-300 fill-amber-300 shrink-0" />
+                    <span>{t('১ ক্লিকে অর্ডার করুন (COD)', '1-Click Order Now (COD)')}</span>
+                  </button>
+                )}
 
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    disabled={(product.stock ?? 0) <= 0}
                     onClick={() => {
-                      addToCart(product, quantity, selectedColor, selectedSize);
+                      addToCart(product, quantity, selectedColor, selectedSize, selectedAttributes);
                       addToast(
                         'success',
                         t('কার্টে যোগ হয়েছে!', 'Added to Cart!'),
                         lang === 'bn' ? product.titleBn : product.title
                       );
                     }}
-                    className="flex-1 sm:flex-none py-3.5 sm:py-4 px-5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm rounded-2xl border border-slate-700 flex items-center justify-center gap-2 cursor-pointer transition-colors active:scale-95"
+                    className="flex-1 sm:flex-none py-3.5 sm:py-4 px-5 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-bold text-sm rounded-2xl border border-slate-700 flex items-center justify-center gap-2 cursor-pointer transition-colors active:scale-95"
                   >
                     <ShoppingBag className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span>{t('কার্টে রাখুন', 'Add to Cart')}</span>
@@ -921,6 +1005,33 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   )}
                 </div>
               )}
+
+              {/* Full Attributes & Product Specifications Table */}
+              {((product.brand || product.brandBn) || (product.attributes && product.attributes.length > 0)) && (
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900">
+                  <div className="px-4 py-2.5 bg-slate-100/80 dark:bg-slate-800/80 text-xs font-black text-slate-800 dark:text-white border-b border-slate-200 dark:border-slate-800">
+                    {t('প্রোডাক্ট স্পেসিফিকেশন ও অ্যাট্রিবিউটস', 'Product Specifications & Attributes')}
+                  </div>
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                    {(product.brand || product.brandBn) && (
+                      <div className="grid grid-cols-3 px-4 py-2.5">
+                        <span className="font-bold text-slate-500">{t(cms?.brandLabelBn || 'ব্র্যান্ড', cms?.brandLabelEn || 'Brand')}</span>
+                        <span className="col-span-2 font-semibold text-slate-900 dark:text-white">
+                          {lang === 'bn' ? product.brandBn || product.brand : product.brand || product.brandBn}
+                        </span>
+                      </div>
+                    )}
+                    {(product.attributes || []).map((attr) => (
+                      <div key={attr.id || attr.name} className="grid grid-cols-3 px-4 py-2.5">
+                        <span className="font-bold text-slate-500">{lang === 'bn' ? attr.nameBn || attr.name : attr.name}</span>
+                        <span className="col-span-2 font-semibold text-slate-900 dark:text-white">
+                          {(attr.values || []).join(', ')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1118,6 +1229,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 key={`sp-flash-${fp.id}`}
                 product={fp}
                 onViewDetails={(p) => openProductPage(p)}
+                onNotifyWaitlist={(p) => setWaitlistProduct(p)}
               />
             ))}
           </div>
@@ -1145,11 +1257,14 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 key={p.id}
                 product={p}
                 onViewDetails={(rel) => openProductPage(rel)}
+                onNotifyWaitlist={(rel) => setWaitlistProduct(rel)}
               />
             ))}
           </div>
         </div>
       )}
+
+      <WaitlistModal product={waitlistProduct} onClose={() => setWaitlistProduct(null)} />
     </div>
   );
 };

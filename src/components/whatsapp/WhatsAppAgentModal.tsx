@@ -41,6 +41,10 @@ export const WhatsAppAgentModal: React.FC = () => {
     playVoiceSample,
     isPlayingVoiceSample,
     openProductPage,
+    aiConfirmOrderByCustomer,
+    goHome,
+    openAllProductsPage,
+    addToast,
     customerProfile,
     lang,
     t
@@ -90,6 +94,8 @@ export const WhatsAppAgentModal: React.FC = () => {
   const handleQuickAction = (action: string) => {
     if (action === 'track') {
       handleSend(lang === 'bn' ? 'আমার অর্ডার ট্র্যাক করতে চাই' : 'I want to track my order');
+    } else if (action === 'confirm_pending') {
+      handleSend(lang === 'bn' ? 'আমার পেন্ডিং অর্ডার কনফার্ম করুন' : 'Confirm my pending order');
     } else if (action === 'deals') {
       handleSend(lang === 'bn' ? 'আজকের সেরা অফার কি কি?' : 'What are today hot deals?');
     } else if (action === 'delivery') {
@@ -100,12 +106,50 @@ export const WhatsAppAgentModal: React.FC = () => {
       setActiveTab('call');
     } else if (action === 'tab_flash') {
       setActiveTab('flash');
+    } else if (action === 'open_tracking') {
+      setActiveView('tracking');
+      navigateToPath('/tracking');
+      setIsWhatsAppOpen(false);
+    } else if (action === 'browse_all') {
+      goHome();
+      openAllProductsPage();
+      setIsWhatsAppOpen(false);
+    } else if (action.startsWith('confirm_order_')) {
+      const orderId = action.replace('confirm_order_', '');
+      const ok = aiConfirmOrderByCustomer(orderId, 'AI Support Agent');
+      if (ok) {
+        addToast(
+          'success',
+          t('অর্ডার কনফার্ম হয়েছে!', 'Order Confirmed!'),
+          `#${orderId}`
+        );
+      }
+    } else if (action.startsWith('buy_')) {
+      const prodId = action.replace('buy_', '');
+      const prod = products.find((p) => p.id === prodId);
+      if (prod) {
+        openOneClickCheckout(prod);
+        setIsWhatsAppOpen(false);
+      }
     } else if (action.startsWith('view_track_')) {
       const orderId = action.replace('view_track_', '');
       setTrackingSearchQuery(orderId);
       setActiveView('tracking');
       navigateToPath('/tracking');
       setIsWhatsAppOpen(false);
+    } else if (action.startsWith('track_')) {
+      const orderId = action.replace('track_', '');
+      setTrackingSearchQuery(orderId);
+      setActiveView('tracking');
+      navigateToPath('/tracking');
+      setIsWhatsAppOpen(false);
+    } else if (action.startsWith('view_')) {
+      const prodId = action.replace('view_', '');
+      const prod = products.find((p) => p.id === prodId);
+      if (prod) {
+        openProductPage(prod);
+        setIsWhatsAppOpen(false);
+      }
     }
   };
 
@@ -238,6 +282,20 @@ export const WhatsAppAgentModal: React.FC = () => {
                         <p className="whitespace-pre-line leading-relaxed text-xs">
                           {lang === 'bn' ? msg.textBn || msg.text : msg.text}
                         </p>
+                        {!isCust && msg.quickActions && msg.quickActions.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-white/10">
+                            {msg.quickActions.map((qa, qaIdx) => (
+                              <button
+                                key={`${msg.id}-qa-${qaIdx}`}
+                                type="button"
+                                onClick={() => handleQuickAction(qa.action)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] cursor-pointer transition-colors"
+                              >
+                                {qa.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         <div className="flex items-center justify-end gap-1 mt-1 text-[9px] text-slate-400">
                           <span>{msg.time}</span>
                           {isCust && <CheckCheck className="w-3 h-3 text-emerald-400" />}
@@ -256,6 +314,9 @@ export const WhatsAppAgentModal: React.FC = () => {
               </div>
 
               <div className="bg-[#111b21] px-2.5 py-1.5 border-t border-[#222e35] flex items-center gap-1.5 overflow-x-auto text-[10px] shrink-0">
+                <button onClick={() => handleQuickAction('confirm_pending')} className="whitespace-nowrap bg-emerald-900/70 border border-emerald-600/50 text-emerald-200 px-2.5 py-1 rounded-full cursor-pointer flex items-center gap-1">
+                  ✅ {t('অর্ডার কনফার্ম', 'Confirm Order')}
+                </button>
                 <button onClick={() => handleQuickAction('track')} className="whitespace-nowrap bg-[#202c33] text-slate-300 px-2.5 py-1 rounded-full cursor-pointer flex items-center gap-1">
                   <Truck className="w-3 h-3 text-emerald-400" /> {t('ট্র্যাক', 'Track')}
                 </button>

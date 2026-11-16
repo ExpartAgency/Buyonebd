@@ -178,7 +178,15 @@ export const AIVoiceCallModal: React.FC = () => {
         }),
         signal: controller.signal
       })
-        .then((res) => res.json())
+        .then(async (res) => {
+          if (!res.ok) return null;
+          const text = await res.text();
+          try {
+            return JSON.parse(text);
+          } catch {
+            return null;
+          }
+        })
         .then((data) => {
           if (data?.audioUrl) {
             const audio = new Audio(data.audioUrl);
@@ -270,8 +278,14 @@ export const AIVoiceCallModal: React.FC = () => {
       clearTimeout(timeoutId);
 
       if (res.ok) {
-        const data = await res.json();
-        if (data.audioUrl) {
+        const rawText = await res.text();
+        let data: any = null;
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          data = null;
+        }
+        if (data?.audioUrl) {
           const audio = new Audio(data.audioUrl);
           audioRef.current = audio;
           audio.onplay = () => setAiSpeaking(true);

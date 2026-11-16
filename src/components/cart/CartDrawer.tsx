@@ -90,7 +90,7 @@ export const CartDrawer: React.FC = () => {
                           {lang === 'bn' ? item.product.titleBn : item.product.title}
                         </h4>
                         <button
-                          onClick={() => removeFromCart(item.product.id, item.selectedColor, item.selectedSize)}
+                          onClick={() => removeFromCart(item.product.id, item.selectedColor, item.selectedSize, item.selectedAttributes)}
                           className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer shrink-0"
                           aria-label="Remove item"
                         >
@@ -98,9 +98,13 @@ export const CartDrawer: React.FC = () => {
                         </button>
                       </div>
 
-                      {(item.selectedColor || item.selectedSize) && (
+                      {(item.selectedColor || item.selectedSize || (item.selectedAttributes && Object.keys(item.selectedAttributes).length > 0)) && (
                         <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                          {[item.selectedColor, item.selectedSize].filter(Boolean).join(' · ')}
+                          {[
+                            item.selectedColor,
+                            item.selectedSize,
+                            ...(item.selectedAttributes ? Object.entries(item.selectedAttributes).map(([k, v]) => `${k}: ${v}`) : [])
+                          ].filter(Boolean).join(' · ')}
                         </p>
                       )}
                     </div>
@@ -113,7 +117,7 @@ export const CartDrawer: React.FC = () => {
                       {/* Quantity Controls */}
                       <div className="flex items-center border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800">
                         <button
-                          onClick={() => updateCartQuantity(item.product.id, -1, item.selectedColor, item.selectedSize)}
+                          onClick={() => updateCartQuantity(item.product.id, -1, item.selectedColor, item.selectedSize, item.selectedAttributes)}
                           className="px-2.5 py-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold text-xs cursor-pointer"
                         >
                           -
@@ -122,7 +126,7 @@ export const CartDrawer: React.FC = () => {
                           {item.quantity}
                         </span>
                         <button
-                          onClick={() => updateCartQuantity(item.product.id, 1, item.selectedColor, item.selectedSize)}
+                          onClick={() => updateCartQuantity(item.product.id, 1, item.selectedColor, item.selectedSize, item.selectedAttributes)}
                           className="px-2.5 py-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold text-xs cursor-pointer"
                         >
                           +

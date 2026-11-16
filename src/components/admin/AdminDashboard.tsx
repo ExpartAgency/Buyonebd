@@ -93,6 +93,7 @@ import {
 } from '../../firebase';
 import {
   Product,
+  ProductAttribute,
   Order,
   OrderStatus,
   CourierProvider,
@@ -101,8 +102,21 @@ import {
   HomeSlide,
   UserStaff,
   AbandonedCart,
-  ProductReview
+  ProductReview,
+  WalletTopUpRequest,
+  DeliveryBoy
 } from '../../types';
+import { CreativeMarketingStudio } from './CreativeMarketingStudio';
+
+const parseJsonSafe = async (res: Response): Promise<any> => {
+  const txt = await res.text();
+  if (!txt) return null;
+  try {
+    return JSON.parse(txt);
+  } catch {
+    return { rawText: txt };
+  }
+};
 
 export const AdminDashboard: React.FC = () => {
   const {
@@ -123,6 +137,8 @@ export const AdminDashboard: React.FC = () => {
     orders,
     updateOrderStatus,
     updateOrderCourier,
+    assignDeliveryBoyToOrder,
+    aiConfirmOrderByCustomer,
     updateOrderDetails,
     deleteOrder,
     bulkUpdateOrders,
@@ -141,6 +157,9 @@ export const AdminDashboard: React.FC = () => {
     deleteProductReview,
     bulkUpdateReviews,
     bulkDeleteReviews,
+    waitlistEntries,
+    markWaitlistNotified,
+    deleteWaitlistEntry,
     users,
     addUser,
     updateUser,
@@ -186,6 +205,9 @@ export const AdminDashboard: React.FC = () => {
     walletTopUps,
     approveWalletTopUp,
     rejectWalletTopUp,
+    editWalletTopUp,
+    deleteWalletTopUp,
+    bulkActionWalletTopUps,
     adjustCustomerWalletByAdmin,
     runWalletExpirySweep,
     mediaLibrary,
@@ -409,9 +431,23 @@ export const AdminDashboard: React.FC = () => {
 
   // Wallet MFS Top-Up & Adjustment state
   const [walletStatusFilter, setWalletStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [selectedTopUpIds, setSelectedTopUpIds] = useState<string[]>([]);
+  const [editingTopUp, setEditingTopUp] = useState<WalletTopUpRequest | null>(null);
+  const [viewingTopUpActivity, setViewingTopUpActivity] = useState<WalletTopUpRequest | null>(null);
   const [adminAdjustAmount, setAdminAdjustAmount] = useState<string>('200');
   const [adminAdjustNote, setAdminAdjustNote] = useState<string>('');
   const [rowCourierChoice, setRowCourierChoice] = useState<Record<string, CourierProvider>>({});
+
+  // Delivery Boy Roster State
+  const [newDeliveryBoyName, setNewDeliveryBoyName] = useState('');
+  const [newDeliveryBoyPhone, setNewDeliveryBoyPhone] = useState('');
+  const [newDeliveryBoyZone, setNewDeliveryBoyZone] = useState('Dhaka City');
+  const [newDeliveryBoyVehicle, setNewDeliveryBoyVehicle] = useState<'Bike' | 'Cycle' | 'Van'>('Bike');
+
+  // Server-Side Pixel Test & AI Quick Order Dialer State
+  const [isTestingPixelCapi, setIsTestingPixelCapi] = useState(false);
+  const [pixelCapiTestResult, setPixelCapiTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [aiQuickOrderId, setAiQuickOrderId] = useState('');
 
   // Support Desk & Browser Call Console state
   const [selectedChatId, setSelectedChatId] = useState<string>('');
@@ -471,9 +507,16 @@ export const AdminDashboard: React.FC = () => {
   // Product modal
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [colorsDraft, setColorsDraft] = useState('Black (কালো), Silver (সিলভার)');
+  const [sizesDraft, setSizesDraft] = useState('Standard Set');
+  const [newAttrName, setNewAttrName] = useState('');
+  const [newAttrNameBn, setNewAttrNameBn] = useState('');
+  const [newAttrOptions, setNewAttrOptions] = useState('');
   const [productForm, setProductForm] = useState<Omit<Product, 'id'>>({
     title: '',
     titleBn: '',
+    brand: '',
+    brandBn: '',
     description: '',
     descriptionBn: '',
     price: 1200,
@@ -499,6 +542,7 @@ export const AdminDashboard: React.FC = () => {
     isFlashSale: true,
     colors: ['Black (কালো)', 'Silver (সিলভার)'],
     sizes: ['Standard'],
+    attributes: [],
     features: ['100% Genuine Quality', 'Fast Shipping Warranty'],
     featuresBn: ['১০০% আসল প্রোডাক্ট', 'দ্রুত ডেলিভারি ওয়ারেন্টি'],
     videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
@@ -578,9 +622,16 @@ export const AdminDashboard: React.FC = () => {
   // Handlers for Products
   const openNewProductModal = () => {
     setEditingProductId(null);
+    setColorsDraft('Black (কালো), Silver (সিলভার)');
+    setSizesDraft('Standard Set');
+    setNewAttrName('');
+    setNewAttrNameBn('');
+    setNewAttrOptions('');
     setProductForm({
       title: '',
       titleBn: '',
+      brand: settings.storeName || 'BuyOne Original',
+      brandBn: settings.storeName || 'বাইওয়ান অরিজিনাল',
       description: '',
       descriptionBn: '',
       price: 1200,
@@ -604,8 +655,12 @@ export const AdminDashboard: React.FC = () => {
       soldCount: 0,
       loyaltyPoints: undefined,
       isFlashSale: true,
-      colors: ['Black (কালো)'],
-      sizes: ['Standard'],
+      colors: ['Black (কালো)', 'Silver (সিলভার)'],
+      sizes: ['Standard Set'],
+      attributes: [
+        { id: 'attr-warranty', name: 'Warranty', nameBn: 'ওয়ারেন্টি', values: ['7 Days Replacement', '6 Months Service'] },
+        { id: 'attr-origin', name: 'Origin', nameBn: 'অরিজিন', values: ['Official Import'] }
+      ],
       features: ['100% Genuine Quality'],
       featuresBn: ['১০০% অরিজিনাল পণ্য'],
       videoUrl: '',
@@ -625,9 +680,16 @@ export const AdminDashboard: React.FC = () => {
 
   const openEditProductModal = (prod: Product) => {
     setEditingProductId(prod.id);
+    setColorsDraft((prod.colors || []).join(', '));
+    setSizesDraft((prod.sizes || []).join(', '));
+    setNewAttrName('');
+    setNewAttrNameBn('');
+    setNewAttrOptions('');
     setProductForm({
       title: prod.title,
       titleBn: prod.titleBn,
+      brand: prod.brand || '',
+      brandBn: prod.brandBn || '',
       description: prod.description,
       descriptionBn: prod.descriptionBn,
       price: prod.price,
@@ -653,6 +715,7 @@ export const AdminDashboard: React.FC = () => {
       isFlashSale: prod.isFlashSale ?? false,
       colors: prod.colors || [],
       sizes: prod.sizes || [],
+      attributes: prod.attributes || [],
       features: prod.features || [],
       featuresBn: prod.featuresBn || [],
       videoUrl: prod.videoUrl || '',
@@ -668,6 +731,69 @@ export const AdminDashboard: React.FC = () => {
       }
     });
     setIsProductModalOpen(true);
+  };
+
+  const handleGenerateProductAttributes = () => {
+    const catSlug = (productForm.category || '').toLowerCase();
+    let genColors = ['Obsidian Black', 'Pearl Silver', 'Midnight Blue'];
+    let genSizes = ['Standard Set', 'Pro Combo'];
+    let genBrand = productForm.brand?.trim() || 'BuyOne Original';
+    let genBrandBn = productForm.brandBn?.trim() || 'বাইওয়ান অরিজিনাল';
+    let genAttrs: ProductAttribute[] = [
+      { id: `attr-${Date.now()}-1`, name: 'Warranty', nameBn: 'ওয়ারেন্টি', values: ['7 Days Replacement', '6 Months Service'] },
+      { id: `attr-${Date.now()}-2`, name: 'Condition', nameBn: 'কন্ডিশন', values: ['Brand New Sealed'] }
+    ];
+
+    if (catSlug.includes('fashion') || catSlug.includes('cloth') || catSlug.includes('apparel')) {
+      genColors = ['Jet Black', 'Olive Green', 'Navy Blue', 'Burgundy'];
+      genSizes = ['M', 'L', 'XL', 'XXL'];
+      genBrand = productForm.brand?.trim() || 'Dhaka Loom Studio';
+      genBrandBn = productForm.brandBn?.trim() || 'ঢাকা লুম স্টুডিও';
+      genAttrs = [
+        { id: `attr-${Date.now()}-1`, name: 'Fabric', nameBn: 'ফেব্রিক', values: ['100% Combed Cotton', 'Premium Blend'] },
+        { id: `attr-${Date.now()}-2`, name: 'Fit Type', nameBn: 'ফিট', values: ['Regular Fit', 'Slim Fit'] }
+      ];
+    } else if (catSlug.includes('beauty') || catSlug.includes('skin') || catSlug.includes('health')) {
+      genColors = ['Natural Glow', 'Soft Beige', 'Pure Care'];
+      genSizes = ['50ml', '100ml', 'Family Pack'];
+      genBrand = productForm.brand?.trim() || 'PureBotanica';
+      genBrandBn = productForm.brandBn?.trim() || 'পিওর বোটানিকা';
+      genAttrs = [
+        { id: `attr-${Date.now()}-1`, name: 'Skin Type', nameBn: 'স্কিন টাইপ', values: ['All Skin Types', 'Sensitive'] },
+        { id: `attr-${Date.now()}-2`, name: 'Shelf Life', nameBn: 'মেয়াদ', values: ['24 Months'] }
+      ];
+    } else if (catSlug.includes('grocery') || catSlug.includes('food') || catSlug.includes('organic')) {
+      genColors = ['Pure Harvest', 'Farm Fresh'];
+      genSizes = ['500gm', '1 Kg', '2 Kg Jar'];
+      genBrand = productForm.brand?.trim() || 'Deshi Agro';
+      genBrandBn = productForm.brandBn?.trim() || 'দেশি এগ্রো';
+      genAttrs = [
+        { id: `attr-${Date.now()}-1`, name: 'Certification', nameBn: 'মান', values: ['100% Organic & Lab Tested'] },
+        { id: `attr-${Date.now()}-2`, name: 'Packaging', nameBn: 'প্যাকেজিং', values: ['Vacuum Sealed Jar'] }
+      ];
+    } else if (catSlug.includes('gadget') || catSlug.includes('watch') || catSlug.includes('tech') || catSlug.includes('electronics')) {
+      genColors = ['Titanium Black', 'Starlight Silver', 'Sunset Orange'];
+      genSizes = ['Standard Box', 'Extra Strap Edition'];
+      genBrand = productForm.brand?.trim() || 'TechPulse Pro';
+      genBrandBn = productForm.brandBn?.trim() || 'টেকপালস প্রো';
+      genAttrs = [
+        { id: `attr-${Date.now()}-1`, name: 'Connectivity', nameBn: 'কানেক্টিভিটি', values: ['Bluetooth 5.3', 'Dual Mode'] },
+        { id: `attr-${Date.now()}-2`, name: 'Battery Backup', nameBn: 'ব্যাটারি', values: ['Up to 7 Days'] },
+        { id: `attr-${Date.now()}-3`, name: 'Water Resistance', nameBn: 'ওয়াটারপ্রুফ', values: ['IP68 Water Resistant'] }
+      ];
+    }
+
+    setColorsDraft(genColors.join(', '));
+    setSizesDraft(genSizes.join(', '));
+    setProductForm((prev) => ({
+      ...prev,
+      brand: genBrand,
+      brandBn: genBrandBn,
+      colors: genColors,
+      sizes: genSizes,
+      attributes: genAttrs
+    }));
+    addToast('success', at('প্রোডাক্ট অ্যাট্রিবিউট তৈরি!', 'Attributes Generated!'), at(`${genAttrs.length}টি কাস্টম অ্যাট্রিবিউট, কালার, সাইজ ও ব্র্যান্ড যোগ হয়েছে।`, `Populated Brand, Colors, Sizes & ${genAttrs.length} Attributes.`));
   };
 
   const handleSaveProduct = (e: React.FormEvent) => {
@@ -687,8 +813,12 @@ export const AdminDashboard: React.FC = () => {
             dhakaOutside: productForm.customDeliveryFees.dhakaOutside
           }
         : undefined;
+    const parsedColors = colorsDraft.split(',').map((s) => s.trim()).filter(Boolean);
+    const parsedSizes = sizesDraft.split(',').map((s) => s.trim()).filter(Boolean);
     const payload: Omit<Product, 'id'> = {
       ...productForm,
+      colors: parsedColors,
+      sizes: parsedSizes,
       barcode: productForm.barcode?.trim() || `880${Date.now().toString().slice(-9)}`,
       customDeliveryFees: customFeesClean,
       seo: {
@@ -1175,8 +1305,8 @@ export const AdminDashboard: React.FC = () => {
           keywordRules: settings.aiKeywordRules || []
         })
       });
-      const data = await res.json();
-      if (data.reply) {
+      const data = await parseJsonSafe(res);
+      if (data?.reply) {
         setCallReplyInput(data.reply);
       }
     } catch {
@@ -2391,6 +2521,109 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
+              {/* Overview Interactive SVG Analytics Graphics */}
+              {(() => {
+                const daysArr = Array.from({ length: 7 }, (_, i) => {
+                  const d = new Date(Date.now() - (6 - i) * 86400000);
+                  const dayStr = d.toDateString();
+                  const dayOrders = orders.filter((o) => new Date(o.createdAt).toDateString() === dayStr && o.status !== 'cancelled');
+                  const rev = dayOrders.reduce((s, o) => s + o.pricing.total, 0);
+                  return {
+                    label: d.toLocaleDateString('en-US', { weekday: 'short' }),
+                    rev,
+                    count: dayOrders.length
+                  };
+                });
+                const maxRev = Math.max(1000, ...daysArr.map((x) => x.rev));
+                const sPending = orders.filter((o) => o.status === 'pending' || o.status === 'on_hold').length;
+                const sActive = orders.filter((o) => o.status === 'ai_confirmed' || o.status === 'processing' || o.status === 'shipped').length;
+                const sDone = orders.filter((o) => o.status === 'delivered').length;
+                const sCancel = orders.filter((o) => o.status === 'cancelled').length;
+                const totalSt = Math.max(1, orders.length);
+                const rC = 36;
+                const circ = 2 * Math.PI * rC;
+                const dDone = (sDone / totalSt) * circ;
+                const dActive = (sActive / totalSt) * circ;
+                const dPend = (sPending / totalSt) * circ;
+
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div className="lg:col-span-2 p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                            <BarChart3 className="w-4 h-4 text-emerald-400" />
+                            <span>{at('গত ৭ দিনের বিক্রয় ও অর্ডার গ্রাফ', '7-Day Revenue & Order Velocity')}</span>
+                          </h4>
+                          <p className="text-[11px] text-slate-400">{at('রিয়েল-টাইম অর্ডার ভলিউম ও দৈনিক আয়', 'Real-time daily revenue performance')}</p>
+                        </div>
+                        <span className="text-xs font-mono font-bold text-emerald-400">৳{totalRevenue.toLocaleString()}</span>
+                      </div>
+                      <svg viewBox="0 0 420 140" className="w-full h-36 overflow-visible">
+                        <defs>
+                          <linearGradient id="ovBarGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#10b981" />
+                            <stop offset="100%" stopColor="#0f766e" stopOpacity="0.4" />
+                          </linearGradient>
+                        </defs>
+                        {[0, 0.5, 1].map((g, gi) => (
+                          <line key={gi} x1="16" y1={110 - g * 88} x2="408" y2={110 - g * 88} stroke="#1e293b" strokeDasharray="3 3" strokeWidth="1" />
+                        ))}
+                        {daysArr.map((d, idx) => {
+                          const barH = Math.max(8, Math.round((d.rev / maxRev) * 86));
+                          const xPos = 24 + idx * 55;
+                          const yPos = 110 - barH;
+                          return (
+                            <g key={idx}>
+                              <rect x={xPos} y={yPos} width="32" height={barH} rx="6" fill="url(#ovBarGrad)" />
+                              <text x={xPos + 16} y={yPos - 5} textAnchor="middle" fill="#94a3b8" fontSize="9" fontFamily="monospace">
+                                {d.count > 0 ? `${d.count}` : '0'}
+                              </text>
+                              <text x={xPos + 16} y="128" textAnchor="middle" fill="#64748b" fontSize="10" fontWeight="bold">
+                                {d.label}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </svg>
+                    </div>
+
+                    <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                      <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-sky-400" />
+                        <span>{at('অর্ডার স্ট্যাটাস অনুপাত', 'Order Status Breakdown')}</span>
+                      </h4>
+                      <div className="flex items-center gap-4">
+                        <svg viewBox="0 0 100 100" className="w-28 h-28 shrink-0 -rotate-90">
+                          <circle cx="50" cy="50" r={rC} fill="transparent" stroke="#1e293b" strokeWidth="12" />
+                          <circle cx="50" cy="50" r={rC} fill="transparent" stroke="#10b981" strokeWidth="12" strokeDasharray={`${dDone} ${circ}`} />
+                          <circle cx="50" cy="50" r={rC} fill="transparent" stroke="#38bdf8" strokeWidth="12" strokeDasharray={`${dActive} ${circ}`} strokeDashoffset={-dDone} />
+                          <circle cx="50" cy="50" r={rC} fill="transparent" stroke="#f59e0b" strokeWidth="12" strokeDasharray={`${dPend} ${circ}`} strokeDashoffset={-(dDone + dActive)} />
+                        </svg>
+                        <div className="space-y-1.5 text-xs flex-1">
+                          <div className="flex justify-between items-center">
+                            <span className="flex items-center gap-1.5 text-slate-300"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />{at('সম্পন্ন', 'Delivered')}</span>
+                            <span className="font-mono font-bold text-white">{sDone}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="flex items-center gap-1.5 text-slate-300"><span className="w-2.5 h-2.5 rounded-full bg-sky-400" />{at('চলমান/শিপড', 'Active')}</span>
+                            <span className="font-mono font-bold text-white">{sActive}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="flex items-center gap-1.5 text-slate-300"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" />{at('পেন্ডিং', 'Pending')}</span>
+                            <span className="font-mono font-bold text-white">{sPending}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="flex items-center gap-1.5 text-slate-300"><span className="w-2.5 h-2.5 rounded-full bg-slate-600" />{at('বাতিল', 'Cancelled')}</span>
+                            <span className="font-mono font-bold text-white">{sCancel}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Low-Stock Alert & 1-Click Restock Widget */}
               {products.some((p) => p.stock <= 15) && (
                 <div className="p-4 rounded-2xl bg-amber-950/25 border border-amber-700/40 space-y-2.5">
@@ -2918,6 +3151,7 @@ export const AdminDashboard: React.FC = () => {
                         <th className="py-3 px-3">{at('স্ট্যাটাস', 'Status')}</th>
                         <th className="py-3 px-3">{at('মোট বিল', 'Total')}</th>
                         <th className="py-3 px-3">{at('সকল কুরিয়ারে পাঠান', 'Send to Courier')}</th>
+                        <th className="py-3 px-3">{at('ডেলিভারি বয়', 'Delivery Boy')}</th>
                         <th className="py-3 px-3">{at('ইনভয়েস', 'Invoice')}</th>
                         <th className="py-3 px-3">{at('কনসাইনমেন্ট আইডি', 'ConsignmentID')}</th>
                         <th className="py-3 px-3">{at('ডেলিভারি স্ট্যাটাস', 'DeliveryStatus')}</th>
@@ -2928,7 +3162,7 @@ export const AdminDashboard: React.FC = () => {
                     <tbody className="divide-y divide-slate-800">
                       {paginatedOrders.length === 0 ? (
                         <tr>
-                          <td colSpan={11} className="py-10 px-4 text-center text-slate-400">
+                          <td colSpan={12} className="py-10 px-4 text-center text-slate-400">
                             <p className="font-semibold">
                               {at('এই ফিল্টারে কোনো অর্ডার পাওয়া যায়নি।', 'No orders match the current filters.')}
                             </p>
@@ -3095,6 +3329,23 @@ export const AdminDashboard: React.FC = () => {
                                     ))}
                                   </div>
                                 </div>
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap">
+                                <select
+                                  value={ord.courier?.deliveryBoyId || ''}
+                                  onChange={(e) => {
+                                    const boy = (settings.deliveryBoys || []).find((b) => b.id === e.target.value) || null;
+                                    assignDeliveryBoyToOrder(ord.id, boy);
+                                  }}
+                                  className="py-1 px-2 rounded-lg bg-slate-950 border border-slate-700 text-[11px] font-semibold text-slate-200 max-w-[130px] cursor-pointer"
+                                >
+                                  <option value="">{at('নির্বাচন নেই', 'Unassigned')}</option>
+                                  {(settings.deliveryBoys || []).filter((db) => db.active).map((db) => (
+                                    <option key={db.id} value={db.id}>
+                                      {db.name} ({db.zone})
+                                    </option>
+                                  ))}
+                                </select>
                               </td>
                               <td className="py-3 px-3 whitespace-nowrap">
                                 <button
@@ -3363,7 +3614,8 @@ export const AdminDashboard: React.FC = () => {
                       : c.product,
                   quantity: c.quantity,
                   selectedColor: c.selectedColor,
-                  selectedSize: c.selectedSize
+                  selectedSize: c.selectedSize,
+                  selectedAttributes: c.product.brand ? { Brand: c.product.brand } : undefined
                 })),
                 paymentMethod: posPaymentMethod,
                 deliveryZone: 'dhaka_inside',
@@ -4364,8 +4616,8 @@ export const AdminDashboard: React.FC = () => {
                               secretKey: settings.courierSettings?.steadfast?.secretKey || ''
                             })
                           });
-                          const data = await res.json();
-                          if (res.ok && data.ok) {
+                          const data = await parseJsonSafe(res);
+                          if (res.ok && data?.ok) {
                             setSteadfastBalanceInfo({
                               ok: true,
                               balance: data.balance,
@@ -4375,9 +4627,9 @@ export const AdminDashboard: React.FC = () => {
                           } else {
                             setSteadfastBalanceInfo({
                               ok: false,
-                              message: data.error || 'Could not authenticate with Steadfast Portal API.'
+                              message: data?.error || data?.rawText || `Could not authenticate with Steadfast Portal API (HTTP ${res.status}).`
                             });
-                            addToast('warning', 'Steadfast Connection Check', data.error || 'Check API Key & Secret Key.');
+                            addToast('warning', 'Steadfast Connection Check', data?.error || 'Check API Key & Secret Key.');
                           }
                         } catch (err: any) {
                           setSteadfastBalanceInfo({
@@ -4702,18 +4954,153 @@ export const AdminDashboard: React.FC = () => {
                   />
                 </div>
               </div>
+              {/* Delivery Boy & Local Rider Management */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Users className="w-4 h-4 text-emerald-400" />
+                      <span>{at('লোকাল ডেলিভারি বয় ও রাইডার ম্যানেজমেন্ট', 'Delivery Boy & Local Rider Fleet')}</span>
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      {at('নিজস্ব ডেলিভারি বয় যোগ করুন এবং অর্ডার টেবিল থেকে সরাসরি অ্যাসাইন করুন', 'Add in-house riders & assign them directly to orders from the Orders tab')}
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full">
+                    {(settings.deliveryBoys || []).filter((d) => d.active).length} {at('জন সক্রিয়', 'Active Riders')}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 text-xs">
+                  <input
+                    type="text"
+                    value={newDeliveryBoyName}
+                    onChange={(e) => setNewDeliveryBoyName(e.target.value)}
+                    placeholder={at('রাইডারের নাম *', 'Rider Name *')}
+                    className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                  <input
+                    type="text"
+                    value={newDeliveryBoyPhone}
+                    onChange={(e) => setNewDeliveryBoyPhone(e.target.value)}
+                    placeholder={at('ফোন নম্বর *', 'Phone (017...) *')}
+                    className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                  />
+                  <input
+                    type="text"
+                    value={newDeliveryBoyZone}
+                    onChange={(e) => setNewDeliveryBoyZone(e.target.value)}
+                    placeholder={at('এলাকা (যেমন: মিরপুর)', 'Zone (e.g. Mirpur)')}
+                    className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                  <select
+                    value={newDeliveryBoyVehicle === 'Cycle' ? 'Bicycle' : newDeliveryBoyVehicle}
+                    onChange={(e) => setNewDeliveryBoyVehicle(e.target.value as any)}
+                    className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  >
+                    <option value="Bike">Motorbike</option>
+                    <option value="Cycle">Bicycle</option>
+                    <option value="Van">Delivery Van</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!newDeliveryBoyName.trim() || !newDeliveryBoyPhone.trim()) {
+                        addToast('warning', at('তথ্য দিন', 'Missing Info'), at('রাইডারের নাম ও ফোন দিন।', 'Enter rider name & phone.'));
+                        return;
+                      }
+                      const mappedVehicle: 'Bike' | 'Bicycle' | 'Van' | 'Walk' =
+                        newDeliveryBoyVehicle === 'Cycle' ? 'Bicycle' : newDeliveryBoyVehicle;
+                      const entry: DeliveryBoy = {
+                        id: `db-${Date.now()}`,
+                        name: newDeliveryBoyName.trim(),
+                        phone: newDeliveryBoyPhone.trim(),
+                        zone: newDeliveryBoyZone.trim() || 'Dhaka City',
+                        vehicleType: mappedVehicle,
+                        active: true
+                      };
+                      updateSettings({ deliveryBoys: [...(settings.deliveryBoys || []), entry] });
+                      setNewDeliveryBoyName('');
+                      setNewDeliveryBoyPhone('');
+                      addToast('success', at('ডেলিভারি বয় যোগ হয়েছে!', 'Delivery Boy Added!'), entry.name);
+                    }}
+                    className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl cursor-pointer flex items-center justify-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{at('যোগ করুন', 'Add Rider')}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                  {(settings.deliveryBoys || []).map((rider) => (
+                    <div key={rider.id} className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold text-white truncate">{rider.name}</p>
+                        <p className="text-[11px] font-mono text-emerald-400">{rider.phone}</p>
+                        <p className="text-[10px] text-slate-400">{rider.zone} • {rider.vehicleType || 'Bike'}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateSettings({
+                              deliveryBoys: (settings.deliveryBoys || []).map((x) =>
+                                x.id === rider.id ? { ...x, active: !x.active } : x
+                              )
+                            })
+                          }
+                          className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer ${
+                            rider.active ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-500'
+                          }`}
+                        >
+                          {rider.active ? 'Active' : 'Off'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateSettings({
+                              deliveryBoys: (settings.deliveryBoys || []).filter((x) => x.id !== rider.id)
+                            })
+                          }
+                          className="p-1.5 rounded bg-rose-950/60 hover:bg-rose-900 text-rose-300 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
           {/* TAB 7: FLASH SALE MANAGER */}
           {activeTab === 'flash_sale' && (() => {
+            const parseFlashDateMs = (raw?: string): number => {
+              if (!raw) return Date.now() + 24 * 3600 * 1000;
+              const str = raw.trim();
+              const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+              if (dmy) {
+                const d = new Date(
+                  Number(dmy[3]),
+                  Number(dmy[2]) - 1,
+                  Number(dmy[1]),
+                  dmy[4] ? Number(dmy[4]) : 23,
+                  dmy[5] ? Number(dmy[5]) : 59,
+                  59
+                );
+                if (!isNaN(d.getTime())) return d.getTime();
+              }
+              const parsed = new Date(str).getTime();
+              return Number.isFinite(parsed) ? parsed : Date.now() + 24 * 3600 * 1000;
+            };
             const toLocalDateTimeInput = (iso?: string) => {
-              const d = iso ? new Date(iso) : new Date(Date.now() + 24 * 3600 * 1000);
+              const d = new Date(parseFlashDateMs(iso));
               if (isNaN(d.getTime())) return '';
               const pad = (n: number) => String(n).padStart(2, '0');
               return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
             };
-            const targetMs = settings.flashSale?.endsAt ? new Date(settings.flashSale.endsAt).getTime() : NaN;
+            const targetMs = settings.flashSale?.endsAt ? parseFlashDateMs(settings.flashSale.endsAt) : NaN;
             const remainingMs = Number.isFinite(targetMs) ? targetMs - Date.now() : 0;
             const isExpired = !Number.isFinite(targetMs) || remainingMs <= 0;
             const remDays = Math.floor(Math.max(0, remainingMs) / (1000 * 3600 * 24));
@@ -5141,6 +5528,58 @@ export const AdminDashboard: React.FC = () => {
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
                     />
                   </div>
+
+                  <div className="pt-1 space-y-2">
+                    <button
+                      type="button"
+                      disabled={isTestingPixelCapi}
+                      onClick={async () => {
+                        setIsTestingPixelCapi(true);
+                        setPixelCapiTestResult(null);
+                        try {
+                          const res = await fetch('/api/tracking/pixel', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              eventName: 'PageView',
+                              eventId: `test_${Date.now()}`,
+                              pixelId: settings.marketingSettings?.facebookPixel?.pixelId,
+                              accessToken: settings.marketingSettings?.facebookPixel?.accessToken,
+                              sourceUrl: typeof window !== 'undefined' ? window.location.href : 'https://buyonebd.com',
+                              userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'BuyOneBD',
+                              testMode: true
+                            })
+                          });
+                          const data = await parseJsonSafe(res);
+                          if (res.ok && data?.success) {
+                            const detail = data.forwardedToMeta
+                              ? at(`সার্ভার-সাইড Meta CAPI লাইভ ভেরিফাইড (Events Received: ${data.eventsReceived || 1})`, `Meta CAPI Server Live Verified (${data.eventsReceived || 1} event forwarded)`)
+                              : at('সার্ভার-সাইড ট্র্যাকিং এন্ডপয়েন্ট সক্রিয় (Pixel ID/Token দিলে Meta-তে ফরওয়ার্ড হবে)', 'Server-side tracking endpoint healthy & active (ready to forward with Pixel ID & Token).');
+                            setPixelCapiTestResult({ ok: true, msg: detail });
+                            addToast('success', at('সার্ভার ট্র্যাকিং সফল!', 'Server Tracking Active!'), detail);
+                          } else {
+                            const errMsg = data?.error || data?.rawText || `HTTP ${res.status}`;
+                            setPixelCapiTestResult({ ok: false, msg: errMsg });
+                            addToast('error', at('ট্র্যাকিং টেস্ট ব্যর্থ', 'Tracking Test Failed'), errMsg);
+                          }
+                        } catch (err: any) {
+                          const msg = err?.message || 'Network error';
+                          setPixelCapiTestResult({ ok: false, msg });
+                        } finally {
+                          setIsTestingPixelCapi(false);
+                        }
+                      }}
+                      className="w-full py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      <Activity className="w-3.5 h-3.5" />
+                      <span>{isTestingPixelCapi ? at('টেস্ট হচ্ছে...', 'Testing CAPI...') : at('সার্ভার-সাইড Pixel CAPI লাইভ টেস্ট করুন', 'Test Server-Side Pixel & CAPI')}</span>
+                    </button>
+                    {pixelCapiTestResult && (
+                      <div className={`px-3 py-2 rounded-xl text-[11px] font-medium border ${pixelCapiTestResult.ok ? 'bg-emerald-950/60 border-emerald-700/60 text-emerald-300' : 'bg-rose-950/60 border-rose-700/60 text-rose-300'}`}>
+                        {pixelCapiTestResult.msg}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Google Analytics 4 */}
@@ -5266,6 +5705,59 @@ export const AdminDashboard: React.FC = () => {
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
                     />
                   </div>
+                </div>
+
+                {/* Microsoft Clarity Connect */}
+                <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Eye className="w-4 h-4 text-sky-400" />
+                      <span>Microsoft Clarity Heatmaps & Session Connect</span>
+                    </h4>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.marketingSettings?.clarity?.enabled ?? false}
+                        onChange={(e) => {
+                          updateSettings({
+                            marketingSettings: {
+                              ...settings.marketingSettings,
+                              clarity: {
+                                projectId: settings.marketingSettings?.clarity?.projectId || '',
+                                enabled: e.target.checked
+                              }
+                            }
+                          });
+                        }}
+                        className="w-4 h-4 rounded text-sky-600 bg-slate-800 border-slate-700"
+                      />
+                      <span className="text-xs text-slate-300">{at('সক্রিয়', 'Active')}</span>
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Clarity Project ID</label>
+                    <input
+                      type="text"
+                      value={settings.marketingSettings?.clarity?.projectId || ''}
+                      onChange={(e) => {
+                        updateSettings({
+                          marketingSettings: {
+                            ...settings.marketingSettings,
+                            clarity: {
+                              enabled: settings.marketingSettings?.clarity?.enabled ?? true,
+                              projectId: e.target.value.trim()
+                            }
+                          }
+                        });
+                      }}
+                      placeholder="e.g. n8k2p9abc1"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    {at('Clarity Project ID বসিয়ে চালু করলে সাথে সাথে সকল ভিজিটরের হিটম্যাপ ও সেশন রেকর্ডিং সংযুক্ত হবে।', 'Paste your Microsoft Clarity Project ID to automatically inject Clarity heatmaps & session replay across the storefront.')}
+                  </p>
                 </div>
               </div>
 
@@ -5906,11 +6398,11 @@ export const AdminDashboard: React.FC = () => {
                               html: `<div style="font-family:sans-serif;line-height:1.6"><h2>${settings.storeName}</h2><p>${emailCampaignBody.replace(/\n/g, '<br/>')}</p></div>`
                             })
                           });
-                          const data = await res.json();
-                          if (res.ok && data.success) {
+                          const data = await parseJsonSafe(res);
+                          if (res.ok && data?.success) {
                             addToast('success', at('ইমেইল ক্যাম্পেইন পাঠানো হয়েছে!', 'Campaign Sent!'), `${data.sentCount} recipients notified.`);
                           } else {
-                            addToast('error', at('SMTP ইরর', 'SMTP Error'), data.error || 'Failed to send');
+                            addToast('error', at('SMTP ইরর', 'SMTP Error'), data?.error || data?.rawText || 'Failed to send');
                           }
                         } catch {
                           addToast('error', at('নেটওয়ার্ক সমস্যা', 'Network Error'), 'Could not reach /api/email/send');
@@ -6742,6 +7234,79 @@ export const AdminDashboard: React.FC = () => {
                 );
               })()}
 
+              {/* Out-of-Stock Waitlist Manager ('Waitlist' Firestore Collection) */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-amber-500/30 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                  <div>
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-amber-400" />
+                      <span>{at(`স্টক-আউট ওয়েটলিস্ট রিকোয়েস্ট (${waitlistEntries.length})`, `Out-of-Stock Waitlist Requests (${waitlistEntries.length})`)}</span>
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      {at('স্টক শেষ হওয়া পণ্যে কাস্টমাররা যে ইমেইল/ফোন দিয়েছেন তার তালিকা', 'Customers waiting to be notified when out-of-stock products are restocked')}
+                    </p>
+                  </div>
+                </div>
+
+                {waitlistEntries.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-500 bg-slate-950 rounded-xl border border-slate-800">
+                    {at('এখনও কোনো ওয়েটলিস্ট রিকোয়েস্ট নেই। স্টক ০ হলে পণ্যের কার্ডে "Notify Me" বাটন দেখা যাবে।', 'No waitlist requests yet. Out-of-stock items show "Notify Me When Available" on the storefront.')}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-900 text-slate-400 border-b border-slate-800">
+                        <tr>
+                          <th className="py-2.5 px-3">{at('পণ্য', 'Product')}</th>
+                          <th className="py-2.5 px-3">{at('ইমেইল / ফোন', 'Contact')}</th>
+                          <th className="py-2.5 px-3">{at('তারিখ', 'Requested')}</th>
+                          <th className="py-2.5 px-3">{at('স্ট্যাটাস', 'Status')}</th>
+                          <th className="py-2.5 px-3 text-right">{at('অ্যাকশন', 'Action')}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {waitlistEntries.map((entry) => (
+                          <tr key={entry.id} className="hover:bg-slate-900/60">
+                            <td className="py-2.5 px-3 font-bold text-white">{entry.productTitleBn || entry.productTitle}</td>
+                            <td className="py-2.5 px-3 font-mono text-emerald-400">
+                              <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 mr-1.5">{entry.contactType}</span>
+                              {entry.contact}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-400">{new Date(entry.createdAt).toLocaleDateString()}</td>
+                            <td className="py-2.5 px-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${entry.status === 'notified' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                                {entry.status}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right space-x-1.5">
+                              {entry.status !== 'notified' && (
+                                <button
+                                  type="button"
+                                  onClick={() => markWaitlistNotified(entry.id)}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                                >
+                                  {at('নটিফাইড করুন', 'Mark Notified')}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => deleteWaitlistEntry(entry.id)}
+                                className="px-2 py-1 rounded-lg bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800 text-[11px] font-bold cursor-pointer"
+                              >
+                                <Trash2 className="w-3 h-3 inline" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Creative Marketing Studio: Banners, Social Posts & Reels Generator */}
+              <CreativeMarketingStudio ta={at} />
+
               <button
                 onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('মার্কেটিং টুলস সেটিংস সফলভাবে আপডেট হয়েছে।', 'Marketing settings saved.'))}
                 className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
@@ -6760,85 +7325,110 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* AI API Keys Setup */}
-                <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
-                  <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                    <Bot className="w-4 h-4 text-emerald-400" />
-                    <span>AI Provider API Keys (Gemini / OpenAI / Claude)</span>
-                  </h4>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Google Gemini API Key</label>
-                    <input
-                      type="password"
-                      value={settings.aiSettings?.geminiApiKey || ''}
-                      onChange={(e) => {
-                        updateSettings({
-                          aiSettings: {
-                            ...settings.aiSettings,
-                            geminiApiKey: e.target.value
-                          }
-                        });
-                      }}
-                      placeholder="AIzaSy..."
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
-                    />
+                {/* Free Auto AI + Server-Side Gemini Engine Control */}
+                <div className="p-6 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-4">
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Bot className="w-4 h-4 text-emerald-400" />
+                      <span>{at('সার্ভার-সাইড এআই ও ফ্রি অটো-এআই ইঞ্জিন', 'Server-Side AI & Free Auto-AI Engine')}</span>
+                    </h4>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                      AUTO FREE READY
+                    </span>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">OpenAI API Key (ChatGPT)</label>
-                    <input
-                      type="password"
-                      value={settings.aiSettings?.openaiApiKey || ''}
-                      onChange={(e) => {
-                        updateSettings({
-                          aiSettings: {
-                            ...settings.aiSettings,
-                            openaiApiKey: e.target.value
-                          }
-                        });
-                      }}
-                      placeholder="sk-proj-..."
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
-                    />
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    {at(
+                      'সকল ক্রেডেনশিয়াল এখন ১০০% নিরাপদ সার্ভার-সাইডে সংরক্ষিত — আলাদাভাবে কোনো API Key দেওয়ার প্রয়োজন নেই। সার্ভার Key না থাকলে বিল্ট-ইন Free Auto-AI ইঞ্জিন স্বয়ংক্রিয়ভাবে অর্ডার কনফার্ম, প্রোডাক্ট সার্চ ও ভয়েস কল পরিচালনা করে।',
+                      'AI engines run securely server-side (no manual API keys needed). When external server keys are unset, the built-in Free Auto-AI + Bengali Speech engine automatically handles chat support, order confirmation & voice calls.'
+                    )}
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-2.5 text-xs">
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Primary Chat Engine</span>
+                      <span className="font-mono font-bold text-emerald-400">Gemini + Free Auto AI</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Bangla Voice TTS</span>
+                      <span className="font-mono font-bold text-teal-400">Neural TTS + Web Speech</span>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Anthropic Claude API Key</label>
+                  <label className="flex items-center justify-between p-3.5 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
+                    <div>
+                      <span className="text-xs font-bold text-white block">
+                        {at('নতুন অর্ডারে অটো AI ভয়েস কনফার্মেশন', 'Auto-Trigger AI Call on New Orders')}
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        {at('অর্ডার প্লেস হওয়া মাত্রই কাস্টমারকে অটোমেটিক কনফার্মেশন কল করবে', 'Automatically initiate AI voice verification right after checkout')}
+                      </span>
+                    </div>
                     <input
-                      type="password"
-                      value={settings.aiSettings?.claudeApiKey || ''}
-                      onChange={(e) => {
+                      type="checkbox"
+                      checked={settings.aiCallSettings?.autoCallOnOrder ?? false}
+                      onChange={(e) =>
                         updateSettings({
-                          aiSettings: {
-                            ...settings.aiSettings,
-                            claudeApiKey: e.target.value
+                          aiCallSettings: {
+                            ...settings.aiCallSettings,
+                            autoCallOnOrder: e.target.checked
                           }
-                        });
-                      }}
-                      placeholder="sk-ant-..."
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                        })
+                      }
+                      className="w-4 h-4 rounded text-emerald-600 bg-slate-800 border-slate-700"
                     />
-                  </div>
+                  </label>
 
-                  <div className="pt-2">
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Selected Primary Model</label>
-                    <select
-                      value={settings.aiSettings?.selectedProvider || 'gemini'}
-                      onChange={(e) => {
-                        updateSettings({
-                          aiSettings: {
-                            ...settings.aiSettings,
-                            selectedProvider: e.target.value as any
+                  {/* 1-Click Quick Order AI Dialer & Confirm */}
+                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                    <span className="text-xs font-bold text-white block">
+                      {at('অর্ডার ১-ক্লিক AI কল ও অটো-কনফার্ম ডায়ালার', '1-Click Quick Order AI Dialer')}
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      <select
+                        value={aiQuickOrderId}
+                        onChange={(e) => setAiQuickOrderId(e.target.value)}
+                        className="flex-1 min-w-[180px] px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white"
+                      >
+                        <option value="">{at('-- পেন্ডিং অর্ডার নির্বাচন করুন --', '-- Select Order to Call --')}</option>
+                        {orders.slice(0, 30).map((ord) => (
+                          <option key={ord.id} value={ord.id}>
+                            {ord.id} • {ord.customer.name} (৳{ord.pricing.total}) [{ord.status}]
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = orders.find((o) => o.id === aiQuickOrderId) || orders.find((o) => o.status === 'pending') || orders[0];
+                          if (!target) {
+                            addToast('warning', at('কোনো অর্ডার নেই', 'No Orders Found'), '');
+                            return;
                           }
-                        });
-                      }}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
-                    >
-                      <option value="gemini">Google Gemini 2.5 Flash / Pro (Recommended for Bengali)</option>
-                      <option value="openai">OpenAI GPT-4o Mini</option>
-                      <option value="claude">Anthropic Claude 3.5 Sonnet</option>
-                    </select>
+                          startAICall(target);
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <PhoneOutgoing className="w-3.5 h-3.5" />
+                        <span>{at('এখনই AI কল করুন', 'Launch AI Call')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = orders.find((o) => o.id === aiQuickOrderId) || orders.find((o) => o.status === 'pending');
+                          if (!target) {
+                            addToast('warning', at('পেন্ডিং অর্ডার নেই', 'No Pending Order'), '');
+                            return;
+                          }
+                          aiConfirmOrderByCustomer(target.id, 'Admin 1-Click AI Confirm');
+                          addToast('success', at('অর্ডার AI কনফার্ম হয়েছে!', 'Order AI Confirmed!'), target.id);
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <CheckCheck className="w-3.5 h-3.5" />
+                        <span>{at('সরাসরি AI কনফার্ম', 'Direct AI Confirm')}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -6850,28 +7440,49 @@ export const AdminDashboard: React.FC = () => {
                       <span>Bangladeshi Female Voice Confirmation</span>
                     </h4>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400">
-                      Aoede / Gemini Neural
+                      Neural / Web Speech Free
                     </span>
                   </div>
 
                   <p className="text-xs text-slate-400">
-                    অর্ডার হওয়ার সাথে সাথে কাস্টমারকে ফোন করে অর্ডার কনফার্ম করে এমন স্মার্ট হিউম্যান ভয়েস। নিচের বাটনে ক্লিক করে লাইভ ভয়েস টেস্ট শুনুন:
+                    {at('অর্ডার হওয়ার সাথে সাথে কাস্টমারকে ফোন করে অর্ডার কনফার্ম করে এমন স্মার্ট হিউম্যান ভয়েস। নিচের বাটনে ক্লিক করে লাইভ ভয়েস টেস্ট শুনুন:', 'Live Bengali confirmation voice sample (automatically falls back to browser speech synthesis so it always works).')}
                   </p>
 
                   <button
                     onClick={async () => {
-                      addToast('info', t('ভয়েস প্লে হচ্ছে...', 'Playing Voice...'), t('Gemini Neural Bengali Audio স্ট্রিম হচ্ছে।', 'Streaming Bengali human audio.'));
+                      addToast('info', t('ভয়েস প্লে হচ্ছে...', 'Playing Voice...'), t('বাংলা ভয়েস অডিও প্লে হচ্ছে।', 'Streaming Bengali human audio.'));
                       await playVoiceSample();
                     }}
                     disabled={isPlayingVoiceSample}
-                    className="w-full py-3 px-4 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-teal-600/20"
+                    className="w-full py-3 px-4 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-teal-600/20 cursor-pointer"
                   >
                     <PhoneCall className="w-4 h-4 text-amber-300 animate-pulse" />
                     <span>{isPlayingVoiceSample ? t('ভয়েস অডিও প্লে হচ্ছে...', 'Streaming Bengali Voice...') : t('🎧 বাংলাদেশী নারী কণ্ঠে লাইভ অডিও শুনুন', 'Listen Live Bengali Voice Sample')}</span>
                   </button>
 
                   <div className="space-y-2 pt-2">
-                    <label className="block text-xs font-bold text-slate-300">{t('কল স্ক্রিপ্ট (Bengali Call Script)', 'Call Script')}</label>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label className="block text-xs font-bold text-slate-300">{t('কল স্ক্রিপ্ট (Bengali Call Script)', 'Call Script')}</label>
+                      <div className="flex flex-wrap gap-1">
+                        {['{customer_name}', '{product_name}', '{total_amount}', '{store_name}'].map((chip) => (
+                          <button
+                            key={chip}
+                            type="button"
+                            onClick={() =>
+                              updateSettings({
+                                aiCallSettings: {
+                                  ...settings.aiCallSettings,
+                                  banglaScript: `${settings.aiCallSettings?.banglaScript || ''} ${chip}`.trim()
+                                }
+                              })
+                            }
+                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 text-[10px] font-mono cursor-pointer"
+                          >
+                            +{chip}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <textarea
                       rows={3}
                       value={settings.aiCallSettings?.banglaScript || ''}
@@ -7167,6 +7778,109 @@ export const AdminDashboard: React.FC = () => {
                 <h3 className="text-xl font-black text-white">{t('সম্পূর্ণ স্টোর অ্যানালিটিক্স', 'Store Analytics & Performance')}</h3>
                 <p className="text-xs text-slate-400">{t('ভিজিটর ট্রাফিক, জেলাভিত্তিক কনভার্সন রেট এবং কুরিয়ার ডেলিভারি রিপোর্ট', 'Visitor traffic, district conversion breakdown and delivery analytics')}</p>
               </div>
+
+              {/* Visual SVG Analytics Charts Row */}
+              {(() => {
+                const maxRevDay = 7;
+                const revPoints = Array.from({ length: maxRevDay }, (_, i) => {
+                  const d = new Date();
+                  d.setDate(d.getDate() - (maxRevDay - 1 - i));
+                  const datePrefix = d.toISOString().split('T')[0];
+                  const dayOrders = orders.filter((o) => (o.createdAt || '').startsWith(datePrefix) && o.status !== 'cancelled');
+                  const total = dayOrders.reduce((s, o) => s + (o.pricing?.total || 0), 0);
+                  return {
+                    label: `${d.getDate()}/${d.getMonth() + 1}`,
+                    total,
+                    count: dayOrders.length
+                  };
+                });
+                const maxRev = Math.max(1000, ...revPoints.map((p) => p.total));
+                const riders = settings.deliveryBoys || [];
+                const riderStats = riders.map((r) => {
+                  const assigned = orders.filter((o) => o.courier?.deliveryBoyId === r.id);
+                  const delivered = assigned.filter((o) => o.status === 'delivered').length;
+                  return { name: r.name, assigned: assigned.length, delivered };
+                });
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4 text-emerald-400" />
+                          <span>{at('৭-দিনের লাইভ সেলস ও অর্ডার গ্রাফ', '7-Day Live Revenue & Order Volume')}</span>
+                        </h4>
+                        <span className="text-[11px] font-mono text-emerald-400 font-bold">
+                          Total: ৳{orders.filter((o) => o.status !== 'cancelled').reduce((s, o) => s + (o.pricing?.total || 0), 0).toLocaleString()}
+                        </span>
+                      </div>
+                      <svg viewBox="0 0 420 150" className="w-full h-40">
+                        <defs>
+                          <linearGradient id="anaRevGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#10b981" stopOpacity="0.45" />
+                            <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
+                          </linearGradient>
+                        </defs>
+                        <line x1="20" y1="120" x2="400" y2="120" stroke="#1e293b" strokeWidth="1" />
+                        <line x1="20" y1="70" x2="400" y2="70" stroke="#1e293b" strokeDasharray="4 4" strokeWidth="1" />
+                        <line x1="20" y1="20" x2="400" y2="20" stroke="#1e293b" strokeDasharray="4 4" strokeWidth="1" />
+                        {revPoints.map((pt, idx) => {
+                          const x = 35 + idx * 55;
+                          const h = Math.max(6, Math.round((pt.total / maxRev) * 95));
+                          const y = 120 - h;
+                          return (
+                            <g key={pt.label}>
+                              <rect x={x} y={y} width="32" height={h} rx="6" fill="url(#anaRevGrad)" stroke="#10b981" strokeWidth="1.5" />
+                              <text x={x + 16} y="138" textAnchor="middle" fill="#94a3b8" fontSize="10">{pt.label}</text>
+                              <text x={x + 16} y={y - 5} textAnchor="middle" fill="#34d399" fontSize="9" fontWeight="bold">{pt.count}x</text>
+                            </g>
+                          );
+                        })}
+                      </svg>
+                    </div>
+
+                    <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                          <Truck className="w-4 h-4 text-sky-400" />
+                          <span>{at('ডেলিভারি বয় ডিসপ্যাচ ও স্টক ইনসাইট', 'Delivery Boy Performance & Category Stock')}</span>
+                        </h4>
+                        <span className="text-[11px] font-mono text-sky-400 font-bold">{riders.length} Riders</span>
+                      </div>
+                      {riderStats.length > 0 ? (
+                        <div className="space-y-2.5 pt-1">
+                          {riderStats.slice(0, 4).map((rs) => (
+                            <div key={rs.name} className="space-y-1 text-xs">
+                              <div className="flex justify-between text-slate-300">
+                                <span className="font-bold">{rs.name}</span>
+                                <span className="font-mono text-sky-400">{rs.delivered}/{rs.assigned} Delivered</span>
+                              </div>
+                              <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                                <div className="h-full bg-gradient-to-r from-sky-500 to-emerald-500 rounded-full" style={{ width: `${Math.min(100, Math.max(12, rs.assigned * 20))}%` }} />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500">{at('কোনো ডেলিভারি বয় নেই', 'No delivery boys registered')}</p>
+                      )}
+                      <div className="pt-2 border-t border-slate-800 grid grid-cols-3 gap-2 text-center text-[11px]">
+                        <div className="p-2 rounded-xl bg-slate-950">
+                          <div className="font-black text-emerald-400 text-sm">{products.filter((p) => p.stock > 0).length}</div>
+                          <div className="text-slate-400">In Stock SKUs</div>
+                        </div>
+                        <div className="p-2 rounded-xl bg-slate-950">
+                          <div className="font-black text-rose-400 text-sm">{products.filter((p) => p.stock <= 0).length}</div>
+                          <div className="text-slate-400">Out of Stock</div>
+                        </div>
+                        <div className="p-2 rounded-xl bg-slate-950">
+                          <div className="font-black text-amber-400 text-sm">{waitlistEntries.length}</div>
+                          <div className="text-slate-400">Waitlist Leads</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
@@ -7956,6 +8670,55 @@ export const AdminDashboard: React.FC = () => {
                     />
                   </div>
 
+                  {/* Favicon Uploader (32x32 / 64x64 browser tab icon) */}
+                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        {settings.faviconUrl ? (
+                          <img src={settings.faviconUrl} alt="Favicon Preview" className="w-8 h-8 object-contain rounded-lg bg-white p-0.5 border border-slate-700" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-[10px] text-slate-500">
+                            ICO
+                          </div>
+                        )}
+                        <div>
+                          <span className="text-xs font-bold text-white block">{at('ব্রাউজার ফ্যাভিকন (Favicon Upload)', 'Browser Favicon Icon')}</span>
+                          <span className="text-[10px] text-slate-400">{at('ব্রাউজার ট্যাব আইকন (PNG/SVG/ICO)', 'Browser tab icon (recommended 64×64 PNG)')}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>{at('আপলোড Favicon', 'Upload Favicon')}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) =>
+                              handleImageFileUpload(e.target.files?.[0], (url) => updateSettings({ faviconUrl: url }), 'logo')
+                            }
+                          />
+                        </label>
+                        {settings.faviconUrl && (
+                          <button
+                            type="button"
+                            onClick={() => updateSettings({ faviconUrl: '' })}
+                            className="px-2.5 py-1.5 bg-rose-950/60 text-rose-300 border border-rose-800 rounded-xl text-xs font-bold cursor-pointer"
+                          >
+                            {at('মুছুন', 'Clear')}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <input
+                      type="text"
+                      value={settings.faviconUrl || ''}
+                      onChange={(e) => updateSettings({ faviconUrl: e.target.value })}
+                      placeholder="https://example.com/favicon.png"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white font-mono"
+                    />
+                  </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                     <div>
                       <label className="block text-slate-300 font-bold mb-1">{at('টপ বার ঘোষণা (বাংলা)', 'Announcement Bar (BN)')}</label>
@@ -8117,6 +8880,54 @@ export const AdminDashboard: React.FC = () => {
                         onChange={(e) =>
                           updateSettings({ cmsTexts: { ...settings.cmsTexts!, orderNowBtnEn: e.target.value } })
                         }
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">Categories Section (BN)</label>
+                      <input
+                        type="text"
+                        value={settings.cmsTexts?.categoriesTitleBn || ''}
+                        onChange={(e) =>
+                          updateSettings({ cmsTexts: { ...settings.cmsTexts!, categoriesTitleBn: e.target.value } })
+                        }
+                        placeholder="ক্যাটাগরি অনুযায়ী শপিং"
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">Categories Section (EN)</label>
+                      <input
+                        type="text"
+                        value={settings.cmsTexts?.categoriesTitleEn || ''}
+                        onChange={(e) =>
+                          updateSettings({ cmsTexts: { ...settings.cmsTexts!, categoriesTitleEn: e.target.value } })
+                        }
+                        placeholder="Shop by Category"
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">Recently Viewed Title (BN)</label>
+                      <input
+                        type="text"
+                        value={settings.cmsTexts?.recentlyViewedTitleBn || ''}
+                        onChange={(e) =>
+                          updateSettings({ cmsTexts: { ...settings.cmsTexts!, recentlyViewedTitleBn: e.target.value } })
+                        }
+                        placeholder="সম্প্রতি দেখা পণ্যসমূহ"
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">Recently Viewed Title (EN)</label>
+                      <input
+                        type="text"
+                        value={settings.cmsTexts?.recentlyViewedTitleEn || ''}
+                        onChange={(e) =>
+                          updateSettings({ cmsTexts: { ...settings.cmsTexts!, recentlyViewedTitleEn: e.target.value } })
+                        }
+                        placeholder="Recently Viewed Products"
                         className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
                       />
                     </div>
@@ -9503,11 +10314,11 @@ export const AdminDashboard: React.FC = () => {
                             testTo: smtpTestEmail.trim() || settings.supportEmail || undefined
                           })
                         });
-                        const data = await res.json();
-                        if (res.ok && data.success) {
+                        const data = await parseJsonSafe(res);
+                        if (res.ok && data?.success) {
                           addToast('success', at('SMTP কানেকশন সফল!', 'SMTP Verified & Sent!'), data.message || 'SMTP connection works!');
                         } else {
-                          addToast('error', at('SMTP কানেকশন ব্যর্থ', 'SMTP Failed'), data.error || 'Check SMTP credentials');
+                          addToast('error', at('SMTP কানেকশন ব্যর্থ', 'SMTP Failed'), data?.error || data?.rawText || 'Check SMTP credentials');
                         }
                       } catch {
                         addToast('error', at('সার্ভার পাওয়া যায়নি', 'Network Error'), 'Could not connect to /api/email/test');
@@ -10296,6 +11107,13 @@ export const AdminDashboard: React.FC = () => {
 // Upload this file to public_html/api/hostinger-bridge.php via Hostinger File Manager
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, X-Bridge-Secret');
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+  http_response_code(200);
+  exit;
+}
 
 $DB_HOST = ${JSON.stringify(hDb.host || 'localhost')};
 $DB_NAME = ${JSON.stringify(hDb.database || 'u123456789_buyone')};
@@ -10370,6 +11188,13 @@ if ($action === 'sync_pull') {
   exit;
 }
 
+if ($action === 'list_orders') {
+  $ordRows = $pdo->query("SELECT payload_json FROM \`{$prefix}orders\` ORDER BY updated_at DESC LIMIT 200")->fetchAll();
+  $list = $ordRows ? array_map(fn($r) => json_decode($r['payload_json'], true), $ordRows) : [];
+  echo json_encode(['success' => true, 'orders' => $list]);
+  exit;
+}
+
 if ($action === 'upsert_order') {
   $o = $input['order'] ?? [];
   if (empty($o['id'])) { echo json_encode(['success' => false, 'error' => 'Missing order id']); exit; }
@@ -10400,14 +11225,43 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                       if (endpoint === 'sync-push') {
                         bodyPayload.payload = exportFullDatabaseBackup();
                       }
-                      const resp = await fetch(`/api/database/hostinger/${endpoint}`, {
+                      const actionMap: Record<typeof endpoint, string> = {
+                        test: 'ping',
+                        'init-schema': 'init_schema',
+                        'sync-push': 'sync_push',
+                        'sync-pull': 'sync_pull'
+                      };
+                      let resp = await fetch(`/api/database/hostinger/${endpoint}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(bodyPayload)
                       });
-                      const data = await resp.json().catch(() => null);
+                      let data = await parseJsonSafe(resp);
+                      if ((resp.status === 404 || resp.status === 502 || !resp.ok) && hDb.phpBridgeUrl) {
+                        const directResp = await fetch(hDb.phpBridgeUrl, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'X-Bridge-Secret': hDb.phpBridgeSecret || ''
+                          },
+                          body: JSON.stringify({
+                            action: actionMap[endpoint],
+                            tablePrefix: hDb.tablePrefix || 'buyone_',
+                            payload: bodyPayload.payload
+                          })
+                        });
+                        resp = directResp;
+                        data = await parseJsonSafe(directResp);
+                      }
                       if (!resp.ok || !data?.success) {
-                        const errMsg = data?.error || `HTTP ${resp.status}`;
+                        const errMsg =
+                          data?.error ||
+                          (resp.status === 404
+                            ? at(
+                                'সার্ভার API (404) পাওয়া যায়নি। Shared Hosting PHP Bridge URL দিন অথবা Node সার্ভার চালু রাখুন।',
+                                'Hostinger backend route returned 404. Switch to PHP Bridge Mode & enter your uploaded hostinger-bridge.php URL.'
+                              )
+                            : `HTTP ${resp.status}`);
                         setHostingerStatus({ ok: false, message: errMsg });
                         addSecurityLog('Hostinger DB Action Failed', `${endpoint}: ${errMsg}`, 'warning');
                         addToast('error', at('Hostinger DB ত্রুটি', 'Hostinger DB Error'), errMsg);
@@ -11812,10 +12666,62 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                 {/* Top-Up Requests Queue */}
                 <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden">
                   <div className="px-5 py-3.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-slate-950/60">
-                    <h4 className="text-sm font-black text-white">
-                      {at(`কাস্টমার অ্যাড ব্যালেন্স রিকোয়েস্ট (${walletTopUps.length})`, `Customer Add Balance Requests (${walletTopUps.length})`)}
-                    </h4>
-                    <div className="flex gap-1.5 text-[11px] font-bold">
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={filteredTopUps.length > 0 && filteredTopUps.every((r) => selectedTopUpIds.includes(r.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedTopUpIds(filteredTopUps.map((r) => r.id));
+                            } else {
+                              setSelectedTopUpIds([]);
+                            }
+                          }}
+                          className="w-4 h-4 rounded text-emerald-600 bg-slate-900 border-slate-700"
+                        />
+                        <span className="font-bold">{at('সব', 'All')}</span>
+                      </label>
+                      <h4 className="text-sm font-black text-white">
+                        {at(`কাস্টমার অ্যাড ব্যালেন্স রিকোয়েস্ট (${walletTopUps.length})`, `Customer Add Balance Requests (${walletTopUps.length})`)}
+                      </h4>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
+                      {selectedTopUpIds.length > 0 && (
+                        <div className="flex items-center gap-1.5 mr-2 px-2 py-1 rounded-xl bg-slate-900 border border-emerald-500/40">
+                          <span className="text-emerald-300 font-mono">{selectedTopUpIds.length} selected</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              bulkActionWalletTopUps(selectedTopUpIds, 'approve');
+                              setSelectedTopUpIds([]);
+                            }}
+                            className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                          >
+                            {at('বাল্ক অনুমোদন', 'Approve')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              bulkActionWalletTopUps(selectedTopUpIds, 'reject');
+                              setSelectedTopUpIds([]);
+                            }}
+                            className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white cursor-pointer"
+                          >
+                            {at('বাল্ক বাতিল', 'Reject')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              bulkActionWalletTopUps(selectedTopUpIds, 'delete');
+                              setSelectedTopUpIds([]);
+                            }}
+                            className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
+                          >
+                            {at('বাল্ক ডিলিট', 'Delete')}
+                          </button>
+                        </div>
+                      )}
                       {(['all', 'pending', 'approved', 'rejected'] as const).map((st) => (
                         <button
                           key={st}
@@ -11841,42 +12747,55 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                     <div className="divide-y divide-slate-800">
                       {filteredTopUps.map((req) => (
                         <div key={req.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div className="space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-mono text-xs font-bold text-slate-400">{req.id}</span>
-                              <span className="text-xs font-black text-white">{req.customerName}</span>
-                              <span className="text-xs font-mono text-emerald-400">({req.customerPhone})</span>
-                              <span className="px-2 py-0.5 rounded bg-slate-800 text-[10px] font-black uppercase text-amber-300">
-                                {req.method}
-                              </span>
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedTopUpIds.includes(req.id)}
+                              onChange={(e) => {
+                                setSelectedTopUpIds((prev) =>
+                                  e.target.checked ? [...prev, req.id] : prev.filter((id) => id !== req.id)
+                                );
+                              }}
+                              className="w-4 h-4 mt-1 rounded text-emerald-600 bg-slate-900 border-slate-700"
+                            />
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-mono text-xs font-bold text-slate-400">{req.id}</span>
+                                <span className="text-xs font-black text-white">{req.customerName}</span>
+                                <span className="text-xs font-mono text-emerald-400">({req.customerPhone})</span>
+                                <span className="px-2 py-0.5 rounded bg-slate-800 text-[10px] font-black uppercase text-amber-300">
+                                  {req.method}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-300 font-mono">
+                                Amount: <span className="font-black text-emerald-400">৳{req.amount.toLocaleString()}</span> • Sender: {req.senderNumber} • TrxID: <span className="text-white font-bold">{req.trxId}</span>
+                              </p>
+                              {req.adminNote && <p className="text-[11px] text-slate-400">{req.adminNote}</p>}
                             </div>
-                            <p className="text-xs text-slate-300 font-mono">
-                              Amount: <span className="font-black text-emerald-400">৳{req.amount.toLocaleString()}</span> • Sender: {req.senderNumber} • TrxID: <span className="text-white font-bold">{req.trxId}</span>
-                            </p>
                           </div>
 
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                             {req.status === 'pending' ? (
                               <>
                                 <button
                                   type="button"
                                   onClick={() => approveWalletTopUp(req.id)}
-                                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
+                                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
                                 >
                                   <Check className="w-3.5 h-3.5" />
-                                  <span>{at('অনুমোদন ও যোগ করুন', 'Approve & Credit')}</span>
+                                  <span>{at('অনুমোদন ও যোগ', 'Approve')}</span>
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => rejectWalletTopUp(req.id)}
-                                  className="px-3 py-1.5 rounded-xl bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-200 font-bold text-xs cursor-pointer"
+                                  className="px-2.5 py-1.5 rounded-xl bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-200 font-bold text-xs cursor-pointer"
                                 >
                                   {at('বাতিল', 'Reject')}
                                 </button>
                               </>
                             ) : (
                               <span
-                                className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
+                                className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase ${
                                   req.status === 'approved'
                                     ? 'bg-emerald-500/20 text-emerald-300'
                                     : 'bg-rose-500/20 text-rose-300'
@@ -11885,6 +12804,32 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                                 {req.status}
                               </span>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => setViewingTopUpActivity(req)}
+                              title="Activity Details"
+                              className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                            >
+                              <Activity className="w-3.5 h-3.5" />
+                              <span>{at('বিস্তারিত', 'Activity')}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingTopUp({ ...req })}
+                              title="Edit Request"
+                              className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                              <span>{at('এডিট', 'Edit')}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteWalletTopUp(req.id)}
+                              title="Delete Request"
+                              className="p-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -11935,6 +12880,11 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                   <p className="text-white">পেমেন্ট মেথড: <span className="font-bold uppercase">{selectedOrderDetails.payment.method}</span></p>
                   <p className="text-white">স্ট্যাটাস: <span className="font-bold text-emerald-400">{selectedOrderDetails.status}</span></p>
                   <p className="text-slate-300 font-mono mt-1">কুরিয়ার ট্র্যাকিং: {selectedOrderDetails.courier?.trackingCode || 'বুকিং হয়নি'}</p>
+                  {selectedOrderDetails.courier?.deliveryBoyName && (
+                    <p className="text-sky-400 font-bold mt-1">
+                      রাইডার: {selectedOrderDetails.courier.deliveryBoyName} ({selectedOrderDetails.courier.deliveryBoyPhone || '—'})
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -12122,6 +13072,26 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                     type="text"
                     value={productForm.title}
                     onChange={(e) => setProductForm({ ...productForm, title: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('ব্র্যান্ড নাম (ইংরেজি)', 'Brand Name (EN)')}</label>
+                  <input
+                    type="text"
+                    value={productForm.brand || ''}
+                    onChange={(e) => setProductForm({ ...productForm, brand: e.target.value })}
+                    placeholder="BuyOne Original"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('ব্র্যান্ড নাম (বাংলা)', 'Brand Name (BN)')}</label>
+                  <input
+                    type="text"
+                    value={productForm.brandBn || ''}
+                    onChange={(e) => setProductForm({ ...productForm, brandBn: e.target.value })}
+                    placeholder="বাইওয়ান অরিজিনাল"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
                   />
                 </div>
@@ -12493,11 +13463,21 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                 </div>
               </div>
 
-              {/* Variants, Colors, Sizes & Storefront Proof Display */}
+              {/* Variants, Colors, Sizes, Dynamic Attributes & 1-Click Generator */}
               <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/30 space-y-3">
-                <span className="font-bold text-emerald-400 text-xs block">
-                  {at('ভ্যারিয়েন্ট, কালার, সাইজ ও সিঙ্গেল পেজ মেট্রিক্স', 'Variants (Color/Size), Sold Count & Loyalty Points')}
-                </span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-bold text-emerald-400 text-xs block">
+                    {at('ভ্যারিয়েন্ট, কালার, সাইজ ও কাস্টম অ্যাট্রিবিউট', 'Variants (Color/Size), Brand & Custom Attributes')}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleGenerateProductAttributes}
+                    className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Wand2 className="w-3.5 h-3.5" />
+                    <span>{at('১-ক্লিক অটো অ্যাট্রিবিউট তৈরি করুন', 'Generate Attributes')}</span>
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-400 font-bold mb-1">
@@ -12505,16 +13485,17 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                     </label>
                     <input
                       type="text"
-                      value={(productForm.colors || []).join(', ')}
-                      onChange={(e) =>
-                        setProductForm({
-                          ...productForm,
+                      value={colorsDraft}
+                      onChange={(e) => {
+                        setColorsDraft(e.target.value);
+                        setProductForm((prev) => ({
+                          ...prev,
                           colors: e.target.value
                             .split(',')
                             .map((s) => s.trim())
                             .filter(Boolean)
-                        })
-                      }
+                        }));
+                      }}
                       placeholder="Black (কালো), Silver (সিলভার), Gold"
                       className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
                     />
@@ -12525,19 +13506,102 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                     </label>
                     <input
                       type="text"
-                      value={(productForm.sizes || []).join(', ')}
-                      onChange={(e) =>
-                        setProductForm({
-                          ...productForm,
+                      value={sizesDraft}
+                      onChange={(e) => {
+                        setSizesDraft(e.target.value);
+                        setProductForm((prev) => ({
+                          ...prev,
                           sizes: e.target.value
                             .split(',')
                             .map((s) => s.trim())
                             .filter(Boolean)
-                        })
-                      }
+                        }));
+                      }}
                       placeholder="Standard Set, Pro Combo, 1 Kg"
                       className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
                     />
+                  </div>
+                </div>
+
+                {/* Custom Product Attributes List & Add Row */}
+                <div className="pt-2 border-t border-slate-800 space-y-2">
+                  <span className="text-[11px] font-bold text-slate-300 block">
+                    {at('কাস্টম অ্যাট্রিবিউট তালিকা (Warranty, Material, Origin ইত্যাদি)', 'Custom Attributes (Warranty, Material, Capacity, etc.)')}
+                  </span>
+                  {(productForm.attributes || []).length > 0 && (
+                    <div className="space-y-1.5">
+                      {(productForm.attributes || []).map((attr, idx) => (
+                        <div key={idx} className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800">
+                          <div className="text-[11px]">
+                            <span className="font-bold text-white">{attr.nameBn || attr.name}</span>
+                            <span className="text-slate-500 mx-1">/</span>
+                            <span className="text-slate-400">{attr.name}:</span>
+                            <span className="ml-2 text-emerald-400 font-mono">{(attr.values || []).join(', ')}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setProductForm((prev) => ({
+                                ...prev,
+                                attributes: (prev.attributes || []).filter((_, i) => i !== idx)
+                              }))
+                            }
+                            className="text-rose-400 hover:text-rose-300 p-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                    <input
+                      type="text"
+                      value={newAttrName}
+                      onChange={(e) => setNewAttrName(e.target.value)}
+                      placeholder="Attr EN (e.g. Material)"
+                      className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white text-[11px]"
+                    />
+                    <input
+                      type="text"
+                      value={newAttrNameBn}
+                      onChange={(e) => setNewAttrNameBn(e.target.value)}
+                      placeholder="Attr BN (যেমন উপাদান)"
+                      className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white text-[11px]"
+                    />
+                    <input
+                      type="text"
+                      value={newAttrOptions}
+                      onChange={(e) => setNewAttrOptions(e.target.value)}
+                      placeholder="Options (comma-sep)"
+                      className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white text-[11px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!newAttrName.trim() || !newAttrOptions.trim()) return;
+                        const opts = newAttrOptions.split(',').map((s) => s.trim()).filter(Boolean);
+                        if (!opts.length) return;
+                        setProductForm((prev) => ({
+                          ...prev,
+                          attributes: [
+                            ...(prev.attributes || []),
+                            {
+                              id: `attr-${Date.now()}`,
+                              name: newAttrName.trim(),
+                              nameBn: newAttrNameBn.trim() || newAttrName.trim(),
+                              values: opts
+                            }
+                          ]
+                        }));
+                        setNewAttrName('');
+                        setNewAttrNameBn('');
+                        setNewAttrOptions('');
+                      }}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-[11px] cursor-pointer"
+                    >
+                      + Add Attr
+                    </button>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -13639,6 +14703,148 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                 কুপন সেভ করুন
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* WALLET TOP-UP EDIT MODAL */}
+      {editingTopUp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <button
+              onClick={() => setEditingTopUp(null)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h3 className="text-base font-black text-white">{at('ওয়ালেট টপ-আপ রিকোয়েস্ট এডিট করুন', 'Edit Wallet Top-Up Request')}</h3>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                editWalletTopUp(editingTopUp.id, {
+                  method: editingTopUp.method,
+                  amount: Number(editingTopUp.amount) || 0,
+                  senderNumber: editingTopUp.senderNumber,
+                  trxId: editingTopUp.trxId,
+                  status: editingTopUp.status,
+                  adminNote: editingTopUp.adminNote
+                });
+                setEditingTopUp(null);
+              }}
+              className="space-y-3 text-xs"
+            >
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">MFS Method</label>
+                <select
+                  value={editingTopUp.method}
+                  onChange={(e) => setEditingTopUp({ ...editingTopUp, method: e.target.value as any })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                >
+                  <option value="bkash">bKash</option>
+                  <option value="nagad">Nagad</option>
+                  <option value="rocket">Rocket</option>
+                  <option value="upay">Upay</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">Amount (৳)</label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  value={editingTopUp.amount}
+                  onChange={(e) => setEditingTopUp({ ...editingTopUp, amount: Number(e.target.value) })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">Sender Number</label>
+                <input
+                  type="text"
+                  required
+                  value={editingTopUp.senderNumber}
+                  onChange={(e) => setEditingTopUp({ ...editingTopUp, senderNumber: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">TrxID</label>
+                <input
+                  type="text"
+                  required
+                  value={editingTopUp.trxId}
+                  onChange={(e) => setEditingTopUp({ ...editingTopUp, trxId: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">Status</label>
+                <select
+                  value={editingTopUp.status}
+                  onChange={(e) => setEditingTopUp({ ...editingTopUp, status: e.target.value as any })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">Admin Note</label>
+                <input
+                  type="text"
+                  value={editingTopUp.adminNote || ''}
+                  onChange={(e) => setEditingTopUp({ ...editingTopUp, adminNote: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                />
+              </div>
+              <button type="submit" className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl cursor-pointer">
+                {at('পরিবর্তন সেভ করুন', 'Save Changes')}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* WALLET TOP-UP ACTIVITY DETAILS MODAL */}
+      {viewingTopUpActivity && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <button
+              onClick={() => setViewingTopUpActivity(null)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div>
+              <span className="text-[11px] font-mono text-emerald-400 font-bold">{viewingTopUpActivity.id}</span>
+              <h3 className="text-base font-black text-white">
+                {viewingTopUpActivity.customerName} ({viewingTopUpActivity.customerPhone})
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Method: <strong className="uppercase text-amber-300">{viewingTopUpActivity.method}</strong> • ৳{viewingTopUpActivity.amount.toLocaleString()} • TrxID: {viewingTopUpActivity.trxId}
+              </p>
+            </div>
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">{at('অ্যাক্টিভিটি টাইমলাইন', 'Activity Log')}</h4>
+              {(viewingTopUpActivity.activityLog || [
+                {
+                  action: `Submitted (${viewingTopUpActivity.status})`,
+                  note: `Sender ${viewingTopUpActivity.senderNumber} • TrxID ${viewingTopUpActivity.trxId}`,
+                  actor: viewingTopUpActivity.customerName,
+                  time: viewingTopUpActivity.createdAt
+                }
+              ]).map((log, idx) => (
+                <div key={idx} className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-0.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-emerald-400">{log.action}</span>
+                    <span className="text-[10px] font-mono text-slate-500">{new Date(log.time).toLocaleString()}</span>
+                  </div>
+                  {log.note && <p className="text-slate-300">{log.note}</p>}
+                  <p className="text-[10px] text-slate-500">By: {log.actor}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

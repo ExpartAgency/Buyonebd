@@ -1,6 +1,123 @@
 {
-  "pixelEvents": [],
+  "pixelEvents": [
+    {
+      "id": "px-1794849443092-appw",
+      "eventName": "PageView",
+      "urlPath": "/",
+      "sourceUrl": "/",
+      "pixelId": "984029182910291",
+      "currency": "BDT",
+      "status": "logged_server",
+      "timestamp": "2026-11-16T17:17:23.092Z"
+    },
+    {
+      "id": "px-1794849423536-pdqb",
+      "eventName": "PageView",
+      "urlPath": "/",
+      "sourceUrl": "/",
+      "pixelId": "984029182910291",
+      "currency": "BDT",
+      "status": "logged_server",
+      "timestamp": "2026-11-16T17:17:03.536Z"
+    }
+  ],
   "orders": [
+    {
+      "id": "BD-20337387",
+      "customer": {
+        "name": "Md hossain Miraz",
+        "phone": "01666775609",
+        "address": "Md Serajul Islam Road 3, 2 Prokolpo, Symoli housing , Adabor, Dhaka Dhaka",
+        "district": "Dhaka - Inside City",
+        "thana": "Dhanmondi",
+        "note": ""
+      },
+      "items": [
+        {
+          "productId": "prod-002",
+          "productTitle": "T9 Vintage Professional Hair & Beard Trimmer for Men",
+          "productTitleBn": "T9 ভিন্টেজ প্রফেশনাল মেটাল হেয়ার ও বিয়ার্ড ট্রিমার (ইউএসবি রিচার্জেবল)",
+          "price": 790,
+          "quantity": 1,
+          "selectedColor": "Vintage Golden (স্বর্ণালী)",
+          "selectedSize": "Standard",
+          "image": "https://images.unsplash.com/photo-1621607512214-68297480165e?w=800&auto=format&fit=crop&q=80"
+        }
+      ],
+      "pricing": {
+        "subtotal": 790,
+        "deliveryFee": 70,
+        "discount": 0,
+        "total": 860
+      },
+      "payment": {
+        "method": "cod",
+        "status": "pending",
+        "paymentNumber": "01666775609",
+        "dueAmount": 860
+      },
+      "deliveryZone": "dhaka_inside",
+      "status": "ai_confirmed",
+      "aiCallStatus": {
+        "called": true,
+        "callTimestamp": "09:40 PM",
+        "confirmedByCustomer": true,
+        "durationSeconds": 43,
+        "notes": "Customer confirmed order verbally/via keypad during AI auto-call",
+        "transcript": [
+          {
+            "speaker": "ai",
+            "text": "Assalamu Alaikum Md hossain Miraz, this is Sumana (সুমনা) from BuyOne BD. You placed an order for 1 item(s) including T9 Vintage Professional Hair & Beard Trimmer for Men, totaling 860 BDT to Md Serajul Islam Road 3, 2 Prokolpo, Symoli housing , Adabor, Dhaka Dhaka, Dhaka - Inside City. Press 1 to confirm or 2 to cancel.",
+            "textBn": "আসসালামু আলাইকুম Md hossain Miraz! বাইওয়ান বিডি থেকে আমি Sumana (সুমনা) বলছি। আপনি আমাদের শপ থেকে 1 টি পণ্য (T9 ভিন্টেজ প্রফেশনাল মেটাল হেয়ার ও বিয়ার্ড ট্রিমার (ইউএসবি রিচার্জেবল)) অর্ডার করেছেন, ডেলিভারি চার্জসহ মোট 860 টাকা। আপনার ডেলিভারি ঠিকানা Md Serajul Islam Road 3, 2 Prokolpo, Symoli housing , Adabor, Dhaka Dhaka, Dhaka - Inside City। অর্ডারটি নিশ্চিত করতে এক চাপুন, বাতিল করতে দুই চাপুন।",
+            "time": "00:02"
+          },
+          {
+            "speaker": "customer",
+            "text": "Pressed [1] - Confirmed Order",
+            "textBn": "[১] চাপলেন - অর্ডার নিশ্চিত",
+            "time": "00:16"
+          },
+          {
+            "speaker": "ai",
+            "text": "Thank you! Your order is confirmed and will be dispatched shortly.",
+            "textBn": "অসংখ্য ধন্যবাদ! আপনার অর্ডারটি সফলভাবে নিশ্চিত হয়েছে। খুব দ্রুত পার্সেলটি পাঠিয়ে দেওয়া হবে।",
+            "time": "00:18"
+          }
+        ]
+      },
+      "courier": {
+        "provider": "Steadfast",
+        "trackingCode": "STDF-BD-20337387",
+        "status": "booked",
+        "currentLocation": "BuyOne Central Warehouse, Tejgaon, Dhaka",
+        "estimatedDelivery": "24 Hours",
+        "history": [
+          {
+            "status": "Order Placed",
+            "time": "Just now",
+            "location": "Online Store",
+            "note": "Order successfully created via 1-Click Express Checkout"
+          },
+          {
+            "status": "AI Call Verified",
+            "time": "Just now",
+            "location": "Automated System",
+            "note": "Customer confirmed parcel receipt via AI Call"
+          }
+        ]
+      },
+      "fraudCheck": {
+        "checked": true,
+        "successRate": 94,
+        "totalOrders": 12,
+        "deliveredCount": 11,
+        "cancelledCount": 1,
+        "riskLevel": "safe",
+        "message": "নিরাপদ গ্রাহক।"
+      },
+      "source": "online",
+      "createdAt": "2026-11-15T18:40:20.337Z"
+    },
     {
       "id": "BD-89211",
       "customer": {
@@ -164,29 +281,20 @@
     "BD-TEST-1794648408625",
     "BD-TEST-1794648391675"
   ],
-  "lastUpdated": "2026-11-15T17:16:27.320Z",
+  "lastUpdated": "2026-11-16T17:17:10.889Z",
   "browsingHistory": [],
   "products": [
     {
       "subcategory": "smart-watches",
-      "price": 1850,
-      "colors": [
-        "Titanium Silver (সিলভার)",
-        "Matte Black (কালো)",
-        "Deep Orange (কমলা)"
+      "isFlashSale": true,
+      "tags": [
+        "Best Seller",
+        "Hot Deal",
+        "Free Delivery"
       ],
-      "descriptionBn": "অরিজিনাল ২.১ ইঞ্চি এমোলেড ডিসপ্লে, ব্লুটুথ কল রিসিভ ও ডায়ালিং, হার্ট রেট ও স্লিপ মনিটরিং সমৃদ্ধ প্রিমিয়াম স্মার্টওয়াচ। সাথে অতিরিক্ত অরেঞ্জ সিলিকন ও ওশান স্ট্র্যাপ সম্পূর্ণ ফ্রি।",
-      "sizes": [
-        "49mm Standard"
-      ],
-      "title": "Ultra Watch 9 Pro AMOLED Display Smartwatch with Calling",
+      "rating": 4.9,
       "sku": "WATCH9-PRO-BLK",
-      "updatedAt": {
-        "type": "firestore/timestamp/1.0",
-        "seconds": 1794762758,
-        "nanoseconds": 403000000
-      },
-      "categoryBn": "স্মার্ট গ্যাজেট",
+      "description": "Next-gen flagship smartwatch with vibrant 2.1-inch Always-on AMOLED screen, wireless magnetic charging, wireless Bluetooth call answering, water-resistant zinc-alloy body, and 100+ sports modes.",
       "featuresBn": [
         "২.১ ইঞ্চি এইচডি ক্রিস্টাল এমোলেড স্ক্রিন",
         "সরাসরি ব্লুটুথ কলিং ও লাউডস্পিকার",
@@ -194,11 +302,41 @@
         "আইপি৬৮ ওয়াটারপ্রুফ বডি",
         "এক চার্জে ৫-৭ দিন দীর্ঘস্থায়ী ব্যাটারি"
       ],
-      "description": "Next-gen flagship smartwatch with vibrant 2.1-inch Always-on AMOLED screen, wireless magnetic charging, wireless Bluetooth call answering, water-resistant zinc-alloy body, and 100+ sports modes.",
-      "id": "prod-001",
+      "title": "Ultra Watch 9 Pro AMOLED Display Smartwatch with Calling",
       "stock": 35,
-      "reviewsCount": 342,
+      "category": "smart-gadgets",
       "warrantyInfo": "1 Year Brand Warranty & 7 Days Replacement",
+      "id": "prod-001",
+      "reviewsCount": 342,
+      "titleBn": "আল্ট্রা ওয়াচ ৯ প্রো এমোলেড ডিসপ্লে স্মার্টওয়াচ (কলিং ও হেলথ ট্র্যাকার)",
+      "colors": [
+        "Titanium Silver (সিলভার)",
+        "Matte Black (কালো)",
+        "Deep Orange (কমলা)"
+      ],
+      "price": 1850,
+      "images": [
+        "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80"
+      ],
+      "originalPrice": 3500,
+      "descriptionBn": "অরিজিনাল ২.১ ইঞ্চি এমোলেড ডিসপ্লে, ব্লুটুথ কল রিসিভ ও ডায়ালিং, হার্ট রেট ও স্লিপ মনিটরিং সমৃদ্ধ প্রিমিয়াম স্মার্টওয়াচ। সাথে অতিরিক্ত অরেঞ্জ সিলিকন ও ওশান স্ট্র্যাপ সম্পূর্ণ ফ্রি।",
+      "seo": {
+        "slug": "ultra-watch-9-pro-amoled-smartwatch",
+        "robots": "index, follow",
+        "keywords": "ultra watch 9 pro, smartwatch price bangladesh, amoled calling watch",
+        "metaTitle": "Ultra Watch 9 Pro AMOLED Smartwatch Price in Bangladesh | BuyOne BD",
+        "metaDescription": "Buy Ultra Watch 9 Pro AMOLED Calling Smartwatch at ৳1,850 with Cash on Delivery across Bangladesh."
+      },
+      "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "categoryBn": "স্মার্ট গ্যাজেট",
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1794767545,
+        "nanoseconds": 347000000
+      },
+      "warrantyInfoBn": "১ বছরের ব্র্যান্ড সার্ভিস ও ৭ দিনের রিপ্লেসমেন্ট গ্যারান্টি",
       "features": [
         "2.1 Inch HD AMOLED Display",
         "Direct Bluetooth Calling & Mic",
@@ -206,126 +344,81 @@
         "IP68 Waterproof Body",
         "7 Days Battery Backup"
       ],
-      "images": [
-        "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80"
-      ],
-      "isFlashSale": true,
-      "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-      "originalPrice": 3500,
-      "category": "smart-gadgets",
-      "seo": {
-        "slug": "ultra-watch-9-pro-amoled-smartwatch",
-        "metaDescription": "Buy Ultra Watch 9 Pro AMOLED Calling Smartwatch at ৳1,850 with Cash on Delivery across Bangladesh.",
-        "metaTitle": "Ultra Watch 9 Pro AMOLED Smartwatch Price in Bangladesh | BuyOne BD",
-        "robots": "index, follow",
-        "keywords": "ultra watch 9 pro, smartwatch price bangladesh, amoled calling watch"
-      },
-      "warrantyInfoBn": "১ বছরের ব্র্যান্ড সার্ভিস ও ৭ দিনের রিপ্লেসমেন্ট গ্যারান্টি",
-      "titleBn": "আল্ট্রা ওয়াচ ৯ প্রো এমোলেড ডিসপ্লে স্মার্টওয়াচ (কলিং ও হেলথ ট্র্যাকার)",
-      "tags": [
-        "Best Seller",
-        "Hot Deal",
-        "Free Delivery"
-      ],
-      "rating": 4.9
+      "sizes": [
+        "49mm Standard"
+      ]
     },
     {
-      "title": "T9 Vintage Professional Hair & Beard Trimmer for Men",
-      "reviewsCount": 228,
-      "originalPrice": 1400,
+      "category": "smart-gadgets",
       "images": [
         "https://images.unsplash.com/photo-1621607512214-68297480165e?w=800&auto=format&fit=crop&q=80",
         "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=800&auto=format&fit=crop&q=80"
+      ],
+      "categoryBn": "স্মার্ট গ্যাজেট",
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1794767545,
+        "nanoseconds": 596000000
+      },
+      "tags": [
+        "Mega Offer",
+        "Trending"
+      ],
+      "id": "prod-002",
+      "price": 790,
+      "titleBn": "T9 ভিন্টেজ প্রফেশনাল মেটাল হেয়ার ও বিয়ার্ড ট্রিমার (ইউএসবি রিচার্জেবল)",
+      "sizes": [
+        "Standard"
       ],
       "colors": [
         "Vintage Golden (স্বর্ণালী)",
         "Classic Bronze (ব্রোঞ্জ)",
         "Silver Metallic (রুপালি)"
       ],
-      "subcategory": "trimmers-shavers",
-      "descriptionBn": "সম্পূর্ণ মেটাল বডি ও রাজকীয় ড্রাগন খোদাই করা টি৯ হেয়ার ও দাড়ি ট্রিমার। ইউএসবি রিচার্জেবল লিথিয়াম ব্যাটারি ও ৪টি ক্লিপ কম্ব সহ।",
-      "updatedAt": {
-        "type": "firestore/timestamp/1.0",
-        "seconds": 1794762758,
-        "nanoseconds": 795000000
+      "seo": {
+        "keywords": "t9 trimmer, vintage hair trimmer bangladesh, beard clipper",
+        "metaDescription": "Original T9 Vintage Metal Rechargeable Hair & Beard Trimmer with zero-gap blade at best price in BD.",
+        "metaTitle": "T9 Vintage Metal Hair & Beard Trimmer | BuyOne BD",
+        "slug": "t9-vintage-professional-hair-trimmer",
+        "robots": "index, follow"
       },
       "description": "Heavy duty dragon carved metal hair clipper trimmer for professional styling and zero trim grooming with ultra-sharp stainless steel T-blade.",
-      "titleBn": "T9 ভিন্টেজ প্রফেশনাল মেটাল হেয়ার ও বিয়ার্ড ট্রিমার (ইউএসবি রিচার্জেবল)",
-      "categoryBn": "স্মার্ট গ্যাজেট",
-      "tags": [
-        "Mega Offer",
-        "Trending"
-      ],
+      "descriptionBn": "সম্পূর্ণ মেটাল বডি ও রাজকীয় ড্রাগন খোদাই করা টি৯ হেয়ার ও দাড়ি ট্রিমার। ইউএসবি রিচার্জেবল লিথিয়াম ব্যাটারি ও ৪টি ক্লিপ কম্ব সহ।",
       "isFlashSale": true,
-      "seo": {
-        "slug": "t9-vintage-professional-hair-trimmer",
-        "robots": "index, follow",
-        "metaTitle": "T9 Vintage Metal Hair & Beard Trimmer | BuyOne BD",
-        "metaDescription": "Original T9 Vintage Metal Rechargeable Hair & Beard Trimmer with zero-gap blade at best price in BD.",
-        "keywords": "t9 trimmer, vintage hair trimmer bangladesh, beard clipper"
-      },
-      "sku": "T9-TRIMMER-GLD",
-      "price": 790,
-      "id": "prod-002",
-      "stock": 62,
-      "category": "smart-gadgets",
-      "featuresBn": [
-        "জিরো ট্রিম শার্প টি-ব্লেড",
-        "সম্পূর্ণ মেটাল ড্রাগন বডি",
-        "১২০০ এমএএইচ রিচার্জেবল ব্যাটারি",
-        "৪টি কাটিং কম্ব (১.৫মিমি, ২মিমি, ৩মিমি, ৪মিমি)"
-      ],
-      "rating": 4.8,
+      "subcategory": "trimmers-shavers",
+      "originalPrice": 1400,
       "features": [
         "Zero Gapped T-Blade",
         "Full Heavy Metal Body",
         "1200mAh Rechargeable Battery",
         "4 Guide Combs Included"
       ],
-      "sizes": [
-        "Standard"
-      ]
+      "sku": "T9-TRIMMER-GLD",
+      "featuresBn": [
+        "জিরো ট্রিম শার্প টি-ব্লেড",
+        "সম্পূর্ণ মেটাল ড্রাগন বডি",
+        "১২০০ এমএএইচ রিচার্জেবল ব্যাটারি",
+        "৪টি কাটিং কম্ব (১.৫মিমি, ২মিমি, ৩মিমি, ৪মিমি)"
+      ],
+      "title": "T9 Vintage Professional Hair & Beard Trimmer for Men",
+      "stock": 62,
+      "rating": 4.8,
+      "reviewsCount": 228
     },
     {
-      "descriptionBn": "শতভাগ প্রিমিয়াম ফাইন সুতি কাপড়ে তৈরি রাজকীয় ডিজাইনের পাঞ্জাবি। নিখুঁত সুতার কাজ এবং আরামদায়ক কাট। যেকোনো উৎসবে পরার জন্য সেরা।",
-      "originalPrice": 2800,
-      "tags": [
-        "Exclusive",
-        "Eid Special"
-      ],
-      "categoryBn": "ফ্যাশন ও লাইফস্টাইল",
-      "title": "Royal Handcrafted Cotton Panjabi Set with Exclusive Embroidery",
-      "sku": "PANJABI-ROYAL-03",
-      "images": [
-        "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1598033129183-c4f50c736f10?w=800&auto=format&fit=crop&q=80"
-      ],
+      "titleBn": "রয়্যাল ফাইন কটন এমব্রয়ডারি পাঞ্জাবি ও পায়জামা সেট",
+      "seo": {
+        "slug": "royal-handcrafted-cotton-panjabi-set",
+        "keywords": "cotton panjabi, eid panjabi bangladesh, mens fashion dhaka",
+        "robots": "index, follow",
+        "metaTitle": "Royal Cotton Embroidered Panjabi Set | BuyOne BD",
+        "metaDescription": "Fine cotton embroidered Panjabi set with fast home delivery all over Bangladesh."
+      },
       "colors": [
         "Navy Blue (নেভি ব্লু)",
         "Snow White (সাদা)",
         "Olive Green (অলিভ গ্রিন)",
         "Jet Black (কালো)"
-      ],
-      "seo": {
-        "metaDescription": "Fine cotton embroidered Panjabi set with fast home delivery all over Bangladesh.",
-        "metaTitle": "Royal Cotton Embroidered Panjabi Set | BuyOne BD",
-        "robots": "index, follow",
-        "slug": "royal-handcrafted-cotton-panjabi-set",
-        "keywords": "cotton panjabi, eid panjabi bangladesh, mens fashion dhaka"
-      },
-      "features": [
-        "100% Breathable Fine Cotton",
-        "High-Grade Thread Embroidery",
-        "Snap Metal Buttons",
-        "Color Fade Resistant"
-      ],
-      "featuresBn": [
-        "১০০% নরম ফাইন সুতি কাপড়",
-        "নিখুঁত সুতার এমব্রয়ডারি কাজ",
-        "ম্যাচিং স্ন্যাপ বাটন",
-        "রং ওঠার ভয় নেই"
       ],
       "sizes": [
         "40 (M)",
@@ -333,216 +426,216 @@
         "44 (XL)",
         "46 (XXL)"
       ],
-      "isFlashSale": false,
-      "titleBn": "রয়্যাল ফাইন কটন এমব্রয়ডারি পাঞ্জাবি ও পায়জামা সেট",
-      "price": 1850,
-      "category": "fashion",
-      "rating": 4.9,
-      "id": "prod-003",
+      "featuresBn": [
+        "১০০% নরম ফাইন সুতি কাপড়",
+        "নিখুঁত সুতার এমব্রয়ডারি কাজ",
+        "ম্যাচিং স্ন্যাপ বাটন",
+        "রং ওঠার ভয় নেই"
+      ],
+      "images": [
+        "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1598033129183-c4f50c736f10?w=800&auto=format&fit=crop&q=80"
+      ],
       "reviewsCount": 189,
-      "description": "Premium tailored formal and festive Panjabi crafted with 100% breathable organic fine cotton fabric with intricate chest embroidery.",
+      "tags": [
+        "Exclusive",
+        "Eid Special"
+      ],
+      "category": "fashion",
+      "price": 1850,
+      "isFlashSale": false,
       "subcategory": "panjabi-kabli",
-      "stock": 28,
+      "categoryBn": "ফ্যাশন ও লাইফস্টাইল",
       "updatedAt": {
         "type": "firestore/timestamp/1.0",
-        "seconds": 1794762759,
-        "nanoseconds": 70000000
-      }
+        "seconds": 1794767545,
+        "nanoseconds": 840000000
+      },
+      "rating": 4.9,
+      "description": "Premium tailored formal and festive Panjabi crafted with 100% breathable organic fine cotton fabric with intricate chest embroidery.",
+      "id": "prod-003",
+      "sku": "PANJABI-ROYAL-03",
+      "descriptionBn": "শতভাগ প্রিমিয়াম ফাইন সুতি কাপড়ে তৈরি রাজকীয় ডিজাইনের পাঞ্জাবি। নিখুঁত সুতার কাজ এবং আরামদায়ক কাট। যেকোনো উৎসবে পরার জন্য সেরা।",
+      "features": [
+        "100% Breathable Fine Cotton",
+        "High-Grade Thread Embroidery",
+        "Snap Metal Buttons",
+        "Color Fade Resistant"
+      ],
+      "originalPrice": 2800,
+      "title": "Royal Handcrafted Cotton Panjabi Set with Exclusive Embroidery",
+      "stock": 28
     },
     {
-      "colors": [
-        "Glossy Black (কালো)"
-      ],
-      "updatedAt": {
-        "type": "firestore/timestamp/1.0",
-        "seconds": 1794762759,
-        "nanoseconds": 312000000
-      },
-      "images": [
-        "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=800&auto=format&fit=crop&q=80"
-      ],
-      "originalPrice": 1200,
-      "features": [
-        "9D Hi-Fi Sound",
-        "Digital Battery Level Indicator",
-        "Touch Controls",
-        "Can Charge Mobile Device"
-      ],
-      "descriptionBn": "৯ডি স্টেরিও সাউন্ড ও চমৎকার বেইস সমৃদ্ধ এম১০ ইয়ারবাডস। ডিজিটাল এলইডি পারসেন্টেজ ডিসপ্লে ও মোবাইল চার্জিং পাওয়ারব্যাংক কেস।",
-      "title": "M10 TWS Wireless Earbuds with 2000mAh Power Bank Case",
-      "categoryBn": "স্মার্ট গ্যাজেট",
-      "reviewsCount": 512,
-      "titleBn": "M10 ব্লুটুথ ৫.১ ওয়্যারলেস ইয়ারবাডস (পাওয়ারব্যাংক ডিসপ্লে সহ)",
       "seo": {
-        "slug": "m10-tws-wireless-earbuds-powerbank",
         "metaDescription": "Shop M10 TWS Wireless Earbuds with 2000mAh emergency powerbank case at ৳690 in Bangladesh.",
-        "metaTitle": "M10 TWS Bluetooth 5.1 Earbuds | BuyOne BD",
         "keywords": "m10 earbuds, tws bluetooth bd, wireless earbuds price",
-        "robots": "index, follow"
+        "robots": "index, follow",
+        "metaTitle": "M10 TWS Bluetooth 5.1 Earbuds | BuyOne BD",
+        "slug": "m10-tws-wireless-earbuds-powerbank"
       },
-      "category": "smart-gadgets",
-      "sku": "M10-TWS-BLK",
-      "description": "Deep bass Bluetooth 5.1 earphones with 9D stereo sound, LED digital battery display case that can also charge your mobile in emergencies.",
-      "subcategory": "tws-earbuds",
-      "stock": 89,
-      "id": "prod-004",
-      "rating": 4.6,
-      "tags": [
-        "Super Deal",
-        "Power Bank Case"
+      "sizes": [
+        "Standard"
       ],
-      "price": 690,
+      "rating": 4.6,
       "featuresBn": [
         "হাই-ফাই ৯ডি স্টেরিও বেইস",
         "ডিজিটাল চার্জিং পার্সেন্টেজ",
         "ফিঙ্গারপ্রিন্ট টাচ কন্ট্রোল",
         "জরুরি প্রয়োজনে মোবাইল চার্জ সুবিধা"
       ],
+      "price": 690,
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1794767546,
+        "nanoseconds": 61000000
+      },
+      "reviewsCount": 512,
+      "titleBn": "M10 ব্লুটুথ ৫.১ ওয়্যারলেস ইয়ারবাডস (পাওয়ারব্যাংক ডিসপ্লে সহ)",
+      "features": [
+        "9D Hi-Fi Sound",
+        "Digital Battery Level Indicator",
+        "Touch Controls",
+        "Can Charge Mobile Device"
+      ],
+      "description": "Deep bass Bluetooth 5.1 earphones with 9D stereo sound, LED digital battery display case that can also charge your mobile in emergencies.",
+      "colors": [
+        "Glossy Black (কালো)"
+      ],
+      "originalPrice": 1200,
+      "descriptionBn": "৯ডি স্টেরিও সাউন্ড ও চমৎকার বেইস সমৃদ্ধ এম১০ ইয়ারবাডস। ডিজিটাল এলইডি পারসেন্টেজ ডিসপ্লে ও মোবাইল চার্জিং পাওয়ারব্যাংক কেস।",
+      "title": "M10 TWS Wireless Earbuds with 2000mAh Power Bank Case",
+      "stock": 88,
       "isFlashSale": true,
-      "sizes": [
-        "Standard"
-      ]
+      "subcategory": "tws-earbuds",
+      "id": "prod-004",
+      "category": "smart-gadgets",
+      "sku": "M10-TWS-BLK",
+      "tags": [
+        "Super Deal",
+        "Power Bank Case"
+      ],
+      "images": [
+        "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=800&auto=format&fit=crop&q=80"
+      ],
+      "categoryBn": "স্মার্ট গ্যাজেট"
     },
     {
-      "reviewsCount": 97,
-      "descriptionBn": "সুন্দরবনের গভীর জঙ্গল থেকে মোয়ালদের সংগৃহীত ১০০% খাঁটি ও প্রক্রিয়াজাতহীন খলিশা ফুলের মধু। রোগ প্রতিরোধ ক্ষমতা বাড়ায়।",
-      "tags": [
-        "100% Pure",
-        "Lab Tested"
+      "sizes": [
+        "1 Kg Glass Jar (১ কেজি)",
+        "500g Glass Jar (৫০০ গ্রাম)"
       ],
       "originalPrice": 1500,
-      "seo": {
-        "metaDescription": "100% pure lab-tested Sundarban Khalisha flower honey delivered fresh in glass jar.",
-        "keywords": "sundarban honey, pure honey bangladesh, khalisha honey",
-        "slug": "sundarban-khalisha-pure-honey-1kg",
-        "metaTitle": "Sundarban Pure Khalisha Honey 1Kg | BuyOne BD",
-        "robots": "index, follow"
+      "subcategory": "wild-raw-honey",
+      "isFlashSale": false,
+      "categoryBn": "অর্গানিক ফুড ও মধু",
+      "id": "prod-005",
+      "price": 1150,
+      "titleBn": "সুন্দরবনের ১০০% খাঁটি খলিশা ফুলের প্রাকৃতিক মধু (১ কেজি)",
+      "sku": "HONEY-SUNDAR-1KG",
+      "descriptionBn": "সুন্দরবনের গভীর জঙ্গল থেকে মোয়ালদের সংগৃহীত ১০০% খাঁটি ও প্রক্রিয়াজাতহীন খলিশা ফুলের মধু। রোগ প্রতিরোধ ক্ষমতা বাড়ায়।",
+      "description": "100% natural, unpasteurized, lab-tested wild honey directly sourced from Sundarban mangrove forest. Rich in antioxidants and authentic floral aroma.",
+      "rating": 5,
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1794767546,
+        "nanoseconds": 308000000
       },
+      "category": "organic-food",
+      "reviewsCount": 97,
+      "title": "Sundarban Raw Natural Khalisha Pure Honey (1 Kg)",
+      "stock": 24,
+      "images": [
+        "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=800&auto=format&fit=crop&q=80"
+      ],
+      "features": [
+        "Directly From Sundarban",
+        "No Added Sugar Or Glucose",
+        "Rich In Natural Enzymes",
+        "Heavy Glass Jar Packaging"
+      ],
+      "colors": [
+        "Pure Golden Amber"
+      ],
       "featuresBn": [
         "সরাসরি সুন্দরবন থেকে সংগৃহীত",
         "চিনি বা গ্লুকোজ মুক্ত শতভাগ খাঁটি",
         "প্রাকৃতিক এনজাইম ও অ্যান্টিঅক্সিডেন্ট",
         "সুরক্ষিত প্রিমিয়াম কাঁচের জার"
       ],
-      "id": "prod-005",
-      "title": "Sundarban Raw Natural Khalisha Pure Honey (1 Kg)",
-      "colors": [
-        "Pure Golden Amber"
+      "tags": [
+        "100% Pure",
+        "Lab Tested"
       ],
-      "images": [
-        "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=800&auto=format&fit=crop&q=80"
-      ],
-      "isFlashSale": false,
-      "sizes": [
-        "1 Kg Glass Jar (১ কেজি)",
-        "500g Glass Jar (৫০০ গ্রাম)"
-      ],
-      "sku": "HONEY-SUNDAR-1KG",
-      "category": "organic-food",
-      "updatedAt": {
-        "type": "firestore/timestamp/1.0",
-        "seconds": 1794762759,
-        "nanoseconds": 649000000
-      },
-      "categoryBn": "অর্গানিক ফুড ও মধু",
-      "subcategory": "wild-raw-honey",
-      "stock": 24,
-      "rating": 5,
-      "description": "100% natural, unpasteurized, lab-tested wild honey directly sourced from Sundarban mangrove forest. Rich in antioxidants and authentic floral aroma.",
-      "titleBn": "সুন্দরবনের ১০০% খাঁটি খলিশা ফুলের প্রাকৃতিক মধু (১ কেজি)",
-      "price": 1150,
-      "features": [
-        "Directly From Sundarban",
-        "No Added Sugar Or Glucose",
-        "Rich In Natural Enzymes",
-        "Heavy Glass Jar Packaging"
-      ]
+      "seo": {
+        "metaDescription": "100% pure lab-tested Sundarban Khalisha flower honey delivered fresh in glass jar.",
+        "keywords": "sundarban honey, pure honey bangladesh, khalisha honey",
+        "metaTitle": "Sundarban Pure Khalisha Honey 1Kg | BuyOne BD",
+        "robots": "index, follow",
+        "slug": "sundarban-khalisha-pure-honey-1kg"
+      }
     },
     {
-      "price": 950,
       "images": [
         "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=800&auto=format&fit=crop&q=80"
       ],
-      "titleBn": "১৪-ইন-১ মাল্টিফাংশনাল ভেজিটেবল ও কিচেন কাটার",
-      "category": "home-kitchen",
-      "colors": [
-        "Emerald Green & Grey"
-      ],
-      "featuresBn": [
-        "১৪ রকমের স্টেইনলেস স্টিল ব্লেড",
-        "ড্রেনেজ বাস্কেট সহ ১.৫ লিটার কন্টেইনার",
-        "বিপিএ-ফ্রি ফুড গ্রেড প্লাস্টিক",
-        "হাত কাটার ভয়হীন হ্যান্ডগার্ড"
-      ],
-      "stock": 55,
       "features": [
         "14 Interchangeable Blades",
         "Large Catch Tray with Drain Basket",
         "Food Grade BPA-Free Plastic",
         "Hand Safety Guard Included"
       ],
-      "id": "prod-006",
-      "sku": "CHOPPER-14IN1",
-      "sizes": [
-        "Standard Set"
-      ],
-      "seo": {
-        "metaDescription": "Cut cooking prep time in half with the 14-in-1 stainless blade kitchen food chopper.",
-        "keywords": "vegetable cutter, kitchen chopper bd, 14 in 1 cutter",
-        "metaTitle": "14-in-1 Smart Vegetable Cutter & Chopper | BuyOne BD",
-        "slug": "14-in-1-vegetable-cutter-chopper",
-        "robots": "index, follow"
-      },
-      "title": "14-in-1 Multifunctional Vegetable Cutter & Food Chopper",
-      "updatedAt": {
-        "type": "firestore/timestamp/1.0",
-        "seconds": 1794762759,
-        "nanoseconds": 879000000
-      },
-      "subcategory": "kitchen-cutters",
-      "description": "Save cooking preparation time with sharp stainless steel blades for slicing, dicing, grating onions, potatoes, carrots with drainage container basket.",
-      "rating": 4.7,
+      "categoryBn": "হোম ও কিচেন",
+      "titleBn": "১৪-ইন-১ মাল্টিফাংশনাল ভেজিটেবল ও কিচেন কাটার",
       "tags": [
         "Kitchen Must Have"
       ],
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1794767546,
+        "nanoseconds": 532000000
+      },
+      "price": 950,
       "reviewsCount": 146,
+      "colors": [
+        "Emerald Green & Grey"
+      ],
+      "sizes": [
+        "Standard Set"
+      ],
+      "sku": "CHOPPER-14IN1",
       "descriptionBn": "রান্নার সময় অর্ধেক করতে আল্ট্রা-শার্প স্টেইনলেস স্টিল ব্লেড সহ ১৪ ধরনের কাটিং ও ড্রেন বাস্কেট যুক্ত স্মার্ট কিচেন কাটার।",
+      "id": "prod-006",
+      "category": "home-kitchen",
+      "seo": {
+        "metaTitle": "14-in-1 Smart Vegetable Cutter & Chopper | BuyOne BD",
+        "keywords": "vegetable cutter, kitchen chopper bd, 14 in 1 cutter",
+        "metaDescription": "Cut cooking prep time in half with the 14-in-1 stainless blade kitchen food chopper.",
+        "slug": "14-in-1-vegetable-cutter-chopper",
+        "robots": "index, follow"
+      },
       "originalPrice": 1600,
+      "stock": 55,
+      "title": "14-in-1 Multifunctional Vegetable Cutter & Food Chopper",
+      "featuresBn": [
+        "১৪ রকমের স্টেইনলেস স্টিল ব্লেড",
+        "ড্রেনেজ বাস্কেট সহ ১.৫ লিটার কন্টেইনার",
+        "বিপিএ-ফ্রি ফুড গ্রেড প্লাস্টিক",
+        "হাত কাটার ভয়হীন হ্যান্ডগার্ড"
+      ],
+      "description": "Save cooking preparation time with sharp stainless steel blades for slicing, dicing, grating onions, potatoes, carrots with drainage container basket.",
+      "rating": 4.7,
       "isFlashSale": true,
-      "categoryBn": "হোম ও কিচেন"
+      "subcategory": "kitchen-cutters"
     },
     {
-      "sizes": [
-        "12ml Roll-On (১২ মিলি)",
-        "6ml Pocket (৬ মিলি)"
-      ],
-      "descriptionBn": "মদিনার ঐতিহ্যবাহী জান্নাতুল ফেরদৌস কনসেনট্রেটেড হালাল আতর। দীর্ঘ ৪৮ ঘণ্টারও বেশি সময় পর্যন্ত কাপড়ে প্রশান্তিময় সুবাস ছড়ায়।",
-      "originalPrice": 950,
+      "reviewsCount": 310,
       "features": [
         "100% Alcohol Free Pure Concentrated Oil",
         "48+ Hours Lasting Scent",
         "Luxurious Crystal Roll-on Bottle",
         "Made from Natural Floral Extracts"
       ],
-      "rating": 4.9,
-      "stock": 80,
-      "sku": "ATTAR-JANNAT-12ML",
-      "category": "islamic-lifestyle",
-      "price": 590,
-      "titleBn": "মদিনার খাঁটি জান্নাতুল ফেরদৌস এলকোহল-মুক্ত পারফিউম আতর (১২ মিলি)",
-      "categoryBn": "ইসলামিক ও আতর",
-      "tags": [
-        "Halal",
-        "Long Lasting"
-      ],
-      "featuresBn": [
-        "শতভাগ অ্যালকোহল ও কেমিক্যাল মুক্ত",
-        "৪৮+ ঘণ্টা দীর্ঘস্থায়ী সুবাস",
-        "প্রিমিয়াম ক্রিস্টাল কাঁচের শিশি",
-        "প্রাকৃতিক ফুলের নির্যাস থেকে প্রস্তুত"
-      ],
-      "isFlashSale": false,
-      "id": "prod-007",
       "seo": {
         "metaTitle": "Jannatul Ferdous Pure Roll-On Attar 12ml | BuyOne BD",
         "slug": "madina-jannatul-ferdous-pure-attar-12ml",
@@ -550,75 +643,99 @@
         "keywords": "jannatul ferdous attar, halal perfume bangladesh, attar 12ml",
         "robots": "index, follow"
       },
-      "reviewsCount": 310,
-      "subcategory": "roll-on-attar",
       "colors": [
         "Amber Crystal Glass Bottle"
       ],
-      "description": "Long-lasting authentic oriental fragrance oil imported from holy Madinah. Free from alcohol and chemical additives with 48 hours lingering smell.",
       "images": [
         "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=800&auto=format&fit=crop&q=80"
       ],
+      "stock": 80,
+      "title": "Madina Pure Jannatul Ferdous Alcohol-Free Concentrated Attar (12ml)",
+      "categoryBn": "ইসলামিক ও আতর",
+      "titleBn": "মদিনার খাঁটি জান্নাতুল ফেরদৌস এলকোহল-মুক্ত পারফিউম আতর (১২ মিলি)",
+      "originalPrice": 950,
+      "descriptionBn": "মদিনার ঐতিহ্যবাহী জান্নাতুল ফেরদৌস কনসেনট্রেটেড হালাল আতর। দীর্ঘ ৪৮ ঘণ্টারও বেশি সময় পর্যন্ত কাপড়ে প্রশান্তিময় সুবাস ছড়ায়।",
+      "id": "prod-007",
+      "rating": 4.9,
+      "featuresBn": [
+        "শতভাগ অ্যালকোহল ও কেমিক্যাল মুক্ত",
+        "৪৮+ ঘণ্টা দীর্ঘস্থায়ী সুবাস",
+        "প্রিমিয়াম ক্রিস্টাল কাঁচের শিশি",
+        "প্রাকৃতিক ফুলের নির্যাস থেকে প্রস্তুত"
+      ],
+      "category": "islamic-lifestyle",
+      "isFlashSale": false,
+      "subcategory": "roll-on-attar",
+      "sizes": [
+        "12ml Roll-On (১২ মিলি)",
+        "6ml Pocket (৬ মিলি)"
+      ],
+      "description": "Long-lasting authentic oriental fragrance oil imported from holy Madinah. Free from alcohol and chemical additives with 48 hours lingering smell.",
+      "sku": "ATTAR-JANNAT-12ML",
       "updatedAt": {
         "type": "firestore/timestamp/1.0",
-        "seconds": 1794762760,
-        "nanoseconds": 133000000
+        "seconds": 1794767546,
+        "nanoseconds": 738000000
       },
-      "title": "Madina Pure Jannatul Ferdous Alcohol-Free Concentrated Attar (12ml)"
+      "tags": [
+        "Halal",
+        "Long Lasting"
+      ],
+      "price": 590
     },
     {
-      "categoryBn": "বিউটি ও পার্সোনাল কেয়ার",
-      "title": "Rice Water Brightening Gentle Foaming Cleanser (150ml)",
-      "tags": [
-        "Natural Glow",
-        "Korean Formula"
-      ],
-      "reviewsCount": 164,
-      "sku": "CLEANSER-RICE-150",
-      "descriptionBn": "প্রাকৃতিক চালের নির্যাস ও ভিটামিন সমৃদ্ধ ফেসওয়াশ। ত্বকের গভীর থেকে ময়লা পরিষ্কার করে ইনস্ট্যান্ট উজ্জ্বলতা ফিরিয়ে আনে।",
-      "colors": [
-        "Milky White"
-      ],
-      "images": [
-        "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&auto=format&fit=crop&q=80"
-      ],
-      "titleBn": "রাইস ওয়াটার ব্রাইটেনিং ফেসওয়াশ ও ডিপ পোর ক্লিনজার (১৫০ মিলি)",
-      "id": "prod-008",
-      "updatedAt": {
-        "type": "firestore/timestamp/1.0",
-        "seconds": 1794762760,
-        "nanoseconds": 389000000
-      },
-      "originalPrice": 1100,
-      "stock": 40,
-      "subcategory": "herbal-skincare",
-      "description": "Deep cleansing face wash enriched with real rice water and moringa oil to gently dissolve impurities and brighten dull skin tone.",
-      "price": 750,
       "features": [
         "Infused with Rice Water and Moringa Oil",
         "For All Skin Types",
         "Sulfate and Paraben Free",
         "Gentle Daily Use"
       ],
-      "isFlashSale": false,
-      "sizes": [
-        "150ml"
-      ],
-      "seo": {
-        "keywords": "rice water cleanser, skincare bangladesh, brightening facewash",
-        "metaDescription": "Korean formula Rice Water & Moringa deep pore brightening cleanser in Bangladesh.",
-        "slug": "rice-water-brightening-foaming-cleanser",
-        "metaTitle": "Rice Water Brightening Foaming Cleanser 150ml | BuyOne BD",
-        "robots": "index, follow"
-      },
-      "category": "beauty-care",
-      "rating": 4.8,
+      "descriptionBn": "প্রাকৃতিক চালের নির্যাস ও ভিটামিন সমৃদ্ধ ফেসওয়াশ। ত্বকের গভীর থেকে ময়লা পরিষ্কার করে ইনস্ট্যান্ট উজ্জ্বলতা ফিরিয়ে আনে।",
+      "reviewsCount": 164,
+      "sku": "CLEANSER-RICE-150",
+      "originalPrice": 1100,
       "featuresBn": [
         "চালের খাঁটি নির্যাস ও ভিটামিন সমৃদ্ধ",
         "সব ধরনের ত্বকের জন্য উপযোগী",
         "প্যারাবেন ও ক্ষতিকর কেমিক্যাল মুক্ত",
         "নরম ও উজ্জ্বল ত্বকের নিশ্চয়তা"
-      ]
+      ],
+      "id": "prod-008",
+      "sizes": [
+        "150ml"
+      ],
+      "updatedAt": {
+        "type": "firestore/timestamp/1.0",
+        "seconds": 1794767546,
+        "nanoseconds": 972000000
+      },
+      "price": 750,
+      "rating": 4.8,
+      "description": "Deep cleansing face wash enriched with real rice water and moringa oil to gently dissolve impurities and brighten dull skin tone.",
+      "images": [
+        "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&auto=format&fit=crop&q=80"
+      ],
+      "category": "beauty-care",
+      "titleBn": "রাইস ওয়াটার ব্রাইটেনিং ফেসওয়াশ ও ডিপ পোর ক্লিনজার (১৫০ মিলি)",
+      "isFlashSale": false,
+      "subcategory": "herbal-skincare",
+      "tags": [
+        "Natural Glow",
+        "Korean Formula"
+      ],
+      "colors": [
+        "Milky White"
+      ],
+      "seo": {
+        "slug": "rice-water-brightening-foaming-cleanser",
+        "keywords": "rice water cleanser, skincare bangladesh, brightening facewash",
+        "metaTitle": "Rice Water Brightening Foaming Cleanser 150ml | BuyOne BD",
+        "robots": "index, follow",
+        "metaDescription": "Korean formula Rice Water & Moringa deep pore brightening cleanser in Bangladesh."
+      },
+      "categoryBn": "বিউটি ও পার্সোনাল কেয়ার",
+      "title": "Rice Water Brightening Gentle Foaming Cleanser (150ml)",
+      "stock": 40
     }
   ],
   "settings": {
@@ -638,11 +755,11 @@
       "dhakaOutside": 130
     },
     "paymentSettings": {
-      "bkashMerchant": "01886289663",
-      "nagadMerchant": "01886289663",
-      "rocketMerchant": "018862896630",
+      "bkashMerchant": "01917942662",
+      "nagadMerchant": "01917942662",
+      "rocketMerchant": "",
       "enableCOD": true,
-      "requireAdvanceDeliveryFee": false,
+      "requireAdvanceDeliveryFee": true,
       "advanceFeeAmount": 100
     },
     "aiCallSettings": {
@@ -663,11 +780,11 @@
     "theme": "gadgets",
     "themeColors": {
       "primary": "#059669",
-      "secondary": "#0d9488",
+      "secondary": "#00a685",
       "headerBg": "#ffffff",
-      "footerBg": "#020617",
-      "heroFrom": "#020617",
-      "heroTo": "#064e3b"
+      "footerBg": "#081a20",
+      "heroFrom": "#011b17",
+      "heroTo": "#024837"
     },
     "cmsTexts": {
       "trendingTitleBn": "হট ও ট্রেন্ডিং কালেকশন",
@@ -677,7 +794,17 @@
       "addToCartBtnBn": "কার্টে যোগ করুন",
       "addToCartBtnEn": "Add to Cart",
       "allCategoriesLabelBn": "সকল পণ্য",
-      "allCategoriesLabelEn": "All Products"
+      "allCategoriesLabelEn": "All Products",
+      "categoriesTitleBn": "জনপ্রিয় ক্যাটাগরি সমূহ",
+      "categoriesTitleEn": "Shop by Categories",
+      "flashSaleTitleBn": "ফ্ল্যাশ সেল ধামাকা",
+      "flashSaleTitleEn": "Flash Sale Deals",
+      "recentlyViewedTitleBn": "সাম্প্রতিক দেখা পণ্য",
+      "recentlyViewedTitleEn": "Recently Viewed",
+      "whyChooseTitleBn": "কেন BuyOne BD সেরা?",
+      "whyChooseTitleEn": "Why Choose BuyOne BD?",
+      "heroSecondaryBtnBn": "সব কালেকশন দেখুন",
+      "heroSecondaryBtnEn": "Explore Store"
     },
     "spinSettings": {
       "enabled": true,
@@ -687,83 +814,73 @@
       "rewards": [
         {
           "color": "#f43f5e",
-          "id": "spin-1",
           "value": 500,
-          "code": "TEMU500",
           "isTryAgain": false,
-          "labelEn": "৳500 OFF",
           "labelBn": "৳৫০০ ক্যাশ",
-          "discountType": "fixed"
+          "id": "spin-1",
+          "labelEn": "৳500 OFF",
+          "discountType": "fixed",
+          "code": "TEMU500"
         },
         {
-          "code": "FREESHIP",
-          "discountType": "free_shipping",
-          "value": 70,
-          "color": "#0284c7",
           "id": "spin-2",
-          "labelEn": "Free Ship",
+          "discountType": "free_shipping",
           "labelBn": "ফ্রি ডেলিভারি",
-          "isTryAgain": false
+          "labelEn": "Free Ship",
+          "color": "#0284c7",
+          "value": 70,
+          "isTryAgain": false,
+          "code": "FREESHIP"
         },
         {
           "code": "MEGA250",
+          "value": 250,
+          "isTryAgain": false,
+          "color": "#10b981",
+          "labelBn": "৳২৫০ ছাড়",
           "id": "spin-3",
           "labelEn": "৳250 OFF",
-          "labelBn": "৳২৫০ ছাড়",
-          "color": "#10b981",
-          "discountType": "fixed",
-          "value": 250,
-          "isTryAgain": false
+          "discountType": "fixed"
         },
         {
-          "discountType": "percent",
-          "value": 50,
-          "isTryAgain": false,
           "code": "HALFPRICE",
+          "value": 50,
+          "color": "#8b5cf6",
           "id": "spin-4",
           "labelEn": "50% OFF",
+          "isTryAgain": false,
           "labelBn": "৫০% মেগা",
-          "color": "#8b5cf6"
+          "discountType": "percent"
         },
         {
           "isTryAgain": false,
+          "id": "spin-5",
           "color": "#f59e0b",
           "value": 150,
-          "labelEn": "৳150 OFF",
           "labelBn": "৳১৫০ ক্যাশ",
-          "code": "CASH150",
           "discountType": "fixed",
-          "id": "spin-5"
+          "labelEn": "৳150 OFF",
+          "code": "CASH150"
         },
         {
-          "code": "GIFT100",
-          "color": "#059669",
-          "value": 100,
-          "discountType": "fixed",
-          "labelEn": "৳100 OFF",
           "labelBn": "৳১০০ ওয়ালেট",
           "id": "spin-6",
+          "labelEn": "৳100 OFF",
+          "color": "#059669",
+          "value": 100,
+          "code": "GIFT100",
+          "discountType": "fixed",
           "isTryAgain": false
         },
         {
-          "labelEn": "20% OFF",
-          "labelBn": "২০% ভাউচার",
-          "discountType": "percent",
-          "value": 20,
-          "color": "#d97706",
           "id": "spin-7",
+          "labelEn": "20% OFF",
+          "color": "#d97706",
+          "value": 20,
           "isTryAgain": false,
-          "code": "DEAL20"
-        },
-        {
-          "isTryAgain": false,
-          "code": "BONUS300",
-          "color": "#ec4899",
-          "value": 300,
-          "discountType": "fixed",
-          "id": "spin-8",
-          "labelEn": "৳300 OFF",
-          "labelBn": "৳৩০০ বোনাস"
+          "code": "DEAL20",
+          "discountType": "percent",
+          "labelBn": "২০% ভাউচার"
         }
       ]
     },
@@ -784,287 +901,287 @@
     },
     "categories": [
       {
-        "nameBn": "স্মার্ট গ্যাজেট",
-        "id": "smart-gadgets",
-        "iconImage": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=240&auto=format&fit=crop&q=80",
-        "slug": "smart-gadgets",
         "order": 1,
+        "isActive": true,
+        "id": "smart-gadgets",
+        "nameEn": "Smart Gadgets",
+        "iconImage": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=240&auto=format&fit=crop&q=80",
+        "nameBn": "স্মার্ট গ্যাজেট",
+        "slug": "smart-gadgets",
         "subcategories": [
           {
+            "image": "https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=200",
             "nameEn": "Smart Watches",
-            "slug": "smart-watches",
             "nameBn": "স্মার্ট ওয়াচ",
-            "image": "https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=200"
+            "slug": "smart-watches"
           },
           {
-            "nameBn": "ব্লুটুথ ইয়ারবাডস",
             "nameEn": "TWS Earbuds",
+            "nameBn": "ব্লুটুথ ইয়ারবাডস",
             "slug": "tws-earbuds",
             "image": "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=200"
           },
           {
+            "image": "https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=200",
             "nameEn": "Power Banks",
             "nameBn": "পাওয়ার ব্যাংক",
-            "image": "https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=200",
             "slug": "power-banks"
           },
           {
-            "slug": "trimmers-shavers",
+            "nameEn": "Trimmers & Shavers",
             "nameBn": "ট্রিমার ও শেভার",
-            "image": "https://images.unsplash.com/photo-1621607512214-68297480165e?w=200",
-            "nameEn": "Trimmers & Shavers"
+            "slug": "trimmers-shavers",
+            "image": "https://images.unsplash.com/photo-1621607512214-68297480165e?w=200"
           }
         ],
-        "icon": "",
-        "nameEn": "Smart Gadgets",
-        "isActive": true
+        "icon": ""
       },
       {
+        "isActive": true,
+        "nameBn": "ফ্যাশন ও লাইফস্টাইল",
+        "nameEn": "Fashion & Lifestyle",
+        "subcategories": [
+          {
+            "image": "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=200",
+            "nameEn": "Polo & T-Shirts",
+            "nameBn": "প্রিমিয়াম টি-শার্ট",
+            "slug": "polo-tshirts"
+          },
+          {
+            "slug": "panjabi-kabli",
+            "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=200",
+            "nameEn": "Panjabi & Kabli",
+            "nameBn": "পাঞ্জাবি ও কাবলি"
+          },
+          {
+            "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=200",
+            "nameEn": "Leather Wallets",
+            "nameBn": "লেদার ওয়ালেট",
+            "slug": "leather-wallets"
+          },
+          {
+            "slug": "sunglasses",
+            "nameEn": "Sunglasses",
+            "nameBn": "সানগ্লাস",
+            "image": "https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=200"
+          }
+        ],
+        "order": 2,
+        "iconImage": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=240&auto=format&fit=crop&q=80",
+        "id": "fashion",
+        "slug": "fashion",
+        "icon": ""
+      },
+      {
+        "nameEn": "Organic Foods & Honey",
+        "order": 3,
+        "iconImage": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=240&auto=format&fit=crop&q=80",
+        "nameBn": "অর্গানিক ফুড ও মধু",
+        "slug": "organic-food",
         "isActive": true,
         "icon": "",
         "subcategories": [
           {
-            "nameEn": "Polo & T-Shirts",
-            "nameBn": "প্রিমিয়াম টি-শার্ট",
-            "image": "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=200",
-            "slug": "polo-tshirts"
-          },
-          {
-            "nameBn": "পাঞ্জাবি ও কাবলি",
-            "slug": "panjabi-kabli",
-            "nameEn": "Panjabi & Kabli",
-            "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=200"
-          },
-          {
-            "nameEn": "Leather Wallets",
-            "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=200",
-            "slug": "leather-wallets",
-            "nameBn": "লেদার ওয়ালেট"
-          },
-          {
-            "nameEn": "Sunglasses",
-            "nameBn": "সানগ্লাস",
-            "image": "https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=200",
-            "slug": "sunglasses"
-          }
-        ],
-        "nameEn": "Fashion & Lifestyle",
-        "id": "fashion",
-        "nameBn": "ফ্যাশন ও লাইফস্টাইল",
-        "order": 2,
-        "slug": "fashion",
-        "iconImage": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=240&auto=format&fit=crop&q=80"
-      },
-      {
-        "nameBn": "অর্গানিক ফুড ও মধু",
-        "subcategories": [
-          {
-            "nameBn": "সুন্দরবনের খাঁটি মধু",
             "nameEn": "Wild Raw Honey",
+            "nameBn": "সুন্দরবনের খাঁটি মধু",
             "slug": "wild-raw-honey",
             "image": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=200"
           },
           {
-            "nameBn": "ঘানির সরিষার তেল",
-            "slug": "mustard-oil",
             "nameEn": "Cold Pressed Mustard Oil",
-            "image": "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=200"
+            "nameBn": "ঘানির সরিষার তেল",
+            "image": "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=200",
+            "slug": "mustard-oil"
           },
           {
-            "image": "https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=200",
             "nameEn": "Pure Desi Ghee",
-            "slug": "pure-ghee",
-            "nameBn": "খাঁটি গাওয়া ঘি"
+            "nameBn": "খাঁটি গাওয়া ঘি",
+            "image": "https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=200",
+            "slug": "pure-ghee"
           },
           {
-            "nameBn": "ড্রাই ফ্রুটস ও বাদাম",
-            "nameEn": "Dry Fruits & Nuts",
             "slug": "dry-fruits",
+            "nameEn": "Dry Fruits & Nuts",
+            "nameBn": "ড্রাই ফ্রুটস ও বাদাম",
             "image": "https://images.unsplash.com/photo-1536591375315-1988d696054a?w=200"
           }
         ],
-        "slug": "organic-food",
-        "id": "organic-food",
-        "iconImage": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=240&auto=format&fit=crop&q=80",
-        "order": 3,
-        "isActive": true,
-        "nameEn": "Organic Foods & Honey",
-        "icon": ""
+        "id": "organic-food"
       },
       {
         "subcategories": [
           {
-            "nameEn": "Premium Roll-on Attar",
-            "nameBn": "জান্নাতুল ফেরদৌস আতর",
+            "slug": "roll-on-attar",
             "image": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=200",
-            "slug": "roll-on-attar"
+            "nameEn": "Premium Roll-on Attar",
+            "nameBn": "জান্নাতুল ফেরদৌস আতর"
           },
           {
             "slug": "digital-tasbih",
-            "image": "https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=200",
             "nameEn": "Digital Tasbih Counter",
-            "nameBn": "ডিজিটাল তসবিহ"
+            "nameBn": "ডিজিটাল তসবিহ",
+            "image": "https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=200"
           },
           {
-            "nameBn": "জায়নামাজ",
             "nameEn": "Luxury Prayer Mat",
-            "slug": "prayer-mats",
-            "image": "https://images.unsplash.com/photo-1609599006353-e629aaabfeae?w=200"
+            "nameBn": "জায়নামাজ",
+            "image": "https://images.unsplash.com/photo-1609599006353-e629aaabfeae?w=200",
+            "slug": "prayer-mats"
           },
           {
             "image": "https://images.unsplash.com/photo-1585036156171-384164a8c675?w=200",
-            "slug": "rehal-stands",
             "nameEn": "Rehal & Stands",
-            "nameBn": "কুরআন স্ট্যান্ড"
+            "nameBn": "কুরআন স্ট্যান্ড",
+            "slug": "rehal-stands"
           }
         ],
-        "nameBn": "ইসলামিক ও আতর",
-        "id": "islamic-lifestyle",
-        "iconImage": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=240&auto=format&fit=crop&q=80",
-        "icon": "",
         "slug": "islamic-lifestyle",
         "isActive": true,
+        "icon": "",
+        "id": "islamic-lifestyle",
+        "nameBn": "ইসলামিক ও আতর",
         "order": 4,
+        "iconImage": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=240&auto=format&fit=crop&q=80",
         "nameEn": "Islamic & Attar"
       },
       {
+        "nameEn": "Home & Kitchen",
+        "id": "home-kitchen",
+        "order": 5,
         "isActive": true,
+        "icon": "",
+        "nameBn": "হোম ও কিচেন",
+        "slug": "home-kitchen",
         "subcategories": [
           {
+            "image": "https://images.unsplash.com/photo-1570222094114-d054a817e56b?w=200",
             "slug": "juicer-blenders",
-            "nameBn": "পোর্টেবল ব্লেন্ডার",
             "nameEn": "Juicer & Blenders",
-            "image": "https://images.unsplash.com/photo-1570222094114-d054a817e56b?w=200"
+            "nameBn": "পোর্টেবল ব্লেন্ডার"
           },
           {
+            "slug": "kitchen-cutters",
             "nameEn": "Kitchen Cutters & Accessories",
             "nameBn": "কিচেন কাটার ও চপার",
-            "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=200",
-            "slug": "kitchen-cutters"
+            "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=200"
           },
           {
+            "nameEn": "Night Lamps & Clocks",
             "nameBn": "স্মার্ট ক্লক ও লাইট",
             "slug": "lamps-clocks",
-            "nameEn": "Night Lamps & Clocks",
             "image": "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=200"
           }
         ],
-        "nameBn": "হোম ও কিচেন",
-        "icon": "",
-        "id": "home-kitchen",
-        "order": 5,
-        "slug": "home-kitchen",
-        "iconImage": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=240&auto=format&fit=crop&q=80",
-        "nameEn": "Home & Kitchen"
+        "iconImage": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=240&auto=format&fit=crop&q=80"
       },
       {
+        "id": "beauty-care",
         "icon": "",
-        "nameBn": "বিউটি ও পার্সোনাল কেয়ার",
-        "order": 6,
+        "nameEn": "Beauty & Personal Care",
         "slug": "beauty-care",
         "isActive": true,
-        "nameEn": "Beauty & Personal Care",
         "subcategories": [
           {
-            "nameBn": "হেয়ার ট্রিমার ও গ্রুমিং",
             "nameEn": "Hair Grooming Kits",
+            "nameBn": "হেয়ার ট্রিমার ও গ্রুমিং",
             "slug": "hair-grooming",
             "image": "https://images.unsplash.com/photo-1621607512214-68297480165e?w=200"
           },
           {
+            "slug": "herbal-skincare",
             "nameEn": "Herbal Skincare",
             "nameBn": "অর্গানিক স্কিনকেয়ার",
-            "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=200",
-            "slug": "herbal-skincare"
+            "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=200"
           },
           {
-            "slug": "body-massagers",
-            "nameBn": "বডি ম্যাসেজার",
             "nameEn": "Body Massagers",
+            "nameBn": "বডি ম্যাসেজার",
+            "slug": "body-massagers",
             "image": "https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=200"
           }
         ],
-        "id": "beauty-care",
+        "nameBn": "বিউটি ও পার্সোনাল কেয়ার",
+        "order": 6,
         "iconImage": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=240&auto=format&fit=crop&q=80"
       }
     ],
     "sliders": [
       {
-        "discountBadgeEn": "65% Mega Offer",
-        "subtitleEn": "Bluetooth calling, heart-rate monitor with 65% mega discount",
-        "linkCategory": "smart-gadgets",
-        "subtitleBn": "ব্লুটুথ কলিং, হার্ট রেট ও মেটাল স্ট্র্যাপ সহ ৬৫% বিশেষ ছাড়ে কিনুন",
-        "buttonTextBn": "১ ক্লিকে এখনই কিনুন",
-        "isActive": true,
         "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=1600&auto=format&fit=crop&q=80",
-        "buttonTextEn": "1-Click Buy Now",
-        "discountBadgeBn": "৬৫% মেগা অফার",
-        "id": "slide-1",
+        "buttonTextBn": "১ ক্লিকে এখনই কিনুন",
         "titleEn": "Super Deal: Ultra Smartwatch & Gadgets Collection",
-        "titleBn": "সুপার ডিল: আল্ট্রা স্মার্টওয়াচ ও গ্যাজেট কালেকশন"
+        "discountBadgeEn": "65% Mega Offer",
+        "id": "slide-1",
+        "isActive": true,
+        "discountBadgeBn": "৬৫% মেগা অফার",
+        "buttonTextEn": "1-Click Buy Now",
+        "subtitleEn": "Bluetooth calling, heart-rate monitor with 65% mega discount",
+        "titleBn": "সুপার ডিল: আল্ট্রা স্মার্টওয়াচ ও গ্যাজেট কালেকশন",
+        "subtitleBn": "ব্লুটুথ কলিং, হার্ট রেট ও মেটাল স্ট্র্যাপ সহ ৬৫% বিশেষ ছাড়ে কিনুন",
+        "linkCategory": "smart-gadgets"
       },
       {
-        "buttonTextBn": "খাঁটি মধু অর্ডার করুন",
-        "id": "slide-2",
-        "isActive": true,
-        "discountBadgeBn": "১০০% অরিজিনাল গ্যারান্টি",
-        "subtitleBn": "কোনো প্রকার চিনি বা প্রিজারভেটিভ ছাড়া ল্যাব টেস্টে শতভাগ খাঁটি",
-        "titleBn": "সুন্দরবনের ১০০% খাঁটি প্রাকৃতিক খলিশা ফুলের মধু",
-        "linkCategory": "organic-food",
         "titleEn": "100% Pure Raw Sundarban Wild Honey",
-        "subtitleEn": "Lab certified zero sugar wild honey directly from forest",
-        "image": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=1600&auto=format&fit=crop&q=80",
         "discountBadgeEn": "100% Pure Guarantee",
-        "buttonTextEn": "Order Pure Honey"
+        "linkCategory": "organic-food",
+        "id": "slide-2",
+        "buttonTextEn": "Order Pure Honey",
+        "isActive": true,
+        "titleBn": "সুন্দরবনের ১০০% খাঁটি প্রাকৃতিক খলিশা ফুলের মধু",
+        "subtitleBn": "কোনো প্রকার চিনি বা প্রিজারভেটিভ ছাড়া ল্যাব টেস্টে শতভাগ খাঁটি",
+        "subtitleEn": "Lab certified zero sugar wild honey directly from forest",
+        "buttonTextBn": "খাঁটি মধু অর্ডার করুন",
+        "discountBadgeBn": "১০০% অরিজিনাল গ্যারান্টি",
+        "image": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=1600&auto=format&fit=crop&q=80"
       },
       {
-        "subtitleBn": "১০০% ফাইন সুতি কাপড়ে নিখুঁত এমব্রয়ডারি কাজ ও এলিগ্যান্ট ফিটিং",
-        "id": "slide-3",
         "titleEn": "Premium Royal Cotton Embroidered Panjabi Set",
-        "titleBn": "প্রিমিয়াম রয়্যাল কটন এমব্রয়ডারি পাঞ্জাবি ও পায়জামা সেট",
-        "buttonTextEn": "View Collection",
+        "subtitleBn": "১০০% ফাইন সুতি কাপড়ে নিখুঁত এমব্রয়ডারি কাজ ও এলিগ্যান্ট ফিটিং",
         "subtitleEn": "100% fine breathable cotton with royal handcrafted embroidery",
-        "isActive": true,
         "discountBadgeBn": "সীমিত স্টক",
         "linkCategory": "fashion",
-        "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1600&auto=format&fit=crop&q=80",
+        "buttonTextEn": "View Collection",
+        "titleBn": "প্রিমিয়াম রয়্যাল কটন এমব্রয়ডারি পাঞ্জাবি ও পায়জামা সেট",
         "buttonTextBn": "কালেকশন দেখুন",
-        "discountBadgeEn": "Limited Stock"
+        "discountBadgeEn": "Limited Stock",
+        "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1600&auto=format&fit=crop&q=80",
+        "id": "slide-3",
+        "isActive": true
       },
       {
-        "titleEn": "14-in-1 Smart Multifunctional Kitchen Vegetable Cutter",
-        "titleBn": "স্মার্ট কিচেন কাটার ও ১৪-ইন-১ মাল্টি চপার গ্যাজেট",
-        "discountBadgeBn": "৳৪৫০ ছাড়",
-        "buttonTextEn": "Grab Kitchen Deal",
         "buttonTextBn": "অফারটি লুফে নিন",
-        "isActive": true,
-        "subtitleBn": "রান্নার সময় অর্ধেক করতে আল্ট্রা শার্প স্টেইনলেস স্টিল কিচেন কাটার",
-        "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=1600&auto=format&fit=crop&q=80",
-        "linkCategory": "home-kitchen",
-        "id": "slide-4",
         "subtitleEn": "Heavy duty blades with instant drainage container basket",
-        "discountBadgeEn": "৳450 Discount"
+        "subtitleBn": "রান্নার সময় অর্ধেক করতে আল্ট্রা শার্প স্টেইনলেস স্টিল কিচেন কাটার",
+        "discountBadgeEn": "৳450 Discount",
+        "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=1600&auto=format&fit=crop&q=80",
+        "titleBn": "স্মার্ট কিচেন কাটার ও ১৪-ইন-১ মাল্টি চপার গ্যাজেট",
+        "isActive": true,
+        "discountBadgeBn": "৳৪৫০ ছাড়",
+        "id": "slide-4",
+        "linkCategory": "home-kitchen",
+        "titleEn": "14-in-1 Smart Multifunctional Kitchen Vegetable Cutter",
+        "buttonTextEn": "Grab Kitchen Deal"
       },
       {
-        "buttonTextEn": "Explore Attar",
-        "subtitleEn": "48+ hours long lasting royal oriental alcohol-free attar",
-        "id": "slide-5",
-        "discountBadgeBn": "হট ডিল",
+        "buttonTextBn": "আতর সংগ্রহ করুন",
         "titleEn": "Jannatul Ferdous Alcohol-Free Pure Perfume Oil (Attar)",
-        "titleBn": "মদিনার খাঁটি জান্নাতুল ফেরদৌস প্রিমিয়াম রোল-অন আতর",
-        "subtitleBn": "৪৮ ঘণ্টারও বেশি স্থায়ী সুরভিময় মিষ্টি সুগন্ধিযুক্ত ১০০% হালাল আতর",
-        "linkCategory": "islamic-lifestyle",
-        "discountBadgeEn": "Hot Deal",
         "image": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=1600&auto=format&fit=crop&q=80",
+        "discountBadgeEn": "Hot Deal",
+        "discountBadgeBn": "হট ডিল",
+        "titleBn": "মদিনার খাঁটি জান্নাতুল ফেরদৌস প্রিমিয়াম রোল-অন আতর",
+        "linkCategory": "islamic-lifestyle",
+        "id": "slide-5",
+        "subtitleBn": "৪৮ ঘণ্টারও বেশি স্থায়ী সুরভিময় মিষ্টি সুগন্ধিযুক্ত ১০০% হালাল আতর",
+        "buttonTextEn": "Explore Attar",
         "isActive": true,
-        "buttonTextBn": "আতর সংগ্রহ করুন"
+        "subtitleEn": "48+ hours long lasting royal oriental alcohol-free attar"
       }
     ],
     "flashSale": {
       "enabled": true,
       "headlineBn": "⚡ আজকের বিশেষ ফ্ল্যাশ সেল - ৫০% পর্যন্ত অবিশ্বাস্য মূল্যছাড়!",
       "headlineEn": "⚡ Today's Mega Flash Sale - Up to 50% Off!",
-      "endsAt": "2026-11-16T17:05:53.783Z",
+      "endsAt": "2026-11-19T16:35:57.916Z",
       "discountPercentage": 50
     },
     "courierSettings": {
@@ -1292,28 +1409,28 @@
       "showCategoriesInFooter": true,
       "quickLinks": [
         {
+          "actionType": "tracking",
           "labelEn": "Live Order Tracking",
           "labelBn": "রিয়েল-টাইম অর্ডার ট্র্যাকিং",
-          "actionType": "tracking",
           "id": "ql-1"
         },
         {
           "labelEn": "Today's Flash Sale Deals",
-          "labelBn": "আজকের ফ্ল্যাশ সেল অফার",
           "id": "ql-2",
+          "labelBn": "আজকের ফ্ল্যাশ সেল অফার",
           "actionType": "flash_sale"
         },
         {
-          "actionType": "store",
-          "id": "ql-3",
           "labelEn": "7 Days Return & Refund Policy",
+          "id": "ql-3",
+          "actionType": "store",
           "labelBn": "৭ দিনের রিটার্ন ও রিফান্ড নীতি"
         },
         {
+          "actionType": "store",
           "id": "ql-4",
           "labelEn": "Terms & Privacy Policy",
-          "labelBn": "গোপনীয়তা ও শর্তাবলী",
-          "actionType": "store"
+          "labelBn": "গোপনীয়তা ও শর্তাবলী"
         }
       ]
     },
@@ -1325,28 +1442,28 @@
       "maxTopUp": 50000,
       "methods": {
         "bkash": {
-          "enabled": true,
           "accountType": "Personal",
           "label": "bKash",
+          "enabled": true,
           "accountNumber": "01886289663"
         },
         "nagad": {
-          "label": "Nagad",
-          "accountType": "Personal",
+          "enabled": true,
           "accountNumber": "01886289663",
-          "enabled": true
+          "label": "Nagad",
+          "accountType": "Personal"
         },
         "rocket": {
           "label": "Rocket",
-          "enabled": true,
           "accountType": "Personal",
-          "accountNumber": "018862896630"
+          "accountNumber": "018862896630",
+          "enabled": true
         },
         "upay": {
           "label": "Upay",
-          "accountType": "Personal",
+          "accountNumber": "01886289663",
           "enabled": true,
-          "accountNumber": "01886289663"
+          "accountType": "Personal"
         }
       }
     },
@@ -1387,6 +1504,10 @@
       "colorLabelEn": "Color / Variant:",
       "sizeLabelBn": "সাইজ / এডিশন:",
       "sizeLabelEn": "Size / Edition:",
+      "brandLabelBn": "ব্র্যান্ড:",
+      "brandLabelEn": "Brand:",
+      "notifyMeBtnBn": "স্টকে এলে জানান (Notify Me)",
+      "notifyMeBtnEn": "Notify Me When Available",
       "loyaltyTextBn": "এই অর্ডারে +{points} রিওয়ার্ড পয়েন্ট পাবেন",
       "loyaltyTextEn": "Earn +{points} Loyalty Points on purchase",
       "pointsPerOrderDivisor": 20,
@@ -1407,28 +1528,28 @@
     },
     "promoCoupons": [
       {
-        "value": 100,
-        "discountType": "fixed",
-        "minOrder": 500,
-        "id": "cpn-welcome",
-        "code": "WELCOME100",
-        "active": true
-      },
-      {
-        "value": 15,
-        "id": "cpn-eid",
-        "minOrder": 1000,
-        "discountType": "percent",
-        "code": "BUYONE15",
-        "active": true
-      },
-      {
         "active": true,
-        "minOrder": 800,
-        "discountType": "free_shipping",
-        "value": 0,
+        "value": 100,
+        "minOrder": 500,
+        "discountType": "fixed",
+        "code": "WELCOME100",
+        "id": "cpn-welcome"
+      },
+      {
+        "discountType": "percent",
+        "id": "cpn-eid",
+        "code": "BUYONE15",
+        "value": 15,
+        "minOrder": 1000,
+        "active": true
+      },
+      {
+        "id": "cpn-ship",
         "code": "FREESHIP",
-        "id": "cpn-ship"
+        "minOrder": 800,
+        "active": true,
+        "discountType": "free_shipping",
+        "value": 0
       }
     ],
     "organicMarketing": {
@@ -1467,400 +1588,448 @@
         "enabled": true,
         "items": [
           {
+            "subBn": "পণ্য হাতে পেয়ে চেক করে পেমেন্ট",
             "titleEn": "100% Cash on Delivery",
-            "id": "usp-1",
             "titleBn": "১০০% ক্যাশ অন ডেলিভারি",
             "subEn": "Inspect parcel before paying",
-            "subBn": "পণ্য হাতে পেয়ে চেক করে পেমেন্ট"
+            "id": "usp-1"
           },
           {
             "id": "usp-2",
-            "subEn": "All 64 districts in Bangladesh",
-            "titleBn": "২৪-৭২ ঘন্টায় হোম ডেলিভারি",
             "titleEn": "24-72h Nationwide Delivery",
+            "titleBn": "২৪-৭২ ঘন্টায় হোম ডেলিভারি",
+            "subEn": "All 64 districts in Bangladesh",
             "subBn": "Steadfast ও Pathao কুরিয়ার"
           },
           {
             "titleEn": "7-Day Easy Replacement",
+            "subBn": "কোনো সমস্যায় ঝামেলামুক্ত বদল",
             "id": "usp-3",
-            "subEn": "Instant defect exchange",
             "titleBn": "৭ দিনের সহজ রিপ্লেসমেন্ট",
-            "subBn": "কোনো সমস্যায় ঝামেলামুক্ত বদল"
+            "subEn": "Instant defect exchange"
           },
           {
-            "subBn": "সরাসরি চ্যাট ও ব্রাউজার কল",
+            "id": "usp-4",
             "subEn": "Instant chat & browser call",
+            "subBn": "সরাসরি চ্যাট ও ব্রাউজার কল",
             "titleEn": "Live Support Desk",
-            "titleBn": "লাইভ এআই ও ভয়েস সাপোর্ট",
-            "id": "usp-4"
+            "titleBn": "লাইভ এআই ও ভয়েস সাপোর্ট"
           }
         ]
+      },
+      "freeShippingBar": {
+        "enabled": true,
+        "thresholdBdt": 1500,
+        "messageBn": "আর মাত্র ৳{remaining} টাকার পণ্য যোগ করলে ফ্রি ডেলিভারি!",
+        "messageEn": "Add ৳{remaining} more for FREE Delivery!"
+      },
+      "bundleDiscount": {
+        "enabled": true,
+        "qty2Percent": 5,
+        "qty3Percent": 10,
+        "badgeBn": "বেশি কিনলে বেশি ছাড়!",
+        "badgeEn": "Buy More, Save More!"
+      },
+      "socialProofFomo": {
+        "enabled": true,
+        "intervalSeconds": 18,
+        "showRealOrdersOnly": false
+      },
+      "checkoutGuard": {
+        "honeypotEnabled": true,
+        "blockDuplicateOrdersMinutes": 5,
+        "checkoutRateLimitSeconds": 20
       }
+    },
+    "hostingerDbSettings": {
+      "enabled": false,
+      "mode": "mysql_direct",
+      "host": "localhost",
+      "port": 3306,
+      "database": "",
+      "username": "",
+      "password": "",
+      "tablePrefix": "buyone_",
+      "ssl": false,
+      "autoSyncOnOrder": true,
+      "phpBridgeUrl": "",
+      "phpBridgeSecret": ""
+    },
+    "securitySettings": {
+      "loginLockoutEnabled": true,
+      "maxLoginAttempts": 5,
+      "lockoutMinutes": 15,
+      "adminPinEnabled": false,
+      "adminPin": "",
+      "checkoutHoneypotEnabled": true,
+      "checkoutRateLimitSeconds": 20,
+      "blockDuplicateOrdersMinutes": 5,
+      "blockedPhones": [],
+      "enableStrictHeaders": true,
+      "maskPublicSecrets": true
     },
     "updatedAt": {
       "type": "firestore/timestamp/1.0",
-      "seconds": 1794762756,
-      "nanoseconds": 219000000
+      "seconds": 1794846959,
+      "nanoseconds": 693000000
+    },
+    "brandAttributes": {
+      "onPrimary": "#ffffff",
+      "cssAttributeString": "--brand-primary: #059669;\n--brand-primary-hover: #047e58;\n--brand-primary-soft: rgba(5, 150, 105, 0.12);\n--brand-primary-border: rgba(5, 150, 105, 0.32);\n--brand-on-primary: #ffffff;\n--brand-secondary: #00a685;",
+      "primaryBorder": "rgba(5, 150, 105, 0.32)",
+      "primarySoft": "rgba(5, 150, 105, 0.12)",
+      "primaryHover": "#047e58",
+      "generatedAt": "2026-11-15T18:32:03.096Z"
     }
   },
   "spinRewards": [
     {
       "color": "#f43f5e",
-      "id": "spin-1",
       "value": 500,
-      "code": "TEMU500",
       "isTryAgain": false,
-      "labelEn": "৳500 OFF",
       "labelBn": "৳৫০০ ক্যাশ",
-      "discountType": "fixed"
+      "id": "spin-1",
+      "labelEn": "৳500 OFF",
+      "discountType": "fixed",
+      "code": "TEMU500"
     },
     {
-      "code": "FREESHIP",
-      "discountType": "free_shipping",
-      "value": 70,
-      "color": "#0284c7",
       "id": "spin-2",
-      "labelEn": "Free Ship",
+      "discountType": "free_shipping",
       "labelBn": "ফ্রি ডেলিভারি",
-      "isTryAgain": false
+      "labelEn": "Free Ship",
+      "color": "#0284c7",
+      "value": 70,
+      "isTryAgain": false,
+      "code": "FREESHIP"
     },
     {
       "code": "MEGA250",
+      "value": 250,
+      "isTryAgain": false,
+      "color": "#10b981",
+      "labelBn": "৳২৫০ ছাড়",
       "id": "spin-3",
       "labelEn": "৳250 OFF",
-      "labelBn": "৳২৫০ ছাড়",
-      "color": "#10b981",
-      "discountType": "fixed",
-      "value": 250,
-      "isTryAgain": false
+      "discountType": "fixed"
     },
     {
-      "discountType": "percent",
-      "value": 50,
-      "isTryAgain": false,
       "code": "HALFPRICE",
+      "value": 50,
+      "color": "#8b5cf6",
       "id": "spin-4",
       "labelEn": "50% OFF",
+      "isTryAgain": false,
       "labelBn": "৫০% মেগা",
-      "color": "#8b5cf6"
+      "discountType": "percent"
     },
     {
       "isTryAgain": false,
+      "id": "spin-5",
       "color": "#f59e0b",
       "value": 150,
-      "labelEn": "৳150 OFF",
       "labelBn": "৳১৫০ ক্যাশ",
-      "code": "CASH150",
       "discountType": "fixed",
-      "id": "spin-5"
+      "labelEn": "৳150 OFF",
+      "code": "CASH150"
     },
     {
-      "code": "GIFT100",
-      "color": "#059669",
-      "value": 100,
-      "discountType": "fixed",
-      "labelEn": "৳100 OFF",
       "labelBn": "৳১০০ ওয়ালেট",
       "id": "spin-6",
+      "labelEn": "৳100 OFF",
+      "color": "#059669",
+      "value": 100,
+      "code": "GIFT100",
+      "discountType": "fixed",
       "isTryAgain": false
     },
     {
-      "labelEn": "20% OFF",
-      "labelBn": "২০% ভাউচার",
-      "discountType": "percent",
-      "value": 20,
-      "color": "#d97706",
       "id": "spin-7",
+      "labelEn": "20% OFF",
+      "color": "#d97706",
+      "value": 20,
       "isTryAgain": false,
-      "code": "DEAL20"
-    },
-    {
-      "isTryAgain": false,
-      "code": "BONUS300",
-      "color": "#ec4899",
-      "value": 300,
-      "discountType": "fixed",
-      "id": "spin-8",
-      "labelEn": "৳300 OFF",
-      "labelBn": "৳৩০০ বোনাস"
+      "code": "DEAL20",
+      "discountType": "percent",
+      "labelBn": "২০% ভাউচার"
     }
   ],
   "categories": [
     {
-      "nameBn": "স্মার্ট গ্যাজেট",
-      "id": "smart-gadgets",
-      "iconImage": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=240&auto=format&fit=crop&q=80",
-      "slug": "smart-gadgets",
       "order": 1,
+      "isActive": true,
+      "id": "smart-gadgets",
+      "nameEn": "Smart Gadgets",
+      "iconImage": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=240&auto=format&fit=crop&q=80",
+      "nameBn": "স্মার্ট গ্যাজেট",
+      "slug": "smart-gadgets",
       "subcategories": [
         {
+          "image": "https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=200",
           "nameEn": "Smart Watches",
-          "slug": "smart-watches",
           "nameBn": "স্মার্ট ওয়াচ",
-          "image": "https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=200"
+          "slug": "smart-watches"
         },
         {
-          "nameBn": "ব্লুটুথ ইয়ারবাডস",
           "nameEn": "TWS Earbuds",
+          "nameBn": "ব্লুটুথ ইয়ারবাডস",
           "slug": "tws-earbuds",
           "image": "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=200"
         },
         {
+          "image": "https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=200",
           "nameEn": "Power Banks",
           "nameBn": "পাওয়ার ব্যাংক",
-          "image": "https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=200",
           "slug": "power-banks"
         },
         {
-          "slug": "trimmers-shavers",
+          "nameEn": "Trimmers & Shavers",
           "nameBn": "ট্রিমার ও শেভার",
-          "image": "https://images.unsplash.com/photo-1621607512214-68297480165e?w=200",
-          "nameEn": "Trimmers & Shavers"
+          "slug": "trimmers-shavers",
+          "image": "https://images.unsplash.com/photo-1621607512214-68297480165e?w=200"
         }
       ],
-      "icon": "",
-      "nameEn": "Smart Gadgets",
-      "isActive": true
+      "icon": ""
     },
     {
+      "isActive": true,
+      "nameBn": "ফ্যাশন ও লাইফস্টাইল",
+      "nameEn": "Fashion & Lifestyle",
+      "subcategories": [
+        {
+          "image": "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=200",
+          "nameEn": "Polo & T-Shirts",
+          "nameBn": "প্রিমিয়াম টি-শার্ট",
+          "slug": "polo-tshirts"
+        },
+        {
+          "slug": "panjabi-kabli",
+          "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=200",
+          "nameEn": "Panjabi & Kabli",
+          "nameBn": "পাঞ্জাবি ও কাবলি"
+        },
+        {
+          "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=200",
+          "nameEn": "Leather Wallets",
+          "nameBn": "লেদার ওয়ালেট",
+          "slug": "leather-wallets"
+        },
+        {
+          "slug": "sunglasses",
+          "nameEn": "Sunglasses",
+          "nameBn": "সানগ্লাস",
+          "image": "https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=200"
+        }
+      ],
+      "order": 2,
+      "iconImage": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=240&auto=format&fit=crop&q=80",
+      "id": "fashion",
+      "slug": "fashion",
+      "icon": ""
+    },
+    {
+      "nameEn": "Organic Foods & Honey",
+      "order": 3,
+      "iconImage": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=240&auto=format&fit=crop&q=80",
+      "nameBn": "অর্গানিক ফুড ও মধু",
+      "slug": "organic-food",
       "isActive": true,
       "icon": "",
       "subcategories": [
         {
-          "nameEn": "Polo & T-Shirts",
-          "nameBn": "প্রিমিয়াম টি-শার্ট",
-          "image": "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=200",
-          "slug": "polo-tshirts"
-        },
-        {
-          "nameBn": "পাঞ্জাবি ও কাবলি",
-          "slug": "panjabi-kabli",
-          "nameEn": "Panjabi & Kabli",
-          "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=200"
-        },
-        {
-          "nameEn": "Leather Wallets",
-          "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=200",
-          "slug": "leather-wallets",
-          "nameBn": "লেদার ওয়ালেট"
-        },
-        {
-          "nameEn": "Sunglasses",
-          "nameBn": "সানগ্লাস",
-          "image": "https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=200",
-          "slug": "sunglasses"
-        }
-      ],
-      "nameEn": "Fashion & Lifestyle",
-      "id": "fashion",
-      "nameBn": "ফ্যাশন ও লাইফস্টাইল",
-      "order": 2,
-      "slug": "fashion",
-      "iconImage": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=240&auto=format&fit=crop&q=80"
-    },
-    {
-      "nameBn": "অর্গানিক ফুড ও মধু",
-      "subcategories": [
-        {
-          "nameBn": "সুন্দরবনের খাঁটি মধু",
           "nameEn": "Wild Raw Honey",
+          "nameBn": "সুন্দরবনের খাঁটি মধু",
           "slug": "wild-raw-honey",
           "image": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=200"
         },
         {
-          "nameBn": "ঘানির সরিষার তেল",
-          "slug": "mustard-oil",
           "nameEn": "Cold Pressed Mustard Oil",
-          "image": "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=200"
+          "nameBn": "ঘানির সরিষার তেল",
+          "image": "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=200",
+          "slug": "mustard-oil"
         },
         {
-          "image": "https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=200",
           "nameEn": "Pure Desi Ghee",
-          "slug": "pure-ghee",
-          "nameBn": "খাঁটি গাওয়া ঘি"
+          "nameBn": "খাঁটি গাওয়া ঘি",
+          "image": "https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=200",
+          "slug": "pure-ghee"
         },
         {
-          "nameBn": "ড্রাই ফ্রুটস ও বাদাম",
-          "nameEn": "Dry Fruits & Nuts",
           "slug": "dry-fruits",
+          "nameEn": "Dry Fruits & Nuts",
+          "nameBn": "ড্রাই ফ্রুটস ও বাদাম",
           "image": "https://images.unsplash.com/photo-1536591375315-1988d696054a?w=200"
         }
       ],
-      "slug": "organic-food",
-      "id": "organic-food",
-      "iconImage": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=240&auto=format&fit=crop&q=80",
-      "order": 3,
-      "isActive": true,
-      "nameEn": "Organic Foods & Honey",
-      "icon": ""
+      "id": "organic-food"
     },
     {
       "subcategories": [
         {
-          "nameEn": "Premium Roll-on Attar",
-          "nameBn": "জান্নাতুল ফেরদৌস আতর",
+          "slug": "roll-on-attar",
           "image": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=200",
-          "slug": "roll-on-attar"
+          "nameEn": "Premium Roll-on Attar",
+          "nameBn": "জান্নাতুল ফেরদৌস আতর"
         },
         {
           "slug": "digital-tasbih",
-          "image": "https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=200",
           "nameEn": "Digital Tasbih Counter",
-          "nameBn": "ডিজিটাল তসবিহ"
+          "nameBn": "ডিজিটাল তসবিহ",
+          "image": "https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=200"
         },
         {
-          "nameBn": "জায়নামাজ",
           "nameEn": "Luxury Prayer Mat",
-          "slug": "prayer-mats",
-          "image": "https://images.unsplash.com/photo-1609599006353-e629aaabfeae?w=200"
+          "nameBn": "জায়নামাজ",
+          "image": "https://images.unsplash.com/photo-1609599006353-e629aaabfeae?w=200",
+          "slug": "prayer-mats"
         },
         {
           "image": "https://images.unsplash.com/photo-1585036156171-384164a8c675?w=200",
-          "slug": "rehal-stands",
           "nameEn": "Rehal & Stands",
-          "nameBn": "কুরআন স্ট্যান্ড"
+          "nameBn": "কুরআন স্ট্যান্ড",
+          "slug": "rehal-stands"
         }
       ],
-      "nameBn": "ইসলামিক ও আতর",
-      "id": "islamic-lifestyle",
-      "iconImage": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=240&auto=format&fit=crop&q=80",
-      "icon": "",
       "slug": "islamic-lifestyle",
       "isActive": true,
+      "icon": "",
+      "id": "islamic-lifestyle",
+      "nameBn": "ইসলামিক ও আতর",
       "order": 4,
+      "iconImage": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=240&auto=format&fit=crop&q=80",
       "nameEn": "Islamic & Attar"
     },
     {
+      "nameEn": "Home & Kitchen",
+      "id": "home-kitchen",
+      "order": 5,
       "isActive": true,
+      "icon": "",
+      "nameBn": "হোম ও কিচেন",
+      "slug": "home-kitchen",
       "subcategories": [
         {
+          "image": "https://images.unsplash.com/photo-1570222094114-d054a817e56b?w=200",
           "slug": "juicer-blenders",
-          "nameBn": "পোর্টেবল ব্লেন্ডার",
           "nameEn": "Juicer & Blenders",
-          "image": "https://images.unsplash.com/photo-1570222094114-d054a817e56b?w=200"
+          "nameBn": "পোর্টেবল ব্লেন্ডার"
         },
         {
+          "slug": "kitchen-cutters",
           "nameEn": "Kitchen Cutters & Accessories",
           "nameBn": "কিচেন কাটার ও চপার",
-          "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=200",
-          "slug": "kitchen-cutters"
+          "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=200"
         },
         {
+          "nameEn": "Night Lamps & Clocks",
           "nameBn": "স্মার্ট ক্লক ও লাইট",
           "slug": "lamps-clocks",
-          "nameEn": "Night Lamps & Clocks",
           "image": "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=200"
         }
       ],
-      "nameBn": "হোম ও কিচেন",
-      "icon": "",
-      "id": "home-kitchen",
-      "order": 5,
-      "slug": "home-kitchen",
-      "iconImage": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=240&auto=format&fit=crop&q=80",
-      "nameEn": "Home & Kitchen"
+      "iconImage": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=240&auto=format&fit=crop&q=80"
     },
     {
+      "id": "beauty-care",
       "icon": "",
-      "nameBn": "বিউটি ও পার্সোনাল কেয়ার",
-      "order": 6,
+      "nameEn": "Beauty & Personal Care",
       "slug": "beauty-care",
       "isActive": true,
-      "nameEn": "Beauty & Personal Care",
       "subcategories": [
         {
-          "nameBn": "হেয়ার ট্রিমার ও গ্রুমিং",
           "nameEn": "Hair Grooming Kits",
+          "nameBn": "হেয়ার ট্রিমার ও গ্রুমিং",
           "slug": "hair-grooming",
           "image": "https://images.unsplash.com/photo-1621607512214-68297480165e?w=200"
         },
         {
+          "slug": "herbal-skincare",
           "nameEn": "Herbal Skincare",
           "nameBn": "অর্গানিক স্কিনকেয়ার",
-          "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=200",
-          "slug": "herbal-skincare"
+          "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=200"
         },
         {
-          "slug": "body-massagers",
-          "nameBn": "বডি ম্যাসেজার",
           "nameEn": "Body Massagers",
+          "nameBn": "বডি ম্যাসেজার",
+          "slug": "body-massagers",
           "image": "https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=200"
         }
       ],
-      "id": "beauty-care",
+      "nameBn": "বিউটি ও পার্সোনাল কেয়ার",
+      "order": 6,
       "iconImage": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=240&auto=format&fit=crop&q=80"
     }
   ],
   "sliders": [
     {
-      "discountBadgeEn": "65% Mega Offer",
-      "subtitleEn": "Bluetooth calling, heart-rate monitor with 65% mega discount",
-      "linkCategory": "smart-gadgets",
-      "subtitleBn": "ব্লুটুথ কলিং, হার্ট রেট ও মেটাল স্ট্র্যাপ সহ ৬৫% বিশেষ ছাড়ে কিনুন",
-      "buttonTextBn": "১ ক্লিকে এখনই কিনুন",
-      "isActive": true,
       "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=1600&auto=format&fit=crop&q=80",
-      "buttonTextEn": "1-Click Buy Now",
-      "discountBadgeBn": "৬৫% মেগা অফার",
-      "id": "slide-1",
+      "buttonTextBn": "১ ক্লিকে এখনই কিনুন",
       "titleEn": "Super Deal: Ultra Smartwatch & Gadgets Collection",
-      "titleBn": "সুপার ডিল: আল্ট্রা স্মার্টওয়াচ ও গ্যাজেট কালেকশন"
+      "discountBadgeEn": "65% Mega Offer",
+      "id": "slide-1",
+      "isActive": true,
+      "discountBadgeBn": "৬৫% মেগা অফার",
+      "buttonTextEn": "1-Click Buy Now",
+      "subtitleEn": "Bluetooth calling, heart-rate monitor with 65% mega discount",
+      "titleBn": "সুপার ডিল: আল্ট্রা স্মার্টওয়াচ ও গ্যাজেট কালেকশন",
+      "subtitleBn": "ব্লুটুথ কলিং, হার্ট রেট ও মেটাল স্ট্র্যাপ সহ ৬৫% বিশেষ ছাড়ে কিনুন",
+      "linkCategory": "smart-gadgets"
     },
     {
-      "buttonTextBn": "খাঁটি মধু অর্ডার করুন",
-      "id": "slide-2",
-      "isActive": true,
-      "discountBadgeBn": "১০০% অরিজিনাল গ্যারান্টি",
-      "subtitleBn": "কোনো প্রকার চিনি বা প্রিজারভেটিভ ছাড়া ল্যাব টেস্টে শতভাগ খাঁটি",
-      "titleBn": "সুন্দরবনের ১০০% খাঁটি প্রাকৃতিক খলিশা ফুলের মধু",
-      "linkCategory": "organic-food",
       "titleEn": "100% Pure Raw Sundarban Wild Honey",
-      "subtitleEn": "Lab certified zero sugar wild honey directly from forest",
-      "image": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=1600&auto=format&fit=crop&q=80",
       "discountBadgeEn": "100% Pure Guarantee",
-      "buttonTextEn": "Order Pure Honey"
+      "linkCategory": "organic-food",
+      "id": "slide-2",
+      "buttonTextEn": "Order Pure Honey",
+      "isActive": true,
+      "titleBn": "সুন্দরবনের ১০০% খাঁটি প্রাকৃতিক খলিশা ফুলের মধু",
+      "subtitleBn": "কোনো প্রকার চিনি বা প্রিজারভেটিভ ছাড়া ল্যাব টেস্টে শতভাগ খাঁটি",
+      "subtitleEn": "Lab certified zero sugar wild honey directly from forest",
+      "buttonTextBn": "খাঁটি মধু অর্ডার করুন",
+      "discountBadgeBn": "১০০% অরিজিনাল গ্যারান্টি",
+      "image": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=1600&auto=format&fit=crop&q=80"
     },
     {
-      "subtitleBn": "১০০% ফাইন সুতি কাপড়ে নিখুঁত এমব্রয়ডারি কাজ ও এলিগ্যান্ট ফিটিং",
-      "id": "slide-3",
       "titleEn": "Premium Royal Cotton Embroidered Panjabi Set",
-      "titleBn": "প্রিমিয়াম রয়্যাল কটন এমব্রয়ডারি পাঞ্জাবি ও পায়জামা সেট",
-      "buttonTextEn": "View Collection",
+      "subtitleBn": "১০০% ফাইন সুতি কাপড়ে নিখুঁত এমব্রয়ডারি কাজ ও এলিগ্যান্ট ফিটিং",
       "subtitleEn": "100% fine breathable cotton with royal handcrafted embroidery",
-      "isActive": true,
       "discountBadgeBn": "সীমিত স্টক",
       "linkCategory": "fashion",
-      "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1600&auto=format&fit=crop&q=80",
+      "buttonTextEn": "View Collection",
+      "titleBn": "প্রিমিয়াম রয়্যাল কটন এমব্রয়ডারি পাঞ্জাবি ও পায়জামা সেট",
       "buttonTextBn": "কালেকশন দেখুন",
-      "discountBadgeEn": "Limited Stock"
+      "discountBadgeEn": "Limited Stock",
+      "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1600&auto=format&fit=crop&q=80",
+      "id": "slide-3",
+      "isActive": true
     },
     {
-      "titleEn": "14-in-1 Smart Multifunctional Kitchen Vegetable Cutter",
-      "titleBn": "স্মার্ট কিচেন কাটার ও ১৪-ইন-১ মাল্টি চপার গ্যাজেট",
-      "discountBadgeBn": "৳৪৫০ ছাড়",
-      "buttonTextEn": "Grab Kitchen Deal",
       "buttonTextBn": "অফারটি লুফে নিন",
-      "isActive": true,
-      "subtitleBn": "রান্নার সময় অর্ধেক করতে আল্ট্রা শার্প স্টেইনলেস স্টিল কিচেন কাটার",
-      "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=1600&auto=format&fit=crop&q=80",
-      "linkCategory": "home-kitchen",
-      "id": "slide-4",
       "subtitleEn": "Heavy duty blades with instant drainage container basket",
-      "discountBadgeEn": "৳450 Discount"
+      "subtitleBn": "রান্নার সময় অর্ধেক করতে আল্ট্রা শার্প স্টেইনলেস স্টিল কিচেন কাটার",
+      "discountBadgeEn": "৳450 Discount",
+      "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=1600&auto=format&fit=crop&q=80",
+      "titleBn": "স্মার্ট কিচেন কাটার ও ১৪-ইন-১ মাল্টি চপার গ্যাজেট",
+      "isActive": true,
+      "discountBadgeBn": "৳৪৫০ ছাড়",
+      "id": "slide-4",
+      "linkCategory": "home-kitchen",
+      "titleEn": "14-in-1 Smart Multifunctional Kitchen Vegetable Cutter",
+      "buttonTextEn": "Grab Kitchen Deal"
     },
     {
-      "buttonTextEn": "Explore Attar",
-      "subtitleEn": "48+ hours long lasting royal oriental alcohol-free attar",
-      "id": "slide-5",
-      "discountBadgeBn": "হট ডিল",
+      "buttonTextBn": "আতর সংগ্রহ করুন",
       "titleEn": "Jannatul Ferdous Alcohol-Free Pure Perfume Oil (Attar)",
-      "titleBn": "মদিনার খাঁটি জান্নাতুল ফেরদৌস প্রিমিয়াম রোল-অন আতর",
-      "subtitleBn": "৪৮ ঘণ্টারও বেশি স্থায়ী সুরভিময় মিষ্টি সুগন্ধিযুক্ত ১০০% হালাল আতর",
-      "linkCategory": "islamic-lifestyle",
-      "discountBadgeEn": "Hot Deal",
       "image": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=1600&auto=format&fit=crop&q=80",
+      "discountBadgeEn": "Hot Deal",
+      "discountBadgeBn": "হট ডিল",
+      "titleBn": "মদিনার খাঁটি জান্নাতুল ফেরদৌস প্রিমিয়াম রোল-অন আতর",
+      "linkCategory": "islamic-lifestyle",
+      "id": "slide-5",
+      "subtitleBn": "৪৮ ঘণ্টারও বেশি স্থায়ী সুরভিময় মিষ্টি সুগন্ধিযুক্ত ১০০% হালাল আতর",
+      "buttonTextEn": "Explore Attar",
       "isActive": true,
-      "buttonTextBn": "আতর সংগ্রহ করুন"
+      "subtitleEn": "48+ hours long lasting royal oriental alcohol-free attar"
     }
   ],
   "customerAccounts": [
@@ -2063,6 +2232,16 @@
       "date": "৩ দিন আগে",
       "verifiedPurchase": true,
       "isApproved": true
+    },
+    {
+      "id": "REV-1794763098055",
+      "productId": "p1",
+      "customerName": "Test",
+      "rating": 5,
+      "comment": "Awesome product",
+      "date": "11/15/2026",
+      "verifiedPurchase": true,
+      "isApproved": true
     }
   ],
   "priceAlerts": [],
@@ -2104,7 +2283,7 @@
       "height": 630,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.591Z"
     },
     {
       "id": "med-2-7631",
@@ -2115,7 +2294,7 @@
       "height": 525,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.591Z"
     },
     {
       "id": "med-3-7586",
@@ -2126,7 +2305,7 @@
       "height": 525,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.591Z"
     },
     {
       "id": "med-4-7582",
@@ -2137,7 +2316,7 @@
       "height": 525,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.591Z"
     },
     {
       "id": "med-5-7562",
@@ -2148,7 +2327,7 @@
       "height": 525,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.591Z"
     },
     {
       "id": "med-6-7772",
@@ -2159,7 +2338,7 @@
       "height": 525,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.591Z"
     },
     {
       "id": "med-7-7582",
@@ -2170,7 +2349,7 @@
       "height": 400,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.591Z"
     },
     {
       "id": "med-8-7533",
@@ -2181,7 +2360,7 @@
       "height": 400,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.591Z"
     },
     {
       "id": "med-9-7537",
@@ -2192,7 +2371,7 @@
       "height": 400,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-10-7723",
@@ -2203,7 +2382,7 @@
       "height": 400,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-11-7513",
@@ -2214,7 +2393,7 @@
       "height": 400,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-12-7367",
@@ -2225,7 +2404,7 @@
       "height": 400,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-13-7584",
@@ -2236,7 +2415,7 @@
       "height": 600,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-14-7376",
@@ -2247,7 +2426,7 @@
       "height": 600,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-15-7723",
@@ -2258,7 +2437,7 @@
       "height": 600,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-16-7430",
@@ -2269,7 +2448,7 @@
       "height": 600,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-17-7523",
@@ -2280,7 +2459,7 @@
       "height": 600,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-18-7535",
@@ -2291,7 +2470,7 @@
       "height": 600,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-19-7572",
@@ -2302,7 +2481,7 @@
       "height": 600,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-20-7631",
@@ -2313,7 +2492,7 @@
       "height": 600,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-21-7539",
@@ -2324,7 +2503,7 @@
       "height": 600,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-22-7515",
@@ -2335,7 +2514,7 @@
       "height": 600,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-23-7725",
@@ -2346,7 +2525,7 @@
       "height": 600,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     },
     {
       "id": "med-24-7369",
@@ -2357,7 +2536,7 @@
       "height": 600,
       "sizeKb": 120,
       "mimeType": "image/jpeg",
-      "createdAt": "2026-11-13T17:08:04.278Z"
+      "createdAt": "2026-11-15T16:52:15.592Z"
     }
   ]
 }

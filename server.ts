@@ -254,10 +254,127 @@ app.get('/api/tts/sample', async (_req, res) => {
   }
 });
 
-// WhatsApp AI Chat Endpoint
+// Smart A-to-Z Local AI Fallback (Free Auto AI — always responds accurately even without external API keys)
+function buildSmartLocalChatReply(params: {
+  message: string;
+  lang: string;
+  storeName: string;
+  hotline: string;
+  products: any[];
+  orders: any[];
+  assistantDraft?: boolean;
+}) {
+  const { message, lang, storeName, hotline, products, orders, assistantDraft } = params;
+  const q = String(message || '').trim().toLowerCase();
+  const isEn = lang === 'en';
+
+  if (assistantDraft) {
+    return {
+      reply: isEn
+        ? `Hello! Thank you for contacting ${storeName}. Cash on Delivery is available across all 64 districts (Dhaka ৳70, Sub-Dhaka ৳100, Outside ৳130). Please share your preferred product name or order ID so we can confirm right away!`
+        : `আসসালামু আলাইকুম! ${storeName}-এ যোগাযোগ করার জন্য ধন্যবাদ। সারা বাংলাদেশে ক্যাশ অন ডেলিভারি সুবিধা রয়েছে (ঢাকা ৳৭০, সাব-ঢাকা ৳১০০, ঢাকার বাইরে ৳১৩০)। আপনার পছন্দের পণ্যের নাম বা অর্ডার আইডি দিন, আমরা এখনই কনফার্ম করে দিচ্ছি!`,
+      quickActions: []
+    };
+  }
+
+  // Order ID lookup (e.g., BD-..., POS-...)
+  const orderMatch = String(message || '').match(/(BD-[A-Z0-9-]+|POS-[A-Z0-9-]+)/i);
+  if (orderMatch && Array.isArray(orders)) {
+    const ord = orders.find((o: any) => String(o?.id || '').toLowerCase() === orderMatch[1].toLowerCase());
+    if (ord) {
+      const quickActions: any[] = [
+        { label: isEn ? `📍 Track #${ord.id}` : `📍 ট্র্যাক #${ord.id}`, action: `track_${ord.id}` }
+      ];
+      if (ord.status === 'pending' || ord.status === 'on_hold') {
+        quickActions.unshift({
+          label: isEn ? `✅ Confirm #${ord.id} Now` : `✅ #${ord.id} এখনই কনফার্ম করুন`,
+          action: `confirm_order_${ord.id}`
+        });
+      }
+      return {
+        reply: isEn
+          ? `Order #${ord.id} (${ord.customer?.name}) — Status: ${String(ord.status || 'pending').toUpperCase()}, Total: ৳${ord.pricing?.total || 0}. Tap below to confirm or track live!`
+          : `অর্ডার #${ord.id} (${ord.customer?.name}) — বর্তমান অবস্থা: ${String(ord.status || 'pending').toUpperCase()}, মোট বিল: ৳${ord.pricing?.total || 0}। নিচের বাটনে ক্লিক করে কনফার্ম বা লাইভ ট্র্যাক করুন!`,
+        quickActions
+      };
+    }
+  }
+
+  // Confirm order intent
+  if (/confirm|নিশ্চিত|কনফার্ম|ok order|approve/i.test(q) && Array.isArray(orders) && orders.length > 0) {
+    const pendingOrd = orders.find((o: any) => o && (o.status === 'pending' || o.status === 'on_hold'));
+    if (pendingOrd) {
+      return {
+        reply: isEn
+          ? `Found your pending order #${pendingOrd.id} (৳${pendingOrd.pricing?.total}). Tap below to verify & confirm immediately for dispatch!`
+          : `আপনার পেন্ডিং অর্ডার #${pendingOrd.id} (মোট ৳${pendingOrd.pricing?.total}) পাওয়া গেছে। ডিসপ্যাচের জন্য নিচের বাটনে ক্লিক করে এক ক্লিকে কনফার্ম করুন!`,
+        quickActions: [
+          { label: isEn ? `✅ Confirm Order #${pendingOrd.id}` : `✅ অর্ডার #${pendingOrd.id} কনফার্ম করুন`, action: `confirm_order_${pendingOrd.id}` },
+          { label: isEn ? `📍 Track Parcel` : `📍 পার্সেল ট্র্যাক`, action: `track_${pendingOrd.id}` }
+        ]
+      };
+    }
+  }
+
+  // Product matching
+  const matchedProducts = Array.isArray(products)
+    ? products
+        .filter((p: any) => {
+          const hay = `${p.title || ''} ${p.titleBn || ''} ${p.category || ''} ${p.brand || ''} ${(p.tags || []).join(' ')}`.toLowerCase();
+          return q.split(/\s+/).some((tok) => tok.length >= 2 && hay.includes(tok));
+        })
+        .slice(0, 3)
+    : [];
+
+  if (matchedProducts.length > 0) {
+    const lines = matchedProducts
+      .map((p: any, idx: number) => `${idx + 1}. ${isEn ? p.title : p.titleBn || p.title} — ৳${p.price} ${p.stock > 0 ? (isEn ? '(In Stock)' : '(স্টকে আছে)') : (isEn ? '(Out of Stock)' : '(স্টক শেষ)')}`)
+      .join('\n');
+    const quickActions = matchedProducts.flatMap((p: any) =>
+      p.stock > 0
+        ? [{ label: isEn ? `⚡ 1-Click Order: ${p.title.slice(0, 18)}` : `⚡ ১-ক্লিক অর্ডার: ${(p.titleBn || p.title).slice(0, 18)}`, action: `buy_${p.id}` }]
+        : [{ label: isEn ? `🔔 Notify Stock: ${p.title.slice(0, 16)}` : `🔔 স্টক অ্যালার্ট`, action: `view_${p.id}` }]
+    );
+    return {
+      reply: isEn
+        ? `Here are top matching products at ${storeName}:\n${lines}\nTap a button below for instant 1-click checkout!`
+        : `${storeName}-এ আপনার পছন্দের সেরা পণ্যসমূহ:\n${lines}\nনিচের বাটনে ক্লিক করে সরাসরি ১-ক্লিক অর্ডার সম্পন্ন করুন!`,
+      quickActions
+    };
+  }
+
+  if (/delivery|charge|shipping|ডেলিভারি|চার্জ|কুরিয়ার|courier/i.test(q)) {
+    return {
+      reply: isEn
+        ? `Delivery Charges: Dhaka City ৳70 (24h), Sub-Dhaka ৳100, Outside Dhaka ৳130 (48-72h) via Steadfast & Pathao Cash on Delivery. Free shipping items require ৳0 delivery fee!`
+        : `ডেলিভারি চার্জ: ঢাকা সিটি ৳৭০ (২৪ ঘণ্টা), সাব-ঢাকা ৳১০০, সারা বাংলাদেশ ৳১৩০ (৪৮-৭২ ঘণ্টা)। সম্পূর্ণ ক্যাশ অন ডেলিভারি ও আনবক্সিং চেক সুবিধা রয়েছে!`,
+      quickActions: [{ label: isEn ? '🛍️ Browse Products' : '🛍️ সব পণ্য দেখুন', action: 'browse_all' }]
+    };
+  }
+
+  return {
+    reply: isEn
+      ? `Welcome to ${storeName} AI Assistant! I can help you find products, calculate delivery fees, place 1-click orders, confirm pending orders, or track parcels live. Hotline: ${hotline}.`
+      : `স্বাগতম ${storeName} এআই অ্যাসিস্ট্যান্টে! আমি আপনাকে পণ্য খুঁজতে, ১-ক্লিক অর্ডার করতে, পেন্ডিং অর্ডার কনফার্ম করতে এবং পার্সেল ট্র্যাক করতে সাহায্য করতে পারি। হটলাইন: ${hotline}।`,
+    quickActions: [
+      { label: isEn ? '🛍️ View All Products' : '🛍️ সব পণ্য দেখুন', action: 'browse_all' },
+      { label: isEn ? '📍 Track My Order' : '📍 অর্ডার ট্র্যাক করুন', action: 'open_tracking' }
+    ]
+  };
+}
+
+// WhatsApp & Storefront Full-Control A-to-Z AI Chat Endpoint
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message, history = [], keywordRules = [], lang = 'bn', assistantDraft = false } = req.body || {};
+    const {
+      message,
+      history = [],
+      keywordRules = [],
+      lang = 'bn',
+      assistantDraft = false,
+      catalogSummary,
+      recentOrdersSummary
+    } = req.body || {};
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
@@ -276,51 +393,95 @@ app.post('/api/chat', async (req, res) => {
       if (matchedRule) {
         const matchedReply = lang === 'en' ? matchedRule.replyEn || matchedRule.replyBn : matchedRule.replyBn || matchedRule.replyEn;
         if (matchedReply) {
-          return res.json({ reply: matchedReply, matchedKeyword: true });
+          return res.json({ reply: matchedReply, matchedKeyword: true, quickActions: [] });
         }
       }
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
-    }
-
-    const saved = loadStoreData();
+    const saved = loadStoreData() || {};
     const storeName = saved?.settings?.storeName || 'BuyOne BD';
     const hotline = saved?.settings?.hotline || '01886-289663';
+    const productsList = Array.isArray(catalogSummary) ? catalogSummary : Array.isArray(saved?.products) ? saved.products : [];
+    const ordersList = Array.isArray(recentOrdersSummary) ? recentOrdersSummary : Array.isArray(saved?.orders) ? saved.orders : [];
+
+    // Free Auto AI Local fallback if GEMINI_API_KEY is not configured
+    if (!process.env.GEMINI_API_KEY) {
+      const localResult = buildSmartLocalChatReply({
+        message: String(message),
+        lang,
+        storeName,
+        hotline,
+        products: productsList,
+        orders: ordersList,
+        assistantDraft
+      });
+      return res.json({ ...localResult, mode: 'free_auto_local' });
+    }
+
+    const compactCatalog = productsList
+      .slice(0, 20)
+      .map((p: any) => `[id:${p.id}] ${p.titleBn || p.title} (${p.title}) - ৳${p.price} (stock:${p.stock ?? 0})`)
+      .join(' | ');
 
     const systemInstruction = assistantDraft
-      ? `You are drafting a helpful, concise customer care reply on behalf of a live support executive at "${storeName}" in Bangladesh. Reply in ${lang === 'en' ? 'English' : 'polite Bengali (বাংলা)'} matching the customer's question. Be polite, accurate about Cash on Delivery across 64 districts, and concise.`
-      : `You are Sumana, a warm, polite, and enthusiastic customer care executive for "${storeName}", Bangladesh's premier e-commerce store with 1-click checkout and AI auto-call order verification.
-You communicate warmly in Bengali (বাংলা) or English matching the customer's language.
-Store policies:
-- Nationwide delivery across all 64 districts in Bangladesh via Steadfast and Pathao Courier.
-- Delivery Fee: Dhaka City ৳70 (24-48 hours), Sub-Dhaka (Gazipur, Savar, Narayanganj) ৳100, Outside Dhaka ৳130 (48-72 hours).
-- Payment methods: Cash on Delivery (পণ্য হাতে পেয়ে টাকা), bKash (${hotline}), Nagad (${hotline}), Rocket.
-- Every order is confirmed via instant automated phone call.
+      ? `You are drafting a helpful, concise customer care reply on behalf of a live support executive at "${storeName}" in Bangladesh. Reply in ${lang === 'en' ? 'English' : 'polite Bengali (বাংলা)'} matching the customer's question. Available catalog: ${compactCatalog}`
+      : `You are Sumana, a professional A-to-Z Senior E-Commerce AI Sales & Order Verification Agent for "${storeName}" in Bangladesh.
+Communicate naturally in ${lang === 'en' ? 'English' : 'Bengali (বাংলা)'}.
+Live Product Catalog: ${compactCatalog || 'Smartwatch, AirPods, Earbuds, Neckband, Charger'}.
+Policies:
+- Nationwide Cash on Delivery via Steadfast & Pathao across 64 districts.
+- Dhaka City ৳70 (24h), Sub-Dhaka ৳100, Outside Dhaka ৳130 (48-72h).
+- Payment: Cash on Delivery, bKash/Nagad/Rocket (${hotline}), Store Wallet.
 - Hotline: ${hotline}.
-Keep responses concise, helpful, and direct.`;
+Be helpful, concise, and guide customers smoothly from browsing to 1-click checkout or order confirmation.`;
 
     const contents = [
-      ...history.map((h: any) => ({
+      ...history.slice(-8).map((h: any) => ({
         role: h.sender === 'user' || h.sender === 'customer' ? 'user' : 'model',
         parts: [{ text: h.textBn || h.text }]
       })),
       {
         role: 'user',
-        parts: [{ text: message }]
+        parts: [{ text: String(message) }]
       }
     ];
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents,
-      config: {
-        systemInstruction,
-      }
-    });
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents,
+        config: {
+          systemInstruction
+        }
+      });
 
-    return res.json({ reply: response.text });
+      const localHints = buildSmartLocalChatReply({
+        message: String(message),
+        lang,
+        storeName,
+        hotline,
+        products: productsList,
+        orders: ordersList,
+        assistantDraft
+      });
+
+      return res.json({
+        reply: response.text || localHints.reply,
+        quickActions: localHints.quickActions,
+        mode: 'gemini_live'
+      });
+    } catch {
+      const localResult = buildSmartLocalChatReply({
+        message: String(message),
+        lang,
+        storeName,
+        hotline,
+        products: productsList,
+        orders: ordersList,
+        assistantDraft
+      });
+      return res.json({ ...localResult, mode: 'free_auto_fallback' });
+    }
   } catch (err: any) {
     console.error('Chat endpoint error:', err);
     return res.status(500).json({ error: err.message || 'Chat generation failed' });
@@ -579,7 +740,7 @@ app.post('/api/steadfast/balance', async (req, res) => {
   try {
     const { apiKey, secretKey, baseUrl } = resolveSteadfastCreds(req.body);
     if (!apiKey || !secretKey) {
-      return res.status(400).json({ success: false, error: 'Steadfast API Key and Secret Key are required.' });
+      return res.status(400).json({ ok: false, success: false, error: 'Steadfast API Key and Secret Key are required.' });
     }
     const resp = await fetch(`${baseUrl}/get_balance`, {
       method: 'GET',
@@ -598,18 +759,23 @@ app.post('/api/steadfast/balance', async (req, res) => {
     }
     if (!resp.ok || (parsed?.status && parsed.status !== 200)) {
       return res.status(400).json({
+        ok: false,
         success: false,
         error: parsed?.message || parsed?.error || `Steadfast API returned HTTP ${resp.status}`,
         details: parsed
       });
     }
+    const balanceVal = parsed?.current_balance ?? parsed?.balance ?? 0;
     return res.json({
+      ok: true,
       success: true,
-      current_balance: parsed?.current_balance ?? parsed?.balance ?? 0,
+      balance: balanceVal,
+      current_balance: balanceVal,
       data: parsed
     });
   } catch (err: any) {
     return res.status(500).json({
+      ok: false,
       success: false,
       error: err?.message || 'Failed to connect to Steadfast Portal API'
     });
@@ -1608,6 +1774,62 @@ app.post('/api/database/hostinger/order', async (req, res) => {
   } catch (err: any) {
     return res.status(400).json({ success: false, error: err?.message || 'Hostinger order sync failed' });
   }
+});
+
+app.post('/api/database/hostinger/orders', async (req, res) => {
+  const cfg = resolveHostingerConfig(req.body?.config);
+  if (cfg.mode === 'php_bridge') {
+    if (!cfg.phpBridgeUrl) {
+      return res.status(400).json({ success: false, error: 'PHP Bridge URL not set.' });
+    }
+    try {
+      const resp = await fetch(cfg.phpBridgeUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': cfg.phpBridgeSecret },
+        body: JSON.stringify({ action: 'list_orders', tablePrefix: cfg.tablePrefix })
+      });
+      const data = await resp.json().catch(() => null);
+      return res.status(resp.ok ? 200 : 400).json(data || { success: false, orders: [] });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'Bridge orders pull failed' });
+    }
+  }
+  let conn: mysql.Connection | null = null;
+  try {
+    conn = await openHostingerMysqlConnection(cfg);
+    await ensureHostingerMysqlSchema(conn, cfg.tablePrefix);
+    const [ordRows] = await conn.query(`SELECT payload_json FROM \`${cfg.tablePrefix}orders\` ORDER BY updated_at DESC LIMIT 200`);
+    const orders = Array.isArray(ordRows) ? (ordRows as any[]).map((r) => JSON.parse(r.payload_json)) : [];
+    return res.json({ success: true, orders });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err?.message || 'Hostinger orders pull failed' });
+  } finally {
+    if (conn) await conn.end().catch(() => {});
+  }
+});
+
+// Out-of-Stock Waitlist REST Fallback Endpoints
+app.get('/api/waitlist', (_req, res) => {
+  const saved = loadStoreData() || {};
+  return res.json({ success: true, entries: Array.isArray(saved.waitlist) ? saved.waitlist : [] });
+});
+
+app.post('/api/waitlist', (req, res) => {
+  const entry = req.body?.entry || req.body;
+  if (!entry?.productId || !entry?.contact) {
+    return res.status(400).json({ success: false, error: 'productId and contact required.' });
+  }
+  const saved = loadStoreData() || {};
+  const list: any[] = Array.isArray(saved.waitlist) ? saved.waitlist : [];
+  const nextEntry = {
+    ...entry,
+    id: entry.id || `wait-${Date.now()}`,
+    status: entry.status || 'waiting',
+    createdAt: entry.createdAt || new Date().toISOString()
+  };
+  saved.waitlist = [nextEntry, ...list.filter((w) => w && w.id !== nextEntry.id)].slice(0, 500);
+  saveStoreData(saved);
+  return res.json({ success: true, entry: nextEntry });
 });
 
 // Mount Vite or serve static files

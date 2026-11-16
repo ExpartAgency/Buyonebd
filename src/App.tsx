@@ -16,6 +16,7 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AdminLoginModal } from './components/auth/AdminLoginModal';
 import { CustomerLoginModal } from './components/auth/CustomerLoginModal';
 import { ToastContainer } from './components/common/ToastContainer';
+import { WaitlistModal } from './components/common/WaitlistModal';
 import { LuckySpinModal, LuckySpinLeftLauncher } from './components/spin/LuckySpinModal';
 import { SingleProductView } from './components/home/SingleProductView';
 import { CustomerDashboardModal } from './components/customer/CustomerDashboardModal';
@@ -55,8 +56,21 @@ function StoreMainContent() {
 
   const [sortBy, setSortBy] = useState<'default' | 'price_asc' | 'price_desc' | 'rating' | 'discount'>('default');
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
+  const [waitlistProduct, setWaitlistProduct] = useState<Product | null>(null);
+
+  const parseFlashDateMs = (raw?: string): number => {
+    if (!raw) return NaN;
+    const trimmed = String(raw).trim();
+    const dmy = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
+    if (dmy) {
+      const [, dd, mm, yyyy, hh = '23', min = '59'] = dmy;
+      return new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(min), 59).getTime();
+    }
+    return new Date(trimmed).getTime();
+  };
+
   const computeFlashTimeLeft = (endsAtIso?: string) => {
-    const targetMs = endsAtIso ? new Date(endsAtIso).getTime() : NaN;
+    const targetMs = parseFlashDateMs(endsAtIso);
     const diffMs = Number.isFinite(targetMs) ? Math.max(0, targetMs - Date.now()) : 6 * 3600 * 1000;
     const totalSeconds = Math.floor(diffMs / 1000);
     const days = Math.floor(totalSeconds / 86400);
@@ -72,6 +86,39 @@ function StoreMainContent() {
   const [flashTimeLeft, setFlashTimeLeft] = useState(() => computeFlashTimeLeft(settings.flashSale?.endsAt));
   const [isPromoPopupVisible, setIsPromoPopupVisible] = useState(false);
   const [referralBannerCode, setReferralBannerCode] = useState<string | null>(null);
+
+  // Live Favicon Sync from Admin Settings
+  useEffect(() => {
+    const href = settings.faviconUrl?.trim();
+    if (!href) return;
+    let link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    link.href = href;
+  }, [settings.faviconUrl]);
+
+  // Live Microsoft Clarity Connect Injection
+  useEffect(() => {
+    const clarity = settings.marketingSettings?.clarity;
+    const projectId = clarity?.projectId?.trim();
+    if (!clarity?.enabled || !projectId || typeof window === 'undefined') return;
+    const scriptId = 'buyone-clarity-script';
+    if (document.getElementById(scriptId)) return;
+    const win = window as any;
+    win.clarity =
+      win.clarity ||
+      function (...args: any[]) {
+        (win.clarity.q = win.clarity.q || []).push(args);
+      };
+    const script = document.createElement('script');
+    script.id = scriptId;
+    script.async = true;
+    script.src = `https://www.clarity.ms/tag/${encodeURIComponent(projectId)}`;
+    document.head.appendChild(script);
+  }, [settings.marketingSettings?.clarity?.enabled, settings.marketingSettings?.clarity?.projectId]);
 
   useEffect(() => {
     setFlashTimeLeft(computeFlashTimeLeft(settings.flashSale?.endsAt));
@@ -596,6 +643,7 @@ function StoreMainContent() {
                   key={`flash-${prod.id}`}
                   product={prod}
                   onViewDetails={(p) => openProductPage(p)}
+                  onNotifyWaitlist={(p) => setWaitlistProduct(p)}
                 />
               ))}
             </div>
@@ -621,7 +669,10 @@ function StoreMainContent() {
                       id="recently-viewed-heading"
                       className="font-display text-base sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight truncate"
                     >
-                      {t('সম্প্রতি দেখা পণ্য', 'Recently Viewed')}
+                      {t(
+                        settings.cmsTexts?.recentlyViewedTitleBn || 'সম্প্রতি দেখা পণ্য',
+                        settings.cmsTexts?.recentlyViewedTitleEn || 'Recently Viewed'
+                      )}
                     </h2>
                     <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                       {t(
@@ -655,6 +706,7 @@ function StoreMainContent() {
                     key={`recent-${prod.id}`}
                     product={prod}
                     onViewDetails={(p) => openProductPage(p)}
+                    onNotifyWaitlist={(p) => setWaitlistProduct(p)}
                   />
                 ))}
               </div>
@@ -726,6 +778,7 @@ function StoreMainContent() {
                 key={prod.id}
                 product={prod}
                 onViewDetails={(p) => openProductPage(p)}
+                onNotifyWaitlist={(p) => setWaitlistProduct(p)}
               />
             ))}
           </div>
@@ -777,6 +830,7 @@ function StoreMainContent() {
         onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
       />
       <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
+      <WaitlistModal product={waitlistProduct} onClose={() => setWaitlistProduct(null)} />
       <ToastContainer />
 
       {/* Organic Discount Promo Popup (Admin Controlled) */}

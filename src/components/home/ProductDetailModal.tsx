@@ -14,10 +14,13 @@ import {
   Send,
   UserCheck,
   Bell,
-  ArrowRight
+  BellRing,
+  ArrowRight,
+  Tag
 } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
+import { WaitlistModal } from '../common/WaitlistModal';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -47,8 +50,21 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
   const [selectedImageIdx, setSelectedImageIdx] = useState(0);
   const [selectedColor, setSelectedColor] = useState<string>('');
   const [selectedSize, setSelectedSize] = useState<string>('');
+  const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({});
+  const [isWaitlistOpen, setIsWaitlistOpen] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState<'details' | 'video' | 'reviews' | 'alert'>('details');
+
+  useEffect(() => {
+    if (!product) return;
+    setSelectedColor(product.colors?.[0] || '');
+    setSelectedSize(product.sizes?.[0] || '');
+    const initAttrs: Record<string, string> = {};
+    (product.attributes || []).forEach((attr) => {
+      if (attr.name && attr.values?.[0]) initAttrs[attr.name] = attr.values[0];
+    });
+    setSelectedAttributes(initAttrs);
+  }, [product?.id]);
 
   // Interactive Zoom State
   const [isZoomed, setIsZoomed] = useState(false);
@@ -88,8 +104,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
   };
 
   const handleAddToCart = () => {
-    addToCart(product, quantity, activeColor, activeSize);
+    addToCart(product, quantity, activeColor, activeSize, selectedAttributes);
   };
+
+  const isOutOfStock = (product.stock ?? 0) <= 0;
+  const brandLabel = lang === 'bn' ? product.brandBn || product.brand : product.brand || product.brandBn;
 
   const handleShare = () => {
     if (navigator.clipboard) {
@@ -308,10 +327,18 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
             {/* Right: Info & Actions */}
             <div className="flex flex-col justify-between space-y-4">
               <div>
-                <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-                  <span className="font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
-                    {lang === 'bn' ? product.categoryBn : product.category}
-                  </span>
+                <div className="flex items-center justify-between text-xs text-slate-500 mb-1 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+                      {lang === 'bn' ? product.categoryBn : product.category}
+                    </span>
+                    {brandLabel && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[11px]">
+                        <Tag className="w-3 h-3 text-emerald-500" />
+                        {brandLabel}
+                      </span>
+                    )}
+                  </div>
                   <span className="font-mono font-semibold">SKU: {product.sku}</span>
                 </div>
 
@@ -415,6 +442,35 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
                   </div>
                 )}
 
+                {/* Custom Dynamic Attributes */}
+                {product.attributes && product.attributes.length > 0 && (
+                  <div className="mt-3 space-y-2.5">
+                    {product.attributes.map((attr) => (
+                      <div key={attr.id || attr.name}>
+                        <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
+                          {lang === 'bn' ? attr.nameBn || attr.name : attr.name}:
+                        </label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {(attr.values || []).map((val) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => setSelectedAttributes((prev) => ({ ...prev, [attr.name]: val }))}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-medium border cursor-pointer transition-all ${
+                                (selectedAttributes[attr.name] || attr.values[0]) === val
+                                  ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold'
+                                  : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                              }`}
+                            >
+                              {val}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Quantity */}
                 <div className="mt-3 flex items-center gap-3">
                   <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{t('পরিমাণ:', 'Quantity:')}</span>
@@ -440,18 +496,30 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
 
               {/* CTAs */}
               <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  onClick={handleOrderNow}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm py-3.5 px-4 rounded-2xl shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
-                >
-                  <span>{t('এখনই অর্ডার করুন', 'Order Now')}</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                {isOutOfStock ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsWaitlistOpen(true)}
+                    className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm py-3.5 px-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-all"
+                  >
+                    <BellRing className="w-4 h-4" />
+                    <span>{t(settings.singleProductCms?.notifyMeBtnBn || 'স্টকে এলে জানান', settings.singleProductCms?.notifyMeBtnEn || 'Notify Me When Available')}</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleOrderNow}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm py-3.5 px-4 rounded-2xl shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
+                  >
+                    <span>{t('এখনই অর্ডার করুন', 'Order Now')}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                )}
 
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={handleAddToCart}
-                    className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-bold text-xs py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    disabled={isOutOfStock}
+                    className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 text-slate-800 dark:text-white font-bold text-xs py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <ShoppingBag className="w-3.5 h-3.5" />
                     <span>{t('কার্টে রাখুন', 'Add to Cart')}</span>
@@ -655,6 +723,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
           </div>
         )}
       </div>
+      {isWaitlistOpen && (
+        <WaitlistModal product={product} onClose={() => setIsWaitlistOpen(false)} />
+      )}
     </div>
   );
 };
