@@ -213,7 +213,7 @@ export const CustomerLoginModal: React.FC = () => {
                     required
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder={t('যেমন: hossain বা 01886289663', 'e.g. hossain or 01886289663')}
+                    placeholder={t('যেমন: মোবাইল নম্বর 01917942662 বা ইমেইল', 'e.g. 01917942662 or email')}
                     className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
@@ -263,27 +263,6 @@ export const CustomerLoginModal: React.FC = () => {
                 <LogIn className="w-4 h-4" />
                 <span>{t('প্রোফাইলে প্রবেশ করুন', 'Sign In to Profile')}</span>
               </button>
-
-              {/* Quick Demo Credentials Pill */}
-              <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between gap-2 text-[11px]">
-                <div className="text-emerald-800 dark:text-emerald-300">
-                  <span className="font-bold flex items-center gap-1">
-                    <Sparkles className="w-3 h-3" />
-                    {t('ডেমো অ্যাকাউন্ট:', 'Demo Account:')}
-                  </span>
-                  <span className="font-mono">hossain / 123456</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIdentifier('hossain');
-                    setPassword('123456');
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[10px] hover:bg-emerald-500 cursor-pointer shrink-0"
-                >
-                  {t('অটো-ফিল', 'Auto Fill')}
-                </button>
-              </div>
             </form>
           ) : mode === 'forgot' ? (
             forgotStep === 'request' ? (
@@ -299,7 +278,7 @@ export const CustomerLoginModal: React.FC = () => {
                       required
                       value={forgotIdentifier}
                       onChange={(e) => setForgotIdentifier(e.target.value)}
-                      placeholder={t('যেমন: hossain বা 01886289663', 'e.g. hossain or 01886289663')}
+                      placeholder={t('যেমন: 01917942662 বা ইমেইল', 'e.g. 01917942662 or email')}
                       className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>

@@ -25,7 +25,10 @@ import {
   CheckCircle2,
   PlusCircle,
   AlertTriangle,
-  Send
+  Send,
+  RefreshCw,
+  Share2,
+  BellRing
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BD_DISTRICTS } from '../../data/initialData';
@@ -51,6 +54,8 @@ export const CustomerDashboardModal: React.FC = () => {
     products,
     wishlist,
     priceAlerts,
+    waitlistEntries,
+    addToCart,
     setActiveView,
     goHome,
     setTrackingSearchQuery,
@@ -203,7 +208,7 @@ export const CustomerDashboardModal: React.FC = () => {
               </div>
               <div className="bg-white/10 backdrop-blur-md px-3 py-2 rounded-2xl border border-amber-400/30 text-left">
                 <span className="text-[10px] uppercase font-bold text-amber-300 block">
-                  {t('পয়েন্টস', 'Points')}
+                  {t('আমার পয়েন্টস', 'My Points')}
                 </span>
                 <span className="text-base sm:text-lg font-black text-amber-400 font-mono">
                   {customerProfile.loyaltyPoints}
@@ -377,10 +382,10 @@ export const CustomerDashboardModal: React.FC = () => {
               {isAddBalanceOpen && settings.walletSettings?.enabled !== false && (() => {
                 const wCfg = settings.walletSettings;
                 const methodsMap = wCfg?.methods || {
-                  bkash: { enabled: true, label: 'bKash', accountNumber: '01886289663', accountType: 'Personal' },
-                  nagad: { enabled: true, label: 'Nagad', accountNumber: '01886289663', accountType: 'Personal' },
-                  rocket: { enabled: true, label: 'Rocket', accountNumber: '018862896630', accountType: 'Personal' },
-                  upay: { enabled: true, label: 'Upay', accountNumber: '01886289663', accountType: 'Personal' }
+                  bkash: { enabled: true, label: 'bKash', accountNumber: '01917942662', accountType: 'Personal' },
+                  nagad: { enabled: true, label: 'Nagad', accountNumber: '01917942662', accountType: 'Personal' },
+                  rocket: { enabled: true, label: 'Rocket', accountNumber: '01917942662', accountType: 'Personal' },
+                  upay: { enabled: true, label: 'Upay', accountNumber: '01917942662', accountType: 'Personal' }
                 };
                 const enabledMethods = (Object.keys(methodsMap) as WalletTopUpMethod[]).filter(
                   (m) => methodsMap[m]?.enabled !== false
@@ -767,6 +772,35 @@ export const CustomerDashboardModal: React.FC = () => {
                 );
               })()}
 
+              {/* Customer Referral Link & Invite Reward Card */}
+              <div className="bg-white dark:bg-slate-900 rounded-3xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <Share2 className="w-4 h-4 text-emerald-600" />
+                    <span>{t('বন্ধুদের রেফার করুন ও বোনাস পান', 'Invite Friends & Earn Rewards')}</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    {t(
+                      `প্রতিটি সফল রেফারেলে আপনার বন্ধু ৳${settings.organicMarketing?.referralProgram?.refereeDiscountBdt || 100} ছাড় ও আপনি ৳${settings.organicMarketing?.referralProgram?.referrerRewardBdt || 50} বোনাস পাবেন।`,
+                      `Friends get ৳${settings.organicMarketing?.referralProgram?.refereeDiscountBdt || 100} OFF and you earn ৳${settings.organicMarketing?.referralProgram?.referrerRewardBdt || 50} wallet credit.`
+                    )}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const refCode = (customerProfile.username || 'BUYONE').toUpperCase();
+                    const url = `${window.location.origin}/?ref=${encodeURIComponent(refCode)}`;
+                    navigator.clipboard?.writeText(url).catch(() => {});
+                    addToast('success', t('রেফারেল লিংক কপি হয়েছে!', 'Referral Link Copied!'), url);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{t('রেফারেল লিংক কপি', 'Copy Referral Link')}</span>
+                </button>
+              </div>
+
               {/* Buyer Protection Guarantee Badge Strip (Temu Style) */}
               <div className="grid grid-cols-3 gap-2.5 text-center text-[11px] font-bold">
                 <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
@@ -834,13 +868,32 @@ export const CustomerDashboardModal: React.FC = () => {
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => handleTrackOrder(ord.courier.trackingCode || ord.id)}
-                        className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
-                      >
-                        <Truck className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>{t('লাইভ ট্র্যাকিং', 'Live Track')}</span>
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const matchedFirst = products.find((p) => p.id === ord.items?.[0]?.productId);
+                            ord.items?.forEach((it) => {
+                              const found = products.find((p) => p.id === it.productId);
+                              if (found) addToCart(found, it.quantity, it.selectedColor, it.selectedSize, it.selectedAttributes);
+                            });
+                            setIsCustomerDashboardOpen(false);
+                            openOneClickCheckout(ord.items?.length === 1 && matchedFirst ? matchedFirst : null);
+                          }}
+                          className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>{t('আবার অর্ডার', 'Re-Order')}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleTrackOrder(ord.courier.trackingCode || ord.id)}
+                          className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                        >
+                          <Truck className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>{t('লাইভ ট্র্যাকিং', 'Live Track')}</span>
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -977,6 +1030,38 @@ export const CustomerDashboardModal: React.FC = () => {
                       </div>
                       <span className="px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 text-xs font-bold border border-emerald-200 dark:border-emerald-800">
                         {t('সক্রিয়', 'Active')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Out-of-Stock Waitlist Requests */}
+              {waitlistEntries.length > 0 && (
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                  <h4 className="font-black text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <BellRing className="w-3.5 h-3.5 text-amber-500" />
+                    <span>{t('স্টক নোটিফিকেশন ওয়েটলিস্ট', 'Stock Availability Waitlist')}</span>
+                  </h4>
+                  {waitlistEntries.slice(0, 8).map((w) => (
+                    <div
+                      key={w.id}
+                      className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                          {lang === 'bn' ? w.productTitleBn || w.productTitle : w.productTitle}
+                        </p>
+                        <p className="text-[11px] text-slate-500 truncate">{w.contact}</p>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                          w.status === 'notified'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}
+                      >
+                        {w.status === 'notified' ? t('জানানো হয়েছে', 'Notified') : t('অপেক্ষমাণ', 'Waiting')}
                       </span>
                     </div>
                   ))}

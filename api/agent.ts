@@ -126,16 +126,19 @@ function buildLocalAgentPlan(params: {
       summaryLines.push(isEn ? `Triggered recovery on pending abandoned carts.` : `সকল পেন্ডিং কার্ট রিকভারি মেসেজ পাঠানো হয়েছে।`);
     }
 
-    if (/open|go to|show|দেখাও|যাও|pos|পস|partial|আংশিক|loyalty|অর্ডার/i.test(q) && commands.length === 0) {
+    if (/open|go to|show|দেখাও|যাও|pos|পস|partial|আংশিক|loyalty|অর্ডার|seo|এসইও|meta|চ্যাট|কল|support|chat|call/i.test(q) && commands.length === 0) {
       let tab = 'orders';
       if (/pos|পস/i.test(q)) tab = 'pos_system';
       else if (/partial|আংশিক/i.test(q)) tab = 'partial_orders';
+      else if (/seo|এসইও|meta|keyword/i.test(q)) tab = 'seo_metadata';
+      else if (/support|chat|call|সাপোর্ট|চ্যাট|কল/i.test(q)) tab = 'support_desk';
       else if (/abandoned|পরিত্যক্ত/i.test(q)) tab = 'abandoned_carts';
       else if (/loyalty|customer|গ্রাহক/i.test(q)) tab = 'users';
       else if (/product|পণ্য/i.test(q)) tab = 'products';
-      else if (/marketing|মার্কেটিং/i.test(q)) tab = 'marketing_hub';
+      else if (/marketing|মার্কেটিং/i.test(q)) tab = 'marketing';
+      else if (/admin|dashboard|ড্যাশবোর্ড/i.test(q)) tab = 'overview';
       commands.push({ type: 'navigate_admin_tab', payload: { tab } });
-      summaryLines.push(isEn ? `Opened ${tab} panel.` : `${tab} সেকশন খোলা হয়েছে।`);
+      summaryLines.push(isEn ? `Opened ${tab} section in Admin Dashboard.` : `অ্যাডমিন ড্যাশবোর্ডের ${tab} সেকশন খোলা হয়েছে।`);
     }
 
     return {
@@ -149,6 +152,15 @@ function buildLocalAgentPlan(params: {
     };
   }
 
+  if (/admin|dashboard|hossain|অ্যাডমিন|ড্যাশবোর্ড/i.test(q)) {
+    commands.push({ type: 'navigate_store', payload: { view: 'admin' } });
+    return {
+      reply: isEn
+        ? 'Opening the Admin Dashboard (/hossain) portal now — manage Orders, Partial Orders, POS, SEO Metadata, Live Chat & Calls, Products, Loyalty, and Marketing.'
+        : 'অ্যাডমিন ড্যাশবোর্ড (/hossain) পোর্টাল খোলা হচ্ছে — এখান থেকে অর্ডার, পস, লাইভ চ্যাট ও কল, SEO মেটাডাটা এবং সম্পূর্ণ স্টোর পরিচালনা করা যায়।',
+      commands
+    };
+  }
   if (orderMatch && /confirm|কনফার্ম/i.test(q)) {
     commands.push({ type: 'ai_confirm_order', payload: { orderId: orderMatch[1].toUpperCase() } });
     return {
@@ -178,7 +190,7 @@ function buildLocalAgentPlan(params: {
     };
   }
   return {
-    reply: isEn ? 'Ask me to find products, open checkout, confirm your order, or track a parcel!' : 'পণ্য খুঁজতে, অর্ডার করতে বা পার্সেল ট্র্যাক করতে আমাকে বলুন!',
+    reply: isEn ? 'Ask me to find products, open checkout, open admin dashboard, confirm your order, or track a parcel!' : 'পণ্য খুঁজতে, অর্ডার করতে, অ্যাডমিন ড্যাশবোর্ড দেখতে বা পার্সেল ট্র্যাক করতে আমাকে বলুন!',
     commands
   };
 }

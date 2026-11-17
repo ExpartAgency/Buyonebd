@@ -104,6 +104,7 @@ import {
   fetchProductsFromFirestore,
   fetchOrdersFromFirestore
 } from '../firebase';
+import { WebRTCAudioSession } from '../utils/webrtcAudio';
 
 async function safeParseJson<T = any>(res: Response): Promise<T | null> {
   try {
@@ -205,10 +206,11 @@ interface StoreContextType {
   setSelectedSubcategory: (sub: string | null) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
-  storeSubView: 'home' | 'products';
-  setStoreSubView: (view: 'home' | 'products') => void;
+  storeSubView: 'home' | 'products' | 'about';
+  setStoreSubView: (view: 'home' | 'products' | 'about') => void;
   goHome: () => void;
   openAllProductsPage: () => void;
+  openAboutPage: () => void;
   selectCategoryFilter: (catSlug: string, subSlug?: string | null) => void;
   openProductPage: (product: Product) => void;
   navigateToPath: (path: string, replace?: boolean) => void;
@@ -362,21 +364,31 @@ interface StoreContextType {
   trackPixelEvent: (eventName: string, extras?: { urlPath?: string; value?: number; contentName?: string }) => Promise<ServerPixelEvent | null>;
   recordPageVisit: (urlPath: string, pageTitle: string, product?: Product | null, categorySlug?: string) => void;
 
-  // Live Support Chats & Backend Browser Call Desk
+  // Live Support Chats & Backend Browser Call Desk (Real-Time WebSocket + WebRTC + Manual Mode)
   supportChats: SupportChatSession[];
   activeChatSessionId: string;
+  setActiveChatSessionId: (id: string) => void;
+  isLiveSocketConnected: boolean;
   sendCustomerChatMessage: (text: string) => Promise<void>;
   sendAgentChatReply: (sessionId: string, text: string) => void;
   generateAgentAIReply: (sessionId: string) => Promise<string>;
   openOrCreateCustomerChatSession: (name: string, phone: string) => string;
   markChatRead: (sessionId: string) => void;
+  toggleChatManualMode: (sessionId: string, manualMode: boolean) => void;
+  requestHumanSupport: (sessionId?: string) => void;
+  resolveSupportChatSession: (sessionId: string, status: 'open' | 'resolved') => void;
+  deleteSupportChatSession: (sessionId: string) => void;
   browserCalls: BrowserCallSession[];
   activeBrowserCall: BrowserCallSession | null;
+  webrtcAudioStatus: 'idle' | 'connecting' | 'live_audio' | 'text_fallback';
+  isBrowserCallMicMuted: boolean;
+  toggleBrowserCallMicMute: () => void;
   initiateCustomerBrowserCall: (
     order?: Order | null,
-    callerInfo?: { name?: string; phone?: string; autoConnect?: boolean }
+    callerInfo?: { name?: string; phone?: string; autoConnect?: boolean; direction?: 'customer_to_admin' | 'admin_to_customer' }
   ) => string;
   answerBrowserCallFromBackend: (callId: string) => void;
+  answerIncomingCustomerCall: (callId: string) => void;
   appendBrowserCallMessage: (callId: string, speaker: 'customer' | 'assistant' | 'ai', text: string, textBn?: string) => void;
   endBrowserCallSession: (callId: string, confirmed?: boolean) => void;
 
@@ -540,16 +552,39 @@ const LOCAL_STORAGE_SPIN_STATS = 'buyonebd_spin_stats_v3';
 const LOCAL_STORAGE_LANG = 'buyonebd_lang_v3';
 const LOCAL_STORAGE_RECENTLY_VIEWED = 'buyonebd_recently_viewed_v1';
 
-// Deep merger to avoid undefined properties
+// Deep merger to avoid undefined properties & migrate legacy hotline strings non-destructively
+function migrateLegacyPhoneStr(val: any, isWhatsapp = false): any {
+  if (typeof val !== 'string') return val;
+  let out = val
+    .replace(/\+?8801886[-\s]?289663/g, '+8801917942662')
+    .replace(/01886[-\s]?289663/g, isWhatsapp ? '8801917942662' : '+8801917942662')
+    .replace(/01886-BUYONE/gi, '+8801917942662');
+  if (isWhatsapp && out === '+8801917942662') return '8801917942662';
+  return out;
+}
+
 function mergeSettings(raw: any): StoreSettings {
   if (!raw || typeof raw !== 'object') return INITIAL_SETTINGS;
   return {
     ...INITIAL_SETTINGS,
     ...raw,
+    hotline: migrateLegacyPhoneStr(raw.hotline ?? INITIAL_SETTINGS.hotline),
+    whatsappNumber: migrateLegacyPhoneStr(raw.whatsappNumber ?? INITIAL_SETTINGS.whatsappNumber, true),
     deliveryFees: { ...INITIAL_SETTINGS.deliveryFees, ...(raw.deliveryFees || {}) },
-    paymentSettings: { ...INITIAL_SETTINGS.paymentSettings, ...(raw.paymentSettings || {}) },
+    paymentSettings: {
+      ...INITIAL_SETTINGS.paymentSettings,
+      ...(raw.paymentSettings || {}),
+      bkashMerchant: migrateLegacyPhoneStr(raw.paymentSettings?.bkashMerchant ?? INITIAL_SETTINGS.paymentSettings.bkashMerchant),
+      nagadMerchant: migrateLegacyPhoneStr(raw.paymentSettings?.nagadMerchant ?? INITIAL_SETTINGS.paymentSettings.nagadMerchant),
+      rocketMerchant: migrateLegacyPhoneStr(raw.paymentSettings?.rocketMerchant ?? INITIAL_SETTINGS.paymentSettings.rocketMerchant)
+    },
     aiCallSettings: { ...INITIAL_SETTINGS.aiCallSettings, ...(raw.aiCallSettings || {}) },
-    announcementBar: { ...INITIAL_SETTINGS.announcementBar, ...(raw.announcementBar || {}) },
+    announcementBar: {
+      ...INITIAL_SETTINGS.announcementBar,
+      ...(raw.announcementBar || {}),
+      textBn: migrateLegacyPhoneStr(raw.announcementBar?.textBn ?? INITIAL_SETTINGS.announcementBar.textBn),
+      textEn: migrateLegacyPhoneStr(raw.announcementBar?.textEn ?? INITIAL_SETTINGS.announcementBar.textEn)
+    },
     themeColors: { ...INITIAL_SETTINGS.themeColors!, ...(raw.themeColors || {}) },
     cmsTexts: { ...INITIAL_SETTINGS.cmsTexts!, ...(raw.cmsTexts || {}) },
     seoSettings: { ...INITIAL_SETTINGS.seoSettings!, ...(raw.seoSettings || {}) },
@@ -1231,11 +1266,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return norm === '/hossain' || norm.startsWith('/hossain/') || h === '#hossain';
   };
 
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
-    return localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true';
-  });
+  // Require explicit admin credential input every visit/reload on /hossain
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(false);
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState<boolean>(() => {
-    return isHossainPathInitial() && localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) !== 'true';
+    return isHossainPathInitial();
   });
   const [firebaseAdminUserEmail, setFirebaseAdminUserEmail] = useState<string | null>(() => {
     return auth.currentUser?.email || null;
@@ -1535,12 +1569,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setIsFirebaseAdminConnected(true);
           setCloudSyncError(null);
           ensureAdminDocInFirestore().catch(() => {});
-          if (isHossainPathInitial()) {
-            setIsAdminLoggedIn(true);
-            localStorage.setItem(LOCAL_STORAGE_ADMIN_AUTH, 'true');
-            setIsAdminLoginOpen(false);
-            setActiveViewState('admin');
-          }
         } else {
           try {
             const admSnap = await getDoc(doc(db, 'admins', user.uid));
@@ -1824,7 +1852,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       {
         name: 'হোসেন আহমেদ',
         username: 'hossain',
-        phone: '01886289663',
+        phone: '01917942662',
         email: 'customer@buyonebd.com',
         address: 'বাড়ি ১২, রোড ৫, ধানমন্ডি',
         district: 'Dhaka - Inside City',
@@ -1848,7 +1876,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const defaultProfile: CustomerProfile = {
       name: 'হোসেন আহমেদ',
       username: 'hossain',
-      phone: '01886289663',
+      phone: '01917942662',
       email: 'customer@buyonebd.com',
       address: 'বাড়ি ১২, রোড ৫, ধানমন্ডি',
       district: 'Dhaka - Inside City',
@@ -2139,10 +2167,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       {
         id: 'TOPUP-9012',
         customerName: 'হোসেন আহমেদ',
-        customerPhone: '01886289663',
+        customerPhone: '01917942662',
         method: 'bkash',
         amount: 500,
-        senderNumber: '01886289663',
+        senderNumber: '01917942662',
         trxId: 'BKS8890124',
         status: 'pending',
         createdAt: new Date(Date.now() - 1800000).toISOString()
@@ -3237,7 +3265,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [storeSubView, setStoreSubView] = useState<'home' | 'products'>('home');
+  const [storeSubView, setStoreSubView] = useState<'home' | 'products' | 'about'>('home');
 
   const [isCartOpen, setIsCartOpenState] = useState(false);
   const [checkoutProduct, setCheckoutProduct] = useState<Product | null>(null);
@@ -3248,9 +3276,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [activeView, setActiveViewState] = useState<'store' | 'admin' | 'tracking'>(() => {
     if (typeof window !== 'undefined') {
       const p = window.location.pathname.replace(/\/+$/, '').toLowerCase() || '/';
-      if ((p === '/hossain' || p.startsWith('/hossain/') || window.location.hash.toLowerCase() === '#hossain') && localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true') {
-        return 'admin';
-      }
       if (p === '/tracking') return 'tracking';
     }
     return 'store';
@@ -3275,6 +3300,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
 
+  // Persistent Visitor ID for isolated real-time live chat & call routing across browsers
+  const [visitorSessionId] = useState<string>(() => {
+    try {
+      const existing = localStorage.getItem('buyonebd_visitor_id_v1');
+      if (existing) return existing;
+      const fresh = `vis-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+      localStorage.setItem('buyonebd_visitor_id_v1', fresh);
+      return fresh;
+    } catch {
+      return `vis-${Date.now().toString(36)}`;
+    }
+  });
+
   // Bidirectional Live Support Chats & Browser Calls
   const [supportChats, setSupportChats] = useState<SupportChatSession[]>(() => {
     try {
@@ -3285,8 +3323,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       {
         id: 'chat-default-1',
         customerName: 'সম্মানিত গ্রাহক',
-        customerPhone: '01886289663',
+        customerPhone: '01917942662',
         status: 'open',
+        manualMode: false,
         lastUpdated: new Date().toISOString(),
         unreadByAdmin: 0,
         messages: [
@@ -3299,15 +3338,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             quickActions: [
               { label: '📦 ট্র্যাক অর্ডার', action: 'track' },
               { label: '🔥 ফ্ল্যাশ ডিলস', action: 'deals' },
-              { label: '🚚 ডেলিভারি চার্জ', action: 'delivery' },
-              { label: '🎡 স্পিন অফার', action: 'open_spin' }
+              { label: '👤 হিউম্যান সাপোর্ট', action: 'request_human' },
+              { label: '🛡️ অ্যাডমিন ড্যাশবোর্ড', action: 'open_admin' }
             ]
           }
         ]
       }
     ];
   });
-  const [activeChatSessionId, setActiveChatSessionId] = useState<string>('chat-default-1');
+  const [activeChatSessionId, setActiveChatSessionId] = useState<string>(() => {
+    try {
+      const savedId = localStorage.getItem('buyonebd_active_chat_id_v1');
+      if (savedId) return savedId;
+    } catch {}
+    const generated = `chat-${visitorSessionId}`;
+    try {
+      localStorage.setItem('buyonebd_active_chat_id_v1', generated);
+    } catch {}
+    return generated;
+  });
 
   const [browserCalls, setBrowserCalls] = useState<BrowserCallSession[]>(() => {
     try {
@@ -3319,6 +3368,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
   const [activeBrowserCallId, setActiveBrowserCallId] = useState<string | null>(null);
   const activeBrowserCall = browserCalls.find((c) => c.id === activeBrowserCallId) || null;
+  const [isLiveSocketConnected, setIsLiveSocketConnected] = useState(false);
+  const [webrtcAudioStatus, setWebrtcAudioStatus] = useState<'idle' | 'connecting' | 'live_audio' | 'text_fallback'>('idle');
+  const [isBrowserCallMicMuted, setIsBrowserCallMicMuted] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const webrtcSessionRef = useRef<WebRTCAudioSession | null>(null);
 
   // AI Call Engine state
   const [activeCallOrder, setActiveCallOrder] = useState<Order | null>(null);
@@ -3436,6 +3490,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(ev)
     }).catch(() => {});
+
+    let timezone = '';
+    try {
+      timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    } catch {}
+    fetch('/api/analytics/visit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        urlPath,
+        pageTitle,
+        timezone,
+        customerName: ev.customerName,
+        customerPhone: ev.customerPhone
+      })
+    }).catch(() => {});
   };
 
   // SEO-friendly URL Navigation Helpers
@@ -3468,6 +3538,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           ? `/product/${selectedProductForPage.seo?.slug || selectedProductForPage.id}`
           : storeSubView === 'products'
           ? '/products'
+          : storeSubView === 'about'
+          ? '/about'
           : '/';
         navigateToPath(target);
       }
@@ -3484,6 +3556,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ? `/product/${selectedProductForPage.seo?.slug || selectedProductForPage.id}`
         : storeSubView === 'products'
         ? '/products'
+        : storeSubView === 'about'
+        ? '/about'
         : '/';
       navigateToPath(target, true);
     }
@@ -3512,6 +3586,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setSelectedSubcategory(null);
     navigateToPath('/products');
     recordPageVisit('/products', t('সকল পণ্য', 'All Products'));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openAboutPage = () => {
+    setActiveViewState('store');
+    setStoreSubView('about');
+    setSelectedProductForPage(null);
+    setIsCartOpenState(false);
+    setIsOneClickOpen(false);
+    navigateToPath('/about');
+    recordPageVisit('/about', t('আমাদের সম্পর্কে ও সেবা সমূহ', 'About BuyOne BD'));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -3590,6 +3675,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setSelectedProductForPage(null);
         setSelectedCategory('all');
         setSelectedSubcategory(null);
+        return;
+      }
+      if (lowerPath === '/about') {
+        setActiveViewState('store');
+        setStoreSubView('about');
+        setSelectedProductForPage(null);
         return;
       }
       if (lowerPath.startsWith('/product/')) {
@@ -3723,7 +3814,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const fetchStoreSnapshotFromServer = async (notifyOnNewOrders = false) => {
     try {
       // 1. Pull from Express server snapshot if available
-      const isAdminSess = localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true';
+      const isAdminSess = isAdminLoggedInRef.current;
       const res = await fetch(`/api/store/sync?t=${Date.now()}`, {
         cache: 'no-store',
         headers: isAdminSess ? { 'x-admin-session': 'buyone-admin-verified' } : undefined
@@ -4159,7 +4250,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (!hasHydratedFromServerRef.current) return;
     const syncTimer = setTimeout(() => {
-      const isAdminSess = localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true';
+      const isAdminSess = isAdminLoggedInRef.current;
       fetch('/api/store/sync', {
         method: 'POST',
         headers: {
@@ -4186,7 +4277,88 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => clearTimeout(syncTimer);
   }, [products, orders, settings, categories, sliders, customerAccounts, walletTopUps, abandonedCarts, reviews, priceAlerts, users]);
 
-  // Fetch initial support state on mount + poll every 2.5s when Support Desk / Chat / Admin is open
+  // Idempotent local merge helpers so WS & REST snapshots never drop concurrent messages
+  const mergeChatsLocal = (prev: SupportChatSession[], incoming: SupportChatSession[]): SupportChatSession[] => {
+    const map = new Map<string, SupportChatSession>();
+    prev.forEach((s) => { if (s?.id) map.set(s.id, s); });
+    incoming.forEach((s) => {
+      if (!s?.id) return;
+      const old = map.get(s.id);
+      if (!old) {
+        map.set(s.id, s);
+        return;
+      }
+      const msgMap = new Map(old.messages.map((m) => [m.id, m]));
+      (s.messages || []).forEach((m) => { if (m?.id) msgMap.set(m.id, m); });
+      const newer = new Date(s.lastUpdated || 0).getTime() >= new Date(old.lastUpdated || 0).getTime() ? s : old;
+      map.set(s.id, { ...old, ...newer, messages: Array.from(msgMap.values()) });
+    });
+    return Array.from(map.values())
+      .sort((a, b) => new Date(b.lastUpdated || 0).getTime() - new Date(a.lastUpdated || 0).getTime())
+      .slice(0, 60);
+  };
+
+  const mergeCallsLocal = (prev: BrowserCallSession[], incoming: BrowserCallSession[]): BrowserCallSession[] => {
+    const map = new Map<string, BrowserCallSession>();
+    prev.forEach((c) => { if (c?.id) map.set(c.id, c); });
+    incoming.forEach((c) => {
+      if (!c?.id) return;
+      const old = map.get(c.id);
+      if (!old) {
+        map.set(c.id, c);
+        return;
+      }
+      const txMap = new Map(old.transcript.map((t) => [t.id, t]));
+      (c.transcript || []).forEach((t) => { if (t?.id) txMap.set(t.id, t); });
+      const rank = (st: string) => (st === 'ended' ? 3 : st === 'connected' ? 2 : 1);
+      const chosenStatus = rank(c.status) >= rank(old.status) ? c.status : old.status;
+      map.set(c.id, {
+        ...old,
+        ...c,
+        status: chosenStatus,
+        answeredBy: c.answeredBy || old.answeredBy,
+        endedAt: c.endedAt || old.endedAt,
+        durationSeconds: Math.max(old.durationSeconds || 0, c.durationSeconds || 0),
+        transcript: Array.from(txMap.values())
+      });
+    });
+    return Array.from(map.values())
+      .sort((a, b) => new Date(b.startedAt || 0).getTime() - new Date(a.startedAt || 0).getTime())
+      .slice(0, 60);
+  };
+
+  const sendWsEvent = (payload: any): boolean => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify(payload));
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  };
+
+  const getOrCreateWebRtcSession = () => {
+    if (!webrtcSessionRef.current) {
+      webrtcSessionRef.current = new WebRTCAudioSession({
+        sendSignal: (payload) => sendWsEvent(payload),
+        onStatusChange: (status) => setWebrtcAudioStatus(status)
+      });
+    }
+    return webrtcSessionRef.current;
+  };
+
+  const toggleBrowserCallMicMute = () => {
+    setIsBrowserCallMicMuted((prev) => {
+      const next = !prev;
+      webrtcSessionRef.current?.setMuted(next);
+      return next;
+    });
+  };
+
+  // Real-time WebSocket connection (/ws) + automatic WebRTC audio signaling + fallback state sync
   const fetchSupportStateFromServer = () => {
     fetch('/api/support/state')
       .then((r) => safeParseJson<any>(r))
@@ -4199,29 +4371,144 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setServerPixelEvents(data.pixelEvents);
         }
         if (Array.isArray(data.supportChats) && data.supportChats.length > 0) {
-          setSupportChats(data.supportChats);
+          setSupportChats((prev) => mergeChatsLocal(prev, data.supportChats));
         }
         if (Array.isArray(data.browserCalls) && data.browserCalls.length > 0) {
-          setBrowserCalls(data.browserCalls);
+          setBrowserCalls((prev) => mergeCallsLocal(prev, data.browserCalls));
         }
       })
       .catch(() => {});
   };
 
+  const activeBrowserCallIdRef = useRef(activeBrowserCallId);
+  activeBrowserCallIdRef.current = activeBrowserCallId;
+  const customerPhoneRef = useRef(customerProfile.phone);
+  customerPhoneRef.current = customerProfile.phone;
+
   useEffect(() => {
     fetchSupportStateFromServer();
-  }, []);
+    if (typeof window === 'undefined' || typeof WebSocket === 'undefined') return;
+
+    let disposed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connectWs = () => {
+      if (disposed) return;
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${proto}//${window.location.host}/ws`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setIsLiveSocketConnected(true);
+      };
+
+      ws.onmessage = (event) => {
+        let msg: any = null;
+        try {
+          msg = JSON.parse(event.data);
+        } catch {
+          return;
+        }
+        if (!msg?.type) return;
+
+        if (msg.type === 'support:init') {
+          if (Array.isArray(msg.supportChats) && msg.supportChats.length > 0) {
+            setSupportChats((prev) => mergeChatsLocal(prev, msg.supportChats));
+          }
+          if (Array.isArray(msg.browserCalls) && msg.browserCalls.length > 0) {
+            setBrowserCalls((prev) => mergeCallsLocal(prev, msg.browserCalls));
+          }
+          return;
+        }
+
+        if (msg.type === 'chat:sync' && Array.isArray(msg.supportChats)) {
+          setSupportChats(msg.supportChats);
+          try {
+            localStorage.setItem('buyonebd_support_chats_v3', JSON.stringify(msg.supportChats));
+          } catch {}
+          return;
+        }
+
+        if (msg.type === 'call:sync' && Array.isArray(msg.browserCalls)) {
+          setBrowserCalls(msg.browserCalls);
+          try {
+            localStorage.setItem('buyonebd_browser_calls_v3', JSON.stringify(msg.browserCalls));
+          } catch {}
+
+          // If Admin placed a call to a customer, auto-ring the storefront modal on matching visitor or active storefront
+          if (activeViewRef.current !== 'admin' && !activeBrowserCallIdRef.current) {
+            const incomingForCustomer = (msg.browserCalls as BrowserCallSession[]).find((c) => {
+              if (c.status !== 'ringing_customer' || c.direction !== 'admin_to_customer') return false;
+              const myPhone = String(customerPhoneRef.current || '').replace(/[^0-9]/g, '').slice(-11);
+              const targetPhone = String(c.customerPhone || '').replace(/[^0-9]/g, '').slice(-11);
+              if (c.visitorSessionId && c.visitorSessionId === visitorSessionId) return true;
+              if (myPhone && targetPhone && myPhone === targetPhone) return true;
+              return !c.visitorSessionId;
+            });
+            if (incomingForCustomer) {
+              setActiveBrowserCallId(incomingForCustomer.id);
+              setIsCallRinging(true);
+              setIsCallActive(false);
+            }
+          }
+          return;
+        }
+
+        if (msg.type === 'webrtc:offer' && msg.callId && msg.sdp) {
+          getOrCreateWebRtcSession().handleIncomingOffer(msg.callId, msg.sdp);
+          return;
+        }
+        if (msg.type === 'webrtc:answer' && msg.callId && msg.sdp) {
+          getOrCreateWebRtcSession().handleIncomingAnswer(msg.callId, msg.sdp);
+          return;
+        }
+        if (msg.type === 'webrtc:ice' && msg.callId && msg.candidate) {
+          getOrCreateWebRtcSession().handleIncomingIce(msg.callId, msg.candidate);
+          return;
+        }
+        if (msg.type === 'webrtc:hangup') {
+          webrtcSessionRef.current?.close(false);
+          setIsBrowserCallMicMuted(false);
+        }
+      };
+
+      ws.onclose = () => {
+        setIsLiveSocketConnected(false);
+        if (!disposed) {
+          reconnectTimer = setTimeout(connectWs, 2500);
+        }
+      };
+
+      ws.onerror = () => {
+        setIsLiveSocketConnected(false);
+      };
+    };
+
+    connectWs();
+
+    return () => {
+      disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      try {
+        wsRef.current?.close();
+      } catch {}
+      webrtcSessionRef.current?.close(false);
+    };
+  }, [visitorSessionId]);
 
   useEffect(() => {
     if (!isWhatsAppOpen && activeView !== 'admin' && !activeBrowserCallId && !isCallRinging && !isCallActive) {
       return;
     }
-    const poll = setInterval(fetchSupportStateFromServer, 2500);
+    const poll = setInterval(fetchSupportStateFromServer, 6000);
     return () => clearInterval(poll);
   }, [isWhatsAppOpen, activeView, activeBrowserCallId, isCallRinging, isCallActive]);
 
   const syncChatsToServer = (nextChats: SupportChatSession[]) => {
-    localStorage.setItem('buyonebd_support_chats_v3', JSON.stringify(nextChats));
+    try {
+      localStorage.setItem('buyonebd_support_chats_v3', JSON.stringify(nextChats));
+    } catch {}
     fetch('/api/support/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4230,7 +4517,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const syncCallsToServer = (nextCalls: BrowserCallSession[]) => {
-    localStorage.setItem('buyonebd_browser_calls_v3', JSON.stringify(nextCalls));
+    try {
+      localStorage.setItem('buyonebd_browser_calls_v3', JSON.stringify(nextCalls));
+    } catch {}
     fetch('/api/support/call', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4238,20 +4527,131 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }).catch(() => {});
   };
 
-  // Bidirectional Chat Actions (Customer + Backend Assistant + A-to-Z AI Order & Shopping Control)
+  const toggleChatManualMode = (sessionId: string, manualMode: boolean) => {
+    setSupportChats((prev) => {
+      const next = prev.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              manualMode,
+              assignedAgent: manualMode ? 'Live Admin Support' : undefined,
+              lastUpdated: new Date().toISOString()
+            }
+          : s
+      );
+      syncChatsToServer(next);
+      return next;
+    });
+    sendWsEvent({
+      type: 'chat:update_session',
+      sessionId,
+      patch: {
+        manualMode,
+        assignedAgent: manualMode ? 'Live Admin Support' : null,
+        lastUpdated: new Date().toISOString()
+      }
+    });
+    addToast(
+      'info',
+      manualMode ? t('ম্যানুয়াল সাপোর্ট চালু', 'Manual Support Mode Active') : t('AI অটো-উত্তর চালু', 'AI Auto-Reply Resumed'),
+      manualMode
+        ? t('এআই বট বিরতি দেওয়া হয়েছে — এখন সরাসরি অ্যাডমিন চ্যাট করবেন।', 'AI bot paused on this thread for direct manual support.')
+        : t('এই থ্রেডে AI সহায়তা পুনরায় সক্রিয় হয়েছে।', 'AI assistant auto-replies resumed on this thread.')
+    );
+  };
+
+  const requestHumanSupport = (sessionId?: string) => {
+    const targetId = sessionId || activeChatSessionId || `chat-${visitorSessionId}`;
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const noticeMsg: SupportChatMessage = {
+      id: `human-req-${Date.now()}`,
+      sender: 'assistant',
+      text: 'Live human support mode enabled. Please write your message — our admin team has been notified immediately and will reply directly.',
+      textBn: 'সরাসরি হিউম্যান সাপোর্ট চালু হয়েছে। আপনার প্রশ্ন লিখুন — আমাদের অ্যাডমিন এখনই ম্যানুয়ালি উত্তর দেবেন।',
+      time
+    };
+
+    setSupportChats((prev) => {
+      const exists = prev.some((s) => s.id === targetId);
+      const next = exists
+        ? prev.map((s) =>
+            s.id === targetId
+              ? {
+                  ...s,
+                  manualMode: true,
+                  assignedAgent: 'Live Admin Support',
+                  unreadByAdmin: (s.unreadByAdmin || 0) + 1,
+                  lastUpdated: new Date().toISOString(),
+                  messages: [...s.messages, noticeMsg]
+                }
+              : s
+          )
+        : [
+            {
+              id: targetId,
+              customerName: customerProfile.name || t('সম্মানিত গ্রাহক', 'Customer'),
+              customerPhone: customerProfile.phone || '',
+              status: 'open' as const,
+              manualMode: true,
+              assignedAgent: 'Live Admin Support',
+              lastUpdated: new Date().toISOString(),
+              unreadByAdmin: 1,
+              messages: [noticeMsg]
+            },
+            ...prev
+          ];
+      syncChatsToServer(next);
+      return next;
+    });
+    sendWsEvent({
+      type: 'chat:append_message',
+      sessionId: targetId,
+      message: noticeMsg,
+      sessionMeta: {
+        customerName: customerProfile.name || 'Customer',
+        customerPhone: customerProfile.phone || '',
+        manualMode: true,
+        assignedAgent: 'Live Admin Support',
+        unreadByAdmin: 1
+      }
+    });
+  };
+
+  const resolveSupportChatSession = (sessionId: string, status: 'open' | 'resolved') => {
+    setSupportChats((prev) => {
+      const next = prev.map((s) => (s.id === sessionId ? { ...s, status, lastUpdated: new Date().toISOString() } : s));
+      syncChatsToServer(next);
+      return next;
+    });
+    sendWsEvent({ type: 'chat:update_session', sessionId, patch: { status, lastUpdated: new Date().toISOString() } });
+  };
+
+  const deleteSupportChatSession = (sessionId: string) => {
+    setSupportChats((prev) => {
+      const next = prev.filter((s) => s.id !== sessionId);
+      syncChatsToServer(next);
+      return next;
+    });
+    sendWsEvent({ type: 'chat:delete_session', sessionId });
+    addToast('info', t('চ্যাট থ্রেড মুছে ফেলা হয়েছে', 'Chat Thread Deleted'), sessionId);
+  };
+
+  // Bidirectional Chat Actions (Customer + Manual Admin Support + A-to-Z AI Order & Shopping Control)
   const sendCustomerChatMessage = async (rawText: string) => {
     const query = rawText.trim();
     if (!query) return;
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const customerMsg: SupportChatMessage = {
-      id: `msg-${Date.now()}`,
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
       sender: 'customer',
       text: query,
       textBn: query,
       time
     };
 
-    const sessId = activeChatSessionId || supportChats[0]?.id || 'chat-default-1';
+    const sessId = activeChatSessionId || `chat-${visitorSessionId}`;
+    const currentSessSnapshot = supportChats.find((s) => s.id === sessId);
+    const isManualThread = Boolean(currentSessSnapshot?.manualMode);
     let sessionHistory: SupportChatMessage[] = [];
 
     setSupportChats((prev) => {
@@ -4277,6 +4677,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               customerName: customerProfile.name || 'সম্মানিত গ্রাহক',
               customerPhone: customerProfile.phone,
               status: 'open' as const,
+              manualMode: false,
               lastUpdated: new Date().toISOString(),
               unreadByAdmin: 1,
               messages: [customerMsg]
@@ -4286,6 +4687,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       syncChatsToServer(next);
       return next;
     });
+
+    sendWsEvent({
+      type: 'chat:append_message',
+      sessionId: sessId,
+      message: customerMsg,
+      sessionMeta: {
+        customerName: customerProfile.name || currentSessSnapshot?.customerName || 'সম্মানিত গ্রাহক',
+        customerPhone: customerProfile.phone || currentSessSnapshot?.customerPhone || '',
+        unreadByAdmin: (currentSessSnapshot?.unreadByAdmin || 0) + 1
+      }
+    });
+
+    // If customer wants manual human support via keyword, switch thread cleanly and pause AI bot
+    const q = query.toLowerCase();
+    if (/(human|agent|manual|admin support|talk to agent|ম্যানুয়াল|অ্যাডমিন|সরাসরি কথা)/i.test(q) && !/dashboard|ড্যাশবোর্ড/i.test(q)) {
+      requestHumanSupport(sessId);
+      return;
+    }
+
+    // If Manual Support Mode is enabled by Admin or Customer, DO NOT let AI bot talk over human admin
+    if (isManualThread) {
+      return;
+    }
 
     const appendBotMsg = (replyMsg: SupportChatMessage) => {
       setSupportChats((prev) => {
@@ -4297,9 +4721,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         syncChatsToServer(next);
         return next;
       });
+      sendWsEvent({
+        type: 'chat:append_message',
+        sessionId: sessId,
+        message: replyMsg
+      });
     };
 
-    const q = query.toLowerCase();
+    // Show & explain Admin Dashboard when requested by anyone
+    if (/(admin dashboard|admin panel|open admin|show admin|\/hossain|অ্যাডমিন ড্যাশবোর্ড|এডমিন প্যানেল)/i.test(q)) {
+      appendBotMsg({
+        id: `bot-${Date.now()}`,
+        sender: 'bot',
+        text: `BuyOne BD Admin Dashboard (/hossain) includes full control over Orders, Partial Orders, POS Terminal, Live Chat & Voice Call Desk, Real-Time SEO Metadata Studio, Products, Loyalty Points, Abandoned Carts, and Marketing.`,
+        textBn: `BuyOne BD অ্যাডমিন ড্যাশবোর্ডে (/hossain) অর্ডার, আংশিক পেমেন্ট, পস (POS), লাইভ চ্যাট ও ব্রাউজার কল, রিয়েল-টাইম SEO মেটাডাটা, পণ্য, লয়্যালটি পয়েন্ট ও মার্কেটিং পরিচালনা করা যায়।`,
+        time,
+        quickActions: [
+          { label: t('🛡️ অ্যাডমিন ড্যাশবোর্ড খুলুন', '🛡️ Open Admin Dashboard'), action: 'open_admin' },
+          { label: t('👤 হিউম্যান সাপোর্ট', '👤 Talk to Admin Manually'), action: 'request_human' }
+        ]
+      });
+      return;
+    }
+
     const orderMatch = query.match(/(BD-[A-Z0-9-]+|POS-[A-Z0-9-]+)/i);
     const phoneMatch = query.match(/01[3-9]\d{8}/);
 
@@ -4445,13 +4889,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     appendBotMsg({
       id: `bot-${Date.now()}`,
       sender: 'bot',
-      text: `Thank you for messaging ${settings.storeName}! A support agent has received your message, or pick a quick action below to shop, confirm, or track an order A-to-Z.`,
-      textBn: `ধন্যবাদ! ${settings.storeName}-এর এআই অ্যাসিস্ট্যান্ট আপনার মেসেজ পেয়েছে। পণ্য অর্ডার, কনফার্ম বা ট্র্যাক করতে নিচের বাটন ব্যবহার করুন।`,
+      text: `Thank you for messaging ${settings.storeName}! A support agent has received your message, or pick a quick action below.`,
+      textBn: `ধন্যবাদ! ${settings.storeName}-এর সাপোর্ট টিম আপনার মেসেজ পেয়েছে। সরাসরি অ্যাডমিনের সাথে কথা বলতে নিচের বাটন চাপুন।`,
       time,
       quickActions: [
+        { label: '👤 হিউম্যান সাপোর্ট', action: 'request_human' },
         { label: '📞 ব্রাউজার কল করুন', action: 'tab_call' },
-        { label: '🔥 ফ্ল্যাশ সেল', action: 'tab_flash' },
-        { label: '📦 অর্ডার ট্র্যাক', action: 'track' }
+        { label: '🛡️ অ্যাডমিন ড্যাশবোর্ড', action: 'open_admin' }
       ]
     });
   };
@@ -4460,7 +4904,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const clean = text.trim();
     if (!clean) return;
     const replyMsg: SupportChatMessage = {
-      id: `agent-${Date.now()}`,
+      id: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
       sender: 'assistant',
       text: clean,
       textBn: clean,
@@ -4471,6 +4915,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         s.id === sessionId
           ? {
               ...s,
+              manualMode: true,
+              assignedAgent: 'Live Admin Support',
               unreadByAdmin: 0,
               lastUpdated: new Date().toISOString(),
               messages: [...s.messages, replyMsg]
@@ -4480,7 +4926,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       syncChatsToServer(next);
       return next;
     });
-    addToast('success', t('রিপ্লাই পাঠানো হয়েছে', 'Reply Sent'), t('কাস্টমারের চ্যাটে উত্তর যুক্ত হয়েছে।', 'Delivered to customer chat window.'));
+    sendWsEvent({
+      type: 'chat:append_message',
+      sessionId,
+      message: replyMsg,
+      sessionMeta: {
+        manualMode: true,
+        assignedAgent: 'Live Admin Support',
+        unreadByAdmin: 0
+      }
+    });
+    addToast('success', t('রিপ্লাই পাঠানো হয়েছে', 'Reply Sent'), t('কাস্টমারের চ্যাটে লাইভ পৌঁছে গেছে।', 'Delivered live to customer chat window.'));
   };
 
   const generateAgentAIReply = async (sessionId: string): Promise<string> => {
@@ -4522,14 +4978,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       customerName: name || t('সম্মানিত গ্রাহক', 'Customer'),
       customerPhone: phone || '',
       status: 'open',
+      manualMode: true,
+      assignedAgent: 'Live Admin Support',
       unreadByAdmin: 0,
       lastUpdated: new Date().toISOString(),
       messages: [
         {
           id: `init-${Date.now()}`,
           sender: 'assistant',
-          text: `Assalamu Alaikum ${name || ''}! Support thread ready — write a message or generate an AI reply below.`,
-          textBn: `আসসালামু আলাইকুম ${name || ''}! সাপোর্ট চ্যাট থ্রেড চালু হয়েছে — এখান থেকে সরাসরি মেসেজ পাঠান।`,
+          text: `Assalamu Alaikum ${name || ''}! Manual support chat connected — reply directly here.`,
+          textBn: `আসসালামু আলাইকুম ${name || ''}! সরাসরি ম্যানুয়াল সাপোর্ট চ্যাট চালু হয়েছে।`,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]
@@ -4539,6 +4997,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       syncChatsToServer(next);
       return next;
     });
+    sendWsEvent({ type: 'chat:upsert_session', session: newSession });
     return newId;
   };
 
@@ -4548,12 +5007,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       syncChatsToServer(next);
       return next;
     });
+    sendWsEvent({ type: 'chat:update_session', sessionId, patch: { unreadByAdmin: 0 } });
   };
 
-  // Bidirectional Browser Call Engine (Customer <-> Backend Assistant Desk)
+  // Bidirectional Real-Time Browser Call Engine (Customer <-> Backend Admin Desk with WebRTC Audio + Speech Fallback)
   const initiateCustomerBrowserCall = (
     order?: Order | null,
-    callerInfo?: { name?: string; phone?: string; autoConnect?: boolean }
+    callerInfo?: { name?: string; phone?: string; autoConnect?: boolean; direction?: 'customer_to_admin' | 'admin_to_customer' }
   ): string => {
     const callId = `CALL-${Math.floor(10000 + Math.random() * 90000)}`;
     const resolvedName =
@@ -4604,27 +5064,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       createdAt: new Date().toISOString()
     };
 
-    const isOutboundLive = Boolean(callerInfo?.autoConnect);
+    const isAdminOutbound = callerInfo?.direction === 'admin_to_customer' || Boolean(callerInfo?.autoConnect);
     const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const session: BrowserCallSession = {
       id: callId,
       orderId: order?.id,
       callType: order ? 'order_verification' : 'support',
+      direction: isAdminOutbound ? 'admin_to_customer' : 'customer_to_admin',
+      visitorSessionId: isAdminOutbound ? undefined : visitorSessionId,
       customerName: resolvedName,
       customerPhone: resolvedPhone,
-      status: isOutboundLive ? 'connected' : 'ringing_backend',
-      answeredBy: isOutboundLive ? 'backend_assistant' : undefined,
+      status: isAdminOutbound ? 'ringing_customer' : 'ringing_backend',
+      answeredBy: isAdminOutbound ? 'backend_assistant' : undefined,
       startedAt: new Date().toISOString(),
       durationSeconds: 0,
       transcript: [
         {
           id: `t-${Date.now()}`,
-          speaker: isOutboundLive ? 'assistant' : 'customer',
-          text: isOutboundLive
-            ? `Outbound voice call connected to ${resolvedName} (${resolvedPhone}).`
-            : `Customer initiated a browser support call (${resolvedName}).`,
-          textBn: isOutboundLive
-            ? `সাপোর্ট ডেস্ক থেকে ${resolvedName} (${resolvedPhone})-কে লাইভ কল সংযুক্ত হয়েছে।`
+          speaker: isAdminOutbound ? 'assistant' : 'customer',
+          text: isAdminOutbound
+            ? `Support admin is calling ${resolvedName} (${resolvedPhone})...`
+            : `Customer initiated a live browser support call (${resolvedName}).`,
+          textBn: isAdminOutbound
+            ? `সাপোর্ট ডেস্ক থেকে ${resolvedName} (${resolvedPhone})-কে কল করা হচ্ছে — কাস্টমারের ব্রাউজারে রিং হচ্ছে...`
             : `গ্রাহক (${resolvedName}) ব্রাউজার থেকে কল করেছেন — রিসিভের জন্য রিং হচ্ছে...`,
           time: nowTime
         }
@@ -4636,17 +5098,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       syncCallsToServer(next);
       return next;
     });
+    sendWsEvent({ type: 'call:start', call: session });
 
-    if (!isOutboundLive) {
+    if (!isAdminOutbound) {
       setActiveBrowserCallId(callId);
       setActiveCallOrder(targetOrder);
       setIsCallRinging(true);
       setIsCallActive(false);
     } else {
       addToast(
-        'success',
-        t('লাইভ কল সংযুক্ত!', 'Live Call Connected!'),
-        t(`${resolvedName} (${resolvedPhone})-এর সাথে কল চালু হয়েছে।`, `Live call started with ${resolvedName}.`)
+        'info',
+        t('কাস্টমারের ব্রাউজারে রিং হচ্ছে...', 'Ringing Customer Browser...'),
+        t(`${resolvedName} (${resolvedPhone}) কল রিসিভ করলেই WebRTC লাইভ কথা শুরু হবে।`, `Waiting for ${resolvedName} to answer live call.`)
       );
     }
     return callId;
@@ -4655,7 +5118,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const answerBrowserCallFromBackend = (callId: string) => {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const greetBn = `আসসালামু আলাইকুম! ${settings.storeNameBn || settings.storeName} সাপোর্ট ডেস্ক থেকে আমি অ্যাসিস্ট্যান্ট বলছি। বলুন, কীভাবে সাহায্য করতে পারি?`;
-    const greetEn = `Assalamu Alaikum! Backend support assistant connected. How can I help you today?`;
+    const greetEn = `Assalamu Alaikum! Support admin connected live. How can I help you today?`;
+    const greetItem: BrowserCallTranscriptItem = {
+      id: `t-${Date.now()}`,
+      speaker: 'assistant',
+      text: greetEn,
+      textBn: greetBn,
+      time
+    };
 
     setBrowserCalls((prev) => {
       const next = prev.map((c) =>
@@ -4664,22 +5134,62 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               ...c,
               status: 'connected' as const,
               answeredBy: 'backend_assistant' as const,
-              transcript: [
-                ...c.transcript,
-                { id: `t-${Date.now()}`, speaker: 'assistant' as const, text: greetEn, textBn: greetBn, time }
-              ]
+              transcript: [...c.transcript, greetItem]
             }
           : c
       );
       syncCallsToServer(next);
       return next;
     });
+    sendWsEvent({
+      type: 'call:answer',
+      callId,
+      answeredBy: 'backend_assistant',
+      transcriptItem: greetItem
+    });
+
+    // Establish peer-to-peer WebRTC microphone + speaker audio stream cleanly
+    getOrCreateWebRtcSession().startAsCaller(callId);
 
     if (activeBrowserCallId === callId) {
       setIsCallRinging(false);
       setIsCallActive(true);
     }
-    addToast('success', t('কল কানেক্ট হয়েছে!', 'Browser Call Answered!'), t('গ্রাহকের সাথে লাইভ কথা বলুন।', 'Connected live to customer browser call.'));
+    addToast('success', t('লাইভ কল সংযুক্ত!', 'Live Call Connected!'), t('মাইক ও চ্যাট ট্রান্সক্রিপ্ট এখন সক্রিয়।', 'Two-way live voice & transcript active.'));
+  };
+
+  const answerIncomingCustomerCall = (callId: string) => {
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const ansItem: BrowserCallTranscriptItem = {
+      id: `t-${Date.now()}`,
+      speaker: 'customer',
+      text: 'Customer answered the incoming call.',
+      textBn: 'গ্রাহক কলটি রিসিভ করেছেন।',
+      time
+    };
+    setBrowserCalls((prev) => {
+      const next = prev.map((c) =>
+        c.id === callId
+          ? {
+              ...c,
+              status: 'connected' as const,
+              answeredBy: 'customer' as const,
+              transcript: [...c.transcript, ansItem]
+            }
+          : c
+      );
+      syncCallsToServer(next);
+      return next;
+    });
+    sendWsEvent({
+      type: 'call:answer',
+      callId,
+      answeredBy: 'customer',
+      transcriptItem: ansItem
+    });
+    getOrCreateWebRtcSession().startAsCaller(callId);
+    setIsCallRinging(false);
+    setIsCallActive(true);
   };
 
   const appendBrowserCallMessage = (
@@ -4704,9 +5214,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       syncCallsToServer(next);
       return next;
     });
+    sendWsEvent({ type: 'call:append_message', callId, item });
   };
 
   const endBrowserCallSession = (callId: string, confirmed?: boolean) => {
+    webrtcSessionRef.current?.close(true);
+    setIsBrowserCallMicMuted(false);
+
     setBrowserCalls((prev) => {
       const next = prev.map((c) =>
         c.id === callId
@@ -4721,6 +5235,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       syncCallsToServer(next);
       return next;
     });
+    sendWsEvent({ type: 'call:end', callId });
 
     if (activeBrowserCallId === callId) {
       setActiveBrowserCallId(null);
@@ -5077,13 +5592,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const seo = settings.seoSettings;
     const storeName = settings.storeName || 'BuyOne BD';
     let pageTitle = seo?.metaTitle || `${storeName} - Online Shopping Bangladesh`;
-    let pageDesc = seo?.metaDescription || settings.tagline;
-    let pageKeywords = seo?.keywords || '';
+    let pageDesc = seo?.metaDescription ?? settings.tagline;
+    let pageKeywords = seo?.keywords ?? '';
     let pageRobots = seo?.robots || 'index, follow';
 
     if (activeView === 'admin') {
-      pageTitle = `Admin Portal - ${storeName}`;
-      pageRobots = 'noindex, nofollow';
+      // Keep storefront SEO meta tags synced in document.head even when editing inside AdminDashboard
+      pageTitle = seo?.metaTitle || `Admin Portal - ${storeName}`;
+      pageRobots = seo?.robots || 'index, follow';
     } else if (activeView === 'tracking') {
       pageTitle = `${t('রিয়েল-টাইম অর্ডার ট্র্যাকিং', 'Real-Time Order Tracking')} - ${storeName}`;
     } else if (isOneClickOpen) {
@@ -5119,7 +5635,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     document.title = pageTitle;
 
     const setMeta = (selector: string, attrName: string, attrVal: string, content: string) => {
-      if (!content) return;
       let el = document.querySelector(selector) as HTMLMetaElement | null;
       if (!el) {
         el = document.createElement('meta');
@@ -6454,19 +6969,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const resetAllToDefault = () => {
-    setProducts(INITIAL_PRODUCTS);
-    setOrders(INITIAL_ORDERS);
-    setCategories(INITIAL_CATEGORIES);
-    setSliders(INITIAL_SLIDERS);
-    setAbandonedCarts(INITIAL_ABANDONED_CARTS);
-    setUsers(INITIAL_USERS);
-    setReviews(INITIAL_REVIEWS);
-    setSettings(INITIAL_SETTINGS);
-    setCart([]);
-    setWishlist([]);
-    setCompareList([]);
-    localStorage.clear();
-    addToast('info', t('রিসেট সম্পন্ন', 'Reset Complete'), t('সকল ডেমো ডাটা ও সেটিংস সফলভাবে রিসেট করা হয়েছে।', 'All demo data & configs restored.'));
+    // Non-destructive update: preserves all orders, products, customers & existing configs
+    setSettings((prev) => mergeSettings(prev));
+    addToast(
+      'success',
+      t('নিরাপদ আপডেট সম্পন্ন', 'Safe Settings Sync Complete'),
+      t(
+        'কোনো অর্ডার, পণ্য বা গ্রাহক তথ্য মুছে না ফেলে ডিফল্ট সেটিংস হালনাগাদ করা হয়েছে।',
+        'Default configuration keys updated without deleting any orders, products, or customer records.'
+      )
+    );
   };
 
   const openOneClickCheckout = (product: Product | null = null) => {
@@ -6708,6 +7220,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             selectCategoryFilter(String(p.category));
           } else if (p.view === 'tracking') {
             setActiveView('tracking');
+          } else if (p.view === 'admin') {
+            navigateToPath('/hossain');
+            if (isAdminLoggedIn) {
+              setActiveView('admin');
+            } else {
+              setIsAdminLoginOpen(true);
+            }
           } else {
             goHome();
           }
@@ -6769,6 +7288,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setStoreSubView,
         goHome,
         openAllProductsPage,
+        openAboutPage,
         selectCategoryFilter,
         openProductPage,
         navigateToPath,
@@ -6853,15 +7373,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         recordPageVisit,
         supportChats,
         activeChatSessionId,
+        setActiveChatSessionId,
+        isLiveSocketConnected,
         sendCustomerChatMessage,
         sendAgentChatReply,
         generateAgentAIReply,
         openOrCreateCustomerChatSession,
         markChatRead,
+        toggleChatManualMode,
+        requestHumanSupport,
+        resolveSupportChatSession,
+        deleteSupportChatSession,
         browserCalls,
         activeBrowserCall,
+        webrtcAudioStatus,
+        isBrowserCallMicMuted,
+        toggleBrowserCallMicMute,
         initiateCustomerBrowserCall,
         answerBrowserCallFromBackend,
+        answerIncomingCustomerCall,
         appendBrowserCallMessage,
         endBrowserCallSession,
         abandonedCarts,

@@ -598,10 +598,15 @@ export const OneClickCheckoutModal: React.FC = () => {
 
             {/* Customer Details */}
             <div className="space-y-2.5">
-              <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                <Truck className="w-3.5 h-3.5 text-rose-600" />
-                {t('ডেলিভারি ঠিকানা ও তথ্য', 'Shipping Information')}
-              </h4>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Truck className="w-3.5 h-3.5 text-rose-600" />
+                  {t('ডেলিভারি ঠিকানা ও তথ্য', 'Shipping Information')}
+                </h4>
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                  {t('শুধুমাত্র বাংলাদেশের ৬৪ জেলায় ডেলিভারি', 'Whole Bangladesh Only (64 Districts)')}
+                </span>
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div>

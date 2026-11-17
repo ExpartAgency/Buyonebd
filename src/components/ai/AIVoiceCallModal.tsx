@@ -31,6 +31,10 @@ export const AIVoiceCallModal: React.FC = () => {
     finishAICall,
     activeBrowserCall,
     answerBrowserCallFromBackend,
+    answerIncomingCustomerCall,
+    webrtcAudioStatus,
+    isBrowserCallMicMuted,
+    toggleBrowserCallMicMute,
     appendBrowserCallMessage,
     endBrowserCallSession,
     orders,
@@ -84,9 +88,12 @@ export const AIVoiceCallModal: React.FC = () => {
     setAiSpeaking(false);
   };
 
-  // Ringtone control for both AI order calls and backend-routed browser calls
+  // Ringtone control for both AI order calls and backend-routed/admin-initiated browser calls
   useEffect(() => {
-    const shouldRing = isCallRinging || (isBackendBrowserCall && activeBrowserCall?.status === 'ringing_backend');
+    const shouldRing =
+      isCallRinging ||
+      (isBackendBrowserCall &&
+        (activeBrowserCall?.status === 'ringing_backend' || activeBrowserCall?.status === 'ringing_customer'));
     if (shouldRing) {
       audioEngine.startPhoneRingtone();
     } else {
@@ -479,6 +486,8 @@ export const AIVoiceCallModal: React.FC = () => {
             {isBackendBrowserCall
               ? activeBrowserCall.status === 'connected'
                 ? formatDuration(callDuration)
+                : activeBrowserCall.status === 'ringing_customer'
+                ? t('অ্যাডমিন কল আসছে...', 'Admin Calling...')
                 : t('ডেস্কে রিং হচ্ছে...', 'Ringing Desk...')
               : isCallActive
               ? formatDuration(callDuration)
@@ -492,7 +501,11 @@ export const AIVoiceCallModal: React.FC = () => {
           <div className="relative my-1 flex items-center justify-center">
             <div
               className={`relative w-20 h-20 rounded-full p-1 bg-gradient-to-tr from-emerald-500 via-teal-400 to-cyan-500 shadow-xl ${
-                isCallRinging || activeBrowserCall?.status === 'ringing_backend' ? 'animate-call-ripple' : ''
+                isCallRinging ||
+                activeBrowserCall?.status === 'ringing_backend' ||
+                activeBrowserCall?.status === 'ringing_customer'
+                  ? 'animate-call-ripple'
+                  : ''
               }`}
             >
               <div className="w-full h-full rounded-full bg-slate-950 flex flex-col items-center justify-center border-2 border-slate-800 overflow-hidden">
@@ -511,6 +524,8 @@ export const AIVoiceCallModal: React.FC = () => {
               {isBackendBrowserCall
                 ? activeBrowserCall.status === 'connected'
                   ? t('সাপোর্ট অ্যাসিস্ট্যান্ট (লাইভ)', 'Support Assistant (Live)')
+                  : activeBrowserCall.status === 'ringing_customer'
+                  ? t('স্টোর অ্যাডমিন থেকে কল আসছে', 'Incoming Call from Store Admin')
                   : t('অফিসিয়াল অ্যাসিস্ট্যান্ট ডেস্ক', 'Official Support Desk')
                 : `${settings.aiCallSettings.agentName || 'সুমনা'} (${t('অর্ডার ভেরিফায়ার', 'Order Verifier')})`}
             </h3>
@@ -519,9 +534,31 @@ export const AIVoiceCallModal: React.FC = () => {
               <span>
                 {isBackendBrowserCall && activeBrowserCall.status === 'ringing_backend'
                   ? t('ব্যাকএন্ড অ্যাসিস্ট্যান্ট কল রিসিভ করার জন্য অপেক্ষমান...', 'Waiting for backend assistant in /hossain to answer...')
+                  : isBackendBrowserCall && activeBrowserCall.status === 'ringing_customer'
+                  ? t('BuyOne BD অ্যাডমিন ডেস্ক থেকে সরাসরি কল — রিসিভ করুন', 'Direct live voice call from BuyOne BD Admin Desk — press Answer')
                   : `${settings.storeName} Official Hotline`}
               </span>
             </p>
+            {isBackendBrowserCall && activeBrowserCall.status === 'connected' && (
+              <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 border border-slate-700 text-emerald-300">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    webrtcAudioStatus === 'live_audio'
+                      ? 'bg-emerald-400 animate-ping'
+                      : webrtcAudioStatus === 'connecting'
+                      ? 'bg-amber-400 animate-pulse'
+                      : 'bg-sky-400'
+                  }`}
+                />
+                <span>
+                  {webrtcAudioStatus === 'live_audio'
+                    ? t('WebRTC লাইভ মাইক ও অডিও চালু', 'WebRTC Live Two-Way Voice Connected')
+                    : webrtcAudioStatus === 'connecting'
+                    ? t('ভয়েস চ্যানেল সংযুক্ত হচ্ছে...', 'Connecting Live Voice Audio...')
+                    : t('ভয়েস স্পিচ + লাইভ টেক্সট মোড', 'Speech + Live Transcript Mode')}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Order Details Panel (if linked to an order) */}
@@ -653,6 +690,38 @@ export const AIVoiceCallModal: React.FC = () => {
           )}
 
           {/* MODE A: BACKEND BROWSER CALL CONTROLS */}
+          {isBackendBrowserCall && activeBrowserCall.status === 'ringing_customer' && (
+            <div className="w-full flex items-center justify-around pt-3 pb-2">
+              <button
+                type="button"
+                onClick={() => {
+                  stopAllAudio();
+                  endBrowserCallSession(activeBrowserCall.id, false);
+                }}
+                className="flex flex-col items-center gap-2 group cursor-pointer"
+              >
+                <div className="w-15 h-15 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center shadow-lg transition-all group-hover:scale-105 active:scale-95">
+                  <PhoneOff className="w-6 h-6" />
+                </div>
+                <span className="text-xs text-rose-300 font-medium">{t('বাতিল', 'Decline')}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  stopAllAudio();
+                  answerIncomingCustomerCall(activeBrowserCall.id);
+                }}
+                className="flex flex-col items-center gap-2 group cursor-pointer"
+              >
+                <div className="w-15 h-15 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center shadow-lg transition-all group-hover:scale-105 active:scale-95">
+                  <Phone className="w-6 h-6" />
+                </div>
+                <span className="text-xs text-emerald-300 font-medium">{t('রিসিভ করুন', 'Answer')}</span>
+              </button>
+            </div>
+          )}
+
           {isBackendBrowserCall && activeBrowserCall.status === 'ringing_backend' && (
             <div className="w-full space-y-3 pt-2">
               <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700 text-xs text-slate-300">
@@ -715,12 +784,16 @@ export const AIVoiceCallModal: React.FC = () => {
               <div className="flex items-center justify-center gap-5">
                 <button
                   type="button"
-                  onClick={() => setIsMuted(!isMuted)}
+                  onClick={() => {
+                    toggleBrowserCallMicMute();
+                    setIsMuted((m) => !m);
+                  }}
                   className={`p-3 rounded-full transition-all cursor-pointer ${
-                    isMuted ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    isBrowserCallMicMuted || isMuted ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                   }`}
+                  title={isBrowserCallMicMuted ? t('মাইক আনমিউট', 'Unmute Mic') : t('মাইক মিউট', 'Mute Mic')}
                 >
-                  {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                  {isBrowserCallMicMuted || isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
                 </button>
 
                 <button

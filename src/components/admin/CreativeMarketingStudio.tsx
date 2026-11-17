@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Download, Film, Image as ImageIcon, Layout, Play, RefreshCw, Sparkles, Square } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
+import { Product } from '../../types';
 
 type CreativeFormat = 'banner' | 'post' | 'reel';
 
@@ -576,6 +577,106 @@ export const CreativeMarketingStudio: React.FC<{ ta: (bn: string, en: string) =>
           />
         </div>
       </div>
+
+      {/* AI Marketing Copy, 15s Reels Script & Hashtag Generator */}
+      <AICampaignCopyGenerator
+        product={product}
+        ta={ta}
+        onApplyToCanvas={(hl, sub) => {
+          setHeadline(hl);
+          setSubtext(sub);
+          addToast('success', ta('ক্যানভাসে অ্যাপ্লাই হয়েছে!', 'Applied to Canvas!'), hl);
+        }}
+      />
+    </div>
+  );
+};
+
+const AICampaignCopyGenerator: React.FC<{
+  product?: Product;
+  ta: (bn: string, en: string) => string;
+  onApplyToCanvas: (headline: string, subtext: string) => void;
+}> = ({ product, ta, onApplyToCanvas }) => {
+  const [mode, setMode] = useState<'ad_copy' | 'reel_script'>('ad_copy');
+  const [isLoading, setIsLoading] = useState(false);
+  const [generated, setGenerated] = useState<{ headline: string; body: string; hashtags: string; provider?: string } | null>(null);
+
+  const handleGenerate = async () => {
+    if (!product) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/ai/marketing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode,
+          productTitle: product.titleBn || product.title,
+          price: product.price,
+          category: product.categoryBn || product.category
+        })
+      });
+      const data = await res.json();
+      if (data?.ok && data.result) {
+        setGenerated({ ...data.result, provider: data.provider });
+      }
+    } catch {
+      // Fallback handled cleanly
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-amber-400" />
+          <span className="font-black text-white">
+            {ta('AI ফেসবুক অ্যাড কপি ও রিলস স্ক্রিপ্ট জেনারেটর', 'AI Facebook Ad Copy & 15s Reels Script Generator')}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setMode('ad_copy')}
+            className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${mode === 'ad_copy' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300'}`}
+          >
+            {ta('অ্যাড কপি', 'Facebook Ad')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('reel_script')}
+            className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${mode === 'reel_script' ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-300'}`}
+          >
+            {ta('১৫-সেকেন্ড রিলস স্ক্রিপ্ট', '15s Reels Script')}
+          </button>
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={isLoading || !product}
+            className="px-3.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-black cursor-pointer disabled:opacity-60"
+          >
+            {isLoading ? ta('লিখছে...', 'Generating...') : ta('✨ AI দিয়ে লিখুন', '✨ Generate AI Copy')}
+          </button>
+        </div>
+      </div>
+
+      {generated && (
+        <div className="p-3.5 rounded-xl bg-slate-900 border border-emerald-500/30 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-black text-emerald-300">{generated.headline}</span>
+            <button
+              type="button"
+              onClick={() => onApplyToCanvas(generated.headline, generated.body.slice(0, 72))}
+              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] cursor-pointer shrink-0"
+            >
+              {ta('ব্যানারে বসান', 'Apply to Canvas')}
+            </button>
+          </div>
+          <p className="text-slate-200 whitespace-pre-line leading-relaxed">{generated.body}</p>
+          <p className="text-[11px] font-mono text-sky-400">{generated.hashtags}</p>
+        </div>
+      )}
     </div>
   );
 };

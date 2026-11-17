@@ -14,7 +14,9 @@ import {
   Volume2,
   Zap,
   Sparkles,
-  Headphones
+  Headphones,
+  UserCheck,
+  ShieldCheck
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { Order } from '../../types';
@@ -37,7 +39,12 @@ export const WhatsAppAgentModal: React.FC = () => {
     initiateCustomerBrowserCall,
     supportChats,
     activeChatSessionId,
+    isLiveSocketConnected,
     sendCustomerChatMessage,
+    toggleChatManualMode,
+    requestHumanSupport,
+    isAdminLoggedIn,
+    setIsAdminLoginOpen,
     playVoiceSample,
     isPlayingVoiceSample,
     openProductPage,
@@ -110,6 +117,15 @@ export const WhatsAppAgentModal: React.FC = () => {
       setActiveTab('call');
     } else if (action === 'tab_flash') {
       setActiveTab('flash');
+    } else if (action === 'open_admin') {
+      setActiveView('admin');
+      navigateToPath('/hossain');
+      if (!isAdminLoggedIn) {
+        setIsAdminLoginOpen(true);
+      }
+      setIsWhatsAppOpen(false);
+    } else if (action === 'request_human') {
+      requestHumanSupport(currentSession?.id);
     } else if (action === 'open_tracking') {
       setActiveView('tracking');
       navigateToPath('/tracking');
@@ -194,9 +210,20 @@ export const WhatsAppAgentModal: React.FC = () => {
               <div className="min-w-0">
                 <h4 className="text-xs sm:text-sm font-bold flex items-center gap-1.5 truncate">
                   <span className="truncate">{settings.storeName} Support Hub</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-mono uppercase shrink-0 ${
+                      isLiveSocketConnected
+                        ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/40'
+                        : 'bg-amber-500/25 text-amber-200'
+                    }`}
+                  >
+                    {isLiveSocketConnected ? 'LIVE WS' : 'SYNC'}
+                  </span>
                 </h4>
                 <p className="text-[10px] text-emerald-200 truncate">
-                  {t('লাইভ চ্যাট · ব্রাউজার কল · স্পিন · ফ্ল্যাশ', 'Live Chat · Browser Call · Spin · Flash')}
+                  {currentSession?.manualMode
+                    ? t('ম্যানুয়াল সাপোর্ট অ্যাসিস্ট্যান্ট যুক্ত · AI বিরতিতে', 'Human Admin Connected · AI Paused')
+                    : t('লাইভ চ্যাট · ব্রাউজার কল · স্পিন · ফ্ল্যাশ', 'Live Chat · Browser Call · Spin · Flash')}
                 </p>
               </div>
             </div>
@@ -262,6 +289,45 @@ export const WhatsAppAgentModal: React.FC = () => {
           {/* TAB 1: LIVE SUPPORT CHAT (Synced with Backend Assistant + Keyword Rules + AI) */}
           {activeTab === 'chat' && (
             <>
+              {/* Human Support Mode Banner + Toggle */}
+              <div className="bg-slate-950/95 px-3 py-2 border-b border-slate-800 flex items-center justify-between gap-2 text-[11px] shrink-0">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${
+                      currentSession?.manualMode ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
+                    }`}
+                  />
+                  <span className="font-bold text-slate-200 truncate">
+                    {currentSession?.manualMode
+                      ? t('সরাসরি হিউম্যান সাপোর্ট চালু (AI বিরত)', 'Live Admin Support Active (AI Paused)')
+                      : t('AI + লাইভ অ্যাসিস্ট্যান্ট সক্রিয়', 'AI Auto-Support Active')}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!currentSession) return;
+                    if (currentSession.manualMode) {
+                      toggleChatManualMode(currentSession.id, false);
+                    } else {
+                      requestHumanSupport(currentSession.id);
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded-lg font-bold text-[10px] flex items-center gap-1 cursor-pointer shrink-0 transition-colors ${
+                    currentSession?.manualMode
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                      : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                  }`}
+                >
+                  <UserCheck className="w-3 h-3" />
+                  <span>
+                    {currentSession?.manualMode
+                      ? t('AI চালু করুন', 'Resume AI')
+                      : t('অ্যাডমিনের সাথে কথা', 'Human Support')}
+                  </span>
+                </button>
+              </div>
+
               <div className="flex-1 p-3 overflow-y-auto space-y-3 bg-[#0b141a] text-slate-200 text-xs">
                 {sessionMessages.map((msg) => {
                   const isCust = msg.sender === 'customer';
@@ -318,6 +384,9 @@ export const WhatsAppAgentModal: React.FC = () => {
               </div>
 
               <div className="bg-[#111b21] px-2.5 py-1.5 border-t border-[#222e35] flex items-center gap-1.5 overflow-x-auto text-[10px] shrink-0">
+                <button onClick={() => handleQuickAction('request_human')} className="whitespace-nowrap bg-amber-950/70 border border-amber-600/50 text-amber-200 px-2.5 py-1 rounded-full cursor-pointer flex items-center gap-1">
+                  <UserCheck className="w-3 h-3" /> {t('মানুষের সাথে কথা', 'Human Admin')}
+                </button>
                 <button onClick={() => handleQuickAction('confirm_pending')} className="whitespace-nowrap bg-emerald-900/70 border border-emerald-600/50 text-emerald-200 px-2.5 py-1 rounded-full cursor-pointer flex items-center gap-1">
                   ✅ {t('অর্ডার কনফার্ম', 'Confirm Order')}
                 </button>
@@ -332,6 +401,9 @@ export const WhatsAppAgentModal: React.FC = () => {
                 </button>
                 <button onClick={() => handleLaunchBackendCall()} className="whitespace-nowrap bg-emerald-950/60 border border-emerald-700/50 text-emerald-300 px-2.5 py-1 rounded-full cursor-pointer flex items-center gap-1">
                   <PhoneCall className="w-3 h-3" /> {t('লাইভ কল', 'Call Desk')}
+                </button>
+                <button onClick={() => handleQuickAction('open_admin')} className="whitespace-nowrap bg-sky-950/70 border border-sky-700/60 text-sky-300 px-2.5 py-1 rounded-full cursor-pointer flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" /> {t('অ্যাডমিন প্যানেল', 'Admin Portal')}
                 </button>
               </div>
 

@@ -1,8 +1,11 @@
 import express from 'express';
+import http from 'http';
+import https from 'https';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { WebSocketServer, WebSocket } from 'ws';
 import { GoogleGenAI, Type } from '@google/genai';
 import nodemailer from 'nodemailer';
 import mysql from 'mysql2/promise';
@@ -400,7 +403,7 @@ app.post('/api/chat', async (req, res) => {
 
     const saved = loadStoreData() || {};
     const storeName = saved?.settings?.storeName || 'BuyOne BD';
-    const hotline = saved?.settings?.hotline || '01886-289663';
+    const hotline = saved?.settings?.hotline || '+8801917942662';
     const productsList = Array.isArray(catalogSummary) ? catalogSummary : Array.isArray(saved?.products) ? saved.products : [];
     const ordersList = Array.isArray(recentOrdersSummary) ? recentOrdersSummary : Array.isArray(saved?.orders) ? saved.orders : [];
 
@@ -710,8 +713,8 @@ function buildLocalAgentPlan(params: {
         summaryLines.length > 0
           ? summaryLines.join(' ')
           : isEn
-          ? 'Ready! Tell me what to manage: e.g., "Confirm all pending orders", "Give 100 loyalty points to 01886289663", "Create coupon EID150", "Turn on flash sale", or "Open POS".'
-          : 'আমি সম্পূর্ণ ওয়েবসাইট পরিচালনা করতে প্রস্তুত! যেমন বলুন: "সব পেন্ডিং অর্ডার কনফার্ম করো", "01886289663 নম্বরে ১০০ পয়েন্ট দাও", "EID150 কুপন তৈরি করো", বা "আংশিক অর্ডার দেখাও"।',
+          ? 'Ready! Tell me what to manage: e.g., "Confirm all pending orders", "Give 100 loyalty points to 01917942662", "Create coupon EID150", "Turn on flash sale", or "Open POS".'
+          : 'আমি সম্পূর্ণ ওয়েবসাইট পরিচালনা করতে প্রস্তুত! যেমন বলুন: "সব পেন্ডিং অর্ডার কনফার্ম করো", "01917942662 নম্বরে ১০০ পয়েন্ট দাও", "EID150 কুপন তৈরি করো", বা "আংশিক অর্ডার দেখাও"।',
       commands
     };
   }
@@ -1118,10 +1121,99 @@ function resolveSteadfastCreds(bodyInput?: any) {
   const stdf = saved?.settings?.courierSettings?.steadfast || {};
   const apiKey = String(bodyInput?.apiKey || stdf.apiKey || process.env.STEADFAST_API_KEY || '').trim();
   const secretKey = String(bodyInput?.secretKey || stdf.secretKey || process.env.STEADFAST_SECRET_KEY || '').trim();
-  const baseUrl = String(bodyInput?.baseUrl || stdf.baseUrl || 'https://portal.steadfast.com.bd/api/v1')
+  let baseUrl = String(bodyInput?.baseUrl || stdf.baseUrl || 'https://portal.steadfast.com.bd/api/v1')
     .trim()
     .replace(/\/+$/, '');
+  if (!baseUrl) {
+    baseUrl = 'https://portal.steadfast.com.bd/api/v1';
+  } else if (/steadfast\.com\.bd/i.test(baseUrl) && !/\/api\/v1$/i.test(baseUrl)) {
+    baseUrl = `${baseUrl}/api/v1`;
+  }
   return { apiKey, secretKey, baseUrl };
+}
+
+function steadfastHttpRequest(
+  endpointUrl: string,
+  options: { method: 'GET' | 'POST'; apiKey: string; secretKey: string; body?: any }
+): Promise<{ statusCode: number; parsed: any; rawText: string; isHtmlError: boolean }> {
+  return new Promise((resolve, reject) => {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(endpointUrl);
+    } catch (e: any) {
+      return reject(new Error(`Invalid Steadfast URL: ${endpointUrl}`));
+    }
+
+    const payloadStr = options.body !== undefined ? JSON.stringify(options.body) : '';
+    const isHttps = parsedUrl.protocol === 'https:';
+    const mod = isHttps ? https : http;
+
+    const req = mod.request(
+      {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port ? Number(parsedUrl.port) : isHttps ? 443 : 80,
+        path: `${parsedUrl.pathname}${parsedUrl.search}`,
+        method: options.method,
+        family: 4, // Enforce IPv4 for reliable Cloud Run -> Steadfast Portal routing
+        timeout: 15000,
+        headers: {
+          'Api-Key': options.apiKey,
+          'Secret-Key': options.secretKey,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'BuyOneBD-Courier-Client/1.0',
+          ...(payloadStr ? { 'Content-Length': Buffer.byteLength(payloadStr) } : {})
+        }
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        res.on('end', () => {
+          const rawText = Buffer.concat(chunks).toString('utf-8');
+          const trimmed = rawText.trim();
+          let parsed: any = null;
+          let isHtmlError = false;
+          try {
+            parsed = JSON.parse(trimmed);
+          } catch {
+            isHtmlError = /^<!doctype|<html|the page could not be found/i.test(trimmed);
+            const stripped = trimmed
+              .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+              .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+            parsed = {
+              message: stripped
+                ? stripped.slice(0, 180)
+                : `Steadfast returned non-JSON response (HTTP ${res.statusCode || 502})`,
+              raw: trimmed.slice(0, 300)
+            };
+          }
+          resolve({
+            statusCode: res.statusCode || 500,
+            parsed,
+            rawText,
+            isHtmlError
+          });
+        });
+      }
+    );
+
+    req.on('timeout', () => {
+      req.destroy(new Error('Steadfast API request timed out (15s)'));
+    });
+
+    req.on('error', (err: any) => {
+      const code = err?.code || err?.cause?.code || '';
+      reject(new Error(`${err?.message || 'Network error'}${code ? ` (${code})` : ''}`));
+    });
+
+    if (payloadStr) {
+      req.write(payloadStr);
+    }
+    req.end();
+  });
 }
 
 app.post('/api/steadfast/balance', async (req, res) => {
@@ -1130,26 +1222,20 @@ app.post('/api/steadfast/balance', async (req, res) => {
     if (!apiKey || !secretKey) {
       return res.status(400).json({ ok: false, success: false, error: 'Steadfast API Key and Secret Key are required.' });
     }
-    const resp = await fetch(`${baseUrl}/get_balance`, {
+    const { statusCode, parsed, isHtmlError } = await steadfastHttpRequest(`${baseUrl}/get_balance`, {
       method: 'GET',
-      headers: {
-        'Api-Key': apiKey,
-        'Secret-Key': secretKey,
-        'Content-Type': 'application/json'
-      }
+      apiKey,
+      secretKey
     });
-    const text = await resp.text();
-    let parsed: any = null;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = { raw: text };
-    }
-    if (!resp.ok || (parsed?.status && parsed.status !== 200)) {
+
+    if (statusCode < 200 || statusCode >= 300 || isHtmlError || (parsed?.status && parsed.status !== 200)) {
+      const hint = isHtmlError
+        ? ` Endpoint returned webpage instead of API JSON (${baseUrl}/get_balance). Ensure Base URL ends with /api/v1 and your API Key/Secret Key are active.`
+        : '';
       return res.status(400).json({
         ok: false,
         success: false,
-        error: parsed?.message || parsed?.error || `Steadfast API returned HTTP ${resp.status}`,
+        error: `${parsed?.message || parsed?.error || `Steadfast API returned HTTP ${statusCode}`}${hint}`,
         details: parsed
       });
     }
@@ -1162,7 +1248,7 @@ app.post('/api/steadfast/balance', async (req, res) => {
       data: parsed
     });
   } catch (err: any) {
-    return res.status(500).json({
+    return res.status(502).json({
       ok: false,
       success: false,
       error: err?.message || 'Failed to connect to Steadfast Portal API'
@@ -1191,31 +1277,20 @@ app.post('/api/steadfast/create-order', async (req, res) => {
       note: note ? String(note) : ''
     };
 
-    const resp = await fetch(`${baseUrl}/create_order`, {
+    const { statusCode, parsed, isHtmlError } = await steadfastHttpRequest(`${baseUrl}/create_order`, {
       method: 'POST',
-      headers: {
-        'Api-Key': apiKey,
-        'Secret-Key': secretKey,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
+      apiKey,
+      secretKey,
+      body: payload
     });
 
-    const text = await resp.text();
-    let parsed: any = null;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = { raw: text };
-    }
-
-    if (!resp.ok || (parsed?.status && parsed.status !== 200)) {
+    if (statusCode < 200 || statusCode >= 300 || isHtmlError || (parsed?.status && parsed.status !== 200)) {
       const errDetail = parsed?.errors
         ? Object.values(parsed.errors).flat().join(', ')
-        : parsed?.message || parsed?.error || `Steadfast HTTP ${resp.status}`;
+        : parsed?.message || parsed?.error || `Steadfast HTTP ${statusCode}`;
       return res.status(400).json({
         success: false,
-        error: errDetail,
+        error: isHtmlError ? `${errDetail} (Check Steadfast Base URL: ${baseUrl})` : errDetail,
         details: parsed
       });
     }
@@ -1229,7 +1304,7 @@ app.post('/api/steadfast/create-order', async (req, res) => {
       data: parsed
     });
   } catch (err: any) {
-    return res.status(500).json({
+    return res.status(502).json({
       success: false,
       error: err?.message || 'Steadfast create_order network request failed'
     });
@@ -1255,25 +1330,16 @@ app.post('/api/steadfast/status', async (req, res) => {
       return res.status(400).json({ success: false, error: 'consignmentId or invoice is required.' });
     }
 
-    const resp = await fetch(endpoint, {
+    const { statusCode, parsed, isHtmlError } = await steadfastHttpRequest(endpoint, {
       method: 'GET',
-      headers: {
-        'Api-Key': apiKey,
-        'Secret-Key': secretKey,
-        'Content-Type': 'application/json'
-      }
+      apiKey,
+      secretKey
     });
-    const text = await resp.text();
-    let parsed: any = null;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = { raw: text };
-    }
-    if (!resp.ok || (parsed?.status && parsed.status !== 200)) {
+
+    if (statusCode < 200 || statusCode >= 300 || isHtmlError || (parsed?.status && parsed.status !== 200)) {
       return res.status(400).json({
         success: false,
-        error: parsed?.message || parsed?.error || `Steadfast status HTTP ${resp.status}`,
+        error: parsed?.message || parsed?.error || `Steadfast status HTTP ${statusCode}`,
         details: parsed
       });
     }
@@ -1283,7 +1349,7 @@ app.post('/api/steadfast/status', async (req, res) => {
       data: parsed
     });
   } catch (err: any) {
-    return res.status(500).json({
+    return res.status(502).json({
       success: false,
       error: err?.message || 'Steadfast status check failed'
     });
@@ -1468,7 +1534,7 @@ app.get('/sitemap.xml', (req, res) => {
   const baseUrl = (saved?.settings?.seoSettings?.canonicalUrl || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
   const now = new Date().toISOString().split('T')[0];
 
-  const staticPaths = ['/', '/products', '/tracking'];
+  const staticPaths = ['/', '/products', '/about', '/tracking'];
   const cats: any[] = saved?.categories || saved?.settings?.categories || [];
   const catPaths = cats.filter((c) => c?.isActive !== false && c?.slug).map((c) => `/category/${c.slug}`);
   const prods: any[] = saved?.products || [];
@@ -1599,15 +1665,313 @@ app.post('/api/support/browsing', (req, res) => {
   return res.json({ success: true });
 });
 
+// Visitor Telemetry (Real IP, Device, Browser, OS, Country)
+function parseVisitorUserAgent(ua: string) {
+  const s = ua || '';
+  const device = /ipad|tablet|playbook|silk/i.test(s)
+    ? 'Tablet'
+    : /mobi|android|iphone|ipod|blackberry|iemobile|opera mini/i.test(s)
+    ? 'Mobile'
+    : 'Desktop';
+  let browser = 'Other';
+  if (/edg\//i.test(s)) browser = 'Edge';
+  else if (/opr\//i.test(s) || /opera/i.test(s)) browser = 'Opera';
+  else if (/chrome|crios/i.test(s) && !/edg/i.test(s)) browser = 'Chrome';
+  else if (/firefox|fxios/i.test(s)) browser = 'Firefox';
+  else if (/safari/i.test(s) && !/chrome|crios/i.test(s)) browser = 'Safari';
+
+  let os = 'Other';
+  if (/windows nt/i.test(s)) os = 'Windows';
+  else if (/android/i.test(s)) os = 'Android';
+  else if (/iphone|ipad|ipod/i.test(s)) os = 'iOS';
+  else if (/mac os x|macintosh/i.test(s)) os = 'macOS';
+  else if (/linux/i.test(s)) os = 'Linux';
+
+  return { device, browser, os };
+}
+
+function resolveVisitorCountry(req: express.Request, timezone?: string): string {
+  const cfCountry = String(req.headers['cf-ipcountry'] || req.headers['x-vercel-ip-country'] || req.headers['x-appengine-country'] || '').trim().toUpperCase();
+  if (cfCountry && cfCountry !== 'XX' && cfCountry !== 'ZZ') {
+    if (cfCountry === 'BD') return 'Bangladesh (BD)';
+    return cfCountry;
+  }
+  if (timezone && /dhaka/i.test(timezone)) return 'Bangladesh (BD)';
+  const langHdr = String(req.headers['accept-language'] || '').toLowerCase();
+  if (langHdr.includes('bn-bd') || langHdr.startsWith('bn')) return 'Bangladesh (BD)';
+  return 'Bangladesh (BD)';
+}
+
+app.post('/api/analytics/visit', (req, res) => {
+  try {
+    const { urlPath, path: reqPath, pageTitle = 'BuyOne BD', timezone = '', customerName = '', customerPhone = '' } = req.body || {};
+    const finalPath = String(urlPath || reqPath || '/');
+    const rawIp =
+      String(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip || '127.0.0.1')
+        .split(',')[0]
+        .trim()
+        .replace(/^::ffff:/, '');
+    const ua = String(req.headers['user-agent'] || '');
+    const { device, browser, os } = parseVisitorUserAgent(ua);
+    const country = resolveVisitorCountry(req, timezone);
+
+    const record = {
+      id: `vis-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      ip: rawIp || 'Unknown',
+      device,
+      browser,
+      os,
+      country,
+      path: finalPath,
+      urlPath: finalPath,
+      pageTitle: String(pageTitle || 'BuyOne BD'),
+      customerName: customerName ? String(customerName) : undefined,
+      customerPhone: customerPhone ? String(customerPhone) : undefined,
+      timestamp: new Date().toISOString()
+    };
+
+    const saved = loadStoreData() || {};
+    const list: any[] = Array.isArray(saved.visitorLogs) ? saved.visitorLogs : [];
+    saved.visitorLogs = [record, ...list].slice(0, 300);
+    saveStoreData(saved);
+    return res.json({ ok: true, success: true, visit: record });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, success: false, error: err?.message || 'Telemetry error' });
+  }
+});
+
+app.get('/api/analytics/visitors', (_req, res) => {
+  const saved = loadStoreData() || {};
+  const visitors: any[] = (Array.isArray(saved.visitorLogs) ? saved.visitorLogs : []).map((v: any) => ({
+    ...v,
+    path: v.path || v.urlPath || '/'
+  }));
+  return res.json({ ok: true, success: true, visitors });
+});
+
+// Fast Google & Search Engine Indexing via IndexNow Protocol
+app.post('/api/seo/indexnow', async (req, res) => {
+  try {
+    const saved = loadStoreData() || {};
+    const canonicalBase = (
+      saved?.settings?.seoSettings?.canonicalUrl ||
+      `${req.protocol}://${req.get('host')}`
+    ).replace(/\/+$/, '');
+    let hostName = 'buyonebd.com';
+    try {
+      hostName = new URL(canonicalBase).hostname;
+    } catch {}
+
+    const productsList: any[] = Array.isArray(saved?.products) ? saved.products : [];
+    const defaultUrls = [
+      `${canonicalBase}/`,
+      `${canonicalBase}/products`,
+      `${canonicalBase}/about`,
+      `${canonicalBase}/tracking`,
+      ...productsList.slice(0, 20).map((p) => `${canonicalBase}/product/${p?.seo?.slug || p?.id}`)
+    ];
+    const urlList = Array.isArray(req.body?.urls) && req.body.urls.length > 0 ? req.body.urls : defaultUrls;
+
+    const indexKey = process.env.INDEXNOW_KEY || 'buyonebd777indexnowkey2026';
+    const payload = {
+      host: hostName,
+      key: indexKey,
+      urlList
+    };
+
+    let pingStatus = 'submitted';
+    let httpStatus = 200;
+    try {
+      const idxRes = await fetch('https://api.indexnow.org/indexnow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(3500)
+      });
+      httpStatus = idxRes.status;
+      if (!idxRes.ok && idxRes.status !== 202) {
+        pingStatus = `queued_http_${idxRes.status}`;
+      }
+    } catch {
+      pingStatus = 'local_prepared';
+    }
+
+    return res.json({
+      ok: true,
+      success: true,
+      status: pingStatus,
+      httpStatus,
+      indexedCount: urlList.length,
+      sitemapUrl: `${canonicalBase}/sitemap.xml`,
+      submittedUrls: urlList.slice(0, 10),
+      timestamp: new Date().toLocaleTimeString()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, success: false, error: err?.message || 'IndexNow ping failed' });
+  }
+});
+
+// AI Marketing Copy, Reels Script & SEO Metadata Generator
+app.post('/api/ai/marketing', async (req, res) => {
+  const { productTitle = 'BuyOne BD Featured Collection', category = 'General', price = 990, goal = 'conversion', lang = 'bn', mode = 'ad_copy' } = req.body || {};
+  const cleanTitle = String(productTitle || 'BuyOne BD Product').trim();
+  const cleanPrice = Number(price) || 990;
+
+  const buildLocalFallback = () => ({
+    headline: lang === 'en' ? `⚡ Flash Deal: ${cleanTitle} Only ৳${cleanPrice}!` : `⚡ ধামাকা অফার: ${cleanTitle} এখন মাত্র ৳${cleanPrice}!`,
+    subtext: lang === 'en' ? `100% Authentic · Cash on Delivery All 64 Districts · Hotline +8801917942662` : `১০০% অরিজিনাল · সারা বাংলাদেশ ক্যাশ অন ডেলিভারি · হটলাইন +8801917942662`,
+    adCopy: lang === 'en'
+      ? `Upgrade your lifestyle with ${cleanTitle}! Special price ৳${cleanPrice} with fast 24-72h delivery across all 64 districts of Bangladesh. Inspect before paying! Order now at BuyOne BD or call +8801917942662.`
+      : `সেরা মানের ${cleanTitle} এখন বিশেষ ছাড়ে মাত্র ৳${cleanPrice}! সারা বাংলাদেশের ৬৪ জেলায় ২৪-৭২ ঘণ্টায় ক্যাশ অন ডেলিভারি। হাতে পেয়ে দেখে পেমেন্ট করুন। অর্ডার করতে ইনবক্স করুন বা কল করুন +8801917942662।`,
+    reelScript: lang === 'en'
+      ? `[0-3s Hook] Stop scrolling! Need ${cleanTitle}?\n[4-9s Value] Premium quality at ৳${cleanPrice} with open-box COD across Bangladesh.\n[10-15s CTA] Tap Order Now at BuyOne BD or dial +8801917942662!`
+      : `[০-৩ সেকেন্ড হুক] দারুণ কিছু খুঁজছেন? দেখুন ${cleanTitle}!\n[৪-৯ সেকেন্ড ফিচার] প্রিমিয়াম কোয়ালিটি মাত্র ৳${cleanPrice} টাকায়—পাচ্ছেন আনবক্সিং চেক ও ক্যাশ অন ডেলিভারি।\n[১০-১৫ সেকেন্ড CTA] স্টক শেষ হওয়ার আগেই BuyOne BD থেকে ১-ক্লিকে অর্ডার করুন!`,
+    keywords: `${cleanTitle}, BuyOne BD, Cash on Delivery Bangladesh, ${category}, Best Price BD`,
+    seoTitle: `${cleanTitle} Price in Bangladesh | BuyOne BD`,
+    seoDescription: `Buy ${cleanTitle} at ৳${cleanPrice} from BuyOne BD. Fast 24-72h Cash on Delivery across all 64 districts of Bangladesh. Hotline +8801917942662.`
+  });
+
+  const formatNormalized = (payload: ReturnType<typeof buildLocalFallback>, provider: string) => ({
+    ok: true,
+    success: true,
+    provider,
+    mode,
+    ...payload,
+    result: {
+      headline: mode === 'seo' ? payload.seoTitle : payload.headline,
+      body: mode === 'seo' ? payload.seoDescription : mode === 'reel_script' ? payload.reelScript : payload.adCopy,
+      hashtags: mode === 'seo' ? payload.keywords : `#BuyOneBD #CashOnDelivery #BangladeshShopping #${category.replace(/[^a-zA-Z0-9]/g, '') || 'TopDeals'}`
+    }
+  });
+
+  if (!process.env.GEMINI_API_KEY) {
+    return res.json(formatNormalized(buildLocalFallback(), 'local_engine'));
+  }
+
+  try {
+    const response: any = await Promise.race([
+      ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: `Generate high-converting Bangladeshi e-commerce marketing assets and SEO metadata for "${cleanTitle}" (Category: ${category}, Price: ৳${cleanPrice}, Goal: ${goal}, Mode: ${mode}, Preferred Language: ${lang === 'en' ? 'English' : 'Bengali & English mix'}). Store is BuyOne BD, Whole Bangladesh 64-district Cash on Delivery, hotline +8801917942662.`,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              headline: { type: Type.STRING },
+              subtext: { type: Type.STRING },
+              adCopy: { type: Type.STRING },
+              reelScript: { type: Type.STRING },
+              keywords: { type: Type.STRING },
+              seoTitle: { type: Type.STRING },
+              seoDescription: { type: Type.STRING }
+            }
+          }
+        }
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini timeout')), 5500))
+    ]);
+    const parsed = JSON.parse((response?.text || '{}').trim());
+    return res.json(formatNormalized({ ...buildLocalFallback(), ...parsed }, 'gemini_ai'));
+  } catch {
+    return res.json(formatNormalized(buildLocalFallback(), 'local_fallback'));
+  }
+});
+
+const activeWsClients = new Set<WebSocket>();
+
+function broadcastWs(payload: any, excludeSocket?: WebSocket) {
+  const msg = JSON.stringify(payload);
+  activeWsClients.forEach((client) => {
+    if (client !== excludeSocket && client.readyState === WebSocket.OPEN) {
+      try {
+        client.send(msg);
+      } catch {
+        // ignore closed client
+      }
+    }
+  });
+}
+
+function mergeSupportChatSessions(existingList: any[], incomingList: any[]): any[] {
+  const map = new Map<string, any>();
+  for (const s of Array.isArray(existingList) ? existingList : []) {
+    if (s?.id) map.set(s.id, s);
+  }
+  for (const s of Array.isArray(incomingList) ? incomingList : []) {
+    if (!s?.id) continue;
+    const prev = map.get(s.id);
+    if (!prev) {
+      map.set(s.id, s);
+      continue;
+    }
+    const msgMap = new Map<string, any>();
+    for (const m of Array.isArray(prev.messages) ? prev.messages : []) {
+      if (m?.id) msgMap.set(m.id, m);
+    }
+    for (const m of Array.isArray(s.messages) ? s.messages : []) {
+      if (m?.id) msgMap.set(m.id, m);
+    }
+    const prevTime = new Date(prev.lastUpdated || 0).getTime();
+    const incTime = new Date(s.lastUpdated || 0).getTime();
+    const newer = incTime >= prevTime ? s : prev;
+    map.set(s.id, {
+      ...prev,
+      ...newer,
+      messages: Array.from(msgMap.values())
+    });
+  }
+  return Array.from(map.values())
+    .sort((a, b) => new Date(b.lastUpdated || 0).getTime() - new Date(a.lastUpdated || 0).getTime())
+    .slice(0, 60);
+}
+
+function mergeBrowserCallSessions(existingList: any[], incomingList: any[]): any[] {
+  const map = new Map<string, any>();
+  for (const c of Array.isArray(existingList) ? existingList : []) {
+    if (c?.id) map.set(c.id, c);
+  }
+  for (const c of Array.isArray(incomingList) ? incomingList : []) {
+    if (!c?.id) continue;
+    const prev = map.get(c.id);
+    if (!prev) {
+      map.set(c.id, c);
+      continue;
+    }
+    const txMap = new Map<string, any>();
+    for (const t of Array.isArray(prev.transcript) ? prev.transcript : []) {
+      if (t?.id) txMap.set(t.id, t);
+    }
+    for (const t of Array.isArray(c.transcript) ? c.transcript : []) {
+      if (t?.id) txMap.set(t.id, t);
+    }
+    const statusRank = (st: string) => (st === 'ended' ? 3 : st === 'connected' ? 2 : 1);
+    const chosenStatus = statusRank(c.status) >= statusRank(prev.status) ? c.status : prev.status;
+    map.set(c.id, {
+      ...prev,
+      ...c,
+      status: chosenStatus,
+      answeredBy: c.answeredBy || prev.answeredBy,
+      endedAt: c.endedAt || prev.endedAt,
+      durationSeconds: Math.max(Number(prev.durationSeconds) || 0, Number(c.durationSeconds) || 0),
+      transcript: Array.from(txMap.values())
+    });
+  }
+  return Array.from(map.values())
+    .sort((a, b) => new Date(b.startedAt || 0).getTime() - new Date(a.startedAt || 0).getTime())
+    .slice(0, 60);
+}
+
 app.post('/api/support/chat', (req, res) => {
   const { sessions } = req.body || {};
   if (!Array.isArray(sessions)) {
     return res.status(400).json({ success: false, error: 'sessions array required' });
   }
   const saved = loadStoreData() || {};
-  saved.supportChats = sessions.slice(0, 60);
+  saved.supportChats = mergeSupportChatSessions(saved.supportChats || [], sessions);
   saveStoreData(saved);
-  return res.json({ success: true });
+  broadcastWs({ type: 'chat:sync', supportChats: saved.supportChats });
+  return res.json({ success: true, supportChats: saved.supportChats });
 });
 
 app.post('/api/support/call', (req, res) => {
@@ -1616,9 +1980,10 @@ app.post('/api/support/call', (req, res) => {
     return res.status(400).json({ success: false, error: 'calls array required' });
   }
   const saved = loadStoreData() || {};
-  saved.browserCalls = calls.slice(0, 60);
+  saved.browserCalls = mergeBrowserCallSessions(saved.browserCalls || [], calls);
   saveStoreData(saved);
-  return res.json({ success: true });
+  broadcastWs({ type: 'call:sync', browserCalls: saved.browserCalls });
+  return res.json({ success: true, browserCalls: saved.browserCalls });
 });
 
 // Meta WhatsApp Cloud API Webhook Verification
@@ -2220,23 +2585,308 @@ app.post('/api/waitlist', (req, res) => {
   return res.json({ success: true, entry: nextEntry });
 });
 
-// Mount Vite or serve static files
+function escapeHtmlAttr(val: string): string {
+  return String(val || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function injectDynamicSeoIntoHtml(html: string): string {
+  const saved = loadStoreData();
+  const seo = saved?.settings?.seoSettings;
+  if (!seo) return html;
+  let out = html;
+  const title = String(seo.metaTitle || '').trim();
+  const desc = String(seo.metaDescription || '').trim();
+  const keywords = String(seo.keywords || '').trim();
+  if (title) {
+    out = out.replace(/<title>[^<]*<\/title>/i, `<title>${escapeHtmlAttr(title)}</title>`);
+    out = out.replace(
+      /<meta\s+property="og:title"\s+content="[^"]*"\s*\/?>/i,
+      `<meta property="og:title" content="${escapeHtmlAttr(title)}" />`
+    );
+    out = out.replace(
+      /<meta\s+name="twitter:title"\s+content="[^"]*"\s*\/?>/i,
+      `<meta name="twitter:title" content="${escapeHtmlAttr(title)}" />`
+    );
+  }
+  if (desc) {
+    out = out.replace(
+      /<meta\s+name="description"\s+content="[^"]*"\s*\/?>/i,
+      `<meta name="description" content="${escapeHtmlAttr(desc)}" />`
+    );
+    out = out.replace(
+      /<meta\s+property="og:description"\s+content="[^"]*"\s*\/?>/i,
+      `<meta property="og:description" content="${escapeHtmlAttr(desc)}" />`
+    );
+    out = out.replace(
+      /<meta\s+name="twitter:description"\s+content="[^"]*"\s*\/?>/i,
+      `<meta name="twitter:description" content="${escapeHtmlAttr(desc)}" />`
+    );
+  }
+  if (keywords !== undefined) {
+    out = out.replace(
+      /<meta\s+name="keywords"\s+content="[^"]*"\s*\/?>/i,
+      `<meta name="keywords" content="${escapeHtmlAttr(keywords)}" />`
+    );
+  }
+  const canonicalUrl = String(seo.canonicalUrl || '').trim();
+  if (canonicalUrl) {
+    if (/<link\s+rel="canonical"/i.test(out)) {
+      out = out.replace(/<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i, `<link rel="canonical" href="${escapeHtmlAttr(canonicalUrl)}" />`);
+    } else {
+      out = out.replace('</head>', `  <link rel="canonical" href="${escapeHtmlAttr(canonicalUrl)}" />\n</head>`);
+    }
+  }
+  const googleVerif = String(seo.googleSiteVerification || '').trim();
+  if (googleVerif && !out.includes('google-site-verification')) {
+    out = out.replace('</head>', `  <meta name="google-site-verification" content="${escapeHtmlAttr(googleVerif)}" />\n</head>`);
+  }
+  const storeName = String(saved?.settings?.storeName || 'BuyOne BD');
+  const structuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'OnlineStore',
+    name: storeName,
+    description: desc || 'Bangladesh E-Commerce Store with Nationwide 64-District Cash on Delivery',
+    telephone: String(saved?.settings?.hotline || '+8801917942662'),
+    areaServed: 'BD',
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: `${canonicalUrl || 'https://buyonebd.com'}/?q={search_term_string}`,
+      'query-input': 'required name=search_term_string'
+    }
+  };
+  if (!out.includes('application/ld+json')) {
+    out = out.replace(
+      '</head>',
+      `  <script type="application/ld+json">${JSON.stringify(structuredData)}</script>\n</head>`
+    );
+  }
+  return out;
+}
+
+// Mount Vite or serve static files + Attach WebSocket Server (/ws)
 async function startServer() {
+  const httpServer = http.createServer(app);
+  const wss = new WebSocketServer({ noServer: true });
+
+  httpServer.on('upgrade', (request, socket, head) => {
+    const reqUrl = request.url || '';
+    if (reqUrl === '/ws' || reqUrl.startsWith('/ws?')) {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+      });
+    }
+  });
+
+  wss.on('connection', (ws) => {
+    activeWsClients.add(ws);
+    const initialSaved = loadStoreData() || {};
+    try {
+      ws.send(
+        JSON.stringify({
+          type: 'support:init',
+          supportChats: initialSaved.supportChats || [],
+          browserCalls: initialSaved.browserCalls || []
+        })
+      );
+    } catch {}
+
+    ws.on('message', (rawData) => {
+      let msg: any = null;
+      try {
+        msg = JSON.parse(rawData.toString());
+      } catch {
+        return;
+      }
+      if (!msg || !msg.type) return;
+
+      const saved = loadStoreData() || {};
+      switch (msg.type) {
+        case 'chat:upsert_session': {
+          if (msg.session?.id) {
+            saved.supportChats = mergeSupportChatSessions(saved.supportChats || [], [msg.session]);
+            saveStoreData(saved);
+            broadcastWs({ type: 'chat:sync', supportChats: saved.supportChats });
+          }
+          break;
+        }
+        case 'chat:append_message': {
+          const { sessionId, message, sessionMeta } = msg;
+          if (sessionId && message?.id) {
+            const existingList: any[] = Array.isArray(saved.supportChats) ? saved.supportChats : [];
+            const prevSess = existingList.find((s) => s.id === sessionId);
+            const nextSess = prevSess
+              ? {
+                  ...prevSess,
+                  ...(sessionMeta || {}),
+                  lastUpdated: new Date().toISOString(),
+                  messages: [...(prevSess.messages || []), message]
+                }
+              : {
+                  id: sessionId,
+                  customerName: sessionMeta?.customerName || 'সম্মানিত গ্রাহক',
+                  customerPhone: sessionMeta?.customerPhone || '',
+                  status: 'open',
+                  manualMode: Boolean(sessionMeta?.manualMode),
+                  lastUpdated: new Date().toISOString(),
+                  unreadByAdmin: message.sender === 'customer' ? 1 : 0,
+                  messages: [message]
+                };
+            saved.supportChats = mergeSupportChatSessions(existingList, [nextSess]);
+            saveStoreData(saved);
+            broadcastWs({ type: 'chat:sync', supportChats: saved.supportChats });
+          }
+          break;
+        }
+        case 'chat:update_session': {
+          const { sessionId, patch } = msg;
+          if (sessionId && patch) {
+            const existingList: any[] = Array.isArray(saved.supportChats) ? saved.supportChats : [];
+            saved.supportChats = existingList.map((s) =>
+              s.id === sessionId ? { ...s, ...patch } : s
+            );
+            saveStoreData(saved);
+            broadcastWs({ type: 'chat:sync', supportChats: saved.supportChats });
+          }
+          break;
+        }
+        case 'chat:delete_session': {
+          const { sessionId } = msg;
+          if (sessionId) {
+            const existingList: any[] = Array.isArray(saved.supportChats) ? saved.supportChats : [];
+            saved.supportChats = existingList.filter((s) => s.id !== sessionId);
+            saveStoreData(saved);
+            broadcastWs({ type: 'chat:sync', supportChats: saved.supportChats });
+          }
+          break;
+        }
+        case 'call:start': {
+          if (msg.call?.id) {
+            saved.browserCalls = mergeBrowserCallSessions(saved.browserCalls || [], [msg.call]);
+            saveStoreData(saved);
+            broadcastWs({ type: 'call:sync', browserCalls: saved.browserCalls, latestCall: msg.call });
+          }
+          break;
+        }
+        case 'call:answer': {
+          const { callId, answeredBy, transcriptItem } = msg;
+          if (callId) {
+            const existingCalls: any[] = Array.isArray(saved.browserCalls) ? saved.browserCalls : [];
+            const prev = existingCalls.find((c) => c.id === callId);
+            if (prev) {
+              const updated = {
+                ...prev,
+                status: 'connected',
+                answeredBy: answeredBy || prev.answeredBy || 'backend_assistant',
+                transcript: transcriptItem ? [...(prev.transcript || []), transcriptItem] : prev.transcript || []
+              };
+              saved.browserCalls = mergeBrowserCallSessions(existingCalls, [updated]);
+              saveStoreData(saved);
+              broadcastWs({ type: 'call:sync', browserCalls: saved.browserCalls });
+            }
+          }
+          break;
+        }
+        case 'call:append_message': {
+          const { callId, item } = msg;
+          if (callId && item?.id) {
+            const existingCalls: any[] = Array.isArray(saved.browserCalls) ? saved.browserCalls : [];
+            const prev = existingCalls.find((c) => c.id === callId);
+            if (prev) {
+              const updated = {
+                ...prev,
+                transcript: [...(prev.transcript || []), item]
+              };
+              saved.browserCalls = mergeBrowserCallSessions(existingCalls, [updated]);
+              saveStoreData(saved);
+              broadcastWs({ type: 'call:sync', browserCalls: saved.browserCalls });
+            }
+          }
+          break;
+        }
+        case 'call:end': {
+          const { callId } = msg;
+          if (callId) {
+            const existingCalls: any[] = Array.isArray(saved.browserCalls) ? saved.browserCalls : [];
+            const prev = existingCalls.find((c) => c.id === callId);
+            if (prev) {
+              const updated = {
+                ...prev,
+                status: 'ended',
+                endedAt: new Date().toISOString(),
+                durationSeconds: Math.max(
+                  1,
+                  Math.round((Date.now() - new Date(prev.startedAt).getTime()) / 1000)
+                )
+              };
+              saved.browserCalls = mergeBrowserCallSessions(existingCalls, [updated]);
+              saveStoreData(saved);
+              broadcastWs({ type: 'call:sync', browserCalls: saved.browserCalls });
+            }
+          }
+          break;
+        }
+        case 'webrtc:offer':
+        case 'webrtc:answer':
+        case 'webrtc:ice':
+        case 'webrtc:hangup': {
+          // Relay peer-to-peer WebRTC audio signaling to all other clients
+          broadcastWs(msg, ws);
+          break;
+        }
+      }
+    });
+
+    ws.on('close', () => {
+      activeWsClients.delete(ws);
+    });
+    ws.on('error', () => {
+      activeWsClients.delete(ws);
+    });
+  });
+
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
+    app.use(async (req, res, next) => {
+      const accept = String(req.headers.accept || '');
+      const isHtmlNav =
+        req.method === 'GET' &&
+        accept.includes('text/html') &&
+        !req.originalUrl.startsWith('/api/') &&
+        !req.originalUrl.startsWith('/ws') &&
+        !req.originalUrl.includes('.');
+      if (!isHtmlNav) return next();
+      try {
+        const rawHtml = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf-8');
+        const seoHtml = injectDynamicSeoIntoHtml(rawHtml);
+        const transformed = await vite.transformIndexHtml(req.originalUrl, seoHtml);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(transformed);
+      } catch (e) {
+        next(e);
+      }
+    });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(__dirname, 'dist')));
+    app.use('/assets', express.static(path.join(__dirname, 'dist', 'assets'), { maxAge: '7d', immutable: true }));
+    app.use(express.static(path.join(__dirname, 'dist'), { index: false, maxAge: '1h' }));
     app.get('*', (_req, res) => {
-      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+      try {
+        const rawHtml = fs.readFileSync(path.join(__dirname, 'dist', 'index.html'), 'utf-8');
+        res.status(200).set({ 'Content-Type': 'text/html' }).send(injectDynamicSeoIntoHtml(rawHtml));
+      } catch {
+        res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+      }
     });
   }
 
-  app.listen(port, '0.0.0.0', () => {
+  httpServer.listen(port, '0.0.0.0', () => {
     console.log(`Server running at http://0.0.0.0:${port} (mode: ${isProd ? 'production' : 'development'})`);
   });
 }

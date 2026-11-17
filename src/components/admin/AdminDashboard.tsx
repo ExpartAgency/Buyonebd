@@ -60,6 +60,8 @@ import {
   FileText,
   Wand2,
   Mic,
+  MicOff,
+  UserCheck,
   Volume2,
   VolumeX,
   PhoneOutgoing,
@@ -111,6 +113,7 @@ import { CreativeMarketingStudio } from './CreativeMarketingStudio';
 import { PartialOrdersView } from './PartialOrdersView';
 import { AIWebsiteAgentView } from './AIWebsiteAgentView';
 import { LoyaltyRulesPanel } from './LoyaltyRulesPanel';
+import { SEOManagerView } from './SEOManagerView';
 
 const parseJsonSafe = async (res: Response): Promise<any> => {
   const txt = await res.text();
@@ -201,15 +204,24 @@ export const AdminDashboard: React.FC = () => {
     serverPixelEvents,
     customerBrowsingLogs,
     supportChats,
+    isLiveSocketConnected,
     sendAgentChatReply,
     generateAgentAIReply,
-    markChatRead,
     openOrCreateCustomerChatSession,
+    markChatRead,
+    toggleChatManualMode,
+    resolveSupportChatSession,
+    deleteSupportChatSession,
     browserCalls,
+    webrtcAudioStatus,
+    isBrowserCallMicMuted,
+    toggleBrowserCallMicMute,
     initiateCustomerBrowserCall,
     answerBrowserCallFromBackend,
     appendBrowserCallMessage,
     endBrowserCallSession,
+    executeAIAgentCommand,
+    agentActionLogs,
     customerWalletBalance,
     walletLastPurchaseAt,
     walletDaysRemaining,
@@ -314,6 +326,7 @@ export const AdminDashboard: React.FC = () => {
     | 'sliders'
     | 'wallet_control'
     | 'marketing'
+    | 'seo_metadata'
     | 'ai_hub'
     | 'spin_wheel'
     | 'analytics'
@@ -349,6 +362,11 @@ export const AdminDashboard: React.FC = () => {
   const [printableBarcodeProduct, setPrintableBarcodeProduct] = useState<Product | null>(null);
   const [posCustomItemName, setPosCustomItemName] = useState('');
   const [posCustomItemPrice, setPosCustomItemPrice] = useState('');
+  const [posVatPercent, setPosVatPercent] = useState<number>(0);
+  const [posSplitMode, setPosSplitMode] = useState<boolean>(false);
+  const [posSplitCashAmount, setPosSplitCashAmount] = useState<number>(0);
+  const [posShowZReport, setPosShowZReport] = useState<boolean>(false);
+  const posBarcodeRef = useRef<HTMLInputElement | null>(null);
   const [posHeldOrders, setPosHeldOrders] = useState<
     {
       id: string;
@@ -369,9 +387,20 @@ export const AdminDashboard: React.FC = () => {
   // Loyalty Points & Customer Manual Wallet Balance Control State
   const [customerSearch, setCustomerSearch] = useState('');
   const [balanceAdjustAmounts, setBalanceAdjustAmounts] = useState<Record<string, number>>({});
+  const [walletCustomerFilter, setWalletCustomerFilter] = useState<'all' | 'has_balance' | 'expiring_soon'>('all');
+  const [selectedWalletPhones, setSelectedWalletPhones] = useState<string[]>([]);
+  const [walletBulkStep, setWalletBulkStep] = useState<number>(100);
+  const [viewingWalletCustomer, setViewingWalletCustomer] = useState<CustomerProfile | null>(null);
   const [loyaltyStepAmounts, setLoyaltyStepAmounts] = useState<Record<string, number>>({});
   const [editingLoyaltyAcc, setEditingLoyaltyAcc] = useState<{ targetKey: string; name: string; points: number } | null>(null);
   const [viewingLoyaltyHistoryAcc, setViewingLoyaltyHistoryAcc] = useState<CustomerProfile | null>(null);
+
+  // Visitor Telemetry (Real IP, Device, Browser, OS, Country) from Backend
+  const [visitorTelemetry, setVisitorTelemetry] = useState<
+    { id: string; ip: string; country: string; device: string; browser: string; os: string; path: string; pageTitle?: string; timestamp: string }[]
+  >([]);
+  const [isLoadingVisitors, setIsLoadingVisitors] = useState(false);
+  const [visitorSearch, setVisitorSearch] = useState('');
 
   // Firebase Cloud Hub Diagnostics, Hosting Setup & Domain Helper State
   const [fbDiagnostics, setFbDiagnostics] = useState<{ ok: boolean; details: FirebaseDiagnosticStep[] } | null>(null);
@@ -479,6 +508,9 @@ export const AdminDashboard: React.FC = () => {
   const [selectedChatId, setSelectedChatId] = useState<string>('');
   const [chatReplyDraft, setChatReplyDraft] = useState<string>('');
   const [isGeneratingAiReply, setIsGeneratingAiReply] = useState<boolean>(false);
+  const [isNewManualChatOpen, setIsNewManualChatOpen] = useState<boolean>(false);
+  const [newManualChatName, setNewManualChatName] = useState<string>('');
+  const [newManualChatPhone, setNewManualChatPhone] = useState<string>('');
   const [selectedCallId, setSelectedCallId] = useState<string>('');
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string>('');
   const [callRosterSearch, setCallRosterSearch] = useState<string>('');
@@ -490,6 +522,11 @@ export const AdminDashboard: React.FC = () => {
   const [callElapsed, setCallElapsed] = useState<number>(0);
   const speechRecognitionRef = useRef<any>(null);
   const [browsingSearch, setBrowsingSearch] = useState<string>('');
+
+  // Always-Visible AI Agent Dock across every Admin Dashboard tab
+  const [isAgentDockOpen, setIsAgentDockOpen] = useState<boolean>(false);
+  const [dockAgentInput, setDockAgentInput] = useState<string>('');
+  const [isDockAgentRunning, setIsDockAgentRunning] = useState<boolean>(false);
 
   // AI Keyword Rules form state
   const [newRuleKeywords, setNewRuleKeywords] = useState('');
@@ -585,9 +622,42 @@ export const AdminDashboard: React.FC = () => {
   });
 
   const [newGalleryUrl, setNewGalleryUrl] = useState('');
-  const [waTestPhone, setWaTestPhone] = useState('01886289663');
+  const [waTestPhone, setWaTestPhone] = useState('01917942662');
   const [waTestMsg, setWaTestMsg] = useState('আসসালামু আলাইকুম! BuyOne BD থেকে আপনার অর্ডার নিশ্চিত করা হয়েছে।');
   const [isSendingWaTest, setIsSendingWaTest] = useState(false);
+
+  const loadVisitorTelemetry = async () => {
+    try {
+      setIsLoadingVisitors(true);
+      const res = await fetch('/api/analytics/visitors');
+      const data = await parseJsonSafe(res);
+      if (data?.ok && Array.isArray(data.visitors)) {
+        setVisitorTelemetry(data.visitors);
+      }
+    } catch {
+      // Ignore network hiccup
+    } finally {
+      setIsLoadingVisitors(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'overview' || activeTab === 'analytics') {
+      loadVisitorTelemetry();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'pos_system') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        posBarcodeRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeTab]);
 
   // Category Modal
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -1098,7 +1168,7 @@ export const AdminDashboard: React.FC = () => {
       const created: DistinctCallCustomer = {
         key,
         name: nameRaw || at('অতিথি গ্রাহক', 'Guest Customer'),
-        phone: cleanPhone || '01886289663',
+        phone: cleanPhone || '01917942662',
         district: districtRaw || '',
         customerOrders: [],
         totalSpent: 0,
@@ -1138,7 +1208,7 @@ export const AdminDashboard: React.FC = () => {
         (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
       );
       const activeCall =
-        sortedCalls.find((c) => c.status === 'ringing_backend') ||
+        sortedCalls.find((c) => c.status === 'ringing_backend' || c.status === 'ringing_customer') ||
         sortedCalls.find((c) => c.status === 'connected') ||
         null;
       return {
@@ -1153,7 +1223,7 @@ export const AdminDashboard: React.FC = () => {
 
     return list.sort((a, b) => {
       const score = (c: DistinctCallCustomer) =>
-        c.activeCall?.status === 'ringing_backend'
+        c.activeCall?.status === 'ringing_backend' || c.activeCall?.status === 'ringing_customer'
           ? 4
           : c.activeCall?.status === 'connected'
           ? 3
@@ -1257,13 +1327,13 @@ export const AdminDashboard: React.FC = () => {
     const newId = initiateCustomerBrowserCall(customer.latestOrder, {
       name: customer.name,
       phone: customer.phone,
-      autoConnect: true
+      direction: 'admin_to_customer'
     });
     setSelectedCallId(newId);
     speakVoiceLine(
       adminLang === 'bn'
-        ? `আসসালামু আলাইকুম ${customer.name}, BuyOne BD সাপোর্ট ডেস্ক থেকে লাইভ কল যুক্ত হয়েছে।`
-        : `Hello ${customer.name}, live support call connected from BuyOne BD desk.`
+        ? `${customer.name} কে ব্রাউজার কল করা হচ্ছে...`
+        : `Dialing ${customer.name} in browser...`
     );
   };
 
@@ -1363,6 +1433,7 @@ export const AdminDashboard: React.FC = () => {
     { id: 'sliders', labelBn: 'স্টোর স্লাইডার (৫-৬ ব্যানার)', labelEn: 'Store Sliders', icon: ImageIcon, badge: sliders.length },
     { id: 'wallet_control', labelBn: 'ওয়ালেট ও MFS রিচার্জ', labelEn: 'Wallet & MFS Top-Up', icon: Wallet, badge: pendingWalletCount },
     { id: 'marketing', labelBn: 'মার্কেটিং ও পিক্সেল হাব', labelEn: 'Marketing & Pixel', icon: BarChart3 },
+    { id: 'seo_metadata', labelBn: 'SEO মেটাডাটা ও হেড ট্যাগ', labelEn: 'SEO Metadata Studio', icon: Globe },
     { id: 'ai_hub', labelBn: 'এআই ও ভয়েস কল সেটআপ', labelEn: 'AI Voice Hub', icon: Bot },
     { id: 'spin_wheel', labelBn: 'লাকি স্পিন কুপন ম্যানেজার', labelEn: 'Spin Rewards', icon: Gift, badge: spinRewards.length },
     { id: 'analytics', labelBn: 'সম্পূর্ণ স্টোর অ্যানালিটিক্স', labelEn: 'All Analytics', icon: TrendingUp },
@@ -1412,14 +1483,22 @@ export const AdminDashboard: React.FC = () => {
                   Admin (/hossain)
                 </span>
               </h2>
-              <p className="text-[11px] text-slate-400 hidden sm:block">
-                {at('হোসাইন ম্যানেজমেন্ট প্ল্যাটফর্ম · রিলোড করতে ক্লিক করুন', 'Hossain Management Portal · Click to reload')}
-              </p>
             </div>
           </button>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Persistent AI Agent Quick Launcher (Visible on Every Admin Tab) */}
+          <button
+            type="button"
+            onClick={() => setIsAgentDockOpen((v) => !v)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black shadow-md shadow-emerald-600/20 cursor-pointer transition-all"
+            title={at('যেকোনো ট্যাব থেকে AI এজেন্ট চালান', 'Open AI Website Agent from any tab')}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+            <span className="hidden sm:inline">{at('AI এজেন্ট', 'AI Agent')}</span>
+          </button>
+
           {/* Cross-Device Cloud Order Sync Status / Quick Connect */}
           {isFirebaseAdminConnected ? (
             <button
@@ -1496,17 +1575,6 @@ export const AdminDashboard: React.FC = () => {
             isSidebarMobileOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          {/* Admin User Card */}
-          <div className="p-4 border-b border-slate-800 flex items-center gap-3 bg-slate-950/40">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center font-bold text-slate-950 shadow-md">
-              H
-            </div>
-            <div className="overflow-hidden">
-              <h4 className="text-xs font-bold text-white truncate">Hossain Admin</h4>
-              <p className="text-[11px] text-slate-400 font-mono truncate">hossain@gmail.com</p>
-            </div>
-          </div>
-
           {/* Left Side Options List (one by one as requested) */}
           <nav className="flex-1 overflow-y-auto p-3 space-y-1">
             <p className="px-3 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
@@ -1557,6 +1625,121 @@ export const AdminDashboard: React.FC = () => {
 
         {/* Content Area */}
         <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 bg-slate-950">
+          {/* GLOBAL ALWAYS-VISIBLE AI AGENT BAR & QUICK DOCK (Visible on EVERY Admin Tab) */}
+          {activeTab !== 'ai_operator' && (
+            <div className="mb-5 rounded-2xl bg-gradient-to-r from-slate-900 via-emerald-950/35 to-slate-900 border border-emerald-700/40 p-3 shadow-lg">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 flex items-center justify-center shrink-0 shadow">
+                    <Bot className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black text-white truncate">
+                        {at('AI ওয়েবসাইট অপারেটর এজেন্ট (সর্বদা সক্রিয়)', 'AI Website Operator Agent (Always Active)')}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold uppercase">
+                        LIVE AI
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 truncate">
+                      {agentActionLogs[0]
+                        ? `${at('সর্বশেষ:', 'Latest:')} ${agentActionLogs[0].reply}`
+                        : at(
+                            'যেকোনো ট্যাব থেকে অর্ডার কনফার্ম, SEO আপডেট, ফ্ল্যাশ সেল, কুরিয়ার ও সাপোর্ট নিয়ন্ত্রণ করুন',
+                            'Control orders, SEO metadata, flash sales, live calls & support across every tab'
+                          )}
+                    </p>
+                  </div>
+                </div>
+
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const q = dockAgentInput.trim();
+                    if (!q || isDockAgentRunning) return;
+                    setDockAgentInput('');
+                    setIsDockAgentRunning(true);
+                    try {
+                      await executeAIAgentCommand(q, 'admin', (tab) => setActiveTab(tab as AdminTab));
+                    } finally {
+                      setIsDockAgentRunning(false);
+                    }
+                  }}
+                  className="flex flex-wrap items-center gap-2 flex-1 max-w-xl"
+                >
+                  <input
+                    type="text"
+                    value={dockAgentInput}
+                    onChange={(e) => setDockAgentInput(e.target.value)}
+                    placeholder={at(
+                      'AI কে কমান্ড দিন (যেমন: SEO আপডেট, পেন্ডিং অর্ডার কনফার্ম, লাইভ সাপোর্ট)...',
+                      'Command AI Agent (e.g. "Open SEO", "Confirm pending orders", "Open Live Calls")...'
+                    )}
+                    className="flex-1 min-w-[200px] px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isDockAgentRunning}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  >
+                    <Send className="w-3 h-3" />
+                    <span>{isDockAgentRunning ? '...' : at('চালান', 'Run')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('ai_operator')}
+                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 text-xs font-bold cursor-pointer"
+                  >
+                    {at('ফুল এজেন্ট', 'Full Console')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAgentDockOpen((v) => !v)}
+                    className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer"
+                  >
+                    {isAgentDockOpen ? at('লুকান', 'Hide') : at(`লগ (${agentActionLogs.length})`, `Logs (${agentActionLogs.length})`)}
+                  </button>
+                </form>
+              </div>
+
+              {isAgentDockOpen && (
+                <div className="mt-3 pt-3 border-t border-slate-800/80 space-y-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { label: at('SEO মেটাডাটা খুলুন', 'Open SEO Studio'), cmd: 'Open SEO metadata editor' },
+                      { label: at('লাইভ কল/চ্যাট ডেস্ক', 'Open Live Support'), cmd: 'Open live chat and calls desk' },
+                      { label: at('অর্ডারসমূহ দেখুন', 'Open Orders'), cmd: 'Open orders tab' },
+                      { label: at('ফ্ল্যাশ সেল চালু', 'Enable Flash Sale'), cmd: 'Turn on flash sale' }
+                    ].map((preset, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => executeAIAgentCommand(preset.cmd, 'admin', (tab) => setActiveTab(tab as AdminTab))}
+                        className="px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-emerald-950/60 border border-slate-800 hover:border-emerald-700/60 text-[11px] font-bold text-slate-200 cursor-pointer"
+                      >
+                        ✨ {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  {agentActionLogs.length > 0 && (
+                    <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                      {agentActionLogs.slice(0, 4).map((log) => (
+                        <div key={log.id} className="p-2 rounded-xl bg-slate-950/90 border border-slate-800 text-[11px] flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="text-slate-400 font-mono">You: {log.instruction}</span>
+                            <p className="text-emerald-300 font-semibold">{log.reply}</p>
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-500 shrink-0">{log.time}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* LIVE INCOMING BROWSER CALL ALERT BANNER (Always visible across tabs) */}
           {ringingCalls.length > 0 && (
             <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-emerald-900/90 via-teal-900/90 to-slate-900 border border-emerald-500/60 shadow-xl shadow-emerald-950/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1615,11 +1798,20 @@ export const AdminDashboard: React.FC = () => {
                   <h3 className="text-xl font-black text-white flex items-center gap-2">
                     <Headphones className="w-5 h-5 text-emerald-400" />
                     <span>{at('লাইভ সাপোর্ট চ্যাট ও ব্রাউজার কল ডেস্ক', 'Backend Live Chat & Browser Call Desk')}</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                        isLiveSocketConnected
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      }`}
+                    >
+                      {isLiveSocketConnected ? 'LIVE WEBSOCKET' : 'HTTP SYNC'}
+                    </span>
                   </h3>
                   <p className="text-xs text-slate-400">
                     {at(
-                      'কাস্টমারের ব্রাউজার কল রিসিভ করুন, কথোপকথন ও কল হিস্ট্রি দেখুন এবং ম্যানুয়াল বা AI দিয়ে চ্যাটে রিপ্লাই দিন',
-                      'Receive customer browser calls, view live call talks & history, and reply to chats manually or via AI'
+                      'কাস্টমারের ব্রাউজার কল রিসিভ করুন, WebRTC ভয়েস অডিওতে কথা বলুন এবং ম্যানুয়াল বা AI দিয়ে চ্যাটে রিপ্লাই দিন',
+                      'Receive & dial browser WebRTC voice calls, toggle Manual Human Support mode per thread, and reply live'
                     )}
                   </p>
                 </div>
@@ -1639,12 +1831,31 @@ export const AdminDashboard: React.FC = () => {
                       <p className="text-[11px] text-slate-400">
                         {at(
                           'প্রতিটি ভিন্ন কাস্টমারের তালিকা থেকে সরাসরি কল রিসিভ করুন অথবা আউটবাউন্ড লাইভ কল করুন',
-                          'Dial or answer distinct customers individually from the live customer directory with full order details'
+                          'Dial or answer distinct customers individually via live WebRTC + speech with full order details'
                         )}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-sky-300">
+                      {webrtcAudioStatus === 'live_audio'
+                        ? at('WebRTC ভয়েস লাইভ', 'WebRTC Audio Live')
+                        : webrtcAudioStatus === 'connecting'
+                        ? at('অডিও সংযুক্ত হচ্ছে...', 'Audio Connecting...')
+                        : at('ভয়েস + টেক্সট চ্যানেল', 'Voice + Speech Desk')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={toggleBrowserCallMicMute}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1.5 cursor-pointer ${
+                        isBrowserCallMicMuted
+                          ? 'bg-amber-950/60 border-amber-600/50 text-amber-300'
+                          : 'bg-slate-950 border-slate-700 text-slate-200'
+                      }`}
+                    >
+                      {isBrowserCallMicMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5 text-emerald-400" />}
+                      <span>{isBrowserCallMicMuted ? at('মাইক মিউট', 'Mic Muted') : at('মাইক চালু', 'Mic Ready')}</span>
+                    </button>
                     <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-emerald-300 tabular-nums">
                       {at(`মোট কাস্টমার: ${callCustomersRoster.length} জন`, `${callCustomersRoster.length} Customers`)}
                     </span>
@@ -1708,6 +1919,7 @@ export const AdminDashboard: React.FC = () => {
                         filteredCallCustomers.map((cust) => {
                           const isSelected = selectedCallCustomer?.key === cust.key;
                           const isRinging = cust.activeCall?.status === 'ringing_backend';
+                          const isRingingCustomer = cust.activeCall?.status === 'ringing_customer';
                           const isLive = cust.activeCall?.status === 'connected';
 
                           return (
@@ -1730,7 +1942,7 @@ export const AdminDashboard: React.FC = () => {
                                 <div className="flex items-center gap-2.5 min-w-0">
                                   <div
                                     className={`w-9 h-9 rounded-full shrink-0 flex items-center justify-center font-black text-xs border ${
-                                      isRinging
+                                      isRinging || isRingingCustomer
                                         ? 'bg-amber-500/20 text-amber-300 border-amber-500 animate-pulse'
                                         : isLive
                                         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500'
@@ -1747,7 +1959,7 @@ export const AdminDashboard: React.FC = () => {
 
                                 <span
                                   className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
-                                    isRinging
+                                    isRinging || isRingingCustomer
                                       ? 'bg-amber-500 text-slate-950 animate-pulse'
                                       : isLive
                                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
@@ -1758,6 +1970,8 @@ export const AdminDashboard: React.FC = () => {
                                 >
                                   {isRinging
                                     ? at('ইনকামিং কল', 'Ringing')
+                                    : isRingingCustomer
+                                    ? at('কাস্টমারে রিং হচ্ছে', 'Calling...')
                                     : isLive
                                     ? at('লাইভ কল', 'On Call')
                                     : cust.latestCall
@@ -1777,7 +1991,7 @@ export const AdminDashboard: React.FC = () => {
                                     type="button"
                                     onClick={() => handleStartLiveVoiceCallForCustomer(cust)}
                                     className={`px-2.5 py-1 rounded-lg font-bold text-[10px] flex items-center gap-1 cursor-pointer ${
-                                      isRinging
+                                      isRinging || isRingingCustomer
                                         ? 'bg-amber-400 hover:bg-amber-300 text-slate-950'
                                         : isLive
                                         ? 'bg-emerald-500 text-slate-950'
@@ -1788,6 +2002,8 @@ export const AdminDashboard: React.FC = () => {
                                     <span>
                                       {isRinging
                                         ? at('রিসিভ', 'Answer')
+                                        : isRingingCustomer
+                                        ? at('রিং হচ্ছে...', 'Ringing...')
                                         : isLive
                                         ? at('কথা বলুন', 'Open')
                                         : at('লাইভ কল', 'Call Live')}
@@ -1886,24 +2102,55 @@ export const AdminDashboard: React.FC = () => {
 
                         {customerConsoleTab === 'chat' ? (
                           <div className="flex-1 flex flex-col justify-between p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 min-h-[380px]">
-                            <div className="flex items-center justify-between pb-2.5 border-b border-slate-800">
+                            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800">
                               <div>
                                 <h5 className="text-sm font-black text-white flex items-center gap-2">
                                   <MessageCircle className="w-4 h-4 text-sky-400" />
                                   <span>{selectedCallCustomer.name}</span>
+                                  {customerChatSession && (
+                                    <span
+                                      className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                                        customerChatSession.manualMode
+                                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                      }`}
+                                    >
+                                      {customerChatSession.manualMode ? 'Manual (AI Paused)' : 'AI Auto'}
+                                    </span>
+                                  )}
                                 </h5>
                                 <p className="text-[11px] text-slate-400 font-mono">
-                                  {selectedCallCustomer.phone} · {at('সরাসরি কাস্টমার চ্যাট ও AI উত্তর', 'Direct Customer Chat & AI Assistant')}
+                                  {selectedCallCustomer.phone} · {at('সরাসরি কাস্টমার চ্যাট ও ম্যানুয়াল সাপোর্ট', 'Direct Customer Chat & Manual Support')}
                                 </p>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => setCustomerConsoleTab('call')}
-                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                              >
-                                <PhoneCall className="w-3 h-3" />
-                                <span>{at('কলে যান', 'Switch to Call')}</span>
-                              </button>
+                              <div className="flex items-center gap-1.5">
+                                {customerChatSession && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      toggleChatManualMode(customerChatSession.id, !customerChatSession.manualMode)
+                                    }
+                                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer border ${
+                                      customerChatSession.manualMode
+                                        ? 'bg-emerald-600 text-white border-emerald-500'
+                                        : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                    }`}
+                                  >
+                                    <UserCheck className="w-3 h-3" />
+                                    <span>
+                                      {customerChatSession.manualMode ? at('AI চালু', 'Resume AI') : at('ম্যানুয়াল', 'Manual Mode')}
+                                    </span>
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomerConsoleTab('call')}
+                                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <PhoneCall className="w-3 h-3" />
+                                  <span>{at('কলে যান', 'Switch to Call')}</span>
+                                </button>
+                              </div>
                             </div>
 
                             <div className="flex-1 overflow-y-auto space-y-2.5 max-h-64 pr-1">
@@ -2063,6 +2310,10 @@ export const AdminDashboard: React.FC = () => {
                                   ) : activeCallObj?.status === 'ringing_backend' ? (
                                     <span className="font-bold text-amber-300">
                                       {at('ব্রাউজার থেকে কল আসছে — রিসিভ করতে বাটনে ক্লিক করুন', 'Incoming browser call ringing...')}
+                                    </span>
+                                  ) : activeCallObj?.status === 'ringing_customer' ? (
+                                    <span className="font-bold text-amber-300 animate-pulse">
+                                      {at('কাস্টমারের স্টোরফ্রন্ট ব্রাউজারে রিং হচ্ছে — রিসিভের জন্য অপেক্ষমান...', 'Ringing Customer Storefront Browser Live...')}
                                     </span>
                                   ) : (
                                     <span>
@@ -2345,15 +2596,64 @@ export const AdminDashboard: React.FC = () => {
 
               {/* B. FULL CHAT HISTORY & MANUAL / AI REPLY INBOX */}
               <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between">
-                  <h4 className="text-sm font-black text-white flex items-center gap-2">
-                    <MessageCircle className="w-4 h-4 text-sky-400" />
-                    <span>{at('কাস্টমার লাইভ চ্যাট হিস্ট্রি ও ম্যানুয়াল / AI রিপ্লাই', 'Customer Live Chat History & Assistant Reply')}</span>
-                  </h4>
-                  <span className="text-[11px] font-mono text-slate-400">
-                    {at(`${supportChats.length}টি থ্রেড`, `${supportChats.length} threads`)}
-                  </span>
+                <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-950/60 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-black text-white flex items-center gap-2">
+                      <MessageCircle className="w-4 h-4 text-sky-400" />
+                      <span>{at('কাস্টমার লাইভ চ্যাট হিস্ট্রি ও ম্যানুয়াল / AI রিপ্লাই', 'Customer Live Chat History & Manual Support Desk')}</span>
+                    </h4>
+                    <span className="text-[11px] font-mono text-slate-400">
+                      {at(`${supportChats.length}টি থ্রেড`, `${supportChats.length} threads`)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsNewManualChatOpen((v) => !v)}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{at('নতুন ম্যানুয়াল চ্যাট', 'New Manual Chat')}</span>
+                  </button>
                 </div>
+
+                {isNewManualChatOpen && (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const cname = newManualChatName.trim() || at('কাস্টমার', 'Customer');
+                      const cphone = newManualChatPhone.trim();
+                      const createdId = openOrCreateCustomerChatSession(cname, cphone);
+                      toggleChatManualMode(createdId, true);
+                      setSelectedChatId(createdId);
+                      setNewManualChatName('');
+                      setNewManualChatPhone('');
+                      setIsNewManualChatOpen(false);
+                    }}
+                    className="p-3 bg-slate-950 border-b border-slate-800 flex flex-wrap items-center gap-2 text-xs"
+                  >
+                    <input
+                      type="text"
+                      required
+                      value={newManualChatName}
+                      onChange={(e) => setNewManualChatName(e.target.value)}
+                      placeholder={at('কাস্টমারের নাম', 'Customer Name')}
+                      className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white min-w-[160px]"
+                    />
+                    <input
+                      type="text"
+                      value={newManualChatPhone}
+                      onChange={(e) => setNewManualChatPhone(e.target.value)}
+                      placeholder={at('মোবাইল নম্বর (ঐচ্ছিক)', 'Phone (optional)')}
+                      className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono min-w-[150px]"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                    >
+                      {at('চ্যাট খুলুন', 'Start Manual Thread')}
+                    </button>
+                  </form>
+                )}
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-800">
                   {/* Threads Column */}
@@ -2376,17 +2676,33 @@ export const AdminDashboard: React.FC = () => {
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-xs font-bold text-white truncate">{chat.customerName}</span>
-                            {chat.unreadByAdmin > 0 && (
-                              <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold">
-                                {chat.unreadByAdmin}
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                  chat.manualMode
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                    : 'bg-emerald-500/15 text-emerald-300'
+                                }`}
+                              >
+                                {chat.manualMode ? 'MANUAL' : 'AI'}
                               </span>
-                            )}
+                              {chat.status === 'resolved' && (
+                                <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 text-[9px]">
+                                  DONE
+                                </span>
+                              )}
+                              {chat.unreadByAdmin > 0 && (
+                                <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold">
+                                  {chat.unreadByAdmin}
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <p className="text-[11px] text-slate-400 line-clamp-1 mt-1">
                             {lastMsg?.text || '...'}
                           </p>
                           <div className="text-[10px] text-slate-500 font-mono mt-1">
-                            {chat.customerPhone || 'Guest'} • {new Date(chat.lastUpdated).toLocaleTimeString()}
+                            {chat.customerPhone || 'Visitor'} • {new Date(chat.lastUpdated).toLocaleTimeString()}
                           </div>
                         </button>
                       );
@@ -2401,12 +2717,64 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     ) : (
                       <>
-                        <div className="pb-3 border-b border-slate-800 flex items-center justify-between">
+                        <div className="pb-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
                           <div>
-                            <h5 className="text-sm font-black text-white">{activeChatObj.customerName}</h5>
+                            <h5 className="text-sm font-black text-white flex items-center gap-2">
+                              <span>{activeChatObj.customerName}</span>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  activeChatObj.manualMode
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                }`}
+                              >
+                                {activeChatObj.manualMode
+                                  ? at('ম্যানুয়াল সাপোর্ট চালু (AI পজ)', 'Manual Human Mode (AI Paused)')
+                                  : at('AI অটো সাপোর্ট চালু', 'AI Auto-Reply Active')}
+                              </span>
+                            </h5>
                             <p className="text-[11px] text-slate-400 font-mono">
                               {activeChatObj.customerPhone || 'Visitor'} • {activeChatObj.messages.length} messages
                             </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => toggleChatManualMode(activeChatObj.id, !activeChatObj.manualMode)}
+                              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer border ${
+                                activeChatObj.manualMode
+                                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500'
+                                  : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
+                              }`}
+                            >
+                              <UserCheck className="w-3.5 h-3.5" />
+                              <span>
+                                {activeChatObj.manualMode
+                                  ? at('AI অটো চালু', 'Switch to AI')
+                                  : at('ম্যানুয়াল নিন', 'Take Over Manual')}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                resolveSupportChatSession(
+                                  activeChatObj.id,
+                                  activeChatObj.status === 'resolved' ? 'open' : 'resolved'
+                                )
+                              }
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-bold text-slate-200 cursor-pointer"
+                            >
+                              {activeChatObj.status === 'resolved' ? at('রি-ওপেন', 'Reopen') : at('রিসলভড', 'Resolve')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteSupportChatSession(activeChatObj.id)}
+                              className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
+                              title={at('চ্যাট মুছুন', 'Delete Thread')}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
 
@@ -2498,6 +2866,20 @@ export const AdminDashboard: React.FC = () => {
                   <p className="text-xs text-slate-400">{t('আজকের বিক্রয়, এআই ভেরিফিকেশন ও কুরিয়ার ডেলিভারি চিত্র', 'Live sales performance, AI calls, and delivery stats')}</p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('seo_metadata')}
+                    className="px-3 py-1 rounded-full text-xs font-bold bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 cursor-pointer"
+                  >
+                    🌐 {at('SEO মেটাডাটা', 'SEO Studio')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('ai_operator')}
+                    className="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 cursor-pointer"
+                  >
+                    ✨ {at('AI এজেন্ট খুলুন', 'Open AI Agent')}
+                  </button>
                   <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                     {t('লাইভ সিস্টেম সক্রিয়', 'Live & Active')}
@@ -2579,79 +2961,168 @@ export const AdminDashboard: React.FC = () => {
                 const dPend = (sPending / totalSt) * circ;
 
                 return (
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    <div className="lg:col-span-2 p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                            <BarChart3 className="w-4 h-4 text-emerald-400" />
-                            <span>{at('গত ৭ দিনের বিক্রয় ও অর্ডার গ্রাফ', '7-Day Revenue & Order Velocity')}</span>
-                          </h4>
-                          <p className="text-[11px] text-slate-400">{at('রিয়েল-টাইম অর্ডার ভলিউম ও দৈনিক আয়', 'Real-time daily revenue performance')}</p>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                      <div className="lg:col-span-2 p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                              <BarChart3 className="w-4 h-4 text-emerald-400" />
+                              <span>{at('গত ৭ দিনের বিক্রয় ও অর্ডার গ্রাফ', '7-Day Revenue & Order Velocity')}</span>
+                            </h4>
+                            <p className="text-[11px] text-slate-400">{at('রিয়েল-টাইম অর্ডার ভলিউম ও দৈনিক আয়', 'Real-time daily revenue performance')}</p>
+                          </div>
+                          <span className="text-xs font-mono font-bold text-emerald-400">৳{totalRevenue.toLocaleString()}</span>
                         </div>
-                        <span className="text-xs font-mono font-bold text-emerald-400">৳{totalRevenue.toLocaleString()}</span>
+                        <svg viewBox="0 0 420 140" className="w-full h-36 overflow-visible">
+                          <defs>
+                            <linearGradient id="ovBarGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#10b981" />
+                              <stop offset="100%" stopColor="#0f766e" stopOpacity="0.4" />
+                            </linearGradient>
+                          </defs>
+                          {[0, 0.5, 1].map((g, gi) => (
+                            <line key={gi} x1="16" y1={110 - g * 88} x2="408" y2={110 - g * 88} stroke="#1e293b" strokeDasharray="3 3" strokeWidth="1" />
+                          ))}
+                          {daysArr.map((d, idx) => {
+                            const barH = Math.max(8, Math.round((d.rev / maxRev) * 86));
+                            const xPos = 24 + idx * 55;
+                            const yPos = 110 - barH;
+                            return (
+                              <g key={idx}>
+                                <rect x={xPos} y={yPos} width="32" height={barH} rx="6" fill="url(#ovBarGrad)" />
+                                <text x={xPos + 16} y={yPos - 5} textAnchor="middle" fill="#94a3b8" fontSize="9" fontFamily="monospace">
+                                  {d.count > 0 ? `${d.count}` : '0'}
+                                </text>
+                                <text x={xPos + 16} y="128" textAnchor="middle" fill="#64748b" fontSize="10" fontWeight="bold">
+                                  {d.label}
+                                </text>
+                              </g>
+                            );
+                          })}
+                        </svg>
                       </div>
-                      <svg viewBox="0 0 420 140" className="w-full h-36 overflow-visible">
-                        <defs>
-                          <linearGradient id="ovBarGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#10b981" />
-                            <stop offset="100%" stopColor="#0f766e" stopOpacity="0.4" />
-                          </linearGradient>
-                        </defs>
-                        {[0, 0.5, 1].map((g, gi) => (
-                          <line key={gi} x1="16" y1={110 - g * 88} x2="408" y2={110 - g * 88} stroke="#1e293b" strokeDasharray="3 3" strokeWidth="1" />
-                        ))}
-                        {daysArr.map((d, idx) => {
-                          const barH = Math.max(8, Math.round((d.rev / maxRev) * 86));
-                          const xPos = 24 + idx * 55;
-                          const yPos = 110 - barH;
-                          return (
-                            <g key={idx}>
-                              <rect x={xPos} y={yPos} width="32" height={barH} rx="6" fill="url(#ovBarGrad)" />
-                              <text x={xPos + 16} y={yPos - 5} textAnchor="middle" fill="#94a3b8" fontSize="9" fontFamily="monospace">
-                                {d.count > 0 ? `${d.count}` : '0'}
-                              </text>
-                              <text x={xPos + 16} y="128" textAnchor="middle" fill="#64748b" fontSize="10" fontWeight="bold">
-                                {d.label}
-                              </text>
-                            </g>
-                          );
-                        })}
-                      </svg>
+
+                      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                        <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                          <Activity className="w-4 h-4 text-sky-400" />
+                          <span>{at('অর্ডার স্ট্যাটাস অনুপাত', 'Order Status Breakdown')}</span>
+                        </h4>
+                        <div className="flex items-center gap-4">
+                          <svg viewBox="0 0 100 100" className="w-28 h-28 shrink-0 -rotate-90">
+                            <circle cx="50" cy="50" r={rC} fill="transparent" stroke="#1e293b" strokeWidth="12" />
+                            <circle cx="50" cy="50" r={rC} fill="transparent" stroke="#10b981" strokeWidth="12" strokeDasharray={`${dDone} ${circ}`} />
+                            <circle cx="50" cy="50" r={rC} fill="transparent" stroke="#38bdf8" strokeWidth="12" strokeDasharray={`${dActive} ${circ}`} strokeDashoffset={-dDone} />
+                            <circle cx="50" cy="50" r={rC} fill="transparent" stroke="#f59e0b" strokeWidth="12" strokeDasharray={`${dPend} ${circ}`} strokeDashoffset={-(dDone + dActive)} />
+                          </svg>
+                          <div className="space-y-1.5 text-xs flex-1">
+                            <div className="flex justify-between items-center">
+                              <span className="flex items-center gap-1.5 text-slate-300"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />{at('সম্পন্ন', 'Delivered')}</span>
+                              <span className="font-mono font-bold text-white">{sDone}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="flex items-center gap-1.5 text-slate-300"><span className="w-2.5 h-2.5 rounded-full bg-sky-400" />{at('চলমান/শিপড', 'Active')}</span>
+                              <span className="font-mono font-bold text-white">{sActive}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="flex items-center gap-1.5 text-slate-300"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" />{at('পেন্ডিং', 'Pending')}</span>
+                              <span className="font-mono font-bold text-white">{sPending}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="flex items-center gap-1.5 text-slate-300"><span className="w-2.5 h-2.5 rounded-full bg-slate-600" />{at('বাতিল', 'Cancelled')}</span>
+                              <span className="font-mono font-bold text-white">{sCancel}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
-                      <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                        <Activity className="w-4 h-4 text-sky-400" />
-                        <span>{at('অর্ডার স্ট্যাটাস অনুপাত', 'Order Status Breakdown')}</span>
-                      </h4>
-                      <div className="flex items-center gap-4">
-                        <svg viewBox="0 0 100 100" className="w-28 h-28 shrink-0 -rotate-90">
-                          <circle cx="50" cy="50" r={rC} fill="transparent" stroke="#1e293b" strokeWidth="12" />
-                          <circle cx="50" cy="50" r={rC} fill="transparent" stroke="#10b981" strokeWidth="12" strokeDasharray={`${dDone} ${circ}`} />
-                          <circle cx="50" cy="50" r={rC} fill="transparent" stroke="#38bdf8" strokeWidth="12" strokeDasharray={`${dActive} ${circ}`} strokeDashoffset={-dDone} />
-                          <circle cx="50" cy="50" r={rC} fill="transparent" stroke="#f59e0b" strokeWidth="12" strokeDasharray={`${dPend} ${circ}`} strokeDashoffset={-(dDone + dActive)} />
-                        </svg>
-                        <div className="space-y-1.5 text-xs flex-1">
-                          <div className="flex justify-between items-center">
-                            <span className="flex items-center gap-1.5 text-slate-300"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />{at('সম্পন্ন', 'Delivered')}</span>
-                            <span className="font-mono font-bold text-white">{sDone}</span>
+                    {/* Executive Category Revenue & Channel Split Analytics Row */}
+                    {(() => {
+                      const catMap = new Map<string, number>();
+                      orders.filter((o) => o.status !== 'cancelled').forEach((o) => {
+                        (o.items || []).forEach((it) => {
+                          const prodObj = products.find((p) => p.id === it.productId);
+                          const catName = prodObj
+                            ? at(prodObj.categoryBn || prodObj.category, prodObj.category)
+                            : at('অন্যান্য', 'General');
+                          catMap.set(catName, (catMap.get(catName) || 0) + ((it.price || 0) * it.quantity));
+                        });
+                      });
+                      const catBars = Array.from(catMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+                      const maxCatVal = Math.max(1000, ...catBars.map((c) => c[1]));
+                      const onlineRev = orders.filter((o) => o.status !== 'cancelled' && (o.source || 'online') !== 'pos').reduce((s, o) => s + o.pricing.total, 0);
+                      const posRev = orders.filter((o) => o.status !== 'cancelled' && o.source === 'pos').reduce((s, o) => s + o.pricing.total, 0);
+                      const sumChan = Math.max(1, onlineRev + posRev);
+                      const onlinePct = Math.round((onlineRev / sumChan) * 100);
+                      const posPct = 100 - onlinePct;
+
+                      return (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                            <h4 className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                              <Tag className="w-4 h-4 text-amber-400" />
+                              <span>{at('ক্যাটাগরি অনুযায়ী বিক্রয় আয় (Top Categories)', 'Category Revenue Share')}</span>
+                            </h4>
+                            {catBars.length === 0 ? (
+                              <p className="text-xs text-slate-500">{at('কোনো ক্যাটাগরি সেলস ডাটা নেই', 'No category sales yet')}</p>
+                            ) : (
+                              <div className="space-y-2.5 text-xs">
+                                {catBars.map(([catLabel, val]) => (
+                                  <div key={catLabel} className="space-y-1">
+                                    <div className="flex justify-between text-slate-300">
+                                      <span className="font-bold truncate max-w-[60%]">{catLabel}</span>
+                                      <span className="font-mono font-bold text-emerald-400">৳{val.toLocaleString()}</span>
+                                    </div>
+                                    <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                                      <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full" style={{ width: `${Math.max(8, Math.round((val / maxCatVal) * 100))}%` }} />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          <div className="flex justify-between items-center">
-                            <span className="flex items-center gap-1.5 text-slate-300"><span className="w-2.5 h-2.5 rounded-full bg-sky-400" />{at('চলমান/শিপড', 'Active')}</span>
-                            <span className="font-mono font-bold text-white">{sActive}</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="flex items-center gap-1.5 text-slate-300"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" />{at('পেন্ডিং', 'Pending')}</span>
-                            <span className="font-mono font-bold text-white">{sPending}</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="flex items-center gap-1.5 text-slate-300"><span className="w-2.5 h-2.5 rounded-full bg-slate-600" />{at('বাতিল', 'Cancelled')}</span>
-                            <span className="font-mono font-bold text-white">{sCancel}</span>
+
+                          <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                                <Globe className="w-4 h-4 text-sky-400" />
+                                <span>{at('অনলাইন বনাম POS সেলস ও লাইভ ভিজিটর', 'Online vs POS Channel Split & Visitors')}</span>
+                              </h4>
+                              <span className="text-[10px] font-mono text-sky-300">{visitorTelemetry.length} Visitors Logged</span>
+                            </div>
+                            <div className="space-y-2 text-xs">
+                              <div className="flex justify-between text-slate-300">
+                                <span className="font-bold">{at('ওয়েবসাইট / অনলাইন স্টোর', 'Online Storefront')} ({onlinePct}%)</span>
+                                <span className="font-mono font-bold text-sky-400">৳{onlineRev.toLocaleString()}</span>
+                              </div>
+                              <div className="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden flex">
+                                <div className="h-full bg-sky-500" style={{ width: `${onlinePct}%` }} />
+                                <div className="h-full bg-amber-500" style={{ width: `${posPct}%` }} />
+                              </div>
+                              <div className="flex justify-between text-slate-300">
+                                <span className="font-bold">{at('কাউন্টার / পস (POS)', 'Counter / POS')} ({posPct}%)</span>
+                                <span className="font-mono font-bold text-amber-400">৳{posRev.toLocaleString()}</span>
+                              </div>
+                            </div>
+                            <div className="pt-2 border-t border-slate-800 grid grid-cols-3 gap-2 text-center text-[11px]">
+                              <div className="p-2 rounded-xl bg-slate-950">
+                                <div className="font-black text-emerald-400 text-sm">{visitorTelemetry.length}</div>
+                                <div className="text-slate-400">{at('লাইভ ভিজিটর', 'Visitors')}</div>
+                              </div>
+                              <div className="p-2 rounded-xl bg-slate-950">
+                                <div className="font-black text-amber-400 text-sm">{customerAccounts.length}</div>
+                                <div className="text-slate-400">{at('নিবন্ধিত কাস্টমার', 'Accounts')}</div>
+                              </div>
+                              <div className="p-2 rounded-xl bg-slate-950">
+                                <div className="font-black text-sky-400 text-sm">{orders.length}</div>
+                                <div className="text-slate-400">{at('মোট অর্ডার', 'Orders')}</div>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
+                      );
+                    })()}
                   </div>
                 );
               })()}
@@ -3513,6 +3984,11 @@ export const AdminDashboard: React.FC = () => {
             <AIWebsiteAgentView onNavigateTab={(tab) => setActiveTab(tab as AdminTab)} />
           )}
 
+          {/* TAB: REAL-TIME STOREFRONT SEO METADATA STUDIO */}
+          {activeTab === 'seo_metadata' && (
+            <SEOManagerView onImageUpload={handleImageFileUpload} />
+          )}
+
           {/* TAB 2B: POS & 1-CLICK BARCODE SYSTEM */}
           {activeTab === 'pos_system' && (() => {
             const getProdBarcode = (p: Product) =>
@@ -3690,7 +4166,8 @@ export const AdminDashboard: React.FC = () => {
 
             const loyaltyCfg = settings.loyaltySettings;
             const bdtPerPt = loyaltyCfg?.bdtPerPoint ?? 1;
-            const afterManualDiscount = Math.max(0, posSubtotal + (posDeliveryFee || 0) - posDiscountAmount);
+            const posVatAmount = Math.round(Math.max(0, posSubtotal - posDiscountAmount) * (Math.max(0, posVatPercent || 0) / 100));
+            const afterManualDiscount = Math.max(0, posSubtotal + posVatAmount + (posDeliveryFee || 0) - posDiscountAmount);
             const posLoyaltyPointsAvail = matchedPosCustomer?.loyaltyPoints || 0;
             const posLoyaltyPointsUsed =
               posUseLoyalty && posLoyaltyPointsAvail > 0
@@ -3703,7 +4180,8 @@ export const AdminDashboard: React.FC = () => {
             const posWalletDeduction = posUseWallet && posWalletAvail > 0 ? Math.min(posWalletAvail, afterLoyalty) : 0;
 
             const posTotal = Math.max(0, afterLoyalty - posWalletDeduction);
-            const paidNum = posPaidAmount === '' ? posTotal : Math.max(0, Number(posPaidAmount) || 0);
+            const splitDigitalAmt = posSplitMode ? Math.max(0, posTotal - (posSplitCashAmount || 0)) : 0;
+            const paidNum = posSplitMode ? posTotal : posPaidAmount === '' ? posTotal : Math.max(0, Number(posPaidAmount) || 0);
             const changeReturn = Math.max(0, paidNum - posTotal);
             const dueRemaining = Math.max(0, posTotal - paidNum);
 
@@ -3724,7 +4202,7 @@ export const AdminDashboard: React.FC = () => {
                   address: 'POS Counter / In-Store Pickup',
                   district: 'Dhaka - Inside City',
                   thana: 'POS Counter',
-                  note: `POS Sale (${posPaymentMethod.toUpperCase()})${posTrxId.trim() ? ` · TrxID: ${posTrxId.trim()}` : ''}`
+                  note: `POS Sale (${posSplitMode ? `SPLIT Cash ৳${posSplitCashAmount} + Digital ৳${splitDigitalAmt}` : posPaymentMethod.toUpperCase()})${posVatPercent > 0 ? ` · VAT ${posVatPercent}% (৳${posVatAmount})` : ''}${posTrxId.trim() ? ` · TrxID: ${posTrxId.trim()}` : ''}`
                 },
                 items: posCart.map((c) => ({
                   product:
@@ -3739,7 +4217,7 @@ export const AdminDashboard: React.FC = () => {
                 paymentMethod: posPaymentMethod,
                 paymentTrxId: posTrxId.trim() || undefined,
                 deliveryZone: 'dhaka_inside',
-                customDeliveryFee: posDeliveryFee || 0,
+                customDeliveryFee: (posDeliveryFee || 0) + posVatAmount,
                 discountAmount: posDiscountAmount,
                 walletUsedAmount: posWalletDeduction > 0 ? posWalletDeduction : undefined,
                 loyaltyPointsUsed: posLoyaltyPointsUsed > 0 ? posLoyaltyPointsUsed : undefined,
@@ -3753,6 +4231,9 @@ export const AdminDashboard: React.FC = () => {
               setPosCart([]);
               setPosDiscount(0);
               setPosDeliveryFee(0);
+              setPosVatPercent(0);
+              setPosSplitMode(false);
+              setPosSplitCashAmount(0);
               setPosPaidAmount('');
               setPosTrxId('');
               setPosUseLoyalty(false);
@@ -3780,8 +4261,49 @@ export const AdminDashboard: React.FC = () => {
                     <span className="px-3 py-1.5 rounded-xl bg-emerald-950/50 border border-emerald-800/60 text-emerald-300 font-mono font-bold">
                       ৳{todayPosRevenue.toLocaleString()}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => setPosShowZReport((v) => !v)}
+                      className={`px-3 py-1.5 rounded-xl border font-bold cursor-pointer ${
+                        posShowZReport
+                          ? 'bg-amber-600 border-amber-500 text-white'
+                          : 'bg-slate-900 border-slate-700 text-amber-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      {at('ডেইলি Z-রিপোর্ট', 'Daily Z-Report')}
+                    </button>
                   </div>
                 </div>
+
+                {/* Daily Z-Report Shift Summary */}
+                {posShowZReport && (
+                  <div className="p-4 rounded-2xl bg-slate-900 border border-amber-500/40 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase block">{at('আজকের ক্যাশ সেল', 'Cash Sales')}</span>
+                      <span className="text-base font-black text-emerald-400 font-mono">
+                        ৳{todayPosOrders.filter((o) => o.payment.method === 'cod' || o.customer.note?.includes('CASH')).reduce((s, o) => s + o.pricing.total, 0).toLocaleString()}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase block">{at('ডিজিটাল / কার্ড সেল', 'Digital / MFS / Card')}</span>
+                      <span className="text-base font-black text-sky-400 font-mono">
+                        ৳{todayPosOrders.filter((o) => o.payment.method !== 'cod' && !o.customer.note?.includes('CASH')).reduce((s, o) => s + o.pricing.total, 0).toLocaleString()}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase block">{at('মোট POS ডিসকাউন্ট', 'Discounts Given')}</span>
+                      <span className="text-base font-black text-rose-400 font-mono">
+                        ৳{todayPosOrders.reduce((s, o) => s + (o.pricing.discount || 0), 0).toLocaleString()}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase block">{at('গড় বিল (Avg Ticket)', 'Avg Basket')}</span>
+                      <span className="text-base font-black text-amber-300 font-mono">
+                        ৳{todayPosOrders.length > 0 ? Math.round(todayPosRevenue / todayPosOrders.length).toLocaleString() : 0}
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Held Draft Bills Strip */}
                 {posHeldOrders.length > 0 && (
@@ -3822,12 +4344,22 @@ export const AdminDashboard: React.FC = () => {
                 <div className="p-4 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] font-bold text-emerald-400 mb-1">
-                        {at('বারকোড / SKU স্ক্যান ইনপুট (Enter চাপুন)', 'Barcode / SKU Scanner Input (Press Enter)')}
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] font-bold text-emerald-400">
+                          {at('বারকোড / SKU স্ক্যান ইনপুট (Enter বা F2 চাপুন)', 'Barcode / SKU Scanner (Enter or F2)')}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => posBarcodeRef.current?.focus()}
+                          className="text-[10px] font-mono text-emerald-300 hover:underline cursor-pointer"
+                        >
+                          [F2 Focus]
+                        </button>
+                      </div>
                       <div className="relative">
                         <Barcode className="w-4 h-4 text-emerald-400 absolute left-3 top-2.5" />
                         <input
+                          ref={posBarcodeRef}
                           type="text"
                           value={posBarcodeInput}
                           onChange={(e) => setPosBarcodeInput(e.target.value)}
@@ -4263,8 +4795,8 @@ export const AdminDashboard: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Discount (% / ৳), Delivery & Paid Amount */}
-                    <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-slate-800">
+                    {/* Discount (% / ৳), VAT %, Delivery & Paid Amount */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-2 border-t border-slate-800">
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <label className="text-slate-400 font-bold text-[10px]">{at('ডিসকাউন্ট', 'Discount')}</label>
@@ -4281,34 +4813,78 @@ export const AdminDashboard: React.FC = () => {
                           min={0}
                           value={posDiscount}
                           onChange={(e) => setPosDiscount(Math.max(0, Number(e.target.value)))}
-                          className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
                         />
                       </div>
                       <div>
-                        <label className="block text-slate-400 font-bold text-[10px] mb-1">{at('ডেলিভারি (৳)', 'Fee (৳)')}</label>
+                        <label className="block text-slate-400 font-bold text-[10px] mb-1">{at('ভ্যাট (%)', 'VAT (%)')}</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={30}
+                          value={posVatPercent}
+                          onChange={(e) => setPosVatPercent(Math.max(0, Number(e.target.value)))}
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-sky-300 font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 font-bold text-[10px] mb-1">{at('ফি (৳)', 'Fee (৳)')}</label>
                         <input
                           type="number"
                           min={0}
                           value={posDeliveryFee}
                           onChange={(e) => setPosDeliveryFee(Math.max(0, Number(e.target.value)))}
-                          className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
                         />
                       </div>
                       <div>
-                        <label className="block text-slate-400 font-bold text-[10px] mb-1">{at('নগদ জমা (৳)', 'Paid Cash (৳)')}</label>
+                        <label className="block text-slate-400 font-bold text-[10px] mb-1">{at('নগদ জমা (৳)', 'Tendered (৳)')}</label>
                         <input
                           type="number"
                           min={0}
                           placeholder={`${posTotal}`}
                           value={posPaidAmount}
                           onChange={(e) => setPosPaidAmount(e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-emerald-300 font-mono"
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-emerald-300 font-mono"
                         />
                       </div>
                     </div>
 
+                    {/* Quick Cash Tendered Buttons */}
+                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono font-bold">
+                      <span className="text-slate-400">{at('দ্রুত নোট:', 'Quick Cash:')}</span>
+                      <button
+                        type="button"
+                        onClick={() => setPosPaidAmount(String(posTotal))}
+                        className="px-2 py-1 rounded-lg bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 hover:bg-emerald-900 cursor-pointer"
+                      >
+                        Exact (৳{posTotal})
+                      </button>
+                      {[500, 1000, 2000, 5000].map((noteVal) => (
+                        <button
+                          key={noteVal}
+                          type="button"
+                          onClick={() => setPosPaidAmount(String(noteVal))}
+                          className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer"
+                        >
+                          ৳{noteVal}
+                        </button>
+                      ))}
+                    </div>
+
                     <div className="space-y-2">
-                      <label className="block text-xs text-slate-400 font-bold">{at('পেমেন্ট মেথড', 'Payment Method')}</label>
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs text-slate-400 font-bold">{at('পেমেন্ট মেথড', 'Payment Method')}</label>
+                        <label className="flex items-center gap-1.5 text-[10px] font-bold text-amber-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={posSplitMode}
+                            onChange={(e) => setPosSplitMode(e.target.checked)}
+                            className="accent-amber-500 rounded"
+                          />
+                          <span>{at('স্প্লিট পেমেন্ট (Cash+Digital)', 'Split Cash + Digital')}</span>
+                        </label>
+                      </div>
                       <div className="grid grid-cols-4 gap-1.5 text-[11px] font-bold">
                         {(['cash', 'bkash', 'nagad', 'card'] as const).map((pm) => (
                           <button
@@ -4325,7 +4901,28 @@ export const AdminDashboard: React.FC = () => {
                           </button>
                         ))}
                       </div>
-                      {posPaymentMethod !== 'cash' && (
+                      {posSplitMode && (
+                        <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-amber-950/25 border border-amber-700/40 text-[11px]">
+                          <div>
+                            <label className="text-slate-400 block mb-0.5">{at('ক্যাশ অংশ (৳)', 'Cash Portion (৳)')}</label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={posTotal}
+                              value={posSplitCashAmount}
+                              onChange={(e) => setPosSplitCashAmount(Math.max(0, Math.min(posTotal, Number(e.target.value))))}
+                              className="w-full px-2 py-1 bg-slate-950 border border-slate-700 rounded-lg text-emerald-300 font-mono"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-slate-400 block mb-0.5">{at('বাকি ডিজিটাল (৳)', 'Digital Balance (৳)')}</label>
+                            <div className="px-2 py-1 bg-slate-950 border border-slate-800 rounded-lg text-sky-300 font-mono font-bold">
+                              ৳{splitDigitalAmt.toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {(posPaymentMethod !== 'cash' || posSplitMode) && (
                         <input
                           type="text"
                           value={posTrxId}
@@ -4342,6 +4939,12 @@ export const AdminDashboard: React.FC = () => {
                         <span>Subtotal:</span>
                         <span>৳{posSubtotal.toLocaleString()}</span>
                       </div>
+                      {posVatAmount > 0 && (
+                        <div className="flex justify-between text-sky-400">
+                          <span>VAT ({posVatPercent}%):</span>
+                          <span>+৳{posVatAmount.toLocaleString()}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-slate-400">
                         <span>Delivery / Fee:</span>
                         <span>+৳{(posDeliveryFee || 0).toLocaleString()}</span>
@@ -4827,7 +5430,7 @@ export const AdminDashboard: React.FC = () => {
                                 </td>
                                 <td className="py-3.5 px-4">
                                   <div className="font-bold text-white">{cart.customerName || 'গ্রাহক'}</div>
-                                  <div className="font-mono text-emerald-400 text-[11px]">{cart.customerPhone || '01886289663'}</div>
+                                  <div className="font-mono text-emerald-400 text-[11px]">{cart.customerPhone || '01917942662'}</div>
                                   <div className="text-slate-500 text-[10px]">{cart.customerDistrict || 'ঢাকা'}</div>
                                 </td>
                                 <td className="py-3.5 px-4">
@@ -6479,7 +7082,7 @@ export const AdminDashboard: React.FC = () => {
                         type="text"
                         value={waTestPhone}
                         onChange={(e) => setWaTestPhone(e.target.value)}
-                        placeholder="01886289663"
+                        placeholder="01917942662"
                         className="sm:w-36 px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white font-mono"
                       />
                       <input
@@ -8501,6 +9104,85 @@ export const AdminDashboard: React.FC = () => {
                           </td>
                         </tr>
                       ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              {/* VISITOR TELEMETRY: REAL IP, COUNTRY, DEVICE, BROWSER, OS */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-emerald-400" />
+                      <span>{at('লাইভ ভিজিটর টেলিমেট্রি (IP, ডিভাইস, ব্রাউজার ও দেশ)', 'Live Visitor Telemetry (Real IP, Device, Browser & Country)')}</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      {at('সার্ভার /api/analytics/visitors থেকে সংগৃহীত প্রতিটি ভিজিটরের রিয়েল আইপি, দেশ ও ব্রাউজার তথ্য', 'Real-time visitor telemetry captured server-side via /api/analytics/visit')}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={visitorSearch}
+                      onChange={(e) => setVisitorSearch(e.target.value)}
+                      placeholder={at('IP, দেশ বা ব্রাউজার...', 'Filter IP, country, browser...')}
+                      className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white w-44 sm:w-56"
+                    />
+                    <button
+                      type="button"
+                      onClick={loadVisitorTelemetry}
+                      disabled={isLoadingVisitors}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingVisitors ? 'animate-spin' : ''}`} />
+                      <span>{at('রিফ্রেশ', 'Refresh')}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-800">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
+                      <tr>
+                        <th className="py-2.5 px-3">IP Address</th>
+                        <th className="py-2.5 px-3">Country</th>
+                        <th className="py-2.5 px-3">Device / OS</th>
+                        <th className="py-2.5 px-3">Browser</th>
+                        <th className="py-2.5 px-3">Page Path</th>
+                        <th className="py-2.5 px-3">Time</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {visitorTelemetry
+                        .filter(
+                          (v) =>
+                            !visitorSearch.trim() ||
+                            v.ip.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+                            v.country.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+                            v.browser.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+                            v.device.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+                            v.path.toLowerCase().includes(visitorSearch.toLowerCase())
+                        )
+                        .slice(0, 40)
+                        .map((v) => (
+                          <tr key={v.id} className="hover:bg-slate-800/40">
+                            <td className="py-2.5 px-3 font-mono font-bold text-emerald-400">{v.ip}</td>
+                            <td className="py-2.5 px-3 font-bold text-white">{v.country}</td>
+                            <td className="py-2.5 px-3 text-slate-300">{v.device} · <span className="text-slate-400">{v.os}</span></td>
+                            <td className="py-2.5 px-3 font-mono text-sky-300">{v.browser}</td>
+                            <td className="py-2.5 px-3 font-mono text-amber-300">{v.path}</td>
+                            <td className="py-2.5 px-3 font-mono text-[11px] text-slate-400">
+                              {new Date(v.timestamp).toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      {visitorTelemetry.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="py-6 text-center text-slate-500">
+                            {at('ভিজিটর টেলিমেট্রি ডাটা সংগ্রহ করা হচ্ছে...', 'Waiting for visitor requests to be logged...')}
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -10822,10 +11504,10 @@ export const AdminDashboard: React.FC = () => {
                 <button
                   type="button"
                   onClick={resetAllToDefault}
-                  className="px-4 py-2 bg-rose-950/50 hover:bg-rose-900 border border-rose-800/60 text-rose-300 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2 bg-sky-950/60 hover:bg-sky-900 border border-sky-700/60 text-sky-200 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  <span>{at('ডেমো ডাটা সম্পূর্ণ রিসেট করুন', 'Factory Reset Demo Data')}</span>
+                  <span>{at('নিরাপদ ডিফল্ট সিঙ্ক (কোনো ডাটা ডিলিট হবে না)', 'Safe Default Sync (No Data Deleted)')}</span>
                 </button>
               </div>
             </div>
@@ -12757,10 +13439,10 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
               minTopUp: 50,
               maxTopUp: 50000,
               methods: {
-                bkash: { enabled: true, label: 'bKash', accountNumber: '01886289663', accountType: 'Personal' as const },
-                nagad: { enabled: true, label: 'Nagad', accountNumber: '01886289663', accountType: 'Personal' as const },
-                rocket: { enabled: true, label: 'Rocket', accountNumber: '018862896630', accountType: 'Personal' as const },
-                upay: { enabled: true, label: 'Upay', accountNumber: '01886289663', accountType: 'Personal' as const }
+                bkash: { enabled: true, label: 'bKash', accountNumber: '01917942662', accountType: 'Personal' as const },
+                nagad: { enabled: true, label: 'Nagad', accountNumber: '01917942662', accountType: 'Personal' as const },
+                rocket: { enabled: true, label: 'Rocket', accountNumber: '01917942662', accountType: 'Personal' as const },
+                upay: { enabled: true, label: 'Upay', accountNumber: '01917942662', accountType: 'Personal' as const }
               }
             };
 
@@ -12997,8 +13679,57 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                 </div>
 
                 {/* Customer-Wise Wallet Balance (+/-) & 30-Day Inactivity Control */}
+                {(() => {
+                  const expiryMsGlobal = (wCfg.expiryDays || 30) * 86400000;
+                  const filteredWalletCustomers = customerAccounts.filter((acc) => {
+                    const q = customerSearch.trim().toLowerCase();
+                    if (
+                      q &&
+                      !acc.name.toLowerCase().includes(q) &&
+                      !acc.phone.toLowerCase().includes(q) &&
+                      !acc.email.toLowerCase().includes(q) &&
+                      !(acc.username || '').toLowerCase().includes(q)
+                    ) {
+                      return false;
+                    }
+                    const refTime = acc.lastPurchaseAt || acc.lastWalletCreditAt;
+                    const dLeft = refTime
+                      ? Math.max(0, Math.ceil((new Date(refTime).getTime() + expiryMsGlobal - Date.now()) / 86400000))
+                      : wCfg.expiryDays || 30;
+                    if (walletCustomerFilter === 'has_balance') return (acc.walletBalance || 0) > 0;
+                    if (walletCustomerFilter === 'expiring_soon') return dLeft <= 5;
+                    return true;
+                  });
+
+                  const handleExportWalletCsv = () => {
+                    const header = 'Name,Phone,Email,WalletBalance,LoyaltyPoints,LastPurchaseAt\n';
+                    const csvRows = filteredWalletCustomers
+                      .map((c) =>
+                        [
+                          `"${c.name.replace(/"/g, '""')}"`,
+                          c.phone,
+                          c.email || '',
+                          c.walletBalance || 0,
+                          c.loyaltyPoints || 0,
+                          c.lastPurchaseAt || ''
+                        ].join(',')
+                      )
+                      .join('\n');
+                    const blob = new Blob([header + csvRows], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `buyonebd-customer-wallets-${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                    addToast('success', at('CSV এক্সপোর্ট সম্পন্ন', 'Wallet CSV Exported'), `${filteredWalletCustomers.length} customers`);
+                  };
+
+                  return (
                 <div className="p-5 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                     <div>
                       <h4 className="font-black text-sm text-white flex items-center gap-2">
                         <Users className="w-4 h-4 text-emerald-400" />
@@ -13006,46 +13737,133 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                       </h4>
                       <p className="text-[11px] text-slate-400">
                         {at(
-                          'প্রতিটি কাস্টমারের ব্যালেন্স সরাসরি কমান/বাড়ান, ৩০ দিনের মেয়াদ রিসেট করুন অথবা সাথে সাথে শূন্য করুন',
-                          'Increase/decrease each customer balance directly, reset their 30-day inactivity clock, or expire to ৳0'
+                          'প্রতিটি কাস্টমারের ব্যালেন্স বাড়ান/কমান, বাল্ক অ্যাকশন নিন, লেজার দেখুন এবং CSV এক্সপোর্ট করুন',
+                          'Adjust balance per customer or in bulk, inspect ledger/orders, send WhatsApp reminder, or export CSV'
                         )}
                       </p>
                     </div>
-                    <div className="relative w-full sm:w-64">
-                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                      <input
-                        type="text"
-                        value={customerSearch}
-                        onChange={(e) => setCustomerSearch(e.target.value)}
-                        placeholder={at('নাম, ফোন বা ইউজারনেম খুঁজুন...', 'Search customer name or phone...')}
-                        className="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
-                      />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="relative w-full sm:w-56">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          value={customerSearch}
+                          onChange={(e) => setCustomerSearch(e.target.value)}
+                          placeholder={at('নাম বা ফোন খুঁজুন...', 'Search name or phone...')}
+                          className="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleExportWalletCsv}
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-300 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>CSV</span>
+                      </button>
                     </div>
+                  </div>
+
+                  {/* Filter Pills & Bulk Toolbar */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {([
+                        { id: 'all', bn: 'সকল কাস্টমার', en: 'All Customers' },
+                        { id: 'has_balance', bn: 'ব্যালেন্স আছে (>৳0)', en: 'Has Balance (>৳0)' },
+                        { id: 'expiring_soon', bn: 'মেয়াদ শেষ হচ্ছে (<=5d)', en: 'Expiring <=5d' }
+                      ] as const).map((pill) => (
+                        <button
+                          key={pill.id}
+                          type="button"
+                          onClick={() => setWalletCustomerFilter(pill.id)}
+                          className={`px-3 py-1 rounded-lg border cursor-pointer ${
+                            walletCustomerFilter === pill.id
+                              ? 'bg-emerald-600 border-emerald-500 text-white'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {at(pill.bn, pill.en)}
+                        </button>
+                      ))}
+                    </div>
+
+                    {selectedWalletPhones.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-950/40 border border-emerald-600/40">
+                        <span className="text-emerald-300 font-mono">{selectedWalletPhones.length} selected</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={walletBulkStep}
+                          onChange={(e) => setWalletBulkStep(Math.max(1, Number(e.target.value)))}
+                          className="w-16 px-2 py-0.5 bg-slate-950 border border-slate-700 rounded text-white font-mono text-center"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            selectedWalletPhones.forEach((ph) => adjustSpecificCustomerBalance(ph, walletBulkStep, 'Admin Bulk Bonus'));
+                            setSelectedWalletPhones([]);
+                          }}
+                          className="px-2 py-0.5 rounded bg-emerald-600 text-white cursor-pointer"
+                        >
+                          +৳{walletBulkStep}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            selectedWalletPhones.forEach((ph) => adjustSpecificCustomerBalance(ph, -walletBulkStep, 'Admin Bulk Deduction'));
+                            setSelectedWalletPhones([]);
+                          }}
+                          className="px-2 py-0.5 rounded bg-rose-600 text-white cursor-pointer"
+                        >
+                          -৳{walletBulkStep}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            selectedWalletPhones.forEach((ph) => resetCustomerWalletExpiry(ph, false));
+                            setSelectedWalletPhones([]);
+                          }}
+                          className="px-2 py-0.5 rounded bg-sky-600 text-white cursor-pointer"
+                        >
+                          Reset 30d
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="overflow-x-auto rounded-xl border border-slate-800">
                     <table className="w-full text-left text-xs text-slate-300">
                       <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
                         <tr>
+                          <th className="py-3 px-3 w-8">
+                            <input
+                              type="checkbox"
+                              checked={
+                                filteredWalletCustomers.length > 0 &&
+                                filteredWalletCustomers.every((c, idx) =>
+                                  selectedWalletPhones.includes(c.phone || c.email || c.username || String(idx))
+                                )
+                              }
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedWalletPhones(
+                                    filteredWalletCustomers.map((c, idx) => c.phone || c.email || c.username || String(idx))
+                                  );
+                                } else {
+                                  setSelectedWalletPhones([]);
+                                }
+                              }}
+                              className="w-3.5 h-3.5 accent-emerald-500 cursor-pointer"
+                            />
+                          </th>
                           <th className="py-3 px-4">{at('কাস্টমার', 'Customer')}</th>
                           <th className="py-3 px-4">{at('বর্তমান ব্যালেন্স', 'Wallet Balance')}</th>
                           <th className="py-3 px-4">{at('৩০-দিন মেয়াদ স্ট্যাটাস', '30-Day Expiry Status')}</th>
-                          <th className="py-3 px-4 text-right">{at('ব্যালেন্স কমান / বাড়ান & মেয়াদ অ্যাকশন', 'Balance (+/-) & Expiry Action')}</th>
+                          <th className="py-3 px-4 text-right">{at('ব্যালেন্স অ্যাকশন & লেজার', 'Balance (+/-) & Ledger')}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800">
-                        {customerAccounts
-                          .filter((acc) => {
-                            const q = customerSearch.trim().toLowerCase();
-                            if (!q) return true;
-                            return (
-                              acc.name.toLowerCase().includes(q) ||
-                              acc.phone.toLowerCase().includes(q) ||
-                              acc.email.toLowerCase().includes(q) ||
-                              (acc.username || '').toLowerCase().includes(q)
-                            );
-                          })
-                          .map((acc, idx) => {
+                        {filteredWalletCustomers.map((acc, idx) => {
                             const targetKey = acc.phone || acc.email || acc.username || String(idx);
                             const stepAmt = balanceAdjustAmounts[targetKey] ?? 50;
                             const refTime = acc.lastPurchaseAt || acc.lastWalletCreditAt;
@@ -13053,8 +13871,21 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                             const daysLeft = refTime
                               ? Math.max(0, Math.ceil((new Date(refTime).getTime() + expiryMs - Date.now()) / 86400000))
                               : wCfg.expiryDays || 30;
+                            const cleanWaPhone = (acc.phone || '').replace(/[^0-9]/g, '');
                             return (
                               <tr key={targetKey} className="hover:bg-slate-800/40">
+                                <td className="py-3 px-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedWalletPhones.includes(targetKey)}
+                                    onChange={(e) => {
+                                      setSelectedWalletPhones((prev) =>
+                                        e.target.checked ? [...prev, targetKey] : prev.filter((k) => k !== targetKey)
+                                      );
+                                    }}
+                                    className="w-3.5 h-3.5 accent-emerald-500 cursor-pointer"
+                                  />
+                                </td>
                                 <td className="py-3 px-4">
                                   <p className="font-bold text-white">{acc.name}</p>
                                   <p className="text-[10px] font-mono text-slate-400">
@@ -13093,7 +13924,7 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                                           [targetKey]: Math.max(1, Number(e.target.value))
                                         }))
                                       }
-                                      className="w-16 px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs text-center"
+                                      className="w-14 px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs text-center"
                                     />
                                     <button
                                       type="button"
@@ -13123,22 +13954,91 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                                     >
                                       Expire ৳0
                                     </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setViewingWalletCustomer(acc)}
+                                      className="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[11px] cursor-pointer"
+                                    >
+                                      {at('বিস্তারিত', 'Details')}
+                                    </button>
+                                    {cleanWaPhone.length >= 10 && (
+                                      <a
+                                        href={`https://wa.me/${cleanWaPhone.startsWith('88') ? cleanWaPhone : '88' + cleanWaPhone}?text=${encodeURIComponent(
+                                          `আসসালামু আলাইকুম ${acc.name}! BuyOne BD ওয়ালেটে আপনার বর্তমান ব্যালেন্স ৳${acc.walletBalance || 0} (মেয়াদ বাকি: ${daysLeft} দিন)। আজই শপিং করতে ভিজিট করুন!`
+                                        )}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="p-1.5 rounded-lg bg-emerald-950 border border-emerald-700 text-emerald-300 hover:bg-emerald-900"
+                                        title="Send WhatsApp Balance Alert"
+                                      >
+                                        <MessageCircle className="w-3.5 h-3.5" />
+                                      </a>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
                             );
                           })}
-                        {customerAccounts.length === 0 && (
+                        {filteredWalletCustomers.length === 0 && (
                           <tr>
-                            <td colSpan={4} className="py-6 text-center text-slate-500">
-                              {at('এখনও কোনো নিবন্ধিত কাস্টমার নেই।', 'No registered customers yet.')}
+                            <td colSpan={5} className="py-6 text-center text-slate-500">
+                              {at('এই ফিল্টারে কোনো কাস্টমার পাওয়া যায়নি।', 'No customers match this filter.')}
                             </td>
                           </tr>
                         )}
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Customer Wallet Ledger & Past Orders Detail Panel */}
+                  {viewingWalletCustomer && (
+                    <div className="p-4 rounded-xl bg-slate-950 border border-emerald-500/40 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h5 className="text-sm font-black text-white">{viewingWalletCustomer.name} — {viewingWalletCustomer.phone}</h5>
+                          <p className="text-[11px] text-slate-400">
+                            Wallet: <strong className="text-emerald-400">৳{(viewingWalletCustomer.walletBalance || 0).toLocaleString()}</strong> · Loyalty: <strong className="text-amber-300">{viewingWalletCustomer.loyaltyPoints || 0} pts</strong>
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setViewingWalletCustomer(null)}
+                          className="p-1 rounded-lg bg-slate-800 text-slate-300 cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-1 max-h-36 overflow-y-auto">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block">{at('ওয়ালেট টপ-আপ রিকোয়েস্ট', 'Wallet Top-Ups')}</span>
+                          {walletTopUps.filter((tReq) => (tReq.customerPhone || '').slice(-11) === (viewingWalletCustomer.phone || '').slice(-11)).slice(0, 6).map((tReq) => (
+                            <div key={tReq.id} className="flex justify-between font-mono text-[11px]">
+                              <span className="text-slate-300">{tReq.method.toUpperCase()} ({tReq.status})</span>
+                              <span className="text-emerald-400 font-bold">+৳{tReq.amount}</span>
+                            </div>
+                          ))}
+                          {walletTopUps.filter((tReq) => (tReq.customerPhone || '').slice(-11) === (viewingWalletCustomer.phone || '').slice(-11)).length === 0 && (
+                            <p className="text-[11px] text-slate-500">No top-up history</p>
+                          )}
+                        </div>
+                        <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-1 max-h-36 overflow-y-auto">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block">{at('সাম্প্রতিক অর্ডার', 'Customer Orders')}</span>
+                          {orders.filter((o) => (o.customer.phone || '').slice(-11) === (viewingWalletCustomer.phone || '').slice(-11)).slice(0, 6).map((o) => (
+                            <div key={o.id} className="flex justify-between font-mono text-[11px]">
+                              <span className="text-slate-300">#{o.id} ({o.status})</span>
+                              <span className="text-sky-400 font-bold">৳{o.pricing.total.toLocaleString()}</span>
+                            </div>
+                          ))}
+                          {orders.filter((o) => (o.customer.phone || '').slice(-11) === (viewingWalletCustomer.phone || '').slice(-11)).length === 0 && (
+                            <p className="text-[11px] text-slate-500">No orders yet</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
+                  );
+                })()}
 
                 {/* Top-Up Requests Queue */}
                 <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden">

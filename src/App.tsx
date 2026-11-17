@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import { StoreProvider, useStore } from './context/StoreContext';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
@@ -9,19 +9,32 @@ import { ProductCard } from './components/home/ProductCard';
 import { ProductDetailModal } from './components/home/ProductDetailModal';
 import { CartDrawer } from './components/cart/CartDrawer';
 import { OneClickCheckoutModal } from './components/checkout/OneClickCheckoutModal';
-import { AIVoiceCallModal } from './components/ai/AIVoiceCallModal';
-import { WhatsAppAgentModal } from './components/whatsapp/WhatsAppAgentModal';
 import { OrderTrackerView } from './components/tracking/OrderTrackerView';
-import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AdminLoginModal } from './components/auth/AdminLoginModal';
 import { CustomerLoginModal } from './components/auth/CustomerLoginModal';
 import { ToastContainer } from './components/common/ToastContainer';
 import { WaitlistModal } from './components/common/WaitlistModal';
-import { LuckySpinModal, LuckySpinLeftLauncher } from './components/spin/LuckySpinModal';
+import { LuckySpinLeftLauncher } from './components/spin/LuckySpinModal';
 import { SingleProductView } from './components/home/SingleProductView';
-import { CustomerDashboardModal } from './components/customer/CustomerDashboardModal';
+import { AboutView } from './components/home/AboutView';
 import { Product } from './types';
-import { Flame, PackageSearch, Clock, ShieldCheck, Truck, Award, Sparkles, X, Copy, Gift, History, Trash2 } from 'lucide-react';
+import { Flame, PackageSearch, Clock, Sparkles, X, Copy, Gift, History, Trash2 } from 'lucide-react';
+
+const AdminDashboard = React.lazy(() =>
+  import('./components/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard }))
+);
+const CustomerDashboardModal = React.lazy(() =>
+  import('./components/customer/CustomerDashboardModal').then((m) => ({ default: m.CustomerDashboardModal }))
+);
+const WhatsAppAgentModal = React.lazy(() =>
+  import('./components/whatsapp/WhatsAppAgentModal').then((m) => ({ default: m.WhatsAppAgentModal }))
+);
+const AIVoiceCallModal = React.lazy(() =>
+  import('./components/ai/AIVoiceCallModal').then((m) => ({ default: m.AIVoiceCallModal }))
+);
+const LuckySpinModal = React.lazy(() =>
+  import('./components/spin/LuckySpinModal').then((m) => ({ default: m.LuckySpinModal }))
+);
 
 function StoreMainContent() {
   const {
@@ -360,8 +373,10 @@ function StoreMainContent() {
     }
     return (
       <div className="min-h-screen bg-slate-950 pb-16 md:pb-0 overflow-x-clip w-full max-w-full">
-        <AdminDashboard />
-        <AIVoiceCallModal />
+        <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-emerald-400 text-xs font-bold">Loading Admin Portal...</div>}>
+          <AdminDashboard />
+          <AIVoiceCallModal />
+        </Suspense>
         <ToastContainer />
         <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
       </div>
@@ -382,13 +397,15 @@ function StoreMainContent() {
         <Footer />
         <OneClickCheckoutModal />
         <CartDrawer />
-        <AIVoiceCallModal />
-        <WhatsAppAgentModal />
-        <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
+        <Suspense fallback={null}>
+          <AIVoiceCallModal />
+          <WhatsAppAgentModal />
+          <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
+          <CustomerDashboardModal />
+        </Suspense>
         <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
         <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
         <CustomerLoginModal />
-        <CustomerDashboardModal />
         <MobileCategoryDrawer
           isOpen={isMobileCategoryDrawerOpen}
           onClose={() => setIsMobileCategoryDrawerOpen(false)}
@@ -418,12 +435,49 @@ function StoreMainContent() {
         <Footer />
         <OneClickCheckoutModal />
         <CartDrawer />
-        <AIVoiceCallModal />
-        <WhatsAppAgentModal />
-        <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
+        <Suspense fallback={null}>
+          <AIVoiceCallModal />
+          <WhatsAppAgentModal />
+          <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
+          <CustomerDashboardModal />
+        </Suspense>
         <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
         <CustomerLoginModal />
-        <CustomerDashboardModal />
+        <MobileCategoryDrawer
+          isOpen={isMobileCategoryDrawerOpen}
+          onClose={() => setIsMobileCategoryDrawerOpen(false)}
+          selectedCategory={selectedCategory}
+          onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
+        />
+        <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
+        <ToastContainer />
+        <MobileBottomNav onOpenCategories={() => setIsMobileCategoryDrawerOpen(true)} />
+      </div>
+    );
+  }
+
+  // View: About & Guarantees Page
+  if (storeSubView === 'about') {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 pb-16 md:pb-0 overflow-x-clip w-full max-w-full">
+        <Navbar
+          onOpenMobileCategories={() => setIsMobileCategoryDrawerOpen(true)}
+          onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
+        />
+        <main className="flex-1 w-full max-w-full overflow-x-clip">
+          <AboutView />
+        </main>
+        <Footer />
+        <OneClickCheckoutModal />
+        <CartDrawer />
+        <Suspense fallback={null}>
+          <AIVoiceCallModal />
+          <WhatsAppAgentModal />
+          <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
+          <CustomerDashboardModal />
+        </Suspense>
+        <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
+        <CustomerLoginModal />
         <MobileCategoryDrawer
           isOpen={isMobileCategoryDrawerOpen}
           onClose={() => setIsMobileCategoryDrawerOpen(false)}
@@ -473,37 +527,6 @@ function StoreMainContent() {
         {storeSubView === 'home' && searchQuery.trim() === '' && selectedCategory === 'all' && (
           <HeroBanner onCategoryFilter={(cat) => selectCategoryFilter(cat, null)} />
         )}
-
-        {/* Editable Home Storefront USP Feature Strip */}
-        {storeSubView === 'home' &&
-          searchQuery.trim() === '' &&
-          selectedCategory === 'all' &&
-          settings.organicMarketing?.homeFeatureStrip?.enabled &&
-          settings.organicMarketing.homeFeatureStrip.items.length > 0 && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
-              {settings.organicMarketing.homeFeatureStrip.items.map((item, idx) => {
-                const Icon = idx === 0 ? Truck : idx === 1 ? ShieldCheck : idx === 2 ? Award : Sparkles;
-                return (
-                  <div
-                    key={item.id || idx}
-                    className="p-3 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center gap-3 shadow-xs"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
-                        {lang === 'bn' ? item.titleBn : item.titleEn}
-                      </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                        {lang === 'bn' ? item.subBn : item.subEn}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
 
         {/* Active Department Breadcrumb & Subcategory Segmented Switcher */}
         <div className="space-y-2.5">
@@ -810,19 +833,21 @@ function StoreMainContent() {
 
       {/* Global Modals & Drawers */}
       <CustomerLoginModal />
-      <CustomerDashboardModal />
       <ProductDetailModal
         product={detailProduct}
         onClose={() => setDetailProduct(null)}
       />
       <OneClickCheckoutModal />
       <CartDrawer />
-      <AIVoiceCallModal />
-      <WhatsAppAgentModal />
-      <LuckySpinModal
-        isOpen={isSpinOpen}
-        onClose={() => setIsSpinOpen(false)}
-      />
+      <Suspense fallback={null}>
+        <CustomerDashboardModal />
+        <AIVoiceCallModal />
+        <WhatsAppAgentModal />
+        <LuckySpinModal
+          isOpen={isSpinOpen}
+          onClose={() => setIsSpinOpen(false)}
+        />
+      </Suspense>
       <MobileCategoryDrawer
         isOpen={isMobileCategoryDrawerOpen}
         onClose={() => setIsMobileCategoryDrawerOpen(false)}

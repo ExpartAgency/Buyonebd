@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ShoppingBag, User, Menu, Globe, ChevronDown, ChevronRight, Layers, Sparkles } from 'lucide-react';
+import { ShoppingBag, User, Menu, Globe, ChevronDown, ChevronRight, Layers, Sparkles, Search, X } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 
 interface NavbarProps {
@@ -15,7 +15,14 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
     setIsCartOpen,
     goHome,
     openAllProductsPage,
+    openAboutPage,
     selectCategoryFilter,
+    searchQuery,
+    setSearchQuery,
+    storeSubView,
+    activeView,
+    setActiveView,
+    setSelectedProductForPage,
     lang,
     setLang,
     t,
@@ -66,8 +73,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
         <div className="bg-slate-900 text-white text-[10px] sm:text-[11px] font-medium py-1.5 px-3 text-center overflow-hidden border-b border-slate-800">
           <div className="max-w-7xl mx-auto truncate">
             {lang === 'bn'
-              ? settings.announcementBar.textBn || 'সারা বাংলাদেশে দ্রুততম হোম ডেলিভারি ও ক্যাশ অন ডেলিভারি সুবিধা | হেল্পলাইন: 01886-289663'
-              : settings.announcementBar.textEn || 'Nationwide Fast Home Delivery with Cash on Delivery | Helpline: 01886-289663'}
+              ? settings.announcementBar.textBn || 'সারা বাংলাদেশে দ্রুততম হোম ডেলিভারি ও ক্যাশ অন ডেলিভারি সুবিধা | হেল্পলাইন: +8801917942662'
+              : settings.announcementBar.textEn || 'Whole Bangladesh Fast Home Delivery with Cash on Delivery | Helpline: +8801917942662'}
           </div>
         </div>
       )}
@@ -220,7 +227,61 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
           >
             {t('সকল পণ্য', 'All Products')}
           </button>
+
+          <button
+            type="button"
+            onClick={openAboutPage}
+            className={`hidden lg:inline-flex text-xs font-semibold px-2 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+              storeSubView === 'about'
+                ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 font-bold'
+                : 'text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400'
+            }`}
+          >
+            {t('আমাদের সম্পর্কে', 'About')}
+          </button>
         </div>
+
+        {/* Center Responsive Search Bar (Desktop & Tablet) */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (activeView !== 'store') setActiveView('store');
+            setSelectedProductForPage(null);
+            if (storeSubView === 'about') openAllProductsPage();
+          }}
+          className="hidden md:flex flex-1 max-w-lg items-center bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-emerald-600/40 focus-within:border-emerald-600 transition-all h-10"
+        >
+          <Search className="w-4 h-4 text-slate-500 ml-3 shrink-0" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              if (activeView !== 'store') setActiveView('store');
+              if (storeSubView === 'about') openAllProductsPage();
+            }}
+            placeholder={t('পণ্য খুঁজুন "Products"', 'Search "Products"')}
+            aria-label={t('পণ্য খুঁজুন', 'Search Products')}
+            className="flex-1 bg-transparent px-2.5 text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none min-w-0"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              aria-label="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            type="submit"
+            style={{ backgroundColor: '#2e5d5e' }}
+            className="h-full px-4 text-white text-xs sm:text-sm font-bold hover:opacity-95 transition-opacity cursor-pointer shrink-0"
+          >
+            {t('খুঁজুন', 'Search')}
+          </button>
+        </form>
 
         {/* Right Section: Language Toggle, Cart, Customer Profile Icon */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
@@ -269,6 +330,50 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
             )}
           </button>
         </div>
+      </div>
+
+      {/* Responsive Mobile Search Row */}
+      <div className="md:hidden px-3 pb-2.5">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (activeView !== 'store') setActiveView('store');
+            setSelectedProductForPage(null);
+            if (storeSubView === 'about') openAllProductsPage();
+          }}
+          className="flex items-center bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden h-9"
+        >
+          <Search className="w-4 h-4 text-slate-500 ml-2.5 shrink-0" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              if (activeView !== 'store') setActiveView('store');
+              if (storeSubView === 'about') openAllProductsPage();
+            }}
+            placeholder={t('পণ্য খুঁজুন "Products"', 'Search "Products"')}
+            aria-label={t('পণ্য খুঁজুন', 'Search Products')}
+            className="flex-1 bg-transparent px-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none min-w-0"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+              aria-label="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            type="submit"
+            style={{ backgroundColor: '#2e5d5e' }}
+            className="h-full px-3 text-white text-xs font-bold hover:opacity-95 cursor-pointer shrink-0"
+          >
+            {t('খুঁজুন', 'Search')}
+          </button>
+        </form>
       </div>
     </header>
   );

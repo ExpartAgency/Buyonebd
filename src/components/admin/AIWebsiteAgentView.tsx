@@ -206,7 +206,7 @@ export const AIWebsiteAgentView: React.FC<AIWebsiteAgentViewProps> = ({ onNaviga
               onChange={(e) => setCommandInput(e.target.value)}
               placeholder={at(
                 'কমান্ড লিখুন (যেমন: "অর্ডার #BD-1001 AI কনফার্ম করো" বা "ঢাকা ডেলিভারি চার্জ ৭০ টাকা করো")...',
-                'Tell AI Operator what to do (e.g. "AI confirm order #BD-1001", "Create coupon SAVE15 15%", "Set 01886289663 points to 200")...'
+                'Tell AI Operator what to do (e.g. "AI confirm order #BD-1001", "Create coupon SAVE15 15%", "Set 01917942662 points to 200")...'
               )}
               className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-2xl text-xs sm:text-sm text-white outline-none"
             />

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Star, ShoppingBag, Heart, ArrowRight, BellRing, Tag } from 'lucide-react';
+import { Star, ShoppingBag, Heart, ArrowRight, BellRing, Tag, Award } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
 import { WaitlistModal } from '../common/WaitlistModal';
@@ -63,6 +63,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
           <img
             src={product.images[0]}
             alt={product.title}
+            loading="lazy"
+            decoding="async"
             referrerPolicy="no-referrer"
             className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
               isOutOfStock ? 'opacity-70 grayscale-[35%]' : ''
@@ -142,6 +144,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
                 </span>
               )}
             </div>
+            {settings.loyaltySettings?.enabled !== false && (
+              <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 text-[10px] font-bold tabular-nums">
+                <Award className="w-3 h-3 shrink-0 text-amber-500" />
+                <span>
+                  {t(
+                    `+${Math.max(1, Math.floor((product.price / 100) * (settings.loyaltySettings?.pointsPer100Bdt ?? 5)))} পয়েন্ট অর্জন`,
+                    `Earn +${Math.max(1, Math.floor((product.price / 100) * (settings.loyaltySettings?.pointsPer100Bdt ?? 5)))} pts`
+                  )}
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-1.5">

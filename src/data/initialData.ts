@@ -730,7 +730,7 @@ export const INITIAL_USERS: UserStaff[] = [
     id: 'user-01',
     name: 'Md Hossain (Owner)',
     email: 'hossain@gmail.com',
-    phone: '01886289663',
+    phone: '01917942662',
     role: 'super_admin',
     isActive: true,
     createdAt: '2026-01-01T00:00:00Z'
@@ -794,8 +794,8 @@ export const INITIAL_SETTINGS: StoreSettings = {
   logoMode: 'text',
   tagline: 'Bangladesh\'s Most Trusted Smart Shopping Platform',
   taglineBn: 'বাংলাদেশের বিশ্বস্ত ১-ক্লিক স্মার্ট ই-কমার্স ও অটোমেটেড এআই সাপোর্ট',
-  hotline: '01886-BUYONE (01886-289663)',
-  whatsappNumber: '8801886289663',
+  hotline: '+8801917942662',
+  whatsappNumber: '8801917942662',
   supportEmail: 'buyonebd@gmail.com',
   address: 'লেভেল ৪, হাউস ১৮, রোড ১১, বনানী, ঢাকা-১২১৩, বাংলাদেশ',
   deliveryFees: {
@@ -804,9 +804,9 @@ export const INITIAL_SETTINGS: StoreSettings = {
     dhakaOutside: 130
   },
   paymentSettings: {
-    bkashMerchant: '01886289663',
-    nagadMerchant: '01886289663',
-    rocketMerchant: '018862896630',
+    bkashMerchant: '01917942662',
+    nagadMerchant: '01917942662',
+    rocketMerchant: '01917942662',
     enableCOD: true,
     requireAdvanceDeliveryFee: false,
     advanceFeeAmount: 100
@@ -823,8 +823,8 @@ export const INITIAL_SETTINGS: StoreSettings = {
   },
   announcementBar: {
     enabled: true,
-    textBn: '🚚 সারা বাংলাদেশে দ্রুততম হোম ডেলিভারি ও ক্যাশ অন ডেলিভারি সুবিধা | হেল্পলাইন: 01886-289663',
-    textEn: '🚚 Nationwide Fast Home Delivery with Cash on Delivery | Helpline: 01886-289663'
+    textBn: '🚚 সমগ্র বাংলাদেশে (৬৪ জেলায়) দ্রুততম হোম ডেলিভারি ও ক্যাশ অন ডেলিভারি সুবিধা | হেল্পলাইন: +8801917942662',
+    textEn: '🚚 Fast Home Delivery Across Whole Bangladesh (All 64 Districts) with Cash on Delivery | Helpline: +8801917942662'
   },
   theme: 'gadgets',
   themeColors: {
@@ -872,14 +872,14 @@ export const INITIAL_SETTINGS: StoreSettings = {
     ]
   },
   whatsappTemplates: {
-    orderConfirmationMsg: 'আসসালামু আলাইকুম {customer_name} ভাই/আপু, BuyOne BD থেকে আপনার অর্ডার #{order_id} সফলভাবে কনফার্ম করা হয়েছে।\nমোট বিল: ৳{total_amount} (ক্যাশ অন ডেলিভারি)\nডেলিভারি ঠিকানা: {address}, {district}\nকুরিয়ার ট্র্যাকিং কোড: {tracking_code}\nযে কোনো তথ্যে যোগাযোগ করুন: 01886-BUYONE। ধন্যবাদ!',
+    orderConfirmationMsg: 'আসসালামু আলাইকুম {customer_name} ভাই/আপু, BuyOne BD থেকে আপনার অর্ডার #{order_id} সফলভাবে কনফার্ম করা হয়েছে।\nমোট বিল: ৳{total_amount} (ক্যাশ অন ডেলিভারি)\nডেলিভারি ঠিকানা: {address}, {district}\nকুরিয়ার ট্র্যাকিং কোড: {tracking_code}\nযে কোনো তথ্যে যোগাযোগ করুন: +8801917942662। ধন্যবাদ!',
     riderDispatchMsg: 'প্রিয় {customer_name}, আপনার পার্সেলটি (#{order_id}) স্টিডফাস্ট কুরিয়ারে বুকিং দেওয়া হয়েছে। ট্র্যাকিং কোড: {tracking_code}। ২-৩ দিনে আপনার ঠিকানায় পৌঁছাবে। ধন্যবাদ, BuyOne BD।',
     abandonedCartMsg: 'আসসালামু আলাইকুম {customer_name} ভাই! আপনি BuyOne BD তে কার্টে কিছু আকর্ষণীয় পণ্য রেখে গেছেন। অর্ডারটি এখনই সম্পন্ন করলে বিশেষ কুপন [COMEBACK10] দিয়ে পাবেন অতিরিক্ত ১০% ছাড় ও ফ্রি গিফট! লিংক: {recovery_link}'
   },
   marketingTemplates: {
     orderConfirmation: 'আসসালামু আলাইকুম {customer_name}! BuyOne BD-তে আপনার অর্ডার #{order_id} সফলভাবে গ্রহণ করা হয়েছে। মোট বিল: ৳{total_amount} (COD)। ঠিকানা: {customer_address}। দ্রুততম সময়ে আপনার ঠিকানায় পৌঁছে যাবে। ধন্যবাদ!',
     shippingDispatched: 'প্রিয় {customer_name}! আপনার অর্ডার #{order_id} কুরিয়ারে ({courier_name}) বুকিং সম্পন্ন হয়েছে। লাইভ ট্র্যাকিং কোড: {tracking_code}। পার্সেল আসার পর চেক করে মূল্য পরিশোধ করুন। ধন্যবাদ, BuyOne BD।',
-    orderHold: 'আসসালামু আলাইকুম {customer_name}! আপনার অর্ডার #{order_id}-এর জন্য ফোন নম্বর ও সঠিক ডেলিভারি ঠিকানা যাচাই প্রয়োজন। অনুগ্রহ করে আপনার সম্পূর্ণ ঠিকানা নিশ্চিত করুন। BuyOne BD হেল্পলাইন: 01886-289663।',
+    orderHold: 'আসসালামু আলাইকুম {customer_name}! আপনার অর্ডার #{order_id}-এর জন্য ফোন নম্বর ও সঠিক ডেলিভারি ঠিকানা যাচাই প্রয়োজন। অনুগ্রহ করে আপনার সম্পূর্ণ ঠিকানা নিশ্চিত করুন। BuyOne BD হেল্পলাইন: +8801917942662।',
     orderCancellation: 'প্রিয় {customer_name}, আপনার অনুরোধ অনুযায়ী অর্ডার #{order_id} বাতিল করা হয়েছে। ভবিষ্যতে BuyOne BD-তে আপনাকে আবার স্বাগত জানাই!',
     cartRecovery: 'আসসালামু আলাইকুম {customer_name}! আপনি BuyOne BD-তে কার্টে পণ্য রেখে গেছেন। আজই অর্ডার নিশ্চিত করলে পাচ্ছেন বিশেষ ৳১০০ ডিসকাউন্ট! কুপন কোড: WIN100।',
     promotionalBroadcast: '🔥 ধামাকা অফার BuyOne BD-তে! সীমিত সময়ের জন্য ৫০% পর্যন্ত মূল্যছাড় চলছে। এখনই ভিজিট করুন এবং ক্যাশ অন ডেলিভারিতে পছন্দের পণ্য কিনুন!',
@@ -981,8 +981,8 @@ export const INITIAL_SETTINGS: StoreSettings = {
     {
       id: 'kw-payment',
       keywords: ['বিকাশ', 'নগদ', 'রকেট', 'পেমেন্ট', 'ক্যাশ', 'bkash', 'nagad', 'rocket', 'payment', 'cod'],
-      replyBn: 'আপনি পণ্য হাতে পেয়ে সম্পূর্ণ টাকা পরিশোধ (Cash on Delivery) করতে পারবেন! এছাড়া বিকাশ/নগদ/রকেট নম্বর: 01886289663।',
-      replyEn: 'Cash on Delivery (pay after checking parcel) is available everywhere. Mobile payments: bKash / Nagad / Rocket Merchant: 01886289663.',
+      replyBn: 'আপনি পণ্য হাতে পেয়ে সম্পূর্ণ টাকা পরিশোধ (Cash on Delivery) করতে পারবেন! এছাড়া বিকাশ/নগদ/রকেট নম্বর: 01917942662।',
+      replyEn: 'Cash on Delivery (pay after checking parcel) is available across all 64 districts of Bangladesh. Mobile payments: bKash / Nagad / Rocket Merchant: 01917942662.',
       enabled: true
     },
     {
@@ -1009,15 +1009,15 @@ export const INITIAL_SETTINGS: StoreSettings = {
     {
       id: 'kw-contact',
       keywords: ['ঠিকানা', 'অফিস', 'শোরুম', 'হেল্পলাইন', 'ফোন', 'নম্বর', 'address', 'office', 'contact', 'phone', 'hotline'],
-      replyBn: 'আমাদের অফিস: লেভেল ৪, হাউস ১৮, রোড ১১, বনানী, ঢাকা-১২১৩। হটলাইন ও হোয়াটসঅ্যাপ: 01886-289663 (সকাল ৯টা – রাত ১১টা)।',
-      replyEn: 'Our office: Level 4, House 18, Road 11, Banani, Dhaka-1213. Hotline & WhatsApp: 01886-289663.',
+      replyBn: 'আমাদের অফিস: লেভেল ৪, হাউস ১৮, রোড ১১, বনানী, ঢাকা-১২১৩। হটলাইন ও হোয়াটসঅ্যাপ: +8801917942662 (সকাল ৯টা – রাত ১১টা)।',
+      replyEn: 'Our office: Level 4, House 18, Road 11, Banani, Dhaka-1213. Hotline & WhatsApp: +8801917942662.',
       enabled: true
     },
     {
       id: 'kw-wholesale',
       keywords: ['পাইকারি', 'হোলসেল', 'বেশি নিলে', 'wholesale', 'bulk', 'reseller'],
-      replyBn: 'জ্বী! পাইকারি বা কর্পোরেট বাল্ক অর্ডারে বিশেষ ছাড় পাওয়া যায়। সরাসরি আমাদের হোয়াটসঅ্যাপে (01886289663) পণ্যের নাম ও পরিমাণ জানান।',
-      replyEn: 'Yes! We offer special wholesale and bulk pricing. Contact our WhatsApp desk (01886289663) with your required quantity.',
+      replyBn: 'জ্বী! পাইকারি বা কর্পোরেট বাল্ক অর্ডারে বিশেষ ছাড় পাওয়া যায়। সরাসরি আমাদের হোয়াটসঅ্যাপে (+8801917942662) পণ্যের নাম ও পরিমাণ জানান।',
+      replyEn: 'Yes! We offer special wholesale and bulk pricing. Contact our WhatsApp desk (+8801917942662) with your required quantity.',
       enabled: true
     }
   ],
@@ -1037,8 +1037,8 @@ export const INITIAL_SETTINGS: StoreSettings = {
   footerSettings: {
     aboutTextBn: 'BuyOne BD হলো বাংলাদেশের বিশ্বস্ত অনলাইন শপিং প্ল্যাটফর্ম। সারাদেশে ক্যাশ অন ডেলিভারি, এআই অটোমেটেড ভয়েস কল কনফার্মেশন ও স্টিডফাস্ট কুরিয়ারের মাধ্যমে দ্রুততম সময়ে আসল পণ্য পৌঁছে দিতে আমরা প্রতিশ্রুতিবদ্ধ।',
     aboutTextEn: 'BuyOne BD is Bangladesh\'s premier shopping destination with instant AI confirmation calls and nationwide Cash on Delivery.',
-    hotline: '01886-BUYONE (01886-289663)',
-    whatsappNumber: '8801886289663',
+    hotline: '+8801917942662',
+    whatsappNumber: '8801917942662',
     email: 'buyonebd@gmail.com',
     address: 'লেভেল ৪, হাউস ১৮, রোড ১১, বনানী, ঢাকা-১২১৩, বাংলাদেশ',
     facebookUrl: 'https://facebook.com',
@@ -1066,25 +1066,25 @@ export const INITIAL_SETTINGS: StoreSettings = {
       bkash: {
         enabled: true,
         label: 'bKash',
-        accountNumber: '01886289663',
+        accountNumber: '01917942662',
         accountType: 'Personal'
       },
       nagad: {
         enabled: true,
         label: 'Nagad',
-        accountNumber: '01886289663',
+        accountNumber: '01917942662',
         accountType: 'Personal'
       },
       rocket: {
         enabled: true,
         label: 'Rocket',
-        accountNumber: '018862896630',
+        accountNumber: '01917942662',
         accountType: 'Personal'
       },
       upay: {
         enabled: true,
         label: 'Upay',
-        accountNumber: '01886289663',
+        accountNumber: '01917942662',
         accountType: 'Personal'
       }
     }

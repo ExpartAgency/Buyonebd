@@ -838,7 +838,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                         <input
                           type="tel"
                           required
-                          placeholder="01886-XXXXXX"
+                          placeholder="01917-XXXXXX"
                           value={alertContact}
                           onChange={(e) => setAlertContact(e.target.value)}
                           className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold outline-none focus:border-emerald-500"

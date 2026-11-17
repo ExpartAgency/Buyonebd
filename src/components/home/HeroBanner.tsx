@@ -1,11 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Zap,
-  ShieldCheck,
-  Truck,
   Flame,
   ArrowRight,
-  PhoneCall,
   ChevronLeft,
   ChevronRight,
   Sparkles
@@ -258,9 +255,25 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
             )}
           </div>
 
-          {/* Right Slide Framed Architectural Visual */}
+          {/* Right Slide Framed Architectural Visual — Clickable Category Redirect */}
           <div className="lg:col-span-5 relative min-h-[220px] sm:min-h-[280px] lg:min-h-full overflow-hidden flex items-center justify-center p-4 sm:p-6">
-            <div className="relative w-full h-full min-h-[210px] lg:min-h-[340px] rounded-2xl overflow-hidden border border-white/15 shadow-2xl">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (onCategoryFilter) {
+                  onCategoryFilter(activeSlide?.linkCategory || 'all');
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onCategoryFilter?.(activeSlide?.linkCategory || 'all');
+                }
+              }}
+              title={t('এই ক্যাটাগরির সকল পণ্য দেখুন', 'Browse this category')}
+              className="relative w-full h-full min-h-[210px] lg:min-h-[340px] rounded-2xl overflow-hidden border border-white/15 shadow-2xl cursor-pointer"
+            >
               {activeSlide?.image ? (
                 <img
                   key={`img-${activeSlide.id || currentSlideIndex}`}
@@ -277,7 +290,10 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
               {featuredProduct && (
                 <button
                   type="button"
-                  onClick={() => openOneClickCheckout(featuredProduct)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openOneClickCheckout(featuredProduct);
+                  }}
                   className="absolute bottom-3 left-3 right-3 p-3 rounded-xl bg-slate-950/80 backdrop-blur-md border border-white/15 flex items-center justify-between gap-2 hover:bg-slate-900 transition-colors text-left cursor-pointer"
                 >
                   <div className="min-w-0">
@@ -304,12 +320,15 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
           </div>
         </div>
 
-        {/* Floating Carousel Controls */}
+        {/* Floating Carousel Controls + Pagination Dots */}
         {slides.length > 1 && (
           <>
             <button
               type="button"
-              onClick={handlePrev}
+              onClick={(e) => {
+                e.stopPropagation();
+                handlePrev();
+              }}
               className="hidden sm:flex absolute left-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/50 hover:bg-black/80 border border-white/15 text-white items-center justify-center backdrop-blur-sm transition-colors cursor-pointer"
               aria-label="Previous Slide"
             >
@@ -317,7 +336,10 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
             </button>
             <button
               type="button"
-              onClick={handleNext}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleNext();
+              }}
               className="hidden sm:flex absolute right-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/50 hover:bg-black/80 border border-white/15 text-white items-center justify-center backdrop-blur-sm transition-colors cursor-pointer"
               aria-label="Next Slide"
             >
@@ -327,48 +349,23 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
         )}
       </div>
 
-      {/* 4-Column Store Assurance Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-            <Zap className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">{t('এক্সপ্রেস চেকআউট', 'Express Checkout')}</h4>
-            <p className="text-[11px] text-slate-500 truncate">{t('১০ সেকেন্ডে অর্ডার', 'Fast 10s order')}</p>
-          </div>
+      {slides.length > 1 && (
+        <div className="flex items-center justify-center gap-2 pt-0.5">
+          {slides.map((sl, idx) => (
+            <button
+              key={`dot-${sl.id || idx}`}
+              type="button"
+              onClick={() => setCurrentSlideIndex(idx)}
+              aria-label={`Slide ${idx + 1}`}
+              className={`h-2.5 rounded-full transition-all cursor-pointer ${
+                idx === currentSlideIndex
+                  ? 'w-7 bg-emerald-600'
+                  : 'w-2.5 bg-slate-300 dark:bg-slate-700 hover:bg-slate-400'
+              }`}
+            />
+          ))}
         </div>
-
-        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
-            <PhoneCall className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">{t('কল কনফার্মেশন', 'Voice Confirmation')}</h4>
-            <p className="text-[11px] text-slate-500 truncate">{t('লাইভ অর্ডার যাচাই', 'Live verification')}</p>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">{t('ক্যাশ অন ডেলিভারি', 'Cash on Delivery')}</h4>
-            <p className="text-[11px] text-slate-500 truncate">{t('পণ্য দেখে পেমেন্ট', 'Pay on parcel receipt')}</p>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-            <Truck className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">{t('সারাদেশে ডেলিভারি', 'Nationwide Courier')}</h4>
-            <p className="text-[11px] text-slate-500 truncate">{t('৬৪ জেলা কভারেজ', 'All 64 districts')}</p>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

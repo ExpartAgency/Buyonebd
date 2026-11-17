@@ -443,6 +443,8 @@ export interface SupportChatSession {
   customerName: string;
   customerPhone?: string;
   status: 'open' | 'resolved';
+  manualMode?: boolean;
+  assignedAgent?: string;
   lastUpdated: string;
   unreadByAdmin: number;
   messages: SupportChatMessage[];
@@ -460,10 +462,12 @@ export interface BrowserCallSession {
   id: string;
   orderId?: string;
   callType: 'support' | 'order_verification';
+  direction?: 'customer_to_admin' | 'admin_to_customer';
+  visitorSessionId?: string;
   customerName: string;
   customerPhone: string;
-  status: 'ringing_backend' | 'connected' | 'ended';
-  answeredBy?: 'backend_assistant' | 'ai_auto';
+  status: 'ringing_backend' | 'ringing_customer' | 'connected' | 'ended';
+  answeredBy?: 'backend_assistant' | 'ai_auto' | 'customer';
   startedAt: string;
   endedAt?: string;
   durationSeconds: number;

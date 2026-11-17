@@ -2538,5 +2538,42 @@
       "mimeType": "image/jpeg",
       "createdAt": "2026-11-15T16:52:15.592Z"
     }
+  ],
+  "visitorLogs": [
+    {
+      "id": "vis-1794939317885-1pv9",
+      "ip": "127.0.0.1",
+      "device": "Desktop",
+      "browser": "Chrome",
+      "os": "Other",
+      "country": "Bangladesh (BD)",
+      "path": "/about",
+      "urlPath": "/about",
+      "pageTitle": "About BuyOne BD",
+      "timestamp": "2026-11-17T18:15:17.886Z"
+    },
+    {
+      "id": "vis-1794939269603-qxdc",
+      "ip": "127.0.0.1",
+      "device": "Desktop",
+      "browser": "Chrome",
+      "os": "Other",
+      "country": "Bangladesh (BD)",
+      "path": "/about",
+      "urlPath": "/about",
+      "pageTitle": "About BuyOne BD",
+      "timestamp": "2026-11-17T18:14:29.603Z"
+    },
+    {
+      "id": "vis-1794939196260-x7r3",
+      "ip": "127.0.0.1",
+      "device": "Desktop",
+      "browser": "Chrome",
+      "os": "Other",
+      "country": "Bangladesh (BD)",
+      "urlPath": "/",
+      "pageTitle": "About BuyOne BD",
+      "timestamp": "2026-11-17T18:13:16.260Z"
+    }
   ]
 }

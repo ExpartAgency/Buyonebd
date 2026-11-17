@@ -8,6 +8,7 @@ export const Footer: React.FC = () => {
     categories,
     goHome,
     openAllProductsPage,
+    openAboutPage,
     selectCategoryFilter,
     setActiveView,
     navigateToPath,
@@ -176,6 +177,14 @@ export const Footer: React.FC = () => {
                   </button>
                 </li>
               ))}
+              <li>
+                <button
+                  onClick={openAboutPage}
+                  className="hover:text-emerald-400 cursor-pointer transition-colors text-left"
+                >
+                  {t('আমাদের সম্পর্কে ও শপিং সুবিধা', 'About Us & Guarantees')}
+                </button>
+              </li>
             </ul>
 
             {footer?.showCategoriesInFooter !== false && activeCategories.length > 0 && (
