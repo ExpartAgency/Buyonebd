@@ -1811,7 +1811,7 @@ export const AdminDashboard: React.FC = () => {
                   <p className="text-xs text-slate-400">
                     {at(
                       'কাস্টমারের ব্রাউজার কল রিসিভ করুন, WebRTC ভয়েস অডিওতে কথা বলুন এবং ম্যানুয়াল বা AI দিয়ে চ্যাটে রিপ্লাই দিন',
-                      'Receive & dial browser WebRTC voice calls, toggle Manual Human Support mode per thread, and reply live'
+                      'Receive & dial browser WebRTC voice calls, toggle Direct Support Desk mode per thread, and reply live'
                     )}
                   </p>
                 </div>
@@ -2729,7 +2729,7 @@ export const AdminDashboard: React.FC = () => {
                                 }`}
                               >
                                 {activeChatObj.manualMode
-                                  ? at('ম্যানুয়াল সাপোর্ট চালু (AI পজ)', 'Manual Human Mode (AI Paused)')
+                                  ? at('ম্যানুয়াল সাপোর্ট চালু (AI পজ)', 'Direct Desk Mode (AI Paused)')
                                   : at('AI অটো সাপোর্ট চালু', 'AI Auto-Reply Active')}
                               </span>
                             </h5>
@@ -2919,7 +2919,7 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                   <div className="text-2xl font-black text-white">{aiSuccessRate}%</div>
                   <div className="text-[11px] text-emerald-400 mt-2">
-                    {t('স্বয়ংক্রিয় হিউম্যান ভয়েস কনফার্ম', 'Voice verified')}
+                    {t('স্বয়ংক্রিয় ভয়েস কনফার্ম', 'Voice verified')}
                   </div>
                 </div>
 
@@ -8456,12 +8456,12 @@ export const AdminDashboard: React.FC = () => {
                   </div>
 
                   <p className="text-xs text-slate-400">
-                    {at('অর্ডার হওয়ার সাথে সাথে কাস্টমারকে ফোন করে অর্ডার কনফার্ম করে এমন স্মার্ট হিউম্যান ভয়েস। নিচের বাটনে ক্লিক করে লাইভ ভয়েস টেস্ট শুনুন:', 'Live Bengali confirmation voice sample (automatically falls back to browser speech synthesis so it always works).')}
+                    {at('অর্ডার হওয়ার সাথে সাথে কাস্টমারকে ফোন করে অর্ডার কনফার্ম করে এমন প্রাকৃতিক বাংলা ভয়েস। নিচের বাটনে ক্লিক করে লাইভ ভয়েস টেস্ট শুনুন:', 'Live Bengali confirmation voice sample (automatically falls back to browser speech synthesis so it always works).')}
                   </p>
 
                   <button
                     onClick={async () => {
-                      addToast('info', t('ভয়েস প্লে হচ্ছে...', 'Playing Voice...'), t('বাংলা ভয়েস অডিও প্লে হচ্ছে।', 'Streaming Bengali human audio.'));
+                      addToast('info', t('ভয়েস প্লে হচ্ছে...', 'Playing Voice...'), t('বাংলা ভয়েস অডিও প্লে হচ্ছে।', 'Streaming natural Bengali voice audio.'));
                       await playVoiceSample();
                     }}
                     disabled={isPlayingVoiceSample}

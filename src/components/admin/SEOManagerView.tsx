@@ -137,9 +137,12 @@ export const SEOManagerView: React.FC<SEOManagerViewProps> = ({ onImageUpload })
   const handleVerifyAndSaveToServer = async () => {
     setIsVerifyingServer(true);
     try {
-      await fetch('/api/store', {
+      const saveRes = await fetch('/api/store/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-session': 'buyone-admin-verified'
+        },
         body: JSON.stringify({
           settings: {
             ...settings,
@@ -147,6 +150,9 @@ export const SEOManagerView: React.FC<SEOManagerViewProps> = ({ onImageUpload })
           }
         })
       });
+      if (!saveRes.ok) {
+        throw new Error(`HTTP ${saveRes.status}`);
+      }
       if (isFirebaseAdminConnected) {
         syncAllDashboardToFirebase().catch(() => {});
       }

@@ -153,10 +153,12 @@ export default async function handler(req: any, res: any) {
 
     return res.status(404).json({ ok: false, success: false, error: `Unknown Steadfast action: ${action}` });
   } catch (err: any) {
-    return res.status(500).json({
+    const code = err?.cause?.code || err?.code || '';
+    const detail = err?.cause?.message || err?.message || 'Steadfast API proxy failed';
+    return res.status(502).json({
       ok: false,
       success: false,
-      error: err?.message || 'Steadfast API proxy failed'
+      error: `${detail}${code ? ` (${code})` : ''}. Check Steadfast Portal API Key & Secret Key in Admin Dashboard.`
     });
   }
 }

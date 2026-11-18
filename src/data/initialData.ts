@@ -816,7 +816,7 @@ export const INITIAL_SETTINGS: StoreSettings = {
     agentName: 'Sumana (সুমনা)',
     agentGender: 'female',
     voiceName: 'Kore',
-    humanTone: 'Warm, natural, polite human Bangladeshi customer care agent with expressive intonation',
+    humanTone: 'Warm, natural, polite Bangladeshi customer care specialist tone with expressive intonation',
     delaySeconds: 3,
     voiceSpeed: 0.95,
     banglaScript: 'আসসালামু আলাইকুম {customer_name} ভাই! বাইওয়ান বিডি থেকে আমি সুমনা বলছিলাম। আশা করি আপনি ভালো আছেন। আপনি আমাদের শপ থেকে {product_name}, মোট {total_amount} টাকার একটি ক্যাশ অন ডেলিভারি অর্ডার করেছিলেন। আপনার ডেলিভারি ঠিকানা হলো {customer_address}। আপনার অর্ডারটি কনফার্ম করতে চাইলে অনুগ্রহ করে নিচে ১ বাটন চাপুন। আর যদি বাতিল করতে চান তবে ২ চাপুন।'

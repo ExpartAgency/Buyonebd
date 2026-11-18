@@ -3313,11 +3313,58 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
 
+  const sanitizeChatMessagesList = (msgs: SupportChatMessage[] = []): SupportChatMessage[] =>
+    msgs.map((m) => {
+      let cleanText = String(m.text || '');
+      let cleanTextBn = String(m.textBn || '');
+      if (/support thread ready|write a message or generate an ai reply/i.test(cleanText)) {
+        cleanText = 'Assalamu Alaikum! Welcome to BuyOne BD Support. Ask about products, delivery fees, or enter your Order ID to track or confirm.';
+        cleanTextBn = 'আসসালামু আলাইকুম! BuyOne BD সাপোর্ট ডেস্কে স্বাগতম। পণ্য, ডেলিভারি চার্জ বা অর্ডার ট্র্যাকিং বিষয়ে আপনার প্রশ্ন লিখুন।';
+      } else {
+        cleanText = cleanText
+          .replace(/Live human support mode enabled\.?\s*/gi, 'Direct Support Desk connected. ')
+          .replace(/human/gi, 'specialist');
+        cleanTextBn = cleanTextBn
+          .replace(/সরাসরি হিউম্যান সাপোর্ট চালু হয়েছে।?/g, 'সরাসরি সাপোর্ট ডেস্ক যুক্ত হয়েছে।')
+          .replace(/হিউম্যান/g, 'সরাসরি সাপোর্ট')
+          .replace(/human/gi, 'specialist');
+      }
+      const cleanActions = Array.isArray(m.quickActions)
+        ? m.quickActions
+            .filter(
+              (qa) =>
+                qa &&
+                qa.action !== 'open_admin' &&
+                !/admin portal|অ্যাডমিন প্যানেল|অ্যাডমিন ড্যাশবোর্ড/i.test(qa.label)
+            )
+            .map((qa) => ({
+              ...qa,
+              label: qa.label
+                .replace(/👤\s*/g, '')
+                .replace(/হিউম্যান সাপোর্ট/gi, 'সরাসরি সাপোর্ট')
+                .replace(/মানুষের সাথে কথা/gi, 'সরাসরি সাপোর্ট')
+                .replace(/human\s*(support|admin)?/gi, 'Live Desk')
+            }))
+        : undefined;
+      return {
+        ...m,
+        text: cleanText,
+        textBn: cleanTextBn || cleanText,
+        ...(cleanActions ? { quickActions: cleanActions } : {})
+      };
+    });
+
+  const sanitizeSupportChats = (sessions: SupportChatSession[] = []): SupportChatSession[] =>
+    sessions.map((s) => ({
+      ...s,
+      messages: sanitizeChatMessagesList(s.messages || [])
+    }));
+
   // Bidirectional Live Support Chats & Browser Calls
   const [supportChats, setSupportChats] = useState<SupportChatSession[]>(() => {
     try {
       const saved = localStorage.getItem('buyonebd_support_chats_v3');
-      if (saved) return JSON.parse(saved);
+      if (saved) return sanitizeSupportChats(JSON.parse(saved));
     } catch {}
     return [
       {
@@ -3332,14 +3379,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           {
             id: 'welcome-1',
             sender: 'bot',
-            text: 'Assalamu Alaikum! Welcome to BuyOne BD AI Support. How can I help you today?',
-            textBn: 'আসসালামু আলাইকুম 👋 BuyOne BD-এর এআই সাপোর্ট সেন্টারে স্বাগতম। কীভাবে সাহায্য করতে পারি?',
+            text: 'Assalamu Alaikum! Welcome to BuyOne BD Support. How can I assist you today?',
+            textBn: 'আসসালামু আলাইকুম! BuyOne BD সাপোর্ট ডেস্কে স্বাগতম। কীভাবে সাহায্য করতে পারি?',
             time: 'Just now',
             quickActions: [
-              { label: '📦 ট্র্যাক অর্ডার', action: 'track' },
-              { label: '🔥 ফ্ল্যাশ ডিলস', action: 'deals' },
-              { label: '👤 হিউম্যান সাপোর্ট', action: 'request_human' },
-              { label: '🛡️ অ্যাডমিন ড্যাশবোর্ড', action: 'open_admin' }
+              { label: '📦 অর্ডার ট্র্যাক', action: 'track' },
+              { label: '🔥 সেরা অফার', action: 'deals' },
+              { label: '🚚 ডেলিভারি চার্জ', action: 'delivery' },
+              { label: '💬 সরাসরি সাপোর্ট', action: 'request_specialist' }
             ]
           }
         ]
@@ -4280,8 +4327,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Idempotent local merge helpers so WS & REST snapshots never drop concurrent messages
   const mergeChatsLocal = (prev: SupportChatSession[], incoming: SupportChatSession[]): SupportChatSession[] => {
     const map = new Map<string, SupportChatSession>();
-    prev.forEach((s) => { if (s?.id) map.set(s.id, s); });
-    incoming.forEach((s) => {
+    sanitizeSupportChats(prev).forEach((s) => { if (s?.id) map.set(s.id, s); });
+    sanitizeSupportChats(incoming).forEach((s) => {
       if (!s?.id) return;
       const old = map.get(s.id);
       if (!old) {
@@ -4423,9 +4470,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
 
         if (msg.type === 'chat:sync' && Array.isArray(msg.supportChats)) {
-          setSupportChats(msg.supportChats);
+          const cleaned = sanitizeSupportChats(msg.supportChats);
+          setSupportChats(cleaned);
           try {
-            localStorage.setItem('buyonebd_support_chats_v3', JSON.stringify(msg.supportChats));
+            localStorage.setItem('buyonebd_support_chats_v3', JSON.stringify(cleaned));
           } catch {}
           return;
         }
@@ -4564,10 +4612,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const targetId = sessionId || activeChatSessionId || `chat-${visitorSessionId}`;
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const noticeMsg: SupportChatMessage = {
-      id: `human-req-${Date.now()}`,
+      id: `desk-req-${Date.now()}`,
       sender: 'assistant',
-      text: 'Live human support mode enabled. Please write your message — our admin team has been notified immediately and will reply directly.',
-      textBn: 'সরাসরি হিউম্যান সাপোর্ট চালু হয়েছে। আপনার প্রশ্ন লিখুন — আমাদের অ্যাডমিন এখনই ম্যানুয়ালি উত্তর দেবেন।',
+      text: 'Direct Support Desk connected. Please type your message below — a support specialist has been notified and will reply shortly.',
+      textBn: 'সরাসরি সাপোর্ট ডেস্ক যুক্ত হয়েছে। অনুগ্রহ করে আপনার বার্তা লিখুন — আমাদের সাপোর্ট প্রতিনিধি এখনই উত্তর দেবেন।',
       time
     };
 
@@ -4728,17 +4776,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     };
 
-    // Show & explain Admin Dashboard when requested by anyone
+    // Direct support desk & shopping assistance keywords
     if (/(admin dashboard|admin panel|open admin|show admin|\/hossain|অ্যাডমিন ড্যাশবোর্ড|এডমিন প্যানেল)/i.test(q)) {
       appendBotMsg({
         id: `bot-${Date.now()}`,
         sender: 'bot',
-        text: `BuyOne BD Admin Dashboard (/hossain) includes full control over Orders, Partial Orders, POS Terminal, Live Chat & Voice Call Desk, Real-Time SEO Metadata Studio, Products, Loyalty Points, Abandoned Carts, and Marketing.`,
-        textBn: `BuyOne BD অ্যাডমিন ড্যাশবোর্ডে (/hossain) অর্ডার, আংশিক পেমেন্ট, পস (POS), লাইভ চ্যাট ও ব্রাউজার কল, রিয়েল-টাইম SEO মেটাডাটা, পণ্য, লয়্যালটি পয়েন্ট ও মার্কেটিং পরিচালনা করা যায়।`,
+        text: `For order help, tracking, or account assistance, please share your Order ID (e.g. BD-1001) or connect with our Live Support Desk below.`,
+        textBn: `অর্ডার, ট্র্যাকিং বা যেকোনো সহায়তার জন্য আপনার অর্ডার আইডি লিখুন অথবা সরাসরি সাপোর্ট ডেস্কে যুক্ত হোন।`,
         time,
         quickActions: [
-          { label: t('🛡️ অ্যাডমিন ড্যাশবোর্ড খুলুন', '🛡️ Open Admin Dashboard'), action: 'open_admin' },
-          { label: t('👤 হিউম্যান সাপোর্ট', '👤 Talk to Admin Manually'), action: 'request_human' }
+          { label: t('📍 অর্ডার ট্র্যাক', '📍 Track Order'), action: 'open_tracking' },
+          { label: t('💬 সরাসরি সাপোর্ট ডেস্ক', '💬 Connect Live Desk'), action: 'request_specialist' }
         ]
       });
       return;
@@ -4889,13 +4937,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     appendBotMsg({
       id: `bot-${Date.now()}`,
       sender: 'bot',
-      text: `Thank you for messaging ${settings.storeName}! A support agent has received your message, or pick a quick action below.`,
-      textBn: `ধন্যবাদ! ${settings.storeName}-এর সাপোর্ট টিম আপনার মেসেজ পেয়েছে। সরাসরি অ্যাডমিনের সাথে কথা বলতে নিচের বাটন চাপুন।`,
+      text: `Thank you for messaging ${settings.storeName}! A support specialist has received your note, or pick a quick option below.`,
+      textBn: `ধন্যবাদ! ${settings.storeName} সাপোর্ট টিম আপনার বার্তা পেয়েছে। প্রয়োজনে নিচের অপশন থেকে সরাসরি কথা বলুন।`,
       time,
       quickActions: [
-        { label: '👤 হিউম্যান সাপোর্ট', action: 'request_human' },
-        { label: '📞 ব্রাউজার কল করুন', action: 'tab_call' },
-        { label: '🛡️ অ্যাডমিন ড্যাশবোর্ড', action: 'open_admin' }
+        { label: t('💬 সরাসরি সাপোর্ট', '💬 Direct Support'), action: 'request_specialist' },
+        { label: t('📞 ব্রাউজার কল', '📞 Call Desk'), action: 'tab_call' },
+        { label: t('📍 অর্ডার ট্র্যাক', '📍 Track Order'), action: 'open_tracking' }
       ]
     });
   };
@@ -7031,7 +7079,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const p = cmd.payload || {};
       switch (cmd.type) {
         case 'ai_confirm_order': {
-          if (p.orderId && aiConfirmOrderByCustomer(String(p.orderId), 'Human-AI Website Controller')) {
+          if (p.orderId && aiConfirmOrderByCustomer(String(p.orderId), 'Store Operations AI Controller')) {
             executed.push(`AI Confirmed #${p.orderId}`);
           }
           break;

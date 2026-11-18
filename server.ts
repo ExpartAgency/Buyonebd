@@ -158,7 +158,7 @@ app.post('/api/tts', async (req, res) => {
 
     // Authentic Bangladeshi female persona prompt
     const defaultBangladeshiStyle = 
-      "You are Sumana, a polite, sweet, authentic 25-year-old native Bangladeshi woman from Dhaka working as a customer service executive. Speak fluent, clear, colloquial Standard Bengali (চলিত বাংলা) with sweet, melodic Dhaka intonation, warm human customer service pauses, and zero robotic artifacts. Speak just like a real, polite Bangladeshi girl calling a customer on a phone call.";
+      "You are Sumana, a polite, sweet, authentic 25-year-old native Bangladeshi female customer care executive from Dhaka. Speak fluent, clear, colloquial Standard Bengali (চলিত বাংলা) with melodic Dhaka intonation, warm conversational pauses, and zero robotic artifacts.";
     
     const voiceStyle = style && style.trim().length > 0 ? style : defaultBangladeshiStyle;
 
@@ -229,7 +229,7 @@ app.get('/api/tts/sample', async (_req, res) => {
             {
               text: sampleText,
               speechMetadata: {
-                style: "A warm, natural, extremely sweet native Bangladeshi Bengali female customer care officer in Dhaka speaking fluent conversational Bengali with natural pauses and warm melody. Not robotic, completely authentic human woman.",
+                style: "A warm, natural, extremely sweet native Bangladeshi Bengali female customer care officer in Dhaka speaking fluent conversational Bengali with natural pauses and warm melody.",
               },
             },
           ],
@@ -809,7 +809,7 @@ app.post('/api/agent', async (req, res) => {
       const systemPrompt =
         role === 'admin'
           ? `You are the Autonomous Store Operator AI for "${compactContext.storeName}" e-commerce website.
-You control the entire website like a skilled human manager.
+You control the entire website like a skilled store operations manager.
 Interpret the Admin's instruction (in Bengali or English) and return JSON with a natural helpful "reply" (in ${lang === 'en' ? 'English' : 'polite Bengali'}) and an array of "commands" to execute immediately against live store state.
 Available command types and payload fields (use payloadJson as a JSON string representing the command payload):
 1. "ai_confirm_order": { "orderId": "BD-..." } (you may emit multiple commands for multiple matching orders)
@@ -825,7 +825,7 @@ Available command types and payload fields (use payloadJson as a JSON string rep
 11. "update_store_settings": { "dhakaInsideFee": number?, "dhakaSubFee": number?, "dhakaOutsideFee": number?, "announcementTextBn": string?, "announcementTextEn": string?, "announcementEnabled": boolean?, "loyaltyEnabled": boolean?, "loyaltyPointsPer100": number?, "loyaltyBdtPerPoint": number? }
 12. "navigate_admin_tab": { "tab": "overview"|"orders"|"partial_orders"|"pos_system"|"products"|"abandoned_carts"|"users"|"ai_operator"|"marketing_hub" }
 Only emit commands clearly requested. Live state: ${JSON.stringify(compactContext)}`
-          : `You are an A-to-Z Shopping Concierge Agent for "${compactContext.storeName}". Help the customer shop like a human assistant.
+          : `You are an A-to-Z Shopping Concierge for "${compactContext.storeName}". Help the customer shop smoothly and professionally.
 Return JSON with "reply" (${lang === 'en' ? 'English' : 'Bengali'}) and optional "commands" using payloadJson strings:
 1. "add_to_cart": { "productId": "...", "quantity": 1 }
 2. "open_checkout": { "productId": "..." }
@@ -2113,6 +2113,11 @@ async function openHostingerMysqlConnection(cfg: ReturnType<typeof resolveHostin
   if (!cfg.host || !cfg.database || !cfg.user) {
     throw new Error('Hostinger MySQL Host, Database Name, and Username are required.');
   }
+  if (cfg.host === 'localhost' || cfg.host === '127.0.0.1') {
+    throw new Error(
+      'Cannot reach localhost:3306 from cloud preview server. Enter your Hostinger Remote MySQL hostname (e.g. srvXXXX.hstgr.io) and allow remote access in hPanel, or use Shared Hosting PHP Bridge mode.'
+    );
+  }
   return mysql.createConnection({
     host: cfg.host,
     port: cfg.port,
@@ -2120,7 +2125,7 @@ async function openHostingerMysqlConnection(cfg: ReturnType<typeof resolveHostin
     password: cfg.password,
     database: cfg.database,
     ssl: cfg.ssl ? { rejectUnauthorized: false } : undefined,
-    connectTimeout: 10000
+    connectTimeout: 5000
   });
 }
 

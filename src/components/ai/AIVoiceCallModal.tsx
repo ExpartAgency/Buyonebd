@@ -726,8 +726,8 @@ export const AIVoiceCallModal: React.FC = () => {
             <div className="w-full space-y-3 pt-2">
               <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700 text-xs text-slate-300">
                 {t(
-                  'আপনার কলটি আমাদের অফিসিয়াল সাপোর্ট প্যানেল (/hossain)-এ রিং হচ্ছে। অ্যাসিস্ট্যান্ট কলটি রিসিভ করলেই সরাসরি কথা শুরু হবে।',
-                  'Your browser call is ringing live in the Backend Admin Portal (/hossain). As soon as an assistant clicks Answer, two-way talk begins.'
+                  'আপনার কলটি আমাদের অফিসিয়াল সাপোর্ট ডেস্কে রিং হচ্ছে। সাপোর্ট প্রতিনিধি কলটি রিসিভ করলেই সরাসরি কথা শুরু হবে।',
+                  'Your browser call is ringing live at our Support Desk. Two-way audio begins as soon as an agent connects.'
                 )}
               </div>
               <div className="flex items-center justify-center gap-3">

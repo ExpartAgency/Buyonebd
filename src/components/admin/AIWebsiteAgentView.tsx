@@ -147,7 +147,7 @@ export const AIWebsiteAgentView: React.FC<AIWebsiteAgentViewProps> = ({ onNaviga
         <div>
           <h3 className="text-xl font-black text-white flex items-center gap-2">
             <Bot className="w-6 h-6 text-emerald-400" />
-            <span>{at('মানুষের মতো ফুল-ওয়েবসাইট কন্ট্রোল এআই এজেন্ট', 'Human-Like Autonomous Website Control AI Agent')}</span>
+            <span>{at('স্মার্ট ফুল-ওয়েবসাইট কন্ট্রোল এআই এজেন্ট', 'Autonomous Store Control AI Agent')}</span>
           </h3>
           <p className="text-xs text-slate-400">
             {at(
