@@ -84,7 +84,12 @@ import {
   ShieldAlert,
   FileCode2,
   Link2,
-  Key
+  Key,
+  Building2,
+  ChevronDown,
+  Globe2,
+  Save,
+  AlertCircle
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BUSINESS_THEME_PRESETS } from '../../data/initialData';
@@ -114,6 +119,9 @@ import { PartialOrdersView } from './PartialOrdersView';
 import { AIWebsiteAgentView } from './AIWebsiteAgentView';
 import { LoyaltyRulesPanel } from './LoyaltyRulesPanel';
 import { SEOManagerView } from './SEOManagerView';
+import { ResellerAdminView } from './ResellerAdminView';
+import { WholesaleAdminView } from './WholesaleAdminView';
+import { GlobalMarketingHub } from './GlobalMarketingHub';
 
 const parseJsonSafe = async (res: Response): Promise<any> => {
   const txt = await res.text();
@@ -188,6 +196,13 @@ export const AdminDashboard: React.FC = () => {
     isPlayingVoiceSample,
     settings,
     updateSettings,
+    hasUnsavedSettings,
+    saveSettingsChanges,
+    discardSettingsChanges,
+    resellers,
+    wholesalers,
+    resellerPayouts,
+    wholesaleQuotes,
     resetAllToDefault,
     setActiveView,
     goHome,
@@ -325,6 +340,9 @@ export const AdminDashboard: React.FC = () => {
     | 'flash_sale'
     | 'sliders'
     | 'wallet_control'
+    | 'resellers'
+    | 'wholesale'
+    | 'global_marketing'
     | 'marketing'
     | 'seo_metadata'
     | 'ai_hub'
@@ -339,6 +357,16 @@ export const AdminDashboard: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
+  const [sidebarSearch, setSidebarSearch] = useState('');
+  const [openSidebarGroups, setOpenSidebarGroups] = useState<Record<string, boolean>>({
+    command: true,
+    catalog: true,
+    partners: true,
+    growth: true,
+    support_ai: false,
+    appearance: false,
+    infra: false
+  });
 
   // POS & 1-Click Barcode System State
   const [posBarcodeInput, setPosBarcodeInput] = useState('');
@@ -618,7 +646,17 @@ export const AdminDashboard: React.FC = () => {
       keywords: '',
       robots: 'index, follow',
       ogImage: ''
-    }
+    },
+    resellable: true,
+    resellerPrice: 980,
+    wholesaleEnabled: true,
+    wholesalePrice: 920,
+    wholesaleMinQty: 10,
+    wholesaleTiers: [
+      { minQty: 10, unitPrice: 920 },
+      { minQty: 25, unitPrice: 860 },
+      { minQty: 50, unitPrice: 800 }
+    ]
   });
 
   const [newGalleryUrl, setNewGalleryUrl] = useState('');
@@ -769,7 +807,17 @@ export const AdminDashboard: React.FC = () => {
         keywords: '',
         robots: 'index, follow',
         ogImage: ''
-      }
+      },
+      resellable: true,
+      resellerPrice: 980,
+      wholesaleEnabled: true,
+      wholesalePrice: 920,
+      wholesaleMinQty: 10,
+      wholesaleTiers: [
+        { minQty: 10, unitPrice: 920 },
+        { minQty: 25, unitPrice: 860 },
+        { minQty: 50, unitPrice: 800 }
+      ]
     });
     setIsProductModalOpen(true);
   };
@@ -824,7 +872,20 @@ export const AdminDashboard: React.FC = () => {
         keywords: prod.seo?.keywords || '',
         robots: prod.seo?.robots || 'index, follow',
         ogImage: prod.seo?.ogImage || ''
-      }
+      },
+      resellable: prod.resellable ?? true,
+      resellerPrice: prod.resellerPrice ?? Math.round(prod.price * 0.82),
+      wholesaleEnabled: prod.wholesaleEnabled ?? true,
+      wholesalePrice: prod.wholesalePrice ?? Math.round(prod.price * 0.78),
+      wholesaleMinQty: prod.wholesaleMinQty ?? 10,
+      wholesaleTiers:
+        prod.wholesaleTiers && prod.wholesaleTiers.length > 0
+          ? prod.wholesaleTiers
+          : [
+              { minQty: prod.wholesaleMinQty ?? 10, unitPrice: prod.wholesalePrice ?? Math.round(prod.price * 0.78) },
+              { minQty: 25, unitPrice: Math.round(prod.price * 0.72) },
+              { minQty: 50, unitPrice: Math.round(prod.price * 0.66) }
+            ]
     });
     setIsProductModalOpen(true);
   };
@@ -1416,39 +1477,102 @@ export const AdminDashboard: React.FC = () => {
   const partialOrdersBadge = orders.filter(
     (o) => o.status === 'partial' || ((o.pricing?.advancePaid || 0) > 0 && (o.payment?.dueAmount || 0) > 0)
   ).length;
+  const pendingResellerCount =
+    resellers.filter((r) => r.status === 'pending').length +
+    resellerPayouts.filter((p) => p.status === 'pending').length;
+  const pendingWholesaleCount =
+    wholesalers.filter((w) => w.status === 'pending').length +
+    wholesaleQuotes.filter((q) => q.status === 'pending').length;
 
-  const sidebarItems: { id: AdminTab; labelBn: string; labelEn: string; icon: any; badge?: number }[] = [
-    { id: 'overview', labelBn: 'ওভারভিউ ও অ্যানালিটিক্স', labelEn: 'Overview', icon: LayoutDashboard },
-    { id: 'ai_operator', labelBn: 'এআই ওয়েবসাইট এজেন্ট', labelEn: 'AI Website Agent', icon: Sparkles },
-    { id: 'support_desk', labelBn: 'লাইভ চ্যাট ও ব্রাউজার কল', labelEn: 'Live Chat & Calls', icon: Headphones, badge: supportDeskBadge },
-    { id: 'orders', labelBn: 'অর্ডার ম্যানেজমেন্ট', labelEn: 'Orders', icon: ShoppingCart, badge: orders.length },
-    { id: 'partial_orders', labelBn: 'আংশিক পেমেন্ট (Partial)', labelEn: 'Partial Orders', icon: CreditCard, badge: partialOrdersBadge || undefined },
-    { id: 'pos_system', labelBn: 'পস ও ১-ক্লিক বারকোড', labelEn: 'POS & Barcode', icon: Barcode, badge: posCart.reduce((s, c) => s + c.quantity, 0) || undefined },
-    { id: 'products', labelBn: 'পণ্য তালিকা ও প্রোডাক্ট যোগ', labelEn: 'Products', icon: Package, badge: products.length },
-    { id: 'media_gallery', labelBn: 'মিডিয়া ও গ্যালারি', labelEn: 'Media / Gallery', icon: ImagePlus, badge: mediaLibrary.length },
-    { id: 'categories', labelBn: 'ক্যাটাগরি ম্যানেজমেন্ট', labelEn: 'Categories', icon: Grid, badge: categories.length },
-    { id: 'abandoned_carts', labelBn: 'কার্ট রিকভারি (ড্রপ-অফ)', labelEn: 'Cart Recovery', icon: ShoppingCart, badge: abandonedCarts.filter(c => !c.recovered).length },
-    { id: 'courier_hub', labelBn: 'কুরিয়ার ইন্টিগ্রেশন হাব', labelEn: 'Steadfast Hub', icon: Truck },
-    { id: 'flash_sale', labelBn: 'ফ্ল্যাশ সেল ম্যানেজার', labelEn: 'Flash Sale', icon: Flame },
-    { id: 'sliders', labelBn: 'স্টোর স্লাইডার (৫-৬ ব্যানার)', labelEn: 'Store Sliders', icon: ImageIcon, badge: sliders.length },
-    { id: 'wallet_control', labelBn: 'ওয়ালেট ও MFS রিচার্জ', labelEn: 'Wallet & MFS Top-Up', icon: Wallet, badge: pendingWalletCount },
-    { id: 'marketing', labelBn: 'মার্কেটিং ও পিক্সেল হাব', labelEn: 'Marketing & Pixel', icon: BarChart3 },
-    { id: 'seo_metadata', labelBn: 'SEO মেটাডাটা ও হেড ট্যাগ', labelEn: 'SEO Metadata Studio', icon: Globe },
-    { id: 'ai_hub', labelBn: 'এআই ও ভয়েস কল সেটআপ', labelEn: 'AI Voice Hub', icon: Bot },
-    { id: 'spin_wheel', labelBn: 'লাকি স্পিন কুপন ম্যানেজার', labelEn: 'Spin Rewards', icon: Gift, badge: spinRewards.length },
-    { id: 'analytics', labelBn: 'সম্পূর্ণ স্টোর অ্যানালিটিক্স', labelEn: 'All Analytics', icon: TrendingUp },
-    { id: 'reviews', labelBn: 'কাস্টমার রিভিউ ও রেটিং', labelEn: 'Customer Reviews', icon: MessageCircle, badge: reviews.length },
-    { id: 'users', labelBn: 'কাস্টমার ব্যালেন্স ও স্টাফ টিম', labelEn: 'Customers & Staff', icon: Users, badge: customerAccounts.length + users.length },
-    { id: 'design_footer', labelBn: 'স্টোর ডিজাইন ও ফুটার', labelEn: 'Store & Footer', icon: Sliders },
-    { id: 'firebase_hub', labelBn: 'হোস্টিং, Hostinger DB ও Firebase', labelEn: 'Hosting, Hostinger DB & Cloud', icon: Cloud },
+  const sidebarGroups: {
+    key: string;
+    titleBn: string;
+    titleEn: string;
+    items: { id: AdminTab; labelBn: string; labelEn: string; icon: any; badge?: number }[];
+  }[] = [
     {
-      id: 'security',
-      labelBn: 'ওয়েবসাইট সিকিউরিটি শিল্ড',
-      labelEn: 'Security Shield',
-      icon: ShieldCheck,
-      badge: securityLogs.filter((l) => l.severity === 'blocked').length || undefined
+      key: 'command',
+      titleBn: '১. কমান্ড ও সেলস',
+      titleEn: '1. Command & Sales',
+      items: [
+        { id: 'overview', labelBn: 'ওভারভিউ ও অ্যানালিটিক্স', labelEn: 'Overview', icon: LayoutDashboard },
+        { id: 'orders', labelBn: 'অর্ডার ম্যানেজমেন্ট', labelEn: 'Orders', icon: ShoppingCart, badge: orders.length },
+        { id: 'partial_orders', labelBn: 'আংশিক পেমেন্ট (Partial)', labelEn: 'Partial Orders', icon: CreditCard, badge: partialOrdersBadge || undefined },
+        { id: 'pos_system', labelBn: 'পস ও ১-ক্লিক বারকোড', labelEn: 'POS & Barcode', icon: Barcode, badge: posCart.reduce((s, c) => s + c.quantity, 0) || undefined },
+        { id: 'analytics', labelBn: 'সম্পূর্ণ স্টোর অ্যানালিটিক্স', labelEn: 'All Analytics', icon: TrendingUp }
+      ]
     },
-    { id: 'settings', labelBn: 'পেমেন্ট, ডেলিভারি ও SMTP', labelEn: 'Settings & SMTP', icon: Settings }
+    {
+      key: 'catalog',
+      titleBn: '২. ক্যাটালগ ও কুরিয়ার',
+      titleEn: '2. Catalog & Fulfillment',
+      items: [
+        { id: 'products', labelBn: 'পণ্য তালিকা ও প্রোডাক্ট যোগ', labelEn: 'Products', icon: Package, badge: products.length },
+        { id: 'categories', labelBn: 'ক্যাটাগরি ম্যানেজমেন্ট', labelEn: 'Categories', icon: Grid, badge: categories.length },
+        { id: 'media_gallery', labelBn: 'মিডিয়া ও গ্যালারি', labelEn: 'Media / Gallery', icon: ImagePlus, badge: mediaLibrary.length },
+        { id: 'courier_hub', labelBn: 'কুরিয়ার ইন্টিগ্রেশন হাব', labelEn: 'Steadfast Hub', icon: Truck }
+      ]
+    },
+    {
+      key: 'partners',
+      titleBn: '৩. ক্রেতা, রিসেলার ও হোলসেল',
+      titleEn: '3. Customers & Partners',
+      items: [
+        { id: 'users', labelBn: 'কাস্টমার ব্যালেন্স ও স্টাফ টিম', labelEn: 'Customers & Staff', icon: Users, badge: customerAccounts.length + users.length },
+        { id: 'wallet_control', labelBn: 'ওয়ালেট ও MFS রিচার্জ', labelEn: 'Wallet & MFS Top-Up', icon: Wallet, badge: pendingWalletCount || undefined },
+        { id: 'resellers', labelBn: 'রিসেলার প্রোগ্রাম ও পেআউট', labelEn: 'Resellers & Payouts', icon: Users, badge: pendingResellerCount || undefined },
+        { id: 'wholesale', labelBn: 'হোলসেল (B2B) ও কোটেশন', labelEn: 'Wholesale & RFQ', icon: Building2, badge: pendingWholesaleCount || undefined }
+      ]
+    },
+    {
+      key: 'growth',
+      titleBn: '৪. গ্রোথ ও গ্লোবাল মার্কেটিং',
+      titleEn: '4. Growth & Marketing',
+      items: [
+        { id: 'global_marketing', labelBn: 'গ্লোবাল মার্কেটিং ও বাল্ক SMS', labelEn: 'Global & Bulk SMS Hub', icon: Globe2 },
+        { id: 'marketing', labelBn: 'মার্কেটিং ও পিক্সেল হাব', labelEn: 'Marketing & Pixel', icon: BarChart3 },
+        { id: 'seo_metadata', labelBn: 'SEO মেটাডাটা ও হেড ট্যাগ', labelEn: 'SEO Metadata Studio', icon: Globe },
+        { id: 'flash_sale', labelBn: 'ফ্ল্যাশ সেল ম্যানেজার', labelEn: 'Flash Sale', icon: Flame },
+        { id: 'spin_wheel', labelBn: 'লাকি স্পিন কুপন ম্যানেজার', labelEn: 'Spin Rewards', icon: Gift, badge: spinRewards.length },
+        { id: 'abandoned_carts', labelBn: 'কার্ট রিকভারি (ড্রপ-অফ)', labelEn: 'Cart Recovery', icon: ShoppingCart, badge: abandonedCarts.filter((c) => !c.recovered).length || undefined }
+      ]
+    },
+    {
+      key: 'support_ai',
+      titleBn: '৫. এআই ও লাইভ সাপোর্ট',
+      titleEn: '5. AI & Support Desk',
+      items: [
+        { id: 'ai_operator', labelBn: 'এআই ওয়েবসাইট এজেন্ট', labelEn: 'AI Website Agent', icon: Sparkles },
+        { id: 'support_desk', labelBn: 'লাইভ চ্যাট ও ব্রাউজার কল', labelEn: 'Live Chat & Calls', icon: Headphones, badge: supportDeskBadge || undefined },
+        { id: 'ai_hub', labelBn: 'এআই ও ভয়েস কল সেটআপ', labelEn: 'AI Voice Hub', icon: Bot },
+        { id: 'reviews', labelBn: 'কাস্টমার রিভিউ ও রেটিং', labelEn: 'Customer Reviews', icon: MessageCircle, badge: reviews.length }
+      ]
+    },
+    {
+      key: 'appearance',
+      titleBn: '৬. স্টোর ডিজাইন ও স্লাইডার',
+      titleEn: '6. Storefront & CMS',
+      items: [
+        { id: 'sliders', labelBn: 'স্টোর স্লাইডার', labelEn: 'Store Sliders', icon: ImageIcon, badge: sliders.length },
+        { id: 'design_footer', labelBn: 'স্টোর ডিজাইন ও ফুটার', labelEn: 'Store & Footer', icon: Sliders }
+      ]
+    },
+    {
+      key: 'infra',
+      titleBn: '৭. ডাটাবেস ও সিকিউরিটি',
+      titleEn: '7. Infra & Security',
+      items: [
+        { id: 'firebase_hub', labelBn: 'হোস্টিং, Hostinger DB ও Cloud', labelEn: 'Hosting, Hostinger DB & Cloud', icon: Cloud },
+        {
+          id: 'security',
+          labelBn: 'ওয়েবসাইট সিকিউরিটি শিল্ড',
+          labelEn: 'Security Shield',
+          icon: ShieldCheck,
+          badge: securityLogs.filter((l) => l.severity === 'blocked').length || undefined
+        },
+        { id: 'settings', labelBn: 'পেমেন্ট, ডেলিভারি ও SMTP', labelEn: 'Settings & SMTP', icon: Settings }
+      ]
+    }
   ];
 
   return (
@@ -1575,41 +1699,90 @@ export const AdminDashboard: React.FC = () => {
             isSidebarMobileOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          {/* Left Side Options List (one by one as requested) */}
-          <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-            <p className="px-3 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-              {t('ড্যাশবোর্ড অপশনসমূহ', 'Navigation Modules')}
-            </p>
-            {sidebarItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
+          {/* Grouped & Searchable Navigation Sidebar */}
+          <nav className="flex-1 overflow-y-auto p-3 space-y-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={sidebarSearch}
+                onChange={(e) => setSidebarSearch(e.target.value)}
+                placeholder={at('মডিউল খুঁজুন...', 'Search modules...')}
+                className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            {sidebarGroups.map((group) => {
+              const q = sidebarSearch.trim().toLowerCase();
+              const visibleItems = q
+                ? group.items.filter(
+                    (it) =>
+                      it.labelEn.toLowerCase().includes(q) ||
+                      it.labelBn.toLowerCase().includes(q) ||
+                      it.id.toLowerCase().includes(q)
+                  )
+                : group.items;
+              if (q && visibleItems.length === 0) return null;
+              const isGroupOpen = q ? true : openSidebarGroups[group.key] !== false;
+
               return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    setActiveTab(item.id);
-                    setIsSidebarMobileOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                    isActive
-                      ? 'bg-emerald-600 text-white font-bold shadow-md shadow-emerald-600/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 truncate">
-                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                    <span className="truncate">{t(item.labelBn, item.labelEn)}</span>
-                  </div>
-                  {item.badge !== undefined && (
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
-                        isActive ? 'bg-emerald-700 text-white' : 'bg-slate-800 text-slate-400'
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
+                <div key={group.key} className="space-y-1 pt-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOpenSidebarGroups((prev) => ({
+                        ...prev,
+                        [group.key]: !(prev[group.key] !== false)
+                      }))
+                    }
+                    className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 uppercase tracking-wider cursor-pointer"
+                  >
+                    <span className="truncate">{t(group.titleBn, group.titleEn)}</span>
+                    {isGroupOpen ? (
+                      <ChevronDown className="w-3.5 h-3.5 shrink-0 text-slate-500" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 shrink-0 text-slate-500" />
+                    )}
+                  </button>
+
+                  {isGroupOpen && (
+                    <div className="space-y-0.5 pl-1">
+                      {visibleItems.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = activeTab === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              setActiveTab(item.id);
+                              setIsSidebarMobileOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
+                              isActive
+                                ? 'bg-emerald-600 text-white font-bold'
+                                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 truncate">
+                              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                              <span className="truncate">{t(item.labelBn, item.labelEn)}</span>
+                            </div>
+                            {item.badge !== undefined && item.badge > 0 && (
+                              <span
+                                className={`text-[10px] px-2 py-0.5 rounded-full font-mono tabular-nums ${
+                                  isActive ? 'bg-emerald-700 text-white' : 'bg-slate-800 text-slate-300'
+                                }`}
+                              >
+                                {item.badge}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
-                </button>
+                </div>
               );
             })}
           </nav>
@@ -1625,6 +1798,40 @@ export const AdminDashboard: React.FC = () => {
 
         {/* Content Area */}
         <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 bg-slate-950">
+          {/* STICKY MANUAL SAVE / UNSAVED CHANGES BAR */}
+          {hasUnsavedSettings && (
+            <div className="sticky top-0 z-30 mb-4 p-3.5 rounded-2xl bg-amber-950/90 border border-amber-500/50 backdrop-blur-md flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 text-xs">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                <div>
+                  <span className="font-bold text-amber-200 block">
+                    {at('অসংরক্ষিত পরিবর্তন রয়েছে', 'Unsaved Settings Draft')}
+                  </span>
+                  <span className="text-[11px] text-amber-300/80">
+                    {at('পরিবর্তন স্থায়ী করতে Save বাটনে ক্লিক করুন (অটো-সেভ বন্ধ রয়েছে)', 'Changes stay in draft until you explicitly click Save (Auto-save is off)')}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => discardSettingsChanges()}
+                  className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold cursor-pointer"
+                >
+                  {at('বাতিল করুন', 'Discard')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => saveSettingsChanges(undefined, at('সকল সেটিংস সফলভাবে সংরক্ষিত হয়েছে!', 'All settings saved & synced!'))}
+                  className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{at('সকল সেটিংস সেভ করুন', 'Save All Settings')}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* GLOBAL ALWAYS-VISIBLE AI AGENT BAR & QUICK DOCK (Visible on EVERY Admin Tab) */}
           {activeTab !== 'ai_operator' && (
             <div className="mb-5 rounded-2xl bg-gradient-to-r from-slate-900 via-emerald-950/35 to-slate-900 border border-emerald-700/40 p-3 shadow-lg">
@@ -5547,7 +5754,7 @@ export const AdminDashboard: React.FC = () => {
                   </label>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-300 mb-1">API Key</label>
                     <input
@@ -5588,6 +5795,26 @@ export const AdminDashboard: React.FC = () => {
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
                     />
                   </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">API Base URL</label>
+                    <input
+                      type="url"
+                      value={settings.courierSettings?.steadfast?.baseUrl || 'https://portal.steadfast.com.bd/api/v1'}
+                      onChange={(e) => {
+                        updateSettings({
+                          courierSettings: {
+                            ...settings.courierSettings,
+                            steadfast: {
+                              ...settings.courierSettings?.steadfast,
+                              baseUrl: e.target.value
+                            }
+                          }
+                        });
+                      }}
+                      placeholder="https://portal.steadfast.com.bd/api/v1"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
@@ -5624,7 +5851,8 @@ export const AdminDashboard: React.FC = () => {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                               apiKey: settings.courierSettings?.steadfast?.apiKey || '',
-                              secretKey: settings.courierSettings?.steadfast?.secretKey || ''
+                              secretKey: settings.courierSettings?.steadfast?.secretKey || '',
+                              baseUrl: settings.courierSettings?.steadfast?.baseUrl || ''
                             })
                           });
                           const data = await parseJsonSafe(res);
@@ -5636,11 +5864,17 @@ export const AdminDashboard: React.FC = () => {
                             });
                             addToast('success', 'Steadfast API Connected!', `Current Balance: ৳${data.balance}`);
                           } else {
+                            const cleanErr =
+                              data?.error ||
+                              (typeof data?.rawText === 'string' && data.rawText.trim().startsWith('<')
+                                ? `Steadfast upstream returned HTML error page (HTTP ${res.status}). Verify API Key, Secret Key & Base URL.`
+                                : data?.rawText) ||
+                              `Could not authenticate with Steadfast Portal API (HTTP ${res.status}).`;
                             setSteadfastBalanceInfo({
                               ok: false,
-                              message: data?.error || data?.rawText || `Could not authenticate with Steadfast Portal API (HTTP ${res.status}).`
+                              message: String(cleanErr).slice(0, 260)
                             });
-                            addToast('warning', 'Steadfast Connection Check', data?.error || 'Check API Key & Secret Key.');
+                            addToast('warning', 'Steadfast Connection Check', String(cleanErr).slice(0, 140));
                           }
                         } catch (err: any) {
                           setSteadfastBalanceInfo({
@@ -5658,10 +5892,17 @@ export const AdminDashboard: React.FC = () => {
                     </button>
 
                     <button
-                      onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('Steadfast API তথ্য আপডেট করা হয়েছে।', 'Steadfast credentials saved.'))}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
+                      type="button"
+                      onClick={() =>
+                        saveSettingsChanges(
+                          t('সংরক্ষিত!', 'Saved!'),
+                          t('Steadfast API তথ্য সংরক্ষিত হয়েছে!', 'Steadfast API credentials saved!')
+                        )
+                      }
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer flex items-center gap-1.5"
                     >
-                      {t('সেটিংস সেভ করুন', 'Save Settings')}
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{t('সেটিংস সেভ করুন', 'Save Settings')}</span>
                     </button>
                   </div>
                 </div>
@@ -6271,14 +6512,16 @@ export const AdminDashboard: React.FC = () => {
                     const nextEnds = isExpired
                       ? new Date(Date.now() + 24 * 3600 * 1000).toISOString()
                       : settings.flashSale?.endsAt || new Date(Date.now() + 24 * 3600 * 1000).toISOString();
-                    updateSettings({
-                      flashSale: {
-                        ...settings.flashSale,
-                        enabled: settings.flashSale?.enabled !== false,
-                        endsAt: nextEnds
-                      }
-                    });
-                    addToast('success', at('ফ্ল্যাশ সেল সংরক্ষিত ও সিঙ্ক সম্পন্ন!', 'Flash Sale Saved & Synced!'), at('সকল ডিভাইসে নতুন ফ্ল্যাশ সেল সময়সূচী চালু হয়েছে।', 'Live countdown updated across devices.'));
+                    updateSettings(
+                      {
+                        flashSale: {
+                          ...settings.flashSale,
+                          enabled: settings.flashSale?.enabled !== false,
+                          endsAt: nextEnds
+                        }
+                      },
+                      { commit: true }
+                    );
                   }}
                   className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors"
                 >
@@ -8319,10 +8562,17 @@ export const AdminDashboard: React.FC = () => {
               <CreativeMarketingStudio ta={at} />
 
               <button
-                onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('মার্কেটিং টুলস সেটিংস সফলভাবে আপডেট হয়েছে।', 'Marketing settings saved.'))}
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
+                type="button"
+                onClick={() =>
+                  saveSettingsChanges(
+                    t('সংরক্ষিত!', 'Saved!'),
+                    t('মার্কেটিং ও পিক্সেল সেটিংস সংরক্ষিত হয়েছে!', 'Marketing & Pixel settings saved!')
+                  )
+                }
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer inline-flex items-center gap-2"
               >
-                {t('মার্কেটিং সেটিংস সেভ করুন', 'Save Marketing Settings')}
+                <Save className="w-4 h-4" />
+                <span>{t('মার্কেটিং সেটিংস সেভ করুন', 'Save Marketing Settings')}</span>
               </button>
             </div>
           )}
@@ -8658,6 +8908,22 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() =>
+                    saveSettingsChanges(
+                      at('সংরক্ষিত!', 'Saved!'),
+                      at('AI ও ভয়েস কল সেটিংস সংরক্ষিত হয়েছে!', 'AI & Voice settings saved!')
+                    )
+                  }
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer inline-flex items-center gap-2"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{at('AI ও ভয়েস সেটিংস সেভ করুন', 'Save AI & Voice Settings')}</span>
+                </button>
               </div>
             </div>
           )}
@@ -11042,10 +11308,17 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <button
-                  onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('CMS ও ফুটার সেটিংস সফলভাবে আপডেট করা হয়েছে।', 'CMS & Footer settings saved.'))}
-                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
+                  type="button"
+                  onClick={() =>
+                    saveSettingsChanges(
+                      t('সংরক্ষিত!', 'Saved!'),
+                      t('CMS, SEO ও ফুটার সেটিংস সফলভাবে সংরক্ষিত হয়েছে!', 'CMS, SEO & Footer settings saved!')
+                    )
+                  }
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer flex items-center justify-center gap-2"
                 >
-                  {at('সম্পূর্ণ CMS ও SEO সেভ করুন', 'Save All CMS, SEO & Footer Settings')}
+                  <Save className="w-4 h-4" />
+                  <span>{at('সম্পূর্ণ CMS ও SEO সেভ করুন', 'Save All CMS, SEO & Footer Settings')}</span>
                 </button>
               </div>
             </div>
@@ -11495,10 +11768,17 @@ export const AdminDashboard: React.FC = () => {
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <button
-                  onClick={() => addToast('success', t('সংরক্ষিত হয়েছে!', 'Saved!'), t('পেমেন্ট, ডেলিভারি ও SMTP সেটিংস আপডেট হয়েছে।', 'Payment, Delivery & SMTP settings updated.'))}
-                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
+                  type="button"
+                  onClick={() =>
+                    saveSettingsChanges(
+                      t('সংরক্ষিত!', 'Saved!'),
+                      t('পেমেন্ট, ডেলিভারি ও SMTP সেটিংস সংরক্ষিত হয়েছে!', 'Payment, Delivery & SMTP settings saved!')
+                    )
+                  }
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer inline-flex items-center gap-2"
                 >
-                  {t('সেটিংস সংরক্ষণ করুন', 'Save Settings')}
+                  <Save className="w-4 h-4" />
+                  <span>{t('সেটিংস সংরক্ষণ করুন', 'Save Settings')}</span>
                 </button>
 
                 <button
@@ -12720,6 +13000,20 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                           <Download className="w-3.5 h-3.5" />
                           <span>{at('hostinger-schema.sql ডাউনলোড', 'Download .SQL File')}</span>
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            saveSettingsChanges(
+                              at('সংরক্ষিত!', 'Saved!'),
+                              at('Hostinger DB সেটিংস সংরক্ষিত হয়েছে!', 'Hostinger DB credentials saved!')
+                            )
+                          }
+                          className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold flex items-center gap-1.5 cursor-pointer ml-auto"
+                        >
+                          <Save className="w-3.5 h-3.5" />
+                          <span>{at('DB সেটিংস সেভ', 'Save DB Config')}</span>
+                        </button>
                       </div>
 
                       {hostingerStatus && (
@@ -13075,6 +13369,21 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                       ))}
                     </div>
                   )}
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      saveSettingsChanges(
+                        at('সংরক্ষিত!', 'Saved!'),
+                        at('সিকিউরিটি শিল্ড সেটিংস সংরক্ষিত হয়েছে!', 'Security Shield settings saved!')
+                      )
+                    }
+                    className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>{at('সিকিউরিটি সেটিংস সেভ করুন', 'Save Security Settings')}</span>
+                  </button>
                 </div>
               </div>
             );
@@ -14216,6 +14525,10 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
               </div>
             );
           })()}
+
+          {activeTab === 'resellers' && <ResellerAdminView />}
+          {activeTab === 'wholesale' && <WholesaleAdminView />}
+          {activeTab === 'global_marketing' && <GlobalMarketingHub />}
         </main>
       </div>
 
@@ -15138,6 +15451,174 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                     className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
                   />
                 </div>
+              </div>
+
+              {/* Reseller & Wholesale B2B Pricing Configuration */}
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+                  <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+                    <Building2 className="w-4 h-4" />
+                    <span>{at('রিসেলার ও হোলসেল (B2B) প্রাইসিং', 'Reseller & Wholesale B2B Pricing')}</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    {at('শুধুমাত্র অনুমোদিত পার্টনার লগইন করলে এই মূল্য দেখাবে', 'Visible only when an approved partner logs in')}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <span className="font-bold text-white">{at('রিসেলার প্রোগ্রামের জন্য সক্রিয়', 'Reseller Program Enabled')}</span>
+                      <input
+                        type="checkbox"
+                        checked={productForm.resellable !== false}
+                        onChange={(e) => setProductForm({ ...productForm, resellable: e.target.checked })}
+                        className="w-4 h-4 rounded text-emerald-600"
+                      />
+                    </label>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">
+                        {at('রিসেলার পাইকারি বেস মূল্য (৳)', 'Reseller Base Price (৳)')}
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={productForm.resellerPrice ?? ''}
+                        onChange={(e) =>
+                          setProductForm({
+                            ...productForm,
+                            resellerPrice: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value))
+                          })
+                        }
+                        placeholder={String(Math.round((productForm.price || 1000) * 0.82))}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-emerald-400 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <span className="font-bold text-white">{at('হোলসেল (B2B) চালু করুন', 'Wholesale (B2B) Enabled')}</span>
+                      <input
+                        type="checkbox"
+                        checked={productForm.wholesaleEnabled !== false}
+                        onChange={(e) => setProductForm({ ...productForm, wholesaleEnabled: e.target.checked })}
+                        className="w-4 h-4 rounded text-sky-600"
+                      />
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          {at('হোলসেল মূল্য (৳)', 'Wholesale Unit Price')}
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={productForm.wholesalePrice ?? ''}
+                          onChange={(e) =>
+                            setProductForm({
+                              ...productForm,
+                              wholesalePrice: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value))
+                            })
+                          }
+                          placeholder={String(Math.round((productForm.price || 1000) * 0.78))}
+                          className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sky-400 font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          {at('সর্বনিম্ন পরিমাণ (MOQ)', 'Min Qty (MOQ)')}
+                        </label>
+                        <input
+                          type="number"
+                          min={2}
+                          value={productForm.wholesaleMinQty ?? 10}
+                          onChange={(e) =>
+                            setProductForm({
+                              ...productForm,
+                              wholesaleMinQty: Math.max(2, Number(e.target.value) || 10)
+                            })
+                          }
+                          className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Wholesale Quantity Tier Slabs */}
+                {productForm.wholesaleEnabled !== false && (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-300">
+                        {at('হোলসেল কোয়ান্টিটি স্ল্যাব রেট (Tiered Slabs)', 'Wholesale Quantity Tier Slabs')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setProductForm((prev) => ({
+                            ...prev,
+                            wholesaleTiers: [
+                              ...(prev.wholesaleTiers || []),
+                              {
+                                minQty: ((prev.wholesaleTiers?.slice(-1)[0]?.minQty || 10) + 15),
+                                unitPrice: Math.max(50, Math.round((prev.wholesalePrice || prev.price * 0.75) * 0.92))
+                              }
+                            ]
+                          }))
+                        }
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 text-[11px] font-bold cursor-pointer"
+                      >
+                        + {at('নতুন স্ল্যাব যোগ', 'Add Tier Slab')}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {(productForm.wholesaleTiers || []).map((tier, tIdx) => (
+                        <div key={tIdx} className="flex items-center gap-1.5 p-2 rounded-xl bg-slate-900 border border-slate-800">
+                          <input
+                            type="number"
+                            min={2}
+                            value={tier.minQty}
+                            onChange={(e) => {
+                              const next = (productForm.wholesaleTiers || []).map((t, i) =>
+                                i === tIdx ? { ...t, minQty: Math.max(2, Number(e.target.value) || 2) } : t
+                              );
+                              setProductForm({ ...productForm, wholesaleTiers: next });
+                            }}
+                            title="Min Qty"
+                            className="w-16 px-2 py-1 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono text-[11px]"
+                          />
+                          <span className="text-slate-500 text-[10px]">pcs @</span>
+                          <input
+                            type="number"
+                            min={1}
+                            value={tier.unitPrice}
+                            onChange={(e) => {
+                              const next = (productForm.wholesaleTiers || []).map((t, i) =>
+                                i === tIdx ? { ...t, unitPrice: Math.max(1, Number(e.target.value) || 1) } : t
+                              );
+                              setProductForm({ ...productForm, wholesaleTiers: next });
+                            }}
+                            title="Unit Price ৳"
+                            className="flex-1 min-w-0 px-2 py-1 bg-slate-950 border border-slate-800 rounded-lg text-sky-300 font-mono text-[11px]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setProductForm({
+                                ...productForm,
+                                wholesaleTiers: (productForm.wholesaleTiers || []).filter((_, i) => i !== tIdx)
+                              })
+                            }
+                            className="text-rose-400 hover:text-rose-300 p-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-2">

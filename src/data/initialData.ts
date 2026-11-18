@@ -1276,6 +1276,46 @@ export const INITIAL_SETTINGS: StoreSettings = {
     minRedeemPoints: 10,
     maxRedeemPercent: 50,
     welcomeBonusPoints: 25
+  },
+  resellerSettings: {
+    enabled: true,
+    autoApprove: false,
+    defaultCommissionPercent: 18,
+    minPayoutBdt: 500,
+    allowCustomMarginPricing: true,
+    resellerWelcomeMsgBn: 'স্বাগতম! আপনার রিসেলার একাউন্ট থেকে প্রতিটি পণ্যে পাইকারি/রিসেলার প্রাইসে বিক্রি করে সরাসরি লাভ উত্তোলন করুন।',
+    resellerWelcomeMsgEn: 'Welcome! Order at exclusive reseller prices and withdraw your earned profit directly via bKash, Nagad, or Bank.'
+  },
+  wholesaleSettings: {
+    enabled: true,
+    autoApprove: false,
+    defaultMinQty: 10,
+    silverDiscountPercent: 5,
+    goldDiscountPercent: 10,
+    platinumDiscountPercent: 15,
+    requireAdvancePercent: 25,
+    b2bHeadlineBn: 'BuyOne BD B2B হোলসেল ট্রেড পোর্টাল — সারা বাংলাদেশে কর্পোরেট ও দোকানদারদের জন্য সরাসরি সাপ্লাই',
+    b2bHeadlineEn: 'BuyOne BD B2B Wholesale Portal — Direct factory & importer trade supply across all 64 districts'
+  },
+  globalMarketingSettings: {
+    defaultExportCurrency: 'BDT',
+    exchangeRates: {
+      USD: 120,
+      GBP: 152,
+      EUR: 130,
+      AED: 32.7,
+      SAR: 32,
+      MYR: 26.8
+    },
+    probashiShippingEnabled: true,
+    smsGatewayProvider: 'ssl_wireless',
+    smsApiKey: '',
+    smsSenderId: 'BUYONEBD',
+    googleMerchantFeedEnabled: true,
+    metaCatalogFeedEnabled: true,
+    tiktokShopSyncEnabled: true,
+    defaultUtmSource: 'facebook',
+    defaultUtmMedium: 'cpc'
   }
 };
 

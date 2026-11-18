@@ -37,7 +37,8 @@ service cloud.firestore {
           'cmsTexts', 'spinSettings', 'whatsappTemplates', 'marketingTemplates',
           'aiSettings', 'seoSettings', 'flashSale', 'footerSettings', 'singleProductCms',
           'organicMarketing', 'walletSettings', 'promoCoupons', 'deliveryBoys', 'brandAttributes',
-          'loyaltySettings', 'categories', 'sliders', 'updatedAt'
+          'loyaltySettings', 'resellerSettings', 'wholesaleSettings', 'globalMarketingSettings',
+          'categories', 'sliders', 'updatedAt'
         ])
         && data.storeName is string && data.storeName.size() >= 1 && data.storeName.size() <= 120
         && data.theme is string && data.theme.size() >= 1 && data.theme.size() <= 40
@@ -73,7 +74,9 @@ service cloud.firestore {
           'stock', 'category', 'categoryBn', 'subcategory', 'tags', 'images', 'sku',
           'barcode', 'freeShipping', 'customDeliveryFees', 'rating', 'reviewsCount',
           'soldCount', 'loyaltyPoints', 'isFlashSale', 'colors', 'sizes', 'attributes', 'features',
-          'featuresBn', 'videoUrl', 'warrantyInfo', 'warrantyInfoBn', 'seo', 'updatedAt'
+          'featuresBn', 'videoUrl', 'warrantyInfo', 'warrantyInfoBn', 'seo',
+          'resellable', 'resellerPrice', 'wholesaleEnabled', 'wholesalePrice', 'wholesaleMinQty', 'wholesaleTiers',
+          'updatedAt'
         ])
         && isValidId(data.id)
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
@@ -92,7 +95,10 @@ service cloud.firestore {
         ])
         && data.keys().hasOnly([
           'id', 'customer', 'items', 'pricing', 'payment', 'deliveryZone', 'status',
-          'aiCallStatus', 'courier', 'fraudCheck', 'source', 'createdAt', 'serverCreatedAt', 'updatedAt'
+          'aiCallStatus', 'courier', 'fraudCheck', 'source',
+          'partnerType', 'resellerId', 'resellerName', 'resellerCode', 'resellerProfit', 'customerQuotedPrice',
+          'wholesaleBuyerId', 'wholesaleCompany',
+          'createdAt', 'serverCreatedAt', 'updatedAt'
         ])
         && isValidId(data.id)
         && data.customer is map
@@ -227,6 +233,66 @@ service cloud.firestore {
         && data.keys().hasOnly(['uid', 'email', 'createdAt'])
         && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128
         && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && data.createdAt is timestamp;
+    }
+
+    function isValidResellerAccount(data) {
+      return data.keys().hasAll(['id', 'name', 'phone', 'resellerCode', 'status', 'createdAt'])
+        && data.keys().hasOnly([
+          'id', 'name', 'phone', 'email', 'district', 'address', 'fbPageUrl',
+          'bkashNumber', 'nagadNumber', 'bankDetails', 'resellerCode',
+          'commissionPercent', 'walletBalance', 'totalEarnings', 'totalOrders',
+          'status', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.phone is string && data.phone.size() >= 6 && data.phone.size() <= 32
+        && data.resellerCode is string && data.resellerCode.size() >= 2 && data.resellerCode.size() <= 40
+        && data.status in ['pending', 'approved', 'suspended']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidResellerPayout(data) {
+      return data.keys().hasAll(['id', 'resellerId', 'resellerName', 'method', 'accountNumber', 'amount', 'status', 'createdAt'])
+        && data.keys().hasOnly([
+          'id', 'resellerId', 'resellerName', 'resellerPhone', 'method', 'accountNumber',
+          'amount', 'status', 'trxId', 'note', 'submittedAt', 'processedAt', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.resellerId is string && data.resellerId.size() >= 1 && data.resellerId.size() <= 80
+        && data.method in ['bkash', 'nagad', 'rocket', 'bank']
+        && data.amount is number && data.amount > 0 && data.amount <= 500000
+        && data.status in ['pending', 'paid', 'rejected']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidWholesaleAccount(data) {
+      return data.keys().hasAll(['id', 'contactName', 'companyName', 'phone', 'tier', 'status', 'createdAt'])
+        && data.keys().hasOnly([
+          'id', 'contactName', 'companyName', 'phone', 'email', 'tradeLicenseNo', 'nidNumber',
+          'district', 'address', 'businessType', 'monthlyVolumeEstimate', 'tier',
+          'extraDiscountPercent', 'creditLimitBdt', 'status', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.contactName is string && data.contactName.size() >= 1 && data.contactName.size() <= 120
+        && data.companyName is string && data.companyName.size() >= 1 && data.companyName.size() <= 160
+        && data.phone is string && data.phone.size() >= 6 && data.phone.size() <= 32
+        && data.tier in ['Silver', 'Gold', 'Platinum']
+        && data.status in ['pending', 'approved', 'suspended']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidWholesaleQuote(data) {
+      return data.keys().hasAll(['id', 'wholesalerId', 'companyName', 'productTitle', 'requestedQty', 'status', 'createdAt'])
+        && data.keys().hasOnly([
+          'id', 'wholesalerId', 'companyName', 'phone', 'productId', 'productTitle',
+          'requestedQty', 'targetUnitPrice', 'adminQuotedPrice', 'notes', 'status',
+          'submittedAt', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.wholesalerId is string && data.wholesalerId.size() >= 1 && data.wholesalerId.size() <= 80
+        && data.requestedQty is number && data.requestedQty >= 1
+        && data.status in ['pending', 'quoted', 'accepted', 'rejected']
         && data.createdAt is timestamp;
     }
 
@@ -418,6 +484,70 @@ service cloud.firestore {
         && incoming().createdAt == request.time;
       allow update: if false;
       allow delete: if isAdmin() && isValidId(uid);
+    }
+
+    match /resellers/{resellerId} {
+      allow get: if isAdmin() && isValidId(resellerId);
+      allow list: if isAdmin();
+      allow create: if isValidId(resellerId)
+        && isValidResellerAccount(incoming())
+        && incoming().id == resellerId
+        && (incoming().status == 'pending' || isAdmin())
+        && incoming().createdAt == request.time;
+      allow update: if isAdmin() && isValidId(resellerId)
+        && isValidResellerAccount(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(resellerId);
+    }
+
+    match /reseller_payouts/{payoutId} {
+      allow get: if isAdmin() && isValidId(payoutId);
+      allow list: if isAdmin();
+      allow create: if isValidId(payoutId)
+        && isValidResellerPayout(incoming())
+        && incoming().id == payoutId
+        && (incoming().status == 'pending' || isAdmin())
+        && incoming().createdAt == request.time;
+      allow update: if isAdmin() && isValidId(payoutId)
+        && isValidResellerPayout(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(payoutId);
+    }
+
+    match /wholesalers/{wholesalerId} {
+      allow get: if isAdmin() && isValidId(wholesalerId);
+      allow list: if isAdmin();
+      allow create: if isValidId(wholesalerId)
+        && isValidWholesaleAccount(incoming())
+        && incoming().id == wholesalerId
+        && (incoming().status == 'pending' || isAdmin())
+        && incoming().createdAt == request.time;
+      allow update: if isAdmin() && isValidId(wholesalerId)
+        && isValidWholesaleAccount(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(wholesalerId);
+    }
+
+    match /wholesale_quotes/{quoteId} {
+      allow get: if isAdmin() && isValidId(quoteId);
+      allow list: if isAdmin();
+      allow create: if isValidId(quoteId)
+        && isValidWholesaleQuote(incoming())
+        && incoming().id == quoteId
+        && (incoming().status == 'pending' || isAdmin())
+        && incoming().createdAt == request.time;
+      allow update: if isAdmin() && isValidId(quoteId)
+        && isValidWholesaleQuote(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(quoteId);
     }
   }
 }

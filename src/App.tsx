@@ -14,6 +14,7 @@ import { AdminLoginModal } from './components/auth/AdminLoginModal';
 import { CustomerLoginModal } from './components/auth/CustomerLoginModal';
 import { ToastContainer } from './components/common/ToastContainer';
 import { WaitlistModal } from './components/common/WaitlistModal';
+import { PartnerPortalModal } from './components/partner/PartnerPortalModal';
 import { LuckySpinLeftLauncher } from './components/spin/LuckySpinModal';
 import { SingleProductView } from './components/home/SingleProductView';
 import { AboutView } from './components/home/AboutView';
@@ -64,6 +65,11 @@ function StoreMainContent() {
     setIsMobileCategoryDrawerOpen,
     recentlyViewedIds,
     clearRecentlyViewed,
+    activeReseller,
+    activeWholesaler,
+    logoutReseller,
+    logoutWholesaler,
+    openPartnerPortal,
     addToast
   } = useStore();
 
@@ -347,7 +353,7 @@ function StoreMainContent() {
       return (
         <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
           <div className="text-center space-y-4">
-            <h2 className="text-xl font-black text-white">{t('অ্যাডমিন প্যানেল সুরক্ষিত', 'Admin Portal Protected (/hossain)')}</h2>
+            <h2 className="text-xl font-black text-white">{t('ম্যানেজমেন্ট প্যানেল সুরক্ষিত', 'Restricted Management Access (/hossain)')}</h2>
             <p className="text-xs text-slate-400">{t('প্রবেশ করতে অ্যাডমিন ইমেইল ও পাসওয়ার্ড দিয়ে লগইন করুন।', 'Sign in with administrator credentials to continue.')}</p>
             <div className="flex items-center justify-center gap-3">
               <button
@@ -373,7 +379,7 @@ function StoreMainContent() {
     }
     return (
       <div className="min-h-screen bg-slate-950 pb-16 md:pb-0 overflow-x-clip w-full max-w-full">
-        <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-emerald-400 text-xs font-bold">Loading Admin Portal...</div>}>
+        <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-emerald-400 text-xs font-bold">Loading Management Console...</div>}>
           <AdminDashboard />
           <AIVoiceCallModal />
         </Suspense>
@@ -406,6 +412,7 @@ function StoreMainContent() {
         <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
         <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
         <CustomerLoginModal />
+        <PartnerPortalModal />
         <MobileCategoryDrawer
           isOpen={isMobileCategoryDrawerOpen}
           onClose={() => setIsMobileCategoryDrawerOpen(false)}
@@ -450,6 +457,7 @@ function StoreMainContent() {
           onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
         />
         <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
+        <PartnerPortalModal />
         <ToastContainer />
         <MobileBottomNav onOpenCategories={() => setIsMobileCategoryDrawerOpen(true)} />
       </div>
@@ -485,6 +493,7 @@ function StoreMainContent() {
           onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
         />
         <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
+        <PartnerPortalModal />
         <ToastContainer />
         <MobileBottomNav onOpenCategories={() => setIsMobileCategoryDrawerOpen(true)} />
       </div>
@@ -500,6 +509,34 @@ function StoreMainContent() {
       />
 
       <main className="flex-1 max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-6 sm:space-y-8 w-full overflow-x-clip">
+        {/* Approved Partner Mode Active Bar (Only visible after approved login) */}
+        {(activeReseller?.status === 'approved' || activeWholesaler?.status === 'approved') && (
+          <div className="px-4 py-2.5 rounded-2xl bg-slate-900 text-white border border-emerald-500/40 flex flex-wrap items-center justify-between gap-2 text-xs tabular-nums">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-bold text-emerald-400">
+                {activeReseller?.status === 'approved'
+                  ? t(`রিসেলার মোড সক্রিয়: ${activeReseller.name} (${activeReseller.resellerCode})`, `Reseller Pricing Unlocked: ${activeReseller.name} · ${activeReseller.resellerCode}`)
+                  : t(`হোলসেল B2B সক্রিয়: ${activeWholesaler?.companyName}`, `Wholesale B2B Active: ${activeWholesaler?.companyName} (${activeWholesaler?.tier?.toUpperCase()})`)}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => openPartnerPortal(activeReseller?.status === 'approved' ? 'reseller' : 'wholesale')}
+                className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+              >
+                {t('পার্টনার ড্যাশবোর্ড', 'Partner Dashboard')}
+              </button>
+              <button
+                type="button"
+                onClick={() => (activeReseller?.status === 'approved' ? logoutReseller() : logoutWholesaler())}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[11px] cursor-pointer"
+              >
+                {t('সাইন আউট', 'Sign Out')}
+              </button>
+            </div>
+          </div>
+        )}
         {/* Organic Referral Visitor Welcome Strip */}
         {referralBannerCode && (
           <div className="p-3 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white flex flex-wrap items-center justify-between gap-2 shadow-md">
@@ -855,6 +892,7 @@ function StoreMainContent() {
         onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
       />
       <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
+      <PartnerPortalModal />
       <WaitlistModal product={waitlistProduct} onClose={() => setWaitlistProduct(null)} />
       <ToastContainer />
 

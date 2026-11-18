@@ -4,7 +4,7 @@ import { useStore } from '../../context/StoreContext';
 import { LoyaltySettings } from '../../types';
 
 export const LoyaltyRulesPanel: React.FC = () => {
-  const { settings, updateSettings, adminLang } = useStore();
+  const { settings, updateSettings, saveSettingsChanges, adminLang } = useStore();
   const at = (bn: string, en: string) => (adminLang === 'en' ? en : bn);
 
   const [form, setForm] = useState<LoyaltySettings>({
@@ -29,9 +29,15 @@ export const LoyaltyRulesPanel: React.FC = () => {
     }
   }, [settings.loyaltySettings]);
 
-  const handleSaveRules = (e: React.FormEvent) => {
+  const handleSaveRules = async (e: React.FormEvent) => {
     e.preventDefault();
     updateSettings({ loyaltySettings: form });
+    setTimeout(() => {
+      saveSettingsChanges(
+        at('লয়্যালটি রুলস সংরক্ষিত হয়েছে', 'Loyalty Rules Saved'),
+        at('কাস্টমার লয়্যালটি পয়েন্ট নিয়ম স্থায়ীভাবে সেভ হয়েছে।', 'Loyalty point earn & redeem rules saved.')
+      );
+    }, 30);
   };
 
   return (

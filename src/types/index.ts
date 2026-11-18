@@ -58,6 +58,11 @@ export interface ProductAttribute {
   values: string[];
 }
 
+export interface WholesaleTier {
+  minQty: number;
+  unitPrice: number;
+}
+
 export interface Product {
   id: string;
   title: string;
@@ -96,6 +101,12 @@ export interface Product {
   warrantyInfo?: string;
   warrantyInfoBn?: string;
   seo?: ProductSEO;
+  resellable?: boolean;
+  resellerPrice?: number;
+  wholesaleEnabled?: boolean;
+  wholesalePrice?: number;
+  wholesaleMinQty?: number;
+  wholesaleTiers?: WholesaleTier[];
 }
 
 export interface OrderItem {
@@ -206,6 +217,14 @@ export interface Order {
   courier: CourierTracking;
   fraudCheck?: OrderFraudCheck;
   source?: 'online' | 'pos';
+  partnerType?: 'retail' | 'reseller' | 'wholesale';
+  resellerId?: string;
+  resellerName?: string;
+  resellerCode?: string;
+  resellerProfit?: number;
+  customerQuotedPrice?: number;
+  wholesaleBuyerId?: string;
+  wholesaleCompany?: string;
   createdAt: string;
   updatedAt?: string;
 }
@@ -569,6 +588,9 @@ export interface StoreSettings {
   hostingerDbSettings?: HostingerDbSettings;
   securitySettings?: SecuritySettings;
   loyaltySettings?: LoyaltySettings;
+  resellerSettings?: ResellerSettings;
+  wholesaleSettings?: WholesaleSettings;
+  globalMarketingSettings?: GlobalMarketingSettings;
 }
 
 export interface LoyaltySettings {
@@ -917,4 +939,124 @@ export interface MediaItem {
   sizeKb: number;
   mimeType: string;
   createdAt: string;
+}
+
+export interface ResellerAccount {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  password?: string;
+  district: string;
+  address?: string;
+  fbPageUrl?: string;
+  bkashNumber?: string;
+  nagadNumber?: string;
+  bankDetails?: string;
+  resellerCode: string;
+  commissionPercent: number;
+  walletBalance: number;
+  totalEarnings: number;
+  totalOrders: number;
+  status: 'pending' | 'approved' | 'suspended';
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ResellerPayoutRequest {
+  id: string;
+  resellerId: string;
+  resellerName: string;
+  resellerPhone: string;
+  method: 'bkash' | 'nagad' | 'rocket' | 'bank';
+  accountNumber: string;
+  amount: number;
+  status: 'pending' | 'paid' | 'rejected';
+  trxId?: string;
+  note?: string;
+  createdAt: string;
+  processedAt?: string;
+}
+
+export interface ResellerSettings {
+  enabled: boolean;
+  autoApprove: boolean;
+  defaultCommissionPercent: number;
+  minPayoutBdt: number;
+  allowCustomMarginPricing: boolean;
+  resellerWelcomeMsgBn: string;
+  resellerWelcomeMsgEn: string;
+}
+
+export interface WholesaleAccount {
+  id: string;
+  contactName: string;
+  companyName: string;
+  phone: string;
+  email?: string;
+  password?: string;
+  tradeLicenseNo?: string;
+  nidNumber?: string;
+  district: string;
+  address: string;
+  businessType: 'Retail Shop' | 'Online Store' | 'Corporate' | 'Distributor' | 'Export';
+  monthlyVolumeEstimate?: string;
+  tier: 'Silver' | 'Gold' | 'Platinum';
+  extraDiscountPercent: number;
+  creditLimitBdt?: number;
+  status: 'pending' | 'approved' | 'suspended';
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface WholesaleQuoteRequest {
+  id: string;
+  wholesalerId: string;
+  companyName: string;
+  phone: string;
+  productId?: string;
+  productTitle: string;
+  requestedQty: number;
+  targetUnitPrice?: number;
+  notes?: string;
+  adminQuotedPrice?: number;
+  status: 'pending' | 'quoted' | 'accepted' | 'rejected';
+  createdAt: string;
+}
+
+export interface WholesaleSettings {
+  enabled: boolean;
+  autoApprove: boolean;
+  defaultMinQty: number;
+  silverDiscountPercent: number;
+  goldDiscountPercent: number;
+  platinumDiscountPercent: number;
+  requireAdvancePercent: number;
+  b2bHeadlineBn: string;
+  b2bHeadlineEn: string;
+}
+
+export interface BulkSmsCampaignLog {
+  id: string;
+  title: string;
+  segment: 'all_customers' | 'dhaka' | 'outside_dhaka' | 'resellers' | 'wholesalers' | 'waitlist';
+  recipientCount: number;
+  message: string;
+  status: 'sent' | 'simulated' | 'failed';
+  estimatedCostBdt: number;
+  createdAt: string;
+}
+
+export interface GlobalMarketingSettings {
+  defaultExportCurrency: 'BDT' | 'USD' | 'GBP' | 'EUR' | 'AED' | 'SAR' | 'MYR';
+  exchangeRates: Record<'USD' | 'GBP' | 'EUR' | 'AED' | 'SAR' | 'MYR', number>;
+  probashiShippingEnabled: boolean;
+  smsGatewayProvider: 'ssl_wireless' | 'bulksmsbd' | 'greenweb' | 'twilio' | 'custom';
+  smsApiKey: string;
+  smsSenderId: string;
+  googleMerchantFeedEnabled: boolean;
+  metaCatalogFeedEnabled: boolean;
+  tiktokShopSyncEnabled: boolean;
+  defaultUtmSource: string;
+  defaultUtmMedium: string;
 }

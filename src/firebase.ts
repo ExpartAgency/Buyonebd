@@ -25,10 +25,14 @@ import {
   PriceAlert,
   Product,
   ProductReview,
+  ResellerAccount,
+  ResellerPayoutRequest,
   StoreSettings,
   UserStaff,
   WaitlistEntry,
-  WalletTopUpRequest
+  WalletTopUpRequest,
+  WholesaleAccount,
+  WholesaleQuoteRequest
 } from './types';
 
 const app = initializeApp(firebaseConfig);
@@ -131,7 +135,8 @@ const ALLOWED_PUBLIC_SETTINGS_KEYS = [
   'paymentSettings', 'aiCallSettings', 'announcementBar', 'theme', 'themeColors',
   'cmsTexts', 'spinSettings', 'whatsappTemplates', 'marketingTemplates',
   'aiSettings', 'seoSettings', 'flashSale', 'footerSettings', 'singleProductCms',
-  'organicMarketing', 'walletSettings', 'promoCoupons', 'deliveryBoys', 'brandAttributes', 'loyaltySettings'
+  'organicMarketing', 'walletSettings', 'promoCoupons', 'deliveryBoys', 'brandAttributes',
+  'loyaltySettings', 'resellerSettings', 'wholesaleSettings', 'globalMarketingSettings'
 ] as const;
 
 const ALLOWED_PRODUCT_KEYS = [
@@ -139,7 +144,8 @@ const ALLOWED_PRODUCT_KEYS = [
   'stock', 'category', 'categoryBn', 'subcategory', 'tags', 'images', 'sku',
   'barcode', 'freeShipping', 'customDeliveryFees', 'rating', 'reviewsCount',
   'soldCount', 'loyaltyPoints', 'isFlashSale', 'colors', 'sizes', 'attributes', 'features',
-  'featuresBn', 'videoUrl', 'warrantyInfo', 'warrantyInfoBn', 'seo'
+  'featuresBn', 'videoUrl', 'warrantyInfo', 'warrantyInfoBn', 'seo',
+  'resellable', 'resellerPrice', 'wholesaleEnabled', 'wholesalePrice', 'wholesaleMinQty', 'wholesaleTiers'
 ] as const;
 
 function safeNum(val: unknown, fallback = 0): number {
@@ -273,6 +279,14 @@ function sanitizeOrderForFirestore(order: Order) {
       }
     ),
     source: order.source === 'pos' ? 'pos' : 'online',
+    ...(order.partnerType ? { partnerType: order.partnerType } : {}),
+    ...(order.resellerId ? { resellerId: String(order.resellerId).slice(0, 80) } : {}),
+    ...(order.resellerName ? { resellerName: String(order.resellerName).slice(0, 120) } : {}),
+    ...(order.resellerCode ? { resellerCode: String(order.resellerCode).slice(0, 40) } : {}),
+    ...(order.resellerProfit !== undefined ? { resellerProfit: safeNum(order.resellerProfit, 0) } : {}),
+    ...(order.customerQuotedPrice !== undefined ? { customerQuotedPrice: safeNum(order.customerQuotedPrice, 0) } : {}),
+    ...(order.wholesaleBuyerId ? { wholesaleBuyerId: String(order.wholesaleBuyerId).slice(0, 80) } : {}),
+    ...(order.wholesaleCompany ? { wholesaleCompany: String(order.wholesaleCompany).slice(0, 160) } : {}),
     createdAt: String(order.createdAt || new Date().toISOString()).slice(0, 64)
   };
 }
@@ -1180,6 +1194,213 @@ export async function ensureAdminDocInFirestore(): Promise<void> {
   }
 }
 
+// ======================= RESELLER & WHOLESALE B2B =======================
+export async function saveResellerToFirestore(reseller: ResellerAccount): Promise<void> {
+  const cleanId = sanitizeFirestoreId(reseller.id, 'res');
+  const path = `resellers/${cleanId}`;
+  try {
+    const ref = doc(db, 'resellers', cleanId);
+    const payload = stripUndefinedDeep({
+      id: cleanId,
+      name: (String(reseller.name || '').trim() || 'Reseller').slice(0, 120),
+      phone: (String(reseller.phone || '').trim() || '01700000000').slice(0, 32),
+      ...(reseller.email ? { email: String(reseller.email).trim().slice(0, 160) } : {}),
+      district: String(reseller.district || 'Dhaka - Inside City').slice(0, 120),
+      ...(reseller.address ? { address: String(reseller.address).slice(0, 400) } : {}),
+      ...(reseller.fbPageUrl ? { fbPageUrl: String(reseller.fbPageUrl).slice(0, 240) } : {}),
+      ...(reseller.bkashNumber ? { bkashNumber: String(reseller.bkashNumber).slice(0, 32) } : {}),
+      ...(reseller.nagadNumber ? { nagadNumber: String(reseller.nagadNumber).slice(0, 32) } : {}),
+      ...(reseller.bankDetails ? { bankDetails: String(reseller.bankDetails).slice(0, 300) } : {}),
+      resellerCode: String(reseller.resellerCode || `RES-${cleanId.slice(-4)}`).slice(0, 40),
+      commissionPercent: safeNum(reseller.commissionPercent, 18),
+      walletBalance: safeNum(reseller.walletBalance, 0),
+      totalEarnings: safeNum(reseller.totalEarnings, 0),
+      totalOrders: Math.max(0, Math.round(Number(reseller.totalOrders) || 0)),
+      status: reseller.status === 'approved' || reseller.status === 'suspended' ? reseller.status : 'pending'
+    });
+    if (!auth.currentUser) {
+      await setDoc(ref, { ...payload, status: 'pending', createdAt: serverTimestamp() });
+      return;
+    }
+    const existingSnap = await getDoc(ref);
+    if (!existingSnap.exists()) {
+      await setDoc(ref, { ...payload, createdAt: serverTimestamp() });
+    } else {
+      await setDoc(ref, { ...payload, createdAt: existingSnap.data().createdAt, updatedAt: serverTimestamp() }, { merge: true });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function fetchResellersFromFirestore(): Promise<ResellerAccount[]> {
+  if (!auth.currentUser) return [];
+  try {
+    const snap = await getDocs(collection(db, 'resellers'));
+    return snap.docs.map((d) => {
+      const data = d.data();
+      const createdTs = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : undefined;
+      return {
+        id: data.id || d.id,
+        name: String(data.name || ''),
+        phone: String(data.phone || ''),
+        email: data.email ? String(data.email) : undefined,
+        district: String(data.district || 'Dhaka - Inside City'),
+        address: data.address ? String(data.address) : undefined,
+        fbPageUrl: data.fbPageUrl ? String(data.fbPageUrl) : undefined,
+        bkashNumber: data.bkashNumber ? String(data.bkashNumber) : undefined,
+        nagadNumber: data.nagadNumber ? String(data.nagadNumber) : undefined,
+        bankDetails: data.bankDetails ? String(data.bankDetails) : undefined,
+        resellerCode: String(data.resellerCode || ''),
+        commissionPercent: Number(data.commissionPercent) || 18,
+        walletBalance: Number(data.walletBalance) || 0,
+        totalEarnings: Number(data.totalEarnings) || 0,
+        totalOrders: Number(data.totalOrders) || 0,
+        status: (data.status || 'pending') as ResellerAccount['status'],
+        createdAt: createdTs || String(data.createdAt || new Date().toISOString())
+      };
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'resellers');
+  }
+}
+
+export async function saveResellerPayoutToFirestore(payout: ResellerPayoutRequest): Promise<void> {
+  const cleanId = sanitizeFirestoreId(payout.id, 'pay');
+  const path = `reseller_payouts/${cleanId}`;
+  try {
+    const ref = doc(db, 'reseller_payouts', cleanId);
+    const payload = stripUndefinedDeep({
+      id: cleanId,
+      resellerId: String(payout.resellerId || '').slice(0, 80),
+      resellerName: String(payout.resellerName || 'Reseller').slice(0, 120),
+      resellerPhone: String(payout.resellerPhone || '').slice(0, 32),
+      method: payout.method || 'bkash',
+      accountNumber: String(payout.accountNumber || '').slice(0, 160),
+      amount: Math.max(1, safeNum(payout.amount, 1)),
+      status: payout.status || 'pending',
+      ...(payout.trxId ? { trxId: String(payout.trxId).slice(0, 80) } : {}),
+      ...(payout.note ? { note: String(payout.note).slice(0, 300) } : {}),
+      submittedAt: String(payout.createdAt || new Date().toISOString()).slice(0, 64),
+      ...(payout.processedAt ? { processedAt: String(payout.processedAt).slice(0, 64) } : {})
+    });
+    if (!auth.currentUser) {
+      await setDoc(ref, { ...payload, status: 'pending', createdAt: serverTimestamp() });
+      return;
+    }
+    const existingSnap = await getDoc(ref);
+    if (!existingSnap.exists()) {
+      await setDoc(ref, { ...payload, createdAt: serverTimestamp() });
+    } else {
+      await setDoc(ref, { ...payload, createdAt: existingSnap.data().createdAt, updatedAt: serverTimestamp() }, { merge: true });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function saveWholesalerToFirestore(buyer: WholesaleAccount): Promise<void> {
+  const cleanId = sanitizeFirestoreId(buyer.id, 'whs');
+  const path = `wholesalers/${cleanId}`;
+  try {
+    const ref = doc(db, 'wholesalers', cleanId);
+    const payload = stripUndefinedDeep({
+      id: cleanId,
+      contactName: (String(buyer.contactName || '').trim() || 'Buyer').slice(0, 120),
+      companyName: (String(buyer.companyName || '').trim() || 'Company').slice(0, 160),
+      phone: (String(buyer.phone || '').trim() || '01700000000').slice(0, 32),
+      ...(buyer.email ? { email: String(buyer.email).trim().slice(0, 160) } : {}),
+      ...(buyer.tradeLicenseNo ? { tradeLicenseNo: String(buyer.tradeLicenseNo).slice(0, 80) } : {}),
+      ...(buyer.nidNumber ? { nidNumber: String(buyer.nidNumber).slice(0, 40) } : {}),
+      district: String(buyer.district || 'Dhaka - Inside City').slice(0, 120),
+      address: String(buyer.address || 'Bangladesh').slice(0, 400),
+      businessType: buyer.businessType || 'Retail Shop',
+      ...(buyer.monthlyVolumeEstimate ? { monthlyVolumeEstimate: String(buyer.monthlyVolumeEstimate).slice(0, 80) } : {}),
+      tier: buyer.tier === 'Gold' || buyer.tier === 'Platinum' ? buyer.tier : 'Silver',
+      extraDiscountPercent: safeNum(buyer.extraDiscountPercent, 5),
+      ...(buyer.creditLimitBdt !== undefined ? { creditLimitBdt: safeNum(buyer.creditLimitBdt, 0) } : {}),
+      status: buyer.status === 'approved' || buyer.status === 'suspended' ? buyer.status : 'pending'
+    });
+    if (!auth.currentUser) {
+      await setDoc(ref, { ...payload, status: 'pending', createdAt: serverTimestamp() });
+      return;
+    }
+    const existingSnap = await getDoc(ref);
+    if (!existingSnap.exists()) {
+      await setDoc(ref, { ...payload, createdAt: serverTimestamp() });
+    } else {
+      await setDoc(ref, { ...payload, createdAt: existingSnap.data().createdAt, updatedAt: serverTimestamp() }, { merge: true });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function fetchWholesalersFromFirestore(): Promise<WholesaleAccount[]> {
+  if (!auth.currentUser) return [];
+  try {
+    const snap = await getDocs(collection(db, 'wholesalers'));
+    return snap.docs.map((d) => {
+      const data = d.data();
+      const createdTs = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : undefined;
+      return {
+        id: data.id || d.id,
+        contactName: String(data.contactName || ''),
+        companyName: String(data.companyName || ''),
+        phone: String(data.phone || ''),
+        email: data.email ? String(data.email) : undefined,
+        tradeLicenseNo: data.tradeLicenseNo ? String(data.tradeLicenseNo) : undefined,
+        nidNumber: data.nidNumber ? String(data.nidNumber) : undefined,
+        district: String(data.district || 'Dhaka - Inside City'),
+        address: String(data.address || ''),
+        businessType: (data.businessType || 'Retail Shop') as WholesaleAccount['businessType'],
+        monthlyVolumeEstimate: data.monthlyVolumeEstimate ? String(data.monthlyVolumeEstimate) : undefined,
+        tier: (data.tier || 'Silver') as WholesaleAccount['tier'],
+        extraDiscountPercent: Number(data.extraDiscountPercent) || 5,
+        creditLimitBdt: data.creditLimitBdt !== undefined ? Number(data.creditLimitBdt) : undefined,
+        status: (data.status || 'pending') as WholesaleAccount['status'],
+        createdAt: createdTs || String(data.createdAt || new Date().toISOString())
+      };
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'wholesalers');
+  }
+}
+
+export async function saveWholesaleQuoteToFirestore(quote: WholesaleQuoteRequest): Promise<void> {
+  const cleanId = sanitizeFirestoreId(quote.id, 'qt');
+  const path = `wholesale_quotes/${cleanId}`;
+  try {
+    const ref = doc(db, 'wholesale_quotes', cleanId);
+    const payload = stripUndefinedDeep({
+      id: cleanId,
+      wholesalerId: String(quote.wholesalerId || '').slice(0, 80),
+      companyName: String(quote.companyName || 'Company').slice(0, 160),
+      phone: String(quote.phone || '').slice(0, 32),
+      ...(quote.productId ? { productId: String(quote.productId).slice(0, 80) } : {}),
+      productTitle: String(quote.productTitle || 'Bulk Order').slice(0, 200),
+      requestedQty: Math.max(1, Math.round(Number(quote.requestedQty) || 1)),
+      ...(quote.targetUnitPrice !== undefined ? { targetUnitPrice: safeNum(quote.targetUnitPrice, 0) } : {}),
+      ...(quote.adminQuotedPrice !== undefined ? { adminQuotedPrice: safeNum(quote.adminQuotedPrice, 0) } : {}),
+      ...(quote.notes ? { notes: String(quote.notes).slice(0, 500) } : {}),
+      status: quote.status || 'pending',
+      submittedAt: String(quote.createdAt || new Date().toISOString()).slice(0, 64)
+    });
+    if (!auth.currentUser) {
+      await setDoc(ref, { ...payload, status: 'pending', createdAt: serverTimestamp() });
+      return;
+    }
+    const existingSnap = await getDoc(ref);
+    if (!existingSnap.exists()) {
+      await setDoc(ref, { ...payload, createdAt: serverTimestamp() });
+    } else {
+      await setDoc(ref, { ...payload, createdAt: existingSnap.data().createdAt, updatedAt: serverTimestamp() }, { merge: true });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
 // ======================= UNIFIED ALL-SETTINGS SYNC & DIAGNOSTICS =======================
 export interface FullCloudSyncPayload {
   settings: StoreSettings;
@@ -1194,6 +1415,10 @@ export interface FullCloudSyncPayload {
   abandonedCarts: AbandonedCart[];
   priceAlerts: PriceAlert[];
   waitlist?: WaitlistEntry[];
+  resellers?: ResellerAccount[];
+  resellerPayouts?: ResellerPayoutRequest[];
+  wholesalers?: WholesaleAccount[];
+  wholesaleQuotes?: WholesaleQuoteRequest[];
   users: UserStaff[];
 }
 
@@ -1317,6 +1542,42 @@ export async function syncAllAdminDataToFirestore(
       counts.waitlist = (counts.waitlist || 0) + 1;
     } catch (err) {
       errors.push(`waitlist ${w.id}: ${extractFirestoreErrorReason(err)}`);
+    }
+  }
+
+  for (const r of payload.resellers || []) {
+    try {
+      await saveResellerToFirestore(r);
+      counts.resellers = (counts.resellers || 0) + 1;
+    } catch (err) {
+      errors.push(`reseller ${r.id}: ${extractFirestoreErrorReason(err)}`);
+    }
+  }
+
+  for (const p of payload.resellerPayouts || []) {
+    try {
+      await saveResellerPayoutToFirestore(p);
+      counts.resellerPayouts = (counts.resellerPayouts || 0) + 1;
+    } catch (err) {
+      errors.push(`reseller_payout ${p.id}: ${extractFirestoreErrorReason(err)}`);
+    }
+  }
+
+  for (const w of payload.wholesalers || []) {
+    try {
+      await saveWholesalerToFirestore(w);
+      counts.wholesalers = (counts.wholesalers || 0) + 1;
+    } catch (err) {
+      errors.push(`wholesaler ${w.id}: ${extractFirestoreErrorReason(err)}`);
+    }
+  }
+
+  for (const q of payload.wholesaleQuotes || []) {
+    try {
+      await saveWholesaleQuoteToFirestore(q);
+      counts.wholesaleQuotes = (counts.wholesaleQuotes || 0) + 1;
+    } catch (err) {
+      errors.push(`wholesale_quote ${q.id}: ${extractFirestoreErrorReason(err)}`);
     }
   }
 

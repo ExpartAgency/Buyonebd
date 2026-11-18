@@ -19,6 +19,9 @@ export const OneClickCheckoutModal: React.FC = () => {
     setActiveView,
     setTrackingSearchQuery,
     addSecurityLog,
+    getPartnerPriceInfo,
+    activeReseller,
+    activeWholesaler,
     lang,
     t,
     addToast
@@ -56,6 +59,10 @@ export const OneClickCheckoutModal: React.FC = () => {
 
   // Success Sheet after placing order
   const [placedOrder, setPlacedOrder] = useState<Order | null>(null);
+  const [customerQuotedPrice, setCustomerQuotedPrice] = useState<string>('');
+
+  const isApprovedReseller = Boolean(activeReseller && activeReseller.status === 'approved' && settings.resellerSettings?.enabled !== false);
+  const isApprovedWholesaler = Boolean(!isApprovedReseller && activeWholesaler && activeWholesaler.status === 'approved' && settings.wholesaleSettings?.enabled !== false);
 
   const currentDistrictObj = BD_DISTRICTS.find((d) => d.name === selectedDistrictName) || BD_DISTRICTS[0];
   const currentZone: DeliveryZone = currentDistrictObj.zone;
@@ -67,9 +74,11 @@ export const OneClickCheckoutModal: React.FC = () => {
       ? 'dhakaSub'
       : 'dhakaOutside';
 
-  // Single product vs Cart items + Marketing Boosters (Free Shipping Bar & Bundle Discount)
+  // Single product vs Cart items + Partner Pricing + Marketing Boosters
   const isSingleProduct = !!checkoutProduct;
-  const singleSubtotal = checkoutProduct ? checkoutProduct.price * quantity : 0;
+  const singlePartnerInfo = checkoutProduct ? getPartnerPriceInfo(checkoutProduct, quantity) : null;
+  const singleEffectiveUnit = singlePartnerInfo ? singlePartnerInfo.unitPrice : 0;
+  const singleSubtotal = checkoutProduct ? singleEffectiveUnit * quantity : 0;
   const subtotal = isSingleProduct ? singleSubtotal : cartTotal;
   const totalQty = isSingleProduct ? quantity : cart.reduce((s, c) => s + c.quantity, 0);
 
@@ -153,6 +162,7 @@ export const OneClickCheckoutModal: React.FC = () => {
       setSelectedAttributes(attrs);
     }
     setPlacedOrder(null);
+    setCustomerQuotedPrice('');
   }, [checkoutProduct, isOneClickOpen]);
 
   // When district changes, update default thana
@@ -322,7 +332,9 @@ export const OneClickCheckoutModal: React.FC = () => {
         advancePaid: advanceAmount > 0 ? advanceAmount : undefined,
         walletUsedAmount: walletDeduction > 0 ? walletDeduction : undefined,
         loyaltyPointsUsed: effectiveLoyaltyPoints > 0 ? effectiveLoyaltyPoints : undefined,
-        loyaltyDiscountAmount: loyaltyDiscountAmount > 0 ? loyaltyDiscountAmount : undefined
+        loyaltyDiscountAmount: loyaltyDiscountAmount > 0 ? loyaltyDiscountAmount : undefined,
+        partnerType: isApprovedReseller ? 'reseller' : isApprovedWholesaler ? 'wholesale' : 'retail',
+        customerQuotedPrice: isApprovedReseller && Number(customerQuotedPrice) > 0 ? Number(customerQuotedPrice) : undefined
       });
 
       // Show immediate Success Confirmation Sheet with 1-Click WhatsApp Memo
@@ -467,9 +479,9 @@ export const OneClickCheckoutModal: React.FC = () => {
                       <h5 className="font-bold text-xs text-slate-900 truncate">
                         {lang === 'bn' ? checkoutProduct.titleBn : checkoutProduct.title}
                       </h5>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="font-bold text-rose-600 text-xs sm:text-sm">৳ {checkoutProduct.price.toLocaleString()}</span>
-                        {checkoutProduct.originalPrice > checkoutProduct.price && (
+                      <div className="flex items-center gap-1.5 mt-0.5 tabular-nums">
+                        <span className="font-bold text-rose-600 text-xs sm:text-sm">৳ {singleEffectiveUnit.toLocaleString()}</span>
+                        {checkoutProduct.originalPrice > singleEffectiveUnit && (
                           <span className="line-through text-slate-400 text-[10px]">৳ {checkoutProduct.originalPrice.toLocaleString()}</span>
                         )}
                       </div>
@@ -497,18 +509,21 @@ export const OneClickCheckoutModal: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-1.5 max-h-28 overflow-y-auto">
-                  {cart.map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between py-1 border-b border-slate-200/60 last:border-0">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <img src={item.product.images[0]} className="w-7 h-7 rounded-md object-cover shrink-0" />
-                        <span className="font-medium text-slate-800 truncate max-w-[170px]">
-                          {lang === 'bn' ? item.product.titleBn : item.product.title}
-                        </span>
-                        <span className="text-slate-400">x{item.quantity}</span>
+                  {cart.map((item, idx) => {
+                    const lineUnit = getPartnerPriceInfo(item.product, item.quantity).unitPrice;
+                    return (
+                      <div key={idx} className="flex items-center justify-between py-1 border-b border-slate-200/60 last:border-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <img src={item.product.images[0]} alt="" className="w-7 h-7 rounded-md object-cover shrink-0" />
+                          <span className="font-medium text-slate-800 truncate max-w-[170px]">
+                            {lang === 'bn' ? item.product.titleBn : item.product.title}
+                          </span>
+                          <span className="text-slate-400">x{item.quantity}</span>
+                        </div>
+                        <span className="font-bold text-slate-900 shrink-0 tabular-nums">৳ {(lineUnit * item.quantity).toLocaleString()}</span>
                       </div>
-                      <span className="font-bold text-slate-900 shrink-0">৳ {(item.product.price * item.quantity).toLocaleString()}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -705,6 +720,27 @@ export const OneClickCheckoutModal: React.FC = () => {
                 />
                 {errors.address && <p className="text-[10px] text-rose-500 mt-0.5">{errors.address}</p>}
               </div>
+
+              {isApprovedReseller && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 space-y-1.5 tabular-nums">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-emerald-900">
+                    <span>{t('রিসেলার অর্ডার: আপনার কাস্টমারের বিক্রয় মূল্য (৳)', 'Reseller Customer COD Selling Price (৳)')}</span>
+                    {Number(customerQuotedPrice) > subtotal && (
+                      <span className="text-emerald-700 font-mono">
+                        {t('আপনার লাভ:', 'Net Margin:')} ৳{(Number(customerQuotedPrice) - subtotal).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="number"
+                    min={subtotal}
+                    value={customerQuotedPrice}
+                    onChange={(e) => setCustomerQuotedPrice(e.target.value)}
+                    placeholder={`Min ৳${subtotal.toLocaleString()} (Optional custom customer price)`}
+                    className="w-full px-3 py-1.5 rounded-lg border border-emerald-300 bg-white text-xs font-mono font-bold text-slate-900"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Temu-Style Coupon Code Box */}

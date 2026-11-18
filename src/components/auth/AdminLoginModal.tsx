@@ -178,7 +178,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
               {isLockedOut ? <ShieldAlert className="w-8 h-8 text-amber-200" /> : <Lock className="w-8 h-8" />}
             </div>
             <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-              {t('এডমিন সিকিউর লগইন', 'Admin Portal Access')}
+              {t('এডমিন সিকিউর লগইন', 'Admin Access')}
             </h3>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
               {t(

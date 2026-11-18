@@ -38,7 +38,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
     reviews,
     addProductReview,
     addPriceAlert,
-    recordProductView
+    recordProductView,
+    getPartnerPriceInfo
   } = useStore();
 
   useEffect(() => {
@@ -109,6 +110,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
 
   const isOutOfStock = (product.stock ?? 0) <= 0;
   const brandLabel = lang === 'bn' ? product.brandBn || product.brand : product.brand || product.brandBn;
+  const partnerPrice = getPartnerPriceInfo(product, quantity);
+  const displayUnitPrice = partnerPrice.unitPrice;
 
   const handleShare = () => {
     if (navigator.clipboard) {
@@ -362,19 +365,43 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
                   <span className="text-xs text-slate-400">({product.reviewsCount} {t('রিভিউ', 'reviews')})</span>
                 </div>
 
-                {/* Price */}
-                <div className="flex items-baseline gap-3 mt-3">
-                  <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                    ৳ {product.price.toLocaleString()}
-                  </span>
-                  {product.originalPrice > product.price && (
-                    <span className="text-sm text-slate-400 line-through">
-                      ৳ {product.originalPrice.toLocaleString()}
+                {/* Price (Strictly Partner-Aware) */}
+                <div className="mt-3 space-y-1.5 tabular-nums">
+                  <div className="flex items-baseline gap-3 flex-wrap">
+                    <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                      ৳ {displayUnitPrice.toLocaleString()}
                     </span>
+                    {product.originalPrice > displayUnitPrice && (
+                      <span className="text-sm text-slate-400 line-through">
+                        ৳ {product.originalPrice.toLocaleString()}
+                      </span>
+                    )}
+                    <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                      · {t('ক্যাশ অন ডেলিভারি', 'Cash on Delivery')}
+                    </span>
+                  </div>
+                  {partnerPrice.mode === 'reseller' && (
+                    <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                      {t('রিসেলার মূল্য সক্রিয়', 'Reseller Rate Active')} · Retail ৳{product.price.toLocaleString()} ·{' '}
+                      {t('লাভ', 'Margin')} ৳{(partnerPrice.estimatedProfitPerUnit || 0).toLocaleString()}/unit
+                    </p>
                   )}
-                  <span className="bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-xs font-bold px-2 py-0.5 rounded-full">
-                    {t('ক্যাশ অন ডেলিভারি', 'Cash on Delivery')}
-                  </span>
+                  {partnerPrice.mode === 'wholesale' && (
+                    <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-[11px] space-y-1">
+                      <p className="font-bold text-emerald-800 dark:text-emerald-300">
+                        {t('হোলসেল B2B ট্রেড রেট', 'Approved B2B Trade Rate')} · MOQ {partnerPrice.minQty || 10} pcs
+                      </p>
+                      {product.wholesaleTiers && product.wholesaleTiers.length > 0 && (
+                        <div className="flex flex-wrap gap-2 text-slate-700 dark:text-slate-300 font-mono">
+                          {product.wholesaleTiers.map((tier) => (
+                            <span key={tier.minQty}>
+                              {tier.minQty}+ pcs: ৳{tier.unitPrice.toLocaleString()}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Description */}

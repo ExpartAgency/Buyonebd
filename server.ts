@@ -257,6 +257,18 @@ app.get('/api/tts/sample', async (_req, res) => {
   }
 });
 
+// Ensure customer-facing chat/AI replies remain polite, brand-aligned, and never mention internal/prohibited terms
+function sanitizeCustomerFacingReply(text: string): string {
+  return String(text || '')
+    .replace(/\bhuman\s+support\b/gi, 'Support Desk')
+    .replace(/\bhuman\s+agent\b/gi, 'Support Representative')
+    .replace(/\bhumans?\b/gi, 'support team')
+    .replace(/হিউম্যান/g, 'সাপোর্ট ডেস্ক')
+    .replace(/মানুষ/g, 'প্রতিনিধি')
+    .replace(/\badmin\s+portal\b/gi, 'Support Desk')
+    .replace(/\/hossain\b/gi, '');
+}
+
 // Smart A-to-Z Local AI Fallback (Free Auto AI — always responds accurately even without external API keys)
 function buildSmartLocalChatReply(params: {
   message: string;
@@ -396,7 +408,7 @@ app.post('/api/chat', async (req, res) => {
       if (matchedRule) {
         const matchedReply = lang === 'en' ? matchedRule.replyEn || matchedRule.replyBn : matchedRule.replyBn || matchedRule.replyEn;
         if (matchedReply) {
-          return res.json({ reply: matchedReply, matchedKeyword: true, quickActions: [] });
+          return res.json({ reply: sanitizeCustomerFacingReply(matchedReply), matchedKeyword: true, quickActions: [] });
         }
       }
     }
@@ -418,7 +430,7 @@ app.post('/api/chat', async (req, res) => {
         orders: ordersList,
         assistantDraft
       });
-      return res.json({ ...localResult, mode: 'free_auto_local' });
+      return res.json({ ...localResult, reply: sanitizeCustomerFacingReply(localResult.reply), mode: 'free_auto_local' });
     }
 
     const compactCatalog = productsList
@@ -427,9 +439,10 @@ app.post('/api/chat', async (req, res) => {
       .join(' | ');
 
     const systemInstruction = assistantDraft
-      ? `You are drafting a helpful, concise customer care reply on behalf of a live support executive at "${storeName}" in Bangladesh. Reply in ${lang === 'en' ? 'English' : 'polite Bengali (বাংলা)'} matching the customer's question. Available catalog: ${compactCatalog}`
-      : `You are Sumana, a professional A-to-Z Senior E-Commerce AI Sales & Order Verification Agent for "${storeName}" in Bangladesh.
+      ? `You are drafting a helpful, concise customer care reply on behalf of a live support executive at "${storeName}" in Bangladesh. Reply in ${lang === 'en' ? 'English' : 'polite Bengali (বাংলা)'} matching the customer's question. Never mention admin portals or internal routes. Available catalog: ${compactCatalog}`
+      : `You are Sumana, a professional A-to-Z Senior E-Commerce Shopping & Order Assistant for "${storeName}" in Bangladesh.
 Communicate naturally in ${lang === 'en' ? 'English' : 'Bengali (বাংলা)'}.
+Strict style rules: NEVER use the word "human" / "হিউম্যান" / "মানুষ" and NEVER mention "Admin Portal" or "/hossain". Refer to assistance teams only as "Support Desk" or "সাপোর্ট ডেস্ক".
 Live Product Catalog: ${compactCatalog || 'Smartwatch, AirPods, Earbuds, Neckband, Charger'}.
 Policies:
 - Nationwide Cash on Delivery via Steadfast & Pathao across 64 districts.
@@ -469,7 +482,7 @@ Be helpful, concise, and guide customers smoothly from browsing to 1-click check
       });
 
       return res.json({
-        reply: response.text || localHints.reply,
+        reply: sanitizeCustomerFacingReply(response.text || localHints.reply),
         quickActions: localHints.quickActions,
         mode: 'gemini_live'
       });
@@ -483,7 +496,7 @@ Be helpful, concise, and guide customers smoothly from browsing to 1-click check
         orders: ordersList,
         assistantDraft
       });
-      return res.json({ ...localResult, mode: 'free_auto_fallback' });
+      return res.json({ ...localResult, reply: sanitizeCustomerFacingReply(localResult.reply), mode: 'free_auto_fallback' });
     }
   } catch (err: any) {
     console.error('Chat endpoint error:', err);
@@ -825,7 +838,8 @@ Available command types and payload fields (use payloadJson as a JSON string rep
 11. "update_store_settings": { "dhakaInsideFee": number?, "dhakaSubFee": number?, "dhakaOutsideFee": number?, "announcementTextBn": string?, "announcementTextEn": string?, "announcementEnabled": boolean?, "loyaltyEnabled": boolean?, "loyaltyPointsPer100": number?, "loyaltyBdtPerPoint": number? }
 12. "navigate_admin_tab": { "tab": "overview"|"orders"|"partial_orders"|"pos_system"|"products"|"abandoned_carts"|"users"|"ai_operator"|"marketing_hub" }
 Only emit commands clearly requested. Live state: ${JSON.stringify(compactContext)}`
-          : `You are an A-to-Z Shopping Concierge for "${compactContext.storeName}". Help the customer shop smoothly and professionally.
+          : `You are an A-to-Z Shopping Assistant for "${compactContext.storeName}". Help the customer shop smoothly and professionally.
+NEVER use the word "human", "হিউম্যান", "মানুষ", "Admin Portal", or "/hossain" in replies.
 Return JSON with "reply" (${lang === 'en' ? 'English' : 'Bengali'}) and optional "commands" using payloadJson strings:
 1. "add_to_cart": { "productId": "...", "quantity": 1 }
 2. "open_checkout": { "productId": "..." }
@@ -874,15 +888,21 @@ Live catalog & recent orders: ${JSON.stringify(compactContext)}`;
           }).filter((c: any) => c.type)
         : [];
 
+      const rawReply = parsed.reply || fallback.reply;
       return res.json({
         success: true,
-        reply: parsed.reply || fallback.reply,
+        reply: role === 'customer' ? sanitizeCustomerFacingReply(rawReply) : rawReply,
         commands: normalizedCommands.length > 0 ? normalizedCommands : fallback.commands,
         mode: 'gemini_live'
       });
     } catch (geminiErr: any) {
       console.warn('Gemini /api/agent fallback used:', geminiErr?.message || geminiErr);
-      return res.json({ success: true, ...fallback, mode: 'free_auto_fallback' });
+      return res.json({
+        success: true,
+        ...fallback,
+        reply: role === 'customer' ? sanitizeCustomerFacingReply(fallback.reply) : fallback.reply,
+        mode: 'free_auto_fallback'
+      });
     }
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Agent request failed' });
@@ -925,6 +945,18 @@ function redactSensitiveSettingsForPublic(rawData: any) {
         adminPin: ''
       };
     }
+    if (s.globalMarketingSettings) {
+      s.globalMarketingSettings = {
+        ...s.globalMarketingSettings,
+        smsApiKey: ''
+      };
+    }
+  }
+  if (Array.isArray(clone.resellers)) {
+    clone.resellers = clone.resellers.map((r: any) => ({ ...r, password: '' }));
+  }
+  if (Array.isArray(clone.wholesalers)) {
+    clone.wholesalers = clone.wholesalers.map((w: any) => ({ ...w, password: '' }));
   }
   return clone;
 }
@@ -951,6 +983,12 @@ app.post('/api/store/sync', (req, res) => {
     abandonedCarts,
     reviews,
     priceAlerts,
+    waitlist,
+    resellers,
+    resellerPayouts,
+    wholesalers,
+    wholesaleQuotes,
+    bulkSmsLogs,
     users,
     mediaLibrary
   } = req.body || {};
@@ -984,9 +1022,24 @@ app.post('/api/store/sync', (req, res) => {
         ...(current.settings.securitySettings || {}),
         ...(settings.securitySettings || {}),
         adminPin: settings.securitySettings?.adminPin || current.settings.securitySettings?.adminPin || ''
+      },
+      globalMarketingSettings: {
+        ...(current.settings.globalMarketingSettings || {}),
+        ...(settings.globalMarketingSettings || {}),
+        smsApiKey:
+          settings.globalMarketingSettings?.smsApiKey ||
+          current.settings.globalMarketingSettings?.smsApiKey ||
+          ''
       }
     };
   }
+
+  const preservePasswords = (incomingList: any[], prevList: any[]) =>
+    incomingList.map((item) => {
+      if (!item || item.password) return item;
+      const old = Array.isArray(prevList) ? prevList.find((x) => x && x.id === item.id) : null;
+      return old?.password ? { ...item, password: old.password } : item;
+    });
 
   const updated = {
     ...current,
@@ -1001,6 +1054,12 @@ app.post('/api/store/sync', (req, res) => {
     abandonedCarts: abandonedCarts !== undefined ? abandonedCarts : current.abandonedCarts,
     reviews: reviews !== undefined ? reviews : current.reviews,
     priceAlerts: priceAlerts !== undefined ? priceAlerts : current.priceAlerts,
+    waitlist: waitlist !== undefined ? waitlist : current.waitlist,
+    resellers: Array.isArray(resellers) ? preservePasswords(resellers, current.resellers) : current.resellers,
+    resellerPayouts: resellerPayouts !== undefined ? resellerPayouts : current.resellerPayouts,
+    wholesalers: Array.isArray(wholesalers) ? preservePasswords(wholesalers, current.wholesalers) : current.wholesalers,
+    wholesaleQuotes: wholesaleQuotes !== undefined ? wholesaleQuotes : current.wholesaleQuotes,
+    bulkSmsLogs: bulkSmsLogs !== undefined ? bulkSmsLogs : current.bulkSmsLogs,
     users: users !== undefined ? users : current.users,
     mediaLibrary: mediaLibrary !== undefined ? mediaLibrary : current.mediaLibrary,
     lastUpdated: new Date().toISOString()
@@ -1013,6 +1072,80 @@ app.post('/api/store/sync', (req, res) => {
     message: 'Store synchronized',
     data: !isAdminSession && shouldMask ? redactSensitiveSettingsForPublic(updated) : updated
   });
+});
+
+// Partner Portal (Reseller & Wholesale) Cross-Device Registration & Authentication
+app.post('/api/partner/register', (req, res) => {
+  const { type, account } = req.body || {};
+  if (!type || !account || !account.phone) {
+    return res.status(400).json({ success: false, error: 'Partner type and account details required.' });
+  }
+  const current = loadStoreData() || {};
+  const cleanPhone = String(account.phone || '').replace(/[^0-9]/g, '').slice(-11);
+  if (type === 'reseller') {
+    const list: any[] = Array.isArray(current.resellers) ? current.resellers : [];
+    const dup = list.find((r) => String(r.phone || '').replace(/[^0-9]/g, '').slice(-11) === cleanPhone);
+    if (dup) {
+      return res.status(409).json({ success: false, error: 'A reseller account with this phone number already exists.' });
+    }
+    const autoApprove = Boolean(current?.settings?.resellerSettings?.autoApprove);
+    const created = {
+      ...account,
+      id: account.id || `res-${Date.now()}`,
+      status: account.status || (autoApprove ? 'approved' : 'pending'),
+      createdAt: account.createdAt || new Date().toISOString()
+    };
+    current.resellers = [created, ...list];
+    saveStoreData(current);
+    return res.json({ success: true, partner: { ...created, password: '' } });
+  }
+  if (type === 'wholesale') {
+    const list: any[] = Array.isArray(current.wholesalers) ? current.wholesalers : [];
+    const dup = list.find((w) => String(w.phone || '').replace(/[^0-9]/g, '').slice(-11) === cleanPhone);
+    if (dup) {
+      return res.status(409).json({ success: false, error: 'A wholesale account with this phone number already exists.' });
+    }
+    const autoApprove = Boolean(current?.settings?.wholesaleSettings?.autoApprove);
+    const created = {
+      ...account,
+      id: account.id || `whs-${Date.now()}`,
+      status: account.status || (autoApprove ? 'approved' : 'pending'),
+      createdAt: account.createdAt || new Date().toISOString()
+    };
+    current.wholesalers = [created, ...list];
+    saveStoreData(current);
+    return res.json({ success: true, partner: { ...created, password: '' } });
+  }
+  return res.status(400).json({ success: false, error: 'Invalid partner type.' });
+});
+
+app.post('/api/partner/login', (req, res) => {
+  const { type, identifier, password } = req.body || {};
+  const rawIdent = String(identifier || '').trim().toLowerCase();
+  const phoneIdent = rawIdent.replace(/[^0-9]/g, '').slice(-11);
+  const current = loadStoreData() || {};
+  const list: any[] = type === 'wholesale'
+    ? (Array.isArray(current.wholesalers) ? current.wholesalers : [])
+    : (Array.isArray(current.resellers) ? current.resellers : []);
+
+  const matched = list.find((acc) => {
+    const accPhone = String(acc.phone || '').replace(/[^0-9]/g, '').slice(-11);
+    const accEmail = String(acc.email || '').trim().toLowerCase();
+    const accCode = String(acc.resellerCode || '').trim().toLowerCase();
+    return (
+      (phoneIdent && accPhone === phoneIdent) ||
+      (accEmail && accEmail === rawIdent) ||
+      (accCode && accCode === rawIdent)
+    );
+  });
+
+  if (!matched) {
+    return res.status(404).json({ success: false, error: 'Account not found. Please register first.' });
+  }
+  if (matched.password && String(matched.password) !== String(password || '')) {
+    return res.status(401).json({ success: false, error: 'Incorrect password / PIN.' });
+  }
+  return res.json({ success: true, partner: { ...matched, password: '' } });
 });
 
 // Atomic Cross-Device Order Endpoints (with Blocklist, Duplicate Flood Protection & Hostinger MySQL auto-mirror)
@@ -1811,24 +1944,196 @@ app.post('/api/seo/indexnow', async (req, res) => {
   }
 });
 
-// AI Marketing Copy, Reels Script & SEO Metadata Generator
+// Live Google Merchant Center XML Feed & Meta / TikTok Catalog CSV Feed
+app.get('/api/feeds/google-merchant.xml', (req, res) => {
+  const saved = loadStoreData() || {};
+  const products: any[] = Array.isArray(saved.products) ? saved.products : [];
+  const storeName = saved?.settings?.storeName || 'BuyOne BD';
+  const canonicalBase =
+    String(saved?.settings?.seoSettings?.canonicalUrl || '').trim().replace(/\/+$/, '') ||
+    `${req.protocol}://${req.get('host')}`;
+
+  const escXml = (v: unknown) =>
+    String(v || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+
+  const itemsXml = products
+    .slice(0, 500)
+    .map((p) => {
+      const link = `${canonicalBase}/?product=${encodeURIComponent(p.seo?.slug || p.id)}`;
+      const img = Array.isArray(p.images) && p.images[0] && !String(p.images[0]).startsWith('data:') ? p.images[0] : '';
+      return `    <item>
+      <g:id>${escXml(p.sku || p.id)}</g:id>
+      <g:title>${escXml(p.title || p.titleBn)}</g:title>
+      <g:description>${escXml(p.description || p.title)}</g:description>
+      <g:link>${escXml(link)}</g:link>
+      ${img ? `<g:image_link>${escXml(img)}</g:image_link>` : ''}
+      <g:condition>new</g:condition>
+      <g:availability>${Number(p.stock) > 0 ? 'in_stock' : 'out_of_stock'}</g:availability>
+      <g:price>${Number(p.price) || 0} BDT</g:price>
+      <g:brand>${escXml(p.brand || storeName)}</g:brand>
+      <g:google_product_category>${escXml(p.category || 'Shopping')}</g:google_product_category>
+    </item>`;
+    })
+    .join('\n');
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:g="http://base.google.com/ns/1.0" version="2.0">
+  <channel>
+    <title>${escXml(storeName)} Product Catalog Feed</title>
+    <link>${escXml(canonicalBase)}</link>
+    <description>Live Google Merchant Center XML feed for Bangladesh &amp; Global E-Commerce</description>
+${itemsXml}
+  </channel>
+</rss>`;
+
+  res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+  return res.status(200).send(xml);
+});
+
+app.get('/api/feeds/meta-catalog.csv', (req, res) => {
+  const saved = loadStoreData() || {};
+  const products: any[] = Array.isArray(saved.products) ? saved.products : [];
+  const storeName = saved?.settings?.storeName || 'BuyOne BD';
+  const canonicalBase =
+    String(saved?.settings?.seoSettings?.canonicalUrl || '').trim().replace(/\/+$/, '') ||
+    `${req.protocol}://${req.get('host')}`;
+
+  const escCsv = (val: unknown) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+  const headers = ['id', 'title', 'description', 'availability', 'condition', 'price', 'link', 'image_link', 'brand'];
+  const rows = products.slice(0, 500).map((p) => {
+    const link = `${canonicalBase}/?product=${encodeURIComponent(p.seo?.slug || p.id)}`;
+    const img = Array.isArray(p.images) && p.images[0] && !String(p.images[0]).startsWith('data:') ? p.images[0] : '';
+    return [
+      escCsv(p.sku || p.id),
+      escCsv(p.title || p.titleBn),
+      escCsv(p.description || p.title),
+      escCsv(Number(p.stock) > 0 ? 'in stock' : 'out of stock'),
+      escCsv('new'),
+      escCsv(`${Number(p.price) || 0} BDT`),
+      escCsv(link),
+      escCsv(img),
+      escCsv(p.brand || storeName)
+    ].join(',');
+  });
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'inline; filename="buyonebd-meta-catalog.csv"');
+  return res.status(200).send([headers.join(','), ...rows].join('\n'));
+});
+
+// BD Bulk SMS Campaign Dispatch Endpoint
+app.post('/api/marketing/sms-campaign', async (req, res) => {
+  const { title = 'Promo Campaign', segment = 'all_customers', recipients = [], message, provider, apiKey, senderId } = req.body || {};
+  if (!message || !String(message).trim()) {
+    return res.status(400).json({ success: false, error: 'SMS message body is required.' });
+  }
+  const saved = loadStoreData() || {};
+  const gms = saved?.settings?.globalMarketingSettings || {};
+  const effectiveKey = String(apiKey || gms.smsApiKey || '').trim();
+  const effectiveSender = String(senderId || gms.smsSenderId || 'BUYONEBD').trim();
+  const effectiveProvider = String(provider || gms.smsGatewayProvider || 'ssl_wireless');
+  const cleanPhones = Array.from(
+    new Set(
+      (Array.isArray(recipients) ? recipients : [])
+        .map((p) => String(p || '').replace(/[^0-9]/g, ''))
+        .filter((p) => p.length >= 10)
+    )
+  );
+  const count = cleanPhones.length;
+  const parts = Math.max(1, Math.ceil(String(message).length / 160));
+  const estimatedCostBdt = Number((count * parts * 0.45).toFixed(2));
+  let status: 'sent' | 'simulated' | 'failed' = effectiveKey && count > 0 ? 'sent' : 'simulated';
+
+  if (effectiveKey && count > 0 && effectiveProvider === 'bulksmsbd') {
+    try {
+      const r = await fetch('https://bulksmsbd.net/api/smsapi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          api_key: effectiveKey,
+          senderid: effectiveSender,
+          number: cleanPhones.slice(0, 100).join(','),
+          message: String(message)
+        })
+      });
+      if (!r.ok) status = 'simulated';
+    } catch {
+      status = 'simulated';
+    }
+  }
+
+  const logEntry = {
+    id: `sms-${Date.now()}`,
+    title: String(title).slice(0, 120),
+    segment,
+    recipientCount: count,
+    message: String(message).slice(0, 500),
+    status,
+    estimatedCostBdt,
+    createdAt: new Date().toISOString()
+  };
+
+  saved.bulkSmsLogs = [logEntry, ...(Array.isArray(saved.bulkSmsLogs) ? saved.bulkSmsLogs : [])].slice(0, 50);
+  saveStoreData(saved);
+  return res.json({ success: true, log: logEntry, logs: saved.bulkSmsLogs });
+});
+
+// AI Marketing Copy, Reels Script, Worldwide/Probashi & SEO Metadata Generator
 app.post('/api/ai/marketing', async (req, res) => {
-  const { productTitle = 'BuyOne BD Featured Collection', category = 'General', price = 990, goal = 'conversion', lang = 'bn', mode = 'ad_copy' } = req.body || {};
+  const {
+    productTitle = 'BuyOne BD Featured Collection',
+    category = 'General',
+    price = 990,
+    goal = 'conversion',
+    lang = 'bn',
+    mode = 'ad_copy',
+    targetRegion = 'bangladesh',
+    currency = 'BDT'
+  } = req.body || {};
   const cleanTitle = String(productTitle || 'BuyOne BD Product').trim();
   const cleanPrice = Number(price) || 990;
+  const saved = loadStoreData() || {};
+  const rates = saved?.settings?.globalMarketingSettings?.exchangeRates || {
+    USD: 120,
+    GBP: 152,
+    EUR: 130,
+    AED: 32.7,
+    SAR: 32,
+    MYR: 26.8
+  };
+  const rate = currency !== 'BDT' && rates[currency] ? Number(rates[currency]) : 1;
+  const convertedPrice = currency === 'BDT' ? `৳${cleanPrice}` : `${currency} ${(cleanPrice / rate).toFixed(2)} (৳${cleanPrice})`;
+  const isProbashi = String(targetRegion || 'bangladesh') !== 'bangladesh';
 
   const buildLocalFallback = () => ({
-    headline: lang === 'en' ? `⚡ Flash Deal: ${cleanTitle} Only ৳${cleanPrice}!` : `⚡ ধামাকা অফার: ${cleanTitle} এখন মাত্র ৳${cleanPrice}!`,
-    subtext: lang === 'en' ? `100% Authentic · Cash on Delivery All 64 Districts · Hotline +8801917942662` : `১০০% অরিজিনাল · সারা বাংলাদেশ ক্যাশ অন ডেলিভারি · হটলাইন +8801917942662`,
-    adCopy: lang === 'en'
-      ? `Upgrade your lifestyle with ${cleanTitle}! Special price ৳${cleanPrice} with fast 24-72h delivery across all 64 districts of Bangladesh. Inspect before paying! Order now at BuyOne BD or call +8801917942662.`
-      : `সেরা মানের ${cleanTitle} এখন বিশেষ ছাড়ে মাত্র ৳${cleanPrice}! সারা বাংলাদেশের ৬৪ জেলায় ২৪-৭২ ঘণ্টায় ক্যাশ অন ডেলিভারি। হাতে পেয়ে দেখে পেমেন্ট করুন। অর্ডার করতে ইনবক্স করুন বা কল করুন +8801917942662।`,
+    headline: isProbashi
+      ? lang === 'en'
+        ? `🌍 Send ${cleanTitle} to Family in Bangladesh — Only ${convertedPrice}!`
+        : `🌍 প্রবাস থেকে দেশে প্রিয়জনকে উপহার দিন ${cleanTitle} — মাত্র ${convertedPrice}!`
+      : lang === 'en'
+      ? `⚡ Flash Deal: ${cleanTitle} Only ${convertedPrice}!`
+      : `⚡ ধামাকা অফার: ${cleanTitle} এখন মাত্র ${convertedPrice}!`,
+    subtext: isProbashi
+      ? `Gift Delivery Across All 64 Districts in Bangladesh · Order from Abroad · Hotline +8801917942662`
+      : lang === 'en'
+      ? `100% Authentic · Cash on Delivery All 64 Districts · Hotline +8801917942662`
+      : `১০০% অরিজিনাল · সারা বাংলাদেশ ক্যাশ অন ডেলিভারি · হটলাইন +8801917942662`,
+    adCopy: isProbashi
+      ? `Living abroad (${targetRegion})? Surprise your parents & family anywhere in all 64 districts of Bangladesh with ${cleanTitle} (${convertedPrice})! Fast doorstep gift delivery + WhatsApp photo confirmation via +8801917942662.`
+      : lang === 'en'
+      ? `Upgrade your lifestyle with ${cleanTitle}! Special price ${convertedPrice} with fast 24-72h delivery across all 64 districts of Bangladesh. Inspect before paying! Order now at BuyOne BD or call +8801917942662.`
+      : `সেরা মানের ${cleanTitle} এখন বিশেষ ছাড়ে মাত্র ${convertedPrice}! সারা বাংলাদেশের ৬৪ জেলায় ২৪-৭২ ঘণ্টায় ক্যাশ অন ডেলিভারি। হাতে পেয়ে দেখে পেমেন্ট করুন। অর্ডার করতে ইনবক্স করুন বা কল করুন +8801917942662।`,
     reelScript: lang === 'en'
-      ? `[0-3s Hook] Stop scrolling! Need ${cleanTitle}?\n[4-9s Value] Premium quality at ৳${cleanPrice} with open-box COD across Bangladesh.\n[10-15s CTA] Tap Order Now at BuyOne BD or dial +8801917942662!`
-      : `[০-৩ সেকেন্ড হুক] দারুণ কিছু খুঁজছেন? দেখুন ${cleanTitle}!\n[৪-৯ সেকেন্ড ফিচার] প্রিমিয়াম কোয়ালিটি মাত্র ৳${cleanPrice} টাকায়—পাচ্ছেন আনবক্সিং চেক ও ক্যাশ অন ডেলিভারি।\n[১০-১৫ সেকেন্ড CTA] স্টক শেষ হওয়ার আগেই BuyOne BD থেকে ১-ক্লিকে অর্ডার করুন!`,
-    keywords: `${cleanTitle}, BuyOne BD, Cash on Delivery Bangladesh, ${category}, Best Price BD`,
-    seoTitle: `${cleanTitle} Price in Bangladesh | BuyOne BD`,
-    seoDescription: `Buy ${cleanTitle} at ৳${cleanPrice} from BuyOne BD. Fast 24-72h Cash on Delivery across all 64 districts of Bangladesh. Hotline +8801917942662.`
+      ? `[0-3s Hook] Stop scrolling! Need ${cleanTitle}?\n[4-9s Value] Premium quality at ${convertedPrice} with open-box COD across Bangladesh.\n[10-15s CTA] Tap Order Now at BuyOne BD or dial +8801917942662!`
+      : `[০-৩ সেকেন্ড হুক] দারুণ কিছু খুঁজছেন? দেখুন ${cleanTitle}!\n[৪-৯ সেকেন্ড ফিচার] প্রিমিয়াম কোয়ালিটি মাত্র ${convertedPrice}—পাচ্ছেন আনবক্সিং চেক ও ক্যাশ অন ডেলিভারি।\n[১০-১৫ সেকেন্ড CTA] স্টক শেষ হওয়ার আগেই BuyOne BD থেকে ১-ক্লিকে অর্ডার করুন!`,
+    keywords: `${cleanTitle}, BuyOne BD, Cash on Delivery Bangladesh, ${category}, ${isProbashi ? 'Bangladesh Gift Delivery Worldwide, Probashi Online Shop BD' : 'Best Price BD'}`,
+    seoTitle: `${cleanTitle} Price in Bangladesh (${convertedPrice}) | BuyOne BD`,
+    seoDescription: `Buy ${cleanTitle} at ${convertedPrice} from BuyOne BD. Fast 24-72h Cash on Delivery across all 64 districts of Bangladesh. Hotline +8801917942662.`
   });
 
   const formatNormalized = (payload: ReturnType<typeof buildLocalFallback>, provider: string) => ({
@@ -1836,11 +2141,16 @@ app.post('/api/ai/marketing', async (req, res) => {
     success: true,
     provider,
     mode,
+    targetRegion,
+    currency,
     ...payload,
     result: {
       headline: mode === 'seo' ? payload.seoTitle : payload.headline,
       body: mode === 'seo' ? payload.seoDescription : mode === 'reel_script' ? payload.reelScript : payload.adCopy,
-      hashtags: mode === 'seo' ? payload.keywords : `#BuyOneBD #CashOnDelivery #BangladeshShopping #${category.replace(/[^a-zA-Z0-9]/g, '') || 'TopDeals'}`
+      hashtags:
+        mode === 'seo'
+          ? payload.keywords
+          : `#BuyOneBD #CashOnDelivery #BangladeshShopping #${isProbashi ? 'ProbashiBangladesh #SendGiftBD ' : ''}#${category.replace(/[^a-zA-Z0-9]/g, '') || 'TopDeals'}`
     }
   });
 
@@ -1852,7 +2162,7 @@ app.post('/api/ai/marketing', async (req, res) => {
     const response: any = await Promise.race([
       ai.models.generateContent({
         model: 'gemini-4-hydrogen',
-        contents: `Generate high-converting Bangladeshi e-commerce marketing assets and SEO metadata for "${cleanTitle}" (Category: ${category}, Price: ৳${cleanPrice}, Goal: ${goal}, Mode: ${mode}, Preferred Language: ${lang === 'en' ? 'English' : 'Bengali & English mix'}). Store is BuyOne BD, Whole Bangladesh 64-district Cash on Delivery, hotline +8801917942662.`,
+        contents: `Generate high-converting Bangladeshi & Worldwide Probashi e-commerce marketing assets and SEO metadata for "${cleanTitle}" (Category: ${category}, Price: ${convertedPrice}, Goal: ${goal}, Mode: ${mode}, Target Region: ${targetRegion}, Preferred Language: ${lang === 'en' ? 'English' : 'Bengali & English mix'}). Store is BuyOne BD, Whole Bangladesh 64-district Cash on Delivery & global diaspora gift orders, hotline +8801917942662.`,
         config: {
           responseMimeType: 'application/json',
           responseSchema: {

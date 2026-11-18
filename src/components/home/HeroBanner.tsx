@@ -16,7 +16,7 @@ interface HeroBannerProps {
 const SLIDE_DURATION_MS = 5500;
 
 export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
-  const { settings, openOneClickCheckout, products, t } = useStore();
+  const { settings, openOneClickCheckout, products, getPartnerPriceInfo, t } = useStore();
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const touchStartXRef = useRef<number | null>(null);
@@ -65,6 +65,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
     (activeSlide?.linkCategory
       ? products.find((p) => p.category === activeSlide.linkCategory)
       : undefined) || products[0];
+  const featuredUnitPrice = featuredProduct ? getPartnerPriceInfo(featuredProduct, 1).unitPrice : 0;
 
   const handleNext = () => {
     if (slides.length > 0) {
@@ -211,7 +212,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
                   >
                     <Zap className="w-3.5 h-3.5 text-amber-300 shrink-0" />
                     <span className="tabular-nums">
-                      {t('১-ক্লিক অর্ডার', '1-Click Order')} · ৳{featuredProduct.price.toLocaleString()}
+                      {t('১-ক্লিক অর্ডার', '1-Click Order')} · ৳{featuredUnitPrice.toLocaleString()}
                     </span>
                   </button>
                 )}
@@ -306,9 +307,9 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
                   </div>
                   <div className="text-right shrink-0 tabular-nums">
                     <span className="block text-sm font-black text-emerald-300 font-mono">
-                      ৳{featuredProduct.price.toLocaleString()}
+                      ৳{featuredUnitPrice.toLocaleString()}
                     </span>
-                    {featuredProduct.originalPrice > featuredProduct.price && (
+                    {featuredProduct.originalPrice > featuredUnitPrice && (
                       <span className="block text-[10px] line-through text-slate-400 font-mono">
                         ৳{featuredProduct.originalPrice.toLocaleString()}
                       </span>

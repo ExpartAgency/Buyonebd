@@ -13,6 +13,7 @@ export const Footer: React.FC = () => {
     setActiveView,
     navigateToPath,
     recordPageVisit,
+    openPartnerPortal,
     t,
     lang
   } = useStore();
@@ -183,6 +184,24 @@ export const Footer: React.FC = () => {
                   className="hover:text-emerald-400 cursor-pointer transition-colors text-left"
                 >
                   {t('আমাদের সম্পর্কে ও শপিং সুবিধা', 'About Us & Guarantees')}
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => openPartnerPortal('reseller')}
+                  className="hover:text-emerald-400 cursor-pointer transition-colors text-left"
+                >
+                  {t('রিসেলার প্রোগ্রাম (Reseller)', 'Reseller Program')}
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => openPartnerPortal('wholesale')}
+                  className="hover:text-emerald-400 cursor-pointer transition-colors text-left"
+                >
+                  {t('হোলসেল / B2B ট্রেড', 'Wholesale B2B')}
                 </button>
               </li>
             </ul>

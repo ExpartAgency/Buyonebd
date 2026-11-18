@@ -26,7 +26,7 @@ interface SEOManagerViewProps {
 }
 
 export const SEOManagerView: React.FC<SEOManagerViewProps> = ({ onImageUpload }) => {
-  const { settings, updateSettings, adminLang, addToast, isFirebaseAdminConnected, syncAllDashboardToFirebase } =
+  const { settings, updateSettings, saveSettingsChanges, adminLang, addToast } =
     useStore();
 
   const at = (bn: string, en: string) => (adminLang === 'en' ? en : bn);
@@ -137,36 +137,16 @@ export const SEOManagerView: React.FC<SEOManagerViewProps> = ({ onImageUpload })
   const handleVerifyAndSaveToServer = async () => {
     setIsVerifyingServer(true);
     try {
-      const saveRes = await fetch('/api/store/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-session': 'buyone-admin-verified'
-        },
-        body: JSON.stringify({
-          settings: {
-            ...settings,
-            seoSettings: seo
-          }
-        })
-      });
-      if (!saveRes.ok) {
-        throw new Error(`HTTP ${saveRes.status}`);
-      }
-      if (isFirebaseAdminConnected) {
-        syncAllDashboardToFirebase().catch(() => {});
-      }
+      await saveSettingsChanges(
+        at('index.html SEO ট্যাগ সফলভাবে সেভ ও যাচাই হয়েছে!', 'index.html SEO Verified & Saved!'),
+        seo.metaTitle
+      );
       const htmlRes = await fetch('/?_seo_check=' + Date.now());
       const htmlText = await htmlRes.text();
       const titleMatch = htmlText.match(/<title>([\s\S]*?)<\/title>/i);
       const serverTitle = titleMatch ? titleMatch[1].trim() : '';
       readLiveHead();
       setServerHtmlHeadStatus(serverTitle || seo.metaTitle);
-      addToast(
-        'success',
-        at('index.html SEO ট্যাগ সফলভাবে সেভ ও যাচাই হয়েছে!', 'index.html SEO Verified & Saved!'),
-        serverTitle || seo.metaTitle
-      );
     } catch {
       readLiveHead();
       addToast('warning', at('লোকাল হেড ট্যাগ আপডেট হয়েছে', 'Browser Head Updated'), at('সার্ভার যাচাই অসম্পূর্ণ', 'Could not verify raw HTML'));

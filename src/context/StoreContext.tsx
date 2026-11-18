@@ -31,7 +31,12 @@ import {
   SecurityLogEntry,
   WaitlistEntry,
   DeliveryBoy,
-  LoyaltyHistoryItem
+  LoyaltyHistoryItem,
+  ResellerAccount,
+  ResellerPayoutRequest,
+  WholesaleAccount,
+  WholesaleQuoteRequest,
+  BulkSmsCampaignLog
 } from '../types';
 import {
   INITIAL_PRODUCTS,
@@ -102,7 +107,13 @@ import {
   ensureAdminDocInFirestore,
   fetchStorefrontSettingsFromFirestore,
   fetchProductsFromFirestore,
-  fetchOrdersFromFirestore
+  fetchOrdersFromFirestore,
+  saveResellerToFirestore,
+  fetchResellersFromFirestore,
+  saveResellerPayoutToFirestore,
+  saveWholesalerToFirestore,
+  fetchWholesalersFromFirestore,
+  saveWholesaleQuoteToFirestore
 } from '../firebase';
 import { WebRTCAudioSession } from '../utils/webrtcAudio';
 
@@ -260,6 +271,8 @@ interface StoreContextType {
     source?: 'online' | 'pos';
     initialStatus?: OrderStatus;
     skipAICall?: boolean;
+    customerQuotedPrice?: number;
+    partnerType?: 'retail' | 'reseller' | 'wholesale';
   }) => Order;
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
   updateOrderCourier: (orderId: string, updates: Partial<Order['courier']>) => void;
@@ -375,7 +388,7 @@ interface StoreContextType {
   openOrCreateCustomerChatSession: (name: string, phone: string) => string;
   markChatRead: (sessionId: string) => void;
   toggleChatManualMode: (sessionId: string, manualMode: boolean) => void;
-  requestHumanSupport: (sessionId?: string) => void;
+  requestDirectDeskSupport: (sessionId?: string) => void;
   resolveSupportChatSession: (sessionId: string, status: 'open' | 'resolved') => void;
   deleteSupportChatSession: (sessionId: string) => void;
   browserCalls: BrowserCallSession[];
@@ -400,7 +413,7 @@ interface StoreContextType {
   deleteAbandonedCart: (cartId: string) => void;
   bulkAbandonedCartsAction: (cartIds: string[], action: 'whatsapp' | 'recover' | 'delete') => void;
 
-  // Autonomous Human-Like Website Control AI Agent
+  // Autonomous Store Operations AI Controller
   agentActionLogs: { id: string; time: string; instruction: string; reply: string; actions: string[]; mode: string }[];
   executeAIAgentCommand: (
     instruction: string,
@@ -476,12 +489,77 @@ interface StoreContextType {
   playVoiceSample: () => Promise<void>;
   isPlayingVoiceSample: boolean;
 
-  // Store Settings & Dynamic Brand Attributes
+  // Store Settings & Manual Save Staging (No auto-save or noisy keystroke toasts)
   settings: StoreSettings;
-  updateSettings: (newSettings: Partial<StoreSettings>) => void;
+  hasUnsavedSettings: boolean;
+  updateSettings: (newSettings: Partial<StoreSettings>, options?: { commit?: boolean }) => void;
+  saveSettingsChanges: (customTitle?: string, customMsg?: string) => Promise<void>;
+  discardSettingsChanges: () => void;
   generateBrandColorAttributes: (primaryHex?: string) => void;
   clearAppCache: () => Promise<void>;
   resetAllToDefault: () => void;
+
+  // Reseller & Wholesale B2B Partner System
+  resellers: ResellerAccount[];
+  activeReseller: ResellerAccount | null;
+  isResellerLoggedIn: boolean;
+  resellerPayouts: ResellerPayoutRequest[];
+  registerReseller: (
+    data: Omit<
+      ResellerAccount,
+      'id' | 'resellerCode' | 'commissionPercent' | 'walletBalance' | 'totalEarnings' | 'totalOrders' | 'status' | 'createdAt'
+    >
+  ) => Promise<{ success: boolean; error?: string; reseller?: ResellerAccount }>;
+  loginReseller: (identifier: string, password?: string) => Promise<{ success: boolean; error?: string; reseller?: ResellerAccount }>;
+  logoutReseller: () => void;
+  updateResellerAccount: (id: string, updates: Partial<ResellerAccount>) => void;
+  requestResellerPayout: (payload: {
+    method: ResellerPayoutRequest['method'];
+    accountNumber: string;
+    amount: number;
+  }) => boolean;
+  processResellerPayout: (id: string, status: 'paid' | 'rejected', trxId?: string, note?: string) => void;
+
+  wholesalers: WholesaleAccount[];
+  activeWholesaler: WholesaleAccount | null;
+  isWholesaleLoggedIn: boolean;
+  wholesaleQuotes: WholesaleQuoteRequest[];
+  registerWholesaler: (
+    data: Omit<WholesaleAccount, 'id' | 'tier' | 'extraDiscountPercent' | 'status' | 'createdAt'>
+  ) => Promise<{ success: boolean; error?: string; wholesaler?: WholesaleAccount }>;
+  loginWholesaler: (identifier: string, password?: string) => Promise<{ success: boolean; error?: string; wholesaler?: WholesaleAccount }>;
+  logoutWholesaler: () => void;
+  updateWholesalerAccount: (id: string, updates: Partial<WholesaleAccount>) => void;
+  submitWholesaleQuote: (payload: {
+    productId?: string;
+    productTitle: string;
+    requestedQty: number;
+    targetUnitPrice?: number;
+    notes?: string;
+  }) => WholesaleQuoteRequest | null;
+  updateWholesaleQuote: (id: string, updates: Partial<WholesaleQuoteRequest>) => void;
+
+  isPartnerPortalOpen: boolean;
+  partnerPortalTab: 'reseller' | 'wholesale';
+  openPartnerPortal: (tab?: 'reseller' | 'wholesale') => void;
+  closePartnerPortal: () => void;
+  getPartnerPriceInfo: (
+    product: Product,
+    quantity?: number
+  ) => {
+    mode: 'retail' | 'reseller' | 'wholesale';
+    unitPrice: number;
+    baseWholesalePrice?: number;
+    minQty?: number;
+    estimatedProfitPerUnit?: number;
+  };
+  bulkSmsLogs: BulkSmsCampaignLog[];
+  dispatchBulkSmsCampaign: (payload: {
+    title: string;
+    segment: BulkSmsCampaignLog['segment'];
+    recipients: string[];
+    message: string;
+  }) => Promise<{ success: boolean; error?: string }>;
 
   // Cart
   cart: CartItem[];
@@ -708,6 +786,22 @@ function mergeSettings(raw: any): StoreSettings {
     loyaltySettings: {
       ...INITIAL_SETTINGS.loyaltySettings!,
       ...(raw.loyaltySettings || {})
+    },
+    resellerSettings: {
+      ...INITIAL_SETTINGS.resellerSettings!,
+      ...(raw.resellerSettings || {})
+    },
+    wholesaleSettings: {
+      ...INITIAL_SETTINGS.wholesaleSettings!,
+      ...(raw.wholesaleSettings || {})
+    },
+    globalMarketingSettings: {
+      ...INITIAL_SETTINGS.globalMarketingSettings!,
+      ...(raw.globalMarketingSettings || {}),
+      exchangeRates: {
+        ...INITIAL_SETTINGS.globalMarketingSettings!.exchangeRates,
+        ...(raw.globalMarketingSettings?.exchangeRates || {})
+      }
     }
   };
 }
@@ -767,10 +861,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const t = (bn: string, en: string) => (lang === 'bn' ? bn : en);
 
-  // Settings & Local Mutation Guard (prevents stale server/cloud snapshots from overwriting in-flight admin edits)
+  // Settings Staging & Manual Save Guard (Zero auto-save on typing, never overwrites unsaved admin drafts)
   const lastLocalMutationAtRef = useRef<number>(0);
 
-  const [settings, setSettings] = useState<StoreSettings>(() => {
+  const [committedSettings, setCommittedSettings] = useState<StoreSettings>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_SETTINGS);
       return saved ? mergeSettings(JSON.parse(saved)) : INITIAL_SETTINGS;
@@ -778,12 +872,145 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return INITIAL_SETTINGS;
     }
   });
+  const committedSettingsRef = useRef<StoreSettings>(committedSettings);
+  committedSettingsRef.current = committedSettings;
+
+  const [settings, setSettings] = useState<StoreSettings>(() => committedSettings);
   const settingsRef = useRef<StoreSettings>(settings);
   settingsRef.current = settings;
 
+  const [hasUnsavedSettings, setHasUnsavedSettings] = useState<boolean>(false);
+  const hasUnsavedSettingsRef = useRef<boolean>(false);
+  hasUnsavedSettingsRef.current = hasUnsavedSettings;
+
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_SETTINGS, JSON.stringify(settings));
-  }, [settings]);
+    localStorage.setItem(LOCAL_STORAGE_SETTINGS, JSON.stringify(committedSettings));
+  }, [committedSettings]);
+
+  // Reseller & Wholesale Partner System + Bulk SMS Logs State
+  const [resellers, setResellers] = useState<ResellerAccount[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_resellers_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const resellersRef = useRef<ResellerAccount[]>(resellers);
+  resellersRef.current = resellers;
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_resellers_v1', JSON.stringify(resellers));
+    } catch {}
+  }, [resellers]);
+
+  const [activeReseller, setActiveReseller] = useState<ResellerAccount | null>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_active_reseller_v1');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (activeReseller) {
+        localStorage.setItem('buyonebd_active_reseller_v1', JSON.stringify(activeReseller));
+      } else {
+        localStorage.removeItem('buyonebd_active_reseller_v1');
+      }
+    } catch {}
+  }, [activeReseller]);
+
+  const isResellerLoggedIn = Boolean(activeReseller);
+
+  const [resellerPayouts, setResellerPayouts] = useState<ResellerPayoutRequest[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_reseller_payouts_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const resellerPayoutsRef = useRef<ResellerPayoutRequest[]>(resellerPayouts);
+  resellerPayoutsRef.current = resellerPayouts;
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_reseller_payouts_v1', JSON.stringify(resellerPayouts));
+    } catch {}
+  }, [resellerPayouts]);
+
+  const [wholesalers, setWholesalers] = useState<WholesaleAccount[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_wholesalers_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const wholesalersRef = useRef<WholesaleAccount[]>(wholesalers);
+  wholesalersRef.current = wholesalers;
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_wholesalers_v1', JSON.stringify(wholesalers));
+    } catch {}
+  }, [wholesalers]);
+
+  const [activeWholesaler, setActiveWholesaler] = useState<WholesaleAccount | null>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_active_wholesaler_v1');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (activeWholesaler) {
+        localStorage.setItem('buyonebd_active_wholesaler_v1', JSON.stringify(activeWholesaler));
+      } else {
+        localStorage.removeItem('buyonebd_active_wholesaler_v1');
+      }
+    } catch {}
+  }, [activeWholesaler]);
+
+  const isWholesaleLoggedIn = Boolean(activeWholesaler);
+
+  const [wholesaleQuotes, setWholesaleQuotes] = useState<WholesaleQuoteRequest[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_wholesale_quotes_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const wholesaleQuotesRef = useRef<WholesaleQuoteRequest[]>(wholesaleQuotes);
+  wholesaleQuotesRef.current = wholesaleQuotes;
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_wholesale_quotes_v1', JSON.stringify(wholesaleQuotes));
+    } catch {}
+  }, [wholesaleQuotes]);
+
+  const [bulkSmsLogs, setBulkSmsLogs] = useState<BulkSmsCampaignLog[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_bulk_sms_logs_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const bulkSmsLogsRef = useRef<BulkSmsCampaignLog[]>(bulkSmsLogs);
+  bulkSmsLogsRef.current = bulkSmsLogs;
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_bulk_sms_logs_v1', JSON.stringify(bulkSmsLogs));
+    } catch {}
+  }, [bulkSmsLogs]);
+
+  const [isPartnerPortalOpen, setIsPartnerPortalOpen] = useState<boolean>(false);
+  const [partnerPortalTab, setPartnerPortalTab] = useState<'reseller' | 'wholesale'>('reseller');
 
   // Categories (ensure upgraded subcategory slugs for legacy localStorage)
   const [categories, setCategories] = useState<Category[]>(() => {
@@ -815,6 +1042,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_CATEGORIES, JSON.stringify(categories));
     setSettings((prev) => ({ ...prev, categories }));
+    setCommittedSettings((prev) => ({ ...prev, categories }));
   }, [categories]);
 
   const addCategory = (catData: Omit<Category, 'id'>) => {
@@ -867,6 +1095,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_SLIDERS, JSON.stringify(sliders));
     setSettings((prev) => ({ ...prev, sliders }));
+    setCommittedSettings((prev) => ({ ...prev, sliders }));
   }, [sliders]);
 
   const addSlide = (slideData: Omit<HomeSlide, 'id'>) => {
@@ -1308,8 +1537,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         abandonedCarts: abandonedCartsRef.current,
         priceAlerts: priceAlertsRef.current,
         waitlist: waitlistEntriesRef.current,
+        resellers: resellersRef.current,
+        resellerPayouts: resellerPayoutsRef.current,
+        wholesalers: wholesalersRef.current,
+        wholesaleQuotes: wholesaleQuotesRef.current,
         users: usersRef.current
       });
+      setCommittedSettings(settingsRef.current);
+      setHasUnsavedSettings(false);
       setLastCloudSyncAt(new Date().toLocaleTimeString());
       if (res.ok) {
         setCloudSyncError(null);
@@ -1349,13 +1584,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       if (pubCfg || privCfg) {
-        setSettings((prev) =>
-          mergeSettings({
-            ...prev,
-            ...(pubCfg || {}),
-            ...(privCfg || {})
-          })
-        );
+        const merged = mergeSettings({
+          ...settingsRef.current,
+          ...(pubCfg || {}),
+          ...(privCfg || {})
+        });
+        setSettings(merged);
+        setCommittedSettings(merged);
+        setHasUnsavedSettings(false);
         if (Array.isArray(pubCfg?.categories) && pubCfg.categories.length > 0) {
           setCategories(pubCfg.categories);
         }
@@ -1384,6 +1620,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           fsCarts,
           fsAlerts,
           fsWaitlist,
+          fsResellers,
+          fsWholesalers,
           fsStaff
         ] = await Promise.all([
           fetchOrdersFromFirestore().catch(() => []),
@@ -1393,6 +1631,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           fetchAbandonedCartsFromFirestore().catch(() => []),
           fetchPriceAlertsFromFirestore().catch(() => []),
           fetchWaitlistFromFirestore().catch(() => []),
+          fetchResellersFromFirestore().catch(() => []),
+          fetchWholesalersFromFirestore().catch(() => []),
           fetchStaffUsersFromFirestore().catch(() => [])
         ]);
 
@@ -1414,6 +1654,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (fsCarts.length > 0) setAbandonedCarts(fsCarts);
         if (fsAlerts.length > 0) setPriceAlerts(fsAlerts);
         if (fsWaitlist.length > 0) setWaitlistEntries(fsWaitlist);
+        if (fsResellers.length > 0) {
+          setResellers((prev) =>
+            fsResellers.map((rr) => {
+              const lm = prev.find((lr) => lr.id === rr.id || lr.phone === rr.phone);
+              return lm?.password ? { ...rr, password: lm.password } : rr;
+            })
+          );
+        }
+        if (fsWholesalers.length > 0) {
+          setWholesalers((prev) =>
+            fsWholesalers.map((rw) => {
+              const lm = prev.find((lw) => lw.id === rw.id || lw.phone === rw.phone);
+              return lm?.password ? { ...rw, password: lm.password } : rw;
+            })
+          );
+        }
         if (fsStaff.length > 0) setUsers(fsStaff);
       }
 
@@ -3881,8 +4137,48 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (Array.isArray(data.products) && data.products.length > 0) {
               setProducts(data.products);
             }
-            if (data.settings) {
-              setSettings(mergeSettings(data.settings));
+            if (data.settings && !hasUnsavedSettingsRef.current) {
+              const nextMerged = mergeSettings(data.settings);
+              setSettings(nextMerged);
+              setCommittedSettings(nextMerged);
+            }
+            if (Array.isArray(data.waitlist)) {
+              setWaitlistEntries(data.waitlist);
+            }
+            if (Array.isArray(data.resellers) && data.resellers.length > 0) {
+              setResellers((prev) => {
+                const map = new Map(prev.map((r) => [r.id, r]));
+                data.resellers.forEach((rr: ResellerAccount) => {
+                  const existing = map.get(rr.id);
+                  map.set(
+                    rr.id,
+                    existing && rr.password === '••••••••' ? { ...rr, password: existing.password } : rr
+                  );
+                });
+                return Array.from(map.values());
+              });
+            }
+            if (Array.isArray(data.resellerPayouts) && data.resellerPayouts.length > 0) {
+              setResellerPayouts(data.resellerPayouts);
+            }
+            if (Array.isArray(data.wholesalers) && data.wholesalers.length > 0) {
+              setWholesalers((prev) => {
+                const map = new Map(prev.map((w) => [w.id, w]));
+                data.wholesalers.forEach((rw: WholesaleAccount) => {
+                  const existing = map.get(rw.id);
+                  map.set(
+                    rw.id,
+                    existing && rw.password === '••••••••' ? { ...rw, password: existing.password } : rw
+                  );
+                });
+                return Array.from(map.values());
+              });
+            }
+            if (Array.isArray(data.wholesaleQuotes) && data.wholesaleQuotes.length > 0) {
+              setWholesaleQuotes(data.wholesaleQuotes);
+            }
+            if (Array.isArray(data.bulkSmsLogs) && data.bulkSmsLogs.length > 0) {
+              setBulkSmsLogs(data.bulkSmsLogs);
             }
           }
 
@@ -3904,7 +4200,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             body: JSON.stringify({
               products,
               orders,
-              settings,
+              settings: committedSettingsRef.current,
               spinRewards,
               categories,
               sliders,
@@ -3913,6 +4209,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               abandonedCarts,
               reviews,
               priceAlerts,
+              waitlist: waitlistEntriesRef.current,
+              resellers: resellersRef.current,
+              resellerPayouts: resellerPayoutsRef.current,
+              wholesalers: wholesalersRef.current,
+              wholesaleQuotes: wholesaleQuotesRef.current,
+              bulkSmsLogs: bulkSmsLogsRef.current,
               users,
               mediaLibrary
             })
@@ -3958,8 +4260,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // 3. Also pull from Firestore directly so static hosts (e.g. Vercel) & multi-device deployments stay synced
     try {
       const cfgData = await fetchStorefrontSettingsFromFirestore();
-      if (cfgData && Date.now() - lastLocalMutationAtRef.current >= 3000) {
-        setSettings((prev) => mergeSettings({ ...prev, ...cfgData }));
+      if (cfgData && Date.now() - lastLocalMutationAtRef.current >= 3000 && !hasUnsavedSettingsRef.current) {
+        const mergedCfg = mergeSettings({ ...committedSettingsRef.current, ...cfgData });
+        setSettings(mergedCfg);
+        setCommittedSettings(mergedCfg);
       }
       const fsProducts = await fetchProductsFromFirestore();
       if (fsProducts.length > 0 && Date.now() - lastLocalMutationAtRef.current >= 3000) {
@@ -4013,10 +4317,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       doc(db, 'storefront', 'public'),
       (snap) => {
         if (!snap.exists()) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000 || hasUnsavedSettingsRef.current) return;
         const remote = snap.data();
         if (remote) {
-          setSettings((prev) => mergeSettings({ ...prev, ...remote }));
+          const merged = mergeSettings({ ...committedSettingsRef.current, ...remote });
+          setSettings(merged);
+          setCommittedSettings(merged);
           if (Array.isArray(remote.categories) && remote.categories.length > 0) {
             setCategories(remote.categories);
           }
@@ -4112,19 +4418,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       doc(db, 'admin_config', 'private'),
       (snap) => {
         if (!snap.exists()) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000 || hasUnsavedSettingsRef.current) return;
         const priv = snap.data();
         if (priv) {
-          setSettings((prev) =>
-            mergeSettings({
-              ...prev,
-              ...(priv.smtpSettings ? { smtpSettings: priv.smtpSettings } : {}),
-              ...(priv.courierSettings ? { courierSettings: priv.courierSettings } : {}),
-              ...(priv.marketingSettings ? { marketingSettings: priv.marketingSettings } : {}),
-              ...(priv.aiSettings ? { aiSettings: priv.aiSettings } : {}),
-              ...(Array.isArray(priv.aiKeywordRules) ? { aiKeywordRules: priv.aiKeywordRules } : {})
-            })
-          );
+          const merged = mergeSettings({
+            ...committedSettingsRef.current,
+            ...(priv.smtpSettings ? { smtpSettings: priv.smtpSettings } : {}),
+            ...(priv.courierSettings ? { courierSettings: priv.courierSettings } : {}),
+            ...(priv.marketingSettings ? { marketingSettings: priv.marketingSettings } : {}),
+            ...(priv.aiSettings ? { aiSettings: priv.aiSettings } : {}),
+            ...(Array.isArray(priv.aiKeywordRules) ? { aiKeywordRules: priv.aiKeywordRules } : {})
+          });
+          setSettings(merged);
+          setCommittedSettings(merged);
           setLastCloudSyncAt(new Date().toLocaleTimeString());
         }
       },
@@ -4293,7 +4599,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, [isFirebaseAdminConnected]);
 
-  // Push store snapshot updates AFTER initial server hydration completes
+  // Push committed store snapshot updates AFTER initial server hydration completes (never pushes unsaved draft settings)
   useEffect(() => {
     if (!hasHydratedFromServerRef.current) return;
     const syncTimer = setTimeout(() => {
@@ -4307,7 +4613,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         body: JSON.stringify({
           products,
           orders,
-          settings,
+          settings: committedSettings,
           spinRewards,
           categories,
           sliders,
@@ -4316,13 +4622,37 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           abandonedCarts,
           reviews,
           priceAlerts,
+          waitlist: waitlistEntries,
+          resellers,
+          resellerPayouts,
+          wholesalers,
+          wholesaleQuotes,
+          bulkSmsLogs,
           users,
           mediaLibrary
         })
       }).catch(() => {});
     }, 500);
     return () => clearTimeout(syncTimer);
-  }, [products, orders, settings, categories, sliders, customerAccounts, walletTopUps, abandonedCarts, reviews, priceAlerts, users]);
+  }, [
+    products,
+    orders,
+    committedSettings,
+    categories,
+    sliders,
+    customerAccounts,
+    walletTopUps,
+    abandonedCarts,
+    reviews,
+    priceAlerts,
+    waitlistEntries,
+    resellers,
+    resellerPayouts,
+    wholesalers,
+    wholesaleQuotes,
+    bulkSmsLogs,
+    users
+  ]);
 
   // Idempotent local merge helpers so WS & REST snapshots never drop concurrent messages
   const mergeChatsLocal = (prev: SupportChatSession[], incoming: SupportChatSession[]): SupportChatSession[] => {
@@ -4608,14 +4938,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   };
 
-  const requestHumanSupport = (sessionId?: string) => {
+  const requestDirectDeskSupport = (sessionId?: string) => {
     const targetId = sessionId || activeChatSessionId || `chat-${visitorSessionId}`;
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const noticeMsg: SupportChatMessage = {
       id: `desk-req-${Date.now()}`,
       sender: 'assistant',
-      text: 'Direct Support Desk connected. Please type your message below — a support specialist has been notified and will reply shortly.',
-      textBn: 'সরাসরি সাপোর্ট ডেস্ক যুক্ত হয়েছে। অনুগ্রহ করে আপনার বার্তা লিখুন — আমাদের সাপোর্ট প্রতিনিধি এখনই উত্তর দেবেন।',
+      text: 'Direct Support Desk connected. Please write your query below — our support specialist has been notified and will respond shortly.',
+      textBn: 'সরাসরি সাপোর্ট ডেস্ক যুক্ত হয়েছে। অনুগ্রহ করে আপনার বার্তা লিখুন — আমাদের সাপোর্ট টিম এখনই উত্তর দেবে।',
       time
     };
 
@@ -4627,7 +4957,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               ? {
                   ...s,
                   manualMode: true,
-                  assignedAgent: 'Live Admin Support',
+                  assignedAgent: 'Support Specialist',
                   unreadByAdmin: (s.unreadByAdmin || 0) + 1,
                   lastUpdated: new Date().toISOString(),
                   messages: [...s.messages, noticeMsg]
@@ -4641,7 +4971,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               customerPhone: customerProfile.phone || '',
               status: 'open' as const,
               manualMode: true,
-              assignedAgent: 'Live Admin Support',
+              assignedAgent: 'Support Specialist',
               lastUpdated: new Date().toISOString(),
               unreadByAdmin: 1,
               messages: [noticeMsg]
@@ -4659,7 +4989,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         customerName: customerProfile.name || 'Customer',
         customerPhone: customerProfile.phone || '',
         manualMode: true,
-        assignedAgent: 'Live Admin Support',
+        assignedAgent: 'Support Specialist',
         unreadByAdmin: 1
       }
     });
@@ -4747,14 +5077,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
 
-    // If customer wants manual human support via keyword, switch thread cleanly and pause AI bot
+    // If customer asks for direct specialist / support desk, switch thread cleanly and pause auto-bot
     const q = query.toLowerCase();
-    if (/(human|agent|manual|admin support|talk to agent|ম্যানুয়াল|অ্যাডমিন|সরাসরি কথা)/i.test(q) && !/dashboard|ড্যাশবোর্ড/i.test(q)) {
-      requestHumanSupport(sessId);
+    if (/(support desk|agent|manual|live desk|talk to specialist|ম্যানুয়াল|সাপোর্ট ডেস্ক|সরাসরি কথা)/i.test(q) && !/dashboard|ড্যাশবোর্ড/i.test(q)) {
+      requestDirectDeskSupport(sessId);
       return;
     }
 
-    // If Manual Support Mode is enabled by Admin or Customer, DO NOT let AI bot talk over human admin
+    // If Direct Support Mode is active, let support desk reply directly
     if (isManualThread) {
       return;
     }
@@ -5549,18 +5879,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!preset) return;
 
     const palette = computeBrandPaletteAttributes(preset.colors.primary, preset.colors.secondary);
-    updateSettings({
-      theme: themeId,
-      themeColors: { ...preset.colors },
-      brandAttributes: {
-        primaryHover: palette.primaryHover,
-        primarySoft: palette.primarySoft,
-        primaryBorder: palette.primaryBorder,
-        onPrimary: palette.onPrimary,
-        cssAttributeString: palette.cssAttributeString,
-        generatedAt: new Date().toISOString()
-      }
-    });
+    updateSettings(
+      {
+        theme: themeId,
+        themeColors: { ...preset.colors },
+        brandAttributes: {
+          primaryHover: palette.primaryHover,
+          primarySoft: palette.primarySoft,
+          primaryBorder: palette.primaryBorder,
+          onPrimary: palette.onPrimary,
+          cssAttributeString: palette.cssAttributeString,
+          generatedAt: new Date().toISOString()
+        }
+      },
+      { commit: true }
+    );
 
     if (includeCategories && preset.suggestedCategories.length > 0) {
       const mappedCats: Category[] = preset.suggestedCategories.map((c, idx) => ({
@@ -5586,24 +5919,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const generateBrandColorAttributes = (primaryHex?: string) => {
     const sourcePrimary = primaryHex || settings.themeColors?.primary || '#059669';
     const computed = computeBrandPaletteAttributes(sourcePrimary);
-    updateSettings({
-      themeColors: {
-        primary: computed.primary,
-        secondary: computed.secondary,
-        headerBg: settings.themeColors?.headerBg || '#ffffff',
-        footerBg: computed.footerBg,
-        heroFrom: computed.heroFrom,
-        heroTo: computed.heroTo
+    updateSettings(
+      {
+        themeColors: {
+          primary: computed.primary,
+          secondary: computed.secondary,
+          headerBg: settings.themeColors?.headerBg || '#ffffff',
+          footerBg: computed.footerBg,
+          heroFrom: computed.heroFrom,
+          heroTo: computed.heroTo
+        },
+        brandAttributes: {
+          primaryHover: computed.primaryHover,
+          primarySoft: computed.primarySoft,
+          primaryBorder: computed.primaryBorder,
+          onPrimary: computed.onPrimary,
+          cssAttributeString: computed.cssAttributeString,
+          generatedAt: new Date().toISOString()
+        }
       },
-      brandAttributes: {
-        primaryHover: computed.primaryHover,
-        primarySoft: computed.primarySoft,
-        primaryBorder: computed.primaryBorder,
-        onPrimary: computed.onPrimary,
-        cssAttributeString: computed.cssAttributeString,
-        generatedAt: new Date().toISOString()
-      }
-    });
+      { commit: true }
+    );
     addToast(
       'success',
       t('ব্র্যান্ড কালার অ্যাট্রিবিউট জেনারেট সম্পন্ন!', 'Brand Color Attributes Generated!'),
@@ -5646,7 +5982,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     if (activeView === 'admin') {
       // Keep storefront SEO meta tags synced in document.head even when editing inside AdminDashboard
-      pageTitle = seo?.metaTitle || `Admin Portal - ${storeName}`;
+      pageTitle = seo?.metaTitle || `Management Console - ${storeName}`;
       pageRobots = seo?.robots || 'index, follow';
     } else if (activeView === 'tracking') {
       pageTitle = `${t('রিয়েল-টাইম অর্ডার ট্র্যাকিং', 'Real-Time Order Tracking')} - ${storeName}`;
@@ -5870,6 +6206,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     source?: 'online' | 'pos';
     initialStatus?: OrderStatus;
     skipAICall?: boolean;
+    customerQuotedPrice?: number;
+    partnerType?: 'retail' | 'reseller' | 'wholesale';
   }) => {
     // Security Shield Enforcement for Online Checkout Orders
     if (orderData.source !== 'pos') {
@@ -5920,7 +6258,44 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     }
 
-    const subtotal = orderData.items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+    const isApprovedReseller = Boolean(
+      orderData.source !== 'pos' &&
+        activeReseller &&
+        activeReseller.status === 'approved' &&
+        settingsRef.current.resellerSettings?.enabled !== false
+    );
+    const isApprovedWholesaler = Boolean(
+      orderData.source !== 'pos' &&
+        !isApprovedReseller &&
+        activeWholesaler &&
+        activeWholesaler.status === 'approved' &&
+        settingsRef.current.wholesaleSettings?.enabled !== false
+    );
+    const resolvedPartnerType: 'retail' | 'reseller' | 'wholesale' =
+      orderData.partnerType ||
+      (isApprovedReseller ? 'reseller' : isApprovedWholesaler ? 'wholesale' : 'retail');
+
+    const pricedItems = orderData.items.map((item) => {
+      const pInfo =
+        orderData.source === 'pos'
+          ? { mode: 'retail' as const, unitPrice: item.product.price }
+          : getPartnerPriceInfo(item.product, item.quantity);
+      return {
+        ...item,
+        effectivePrice: pInfo.unitPrice,
+        retailPrice: item.product.price
+      };
+    });
+
+    const subtotal = pricedItems.reduce((sum, item) => sum + item.effectivePrice * item.quantity, 0);
+    const resellerComputedProfit = isApprovedReseller
+      ? orderData.customerQuotedPrice && orderData.customerQuotedPrice > subtotal
+        ? Math.round(orderData.customerQuotedPrice - subtotal)
+        : Math.max(
+            0,
+            pricedItems.reduce((s, it) => s + Math.max(0, it.retailPrice - it.effectivePrice) * it.quantity, 0)
+          )
+      : 0;
 
     // Per-product delivery charge calculation (freeShipping or customDeliveryFees or global default)
     const resolveDeliveryFee = (): number => {
@@ -5996,18 +6371,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const newOrder: Order = {
       id: newOrderId,
       customer: orderData.customer,
-      items: orderData.items.map((i) => ({
+      items: pricedItems.map((i) => ({
         productId: i.product.id,
         productTitle: i.product.title,
         productTitleBn: i.product.titleBn,
-        price: i.product.price,
+        price: i.effectivePrice,
         quantity: i.quantity,
         selectedColor: i.selectedColor,
         selectedSize: i.selectedSize,
         ...(i.selectedAttributes && Object.keys(i.selectedAttributes).length > 0
           ? { selectedAttributes: i.selectedAttributes }
           : {}),
-        image: i.product.images[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600'
+        image: i.product.images[0] || ''
       })),
       pricing: {
         subtotal,
@@ -6068,9 +6443,37 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         message: rate >= 80 ? 'নিরাপদ গ্রাহক।' : 'রিটার্ন ঝুঁকি রয়েছে।'
       },
       source: orderData.source || 'online',
+      partnerType: resolvedPartnerType,
+      ...(isApprovedReseller && activeReseller
+        ? {
+            resellerId: activeReseller.id,
+            resellerName: activeReseller.name,
+            resellerCode: activeReseller.resellerCode,
+            resellerProfit: resellerComputedProfit,
+            customerQuotedPrice: orderData.customerQuotedPrice || subtotal + resellerComputedProfit
+          }
+        : {}),
+      ...(isApprovedWholesaler && activeWholesaler
+        ? {
+            wholesaleBuyerId: activeWholesaler.id,
+            wholesaleCompany: activeWholesaler.companyName
+          }
+        : {}),
       createdAt: nowIso,
       updatedAt: nowIso
     };
+
+    if (isApprovedReseller && activeReseller) {
+      const updatedReseller: ResellerAccount = {
+        ...activeReseller,
+        walletBalance: (activeReseller.walletBalance || 0) + resellerComputedProfit,
+        totalEarnings: (activeReseller.totalEarnings || 0) + resellerComputedProfit,
+        totalOrders: (activeReseller.totalOrders || 0) + 1
+      };
+      setActiveReseller(updatedReseller);
+      setResellers((prev) => prev.map((r) => (r.id === activeReseller.id ? updatedReseller : r)));
+      saveResellerToFirestore(updatedReseller).catch(() => {});
+    }
 
     lastLocalMutationAtRef.current = Date.now();
     knownOrderIdsRef.current.add(newOrder.id);
@@ -6920,35 +7323,533 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const clearCart = () => setCart([]);
 
-  const cartTotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  // Strict Partner Pricing Resolver (Retail shoppers NEVER see Reseller/Wholesale pricing unless logged in with status === 'approved')
+  const getPartnerPriceInfo = (
+    product: Product,
+    quantity = 1
+  ): {
+    mode: 'retail' | 'reseller' | 'wholesale';
+    unitPrice: number;
+    baseWholesalePrice?: number;
+    minQty?: number;
+    estimatedProfitPerUnit?: number;
+  } => {
+    const qty = Math.max(1, Math.round(quantity || 1));
+    const rCfg = settingsRef.current.resellerSettings || INITIAL_SETTINGS.resellerSettings!;
+    if (
+      activeReseller &&
+      activeReseller.status === 'approved' &&
+      rCfg.enabled !== false &&
+      product.resellable !== false
+    ) {
+      const commPct = Math.max(1, Math.min(60, activeReseller.commissionPercent || rCfg.defaultCommissionPercent || 18));
+      const resellerUnit =
+        typeof product.resellerPrice === 'number' && product.resellerPrice > 0
+          ? Math.round(product.resellerPrice)
+          : Math.max(1, Math.round(product.price * (1 - commPct / 100)));
+      return {
+        mode: 'reseller',
+        unitPrice: resellerUnit,
+        estimatedProfitPerUnit: Math.max(0, product.price - resellerUnit)
+      };
+    }
+
+    const wCfg = settingsRef.current.wholesaleSettings || INITIAL_SETTINGS.wholesaleSettings!;
+    if (
+      activeWholesaler &&
+      activeWholesaler.status === 'approved' &&
+      wCfg.enabled !== false &&
+      product.wholesaleEnabled !== false
+    ) {
+      const minQty = product.wholesaleMinQty || wCfg.defaultMinQty || 10;
+      const baseWs =
+        typeof product.wholesalePrice === 'number' && product.wholesalePrice > 0
+          ? Math.round(product.wholesalePrice)
+          : Math.max(1, Math.round(product.price * 0.72));
+
+      let slabPrice = baseWs;
+      if (Array.isArray(product.wholesaleTiers) && product.wholesaleTiers.length > 0) {
+        const sortedTiers = [...product.wholesaleTiers].sort((a, b) => a.minQty - b.minQty);
+        for (const tier of sortedTiers) {
+          if (qty >= tier.minQty && tier.unitPrice > 0) {
+            slabPrice = tier.unitPrice;
+          }
+        }
+      }
+      const extraDisc = Math.max(0, Math.min(30, activeWholesaler.extraDiscountPercent || 0));
+      const finalWsPrice = Math.max(1, Math.round(slabPrice * (1 - extraDisc / 100)));
+      return {
+        mode: 'wholesale',
+        unitPrice: finalWsPrice,
+        baseWholesalePrice: baseWs,
+        minQty
+      };
+    }
+
+    return {
+      mode: 'retail',
+      unitPrice: product.price
+    };
+  };
+
+  const cartTotal = cart.reduce((sum, item) => sum + getPartnerPriceInfo(item.product, item.quantity).unitPrice * item.quantity, 0);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  // Settings (persists BOTH public storefront config and private SMTP/Courier/Marketing/AI vault)
-  const updateSettings = (newSettings: Partial<StoreSettings>) => {
+  // Settings Staging & Explicit Manual Save (NEVER auto-saves or toasts on keystroke edits)
+  const updateSettings = (newSettings: Partial<StoreSettings>, options?: { commit?: boolean }) => {
     lastLocalMutationAtRef.current = Date.now();
-    setSettings((prev) => {
-      const next = { ...prev, ...newSettings };
-      if (newSettings.themeColors && !newSettings.brandAttributes) {
-        const computed = computeBrandPaletteAttributes(
-          next.themeColors?.primary,
-          next.themeColors?.secondary
-        );
-        next.brandAttributes = {
-          primaryHover: computed.primaryHover,
-          primarySoft: computed.primarySoft,
-          primaryBorder: computed.primaryBorder,
-          onPrimary: computed.onPrimary,
-          cssAttributeString: computed.cssAttributeString,
-          generatedAt: new Date().toISOString()
-        };
-      }
+    const prevDraft = settingsRef.current;
+    const next: StoreSettings = { ...prevDraft, ...newSettings };
+    if (newSettings.themeColors && !newSettings.brandAttributes) {
+      const computed = computeBrandPaletteAttributes(
+        next.themeColors?.primary,
+        next.themeColors?.secondary
+      );
+      next.brandAttributes = {
+        primaryHover: computed.primaryHover,
+        primarySoft: computed.primarySoft,
+        primaryBorder: computed.primaryBorder,
+        onPrimary: computed.onPrimary,
+        cssAttributeString: computed.cssAttributeString,
+        generatedAt: new Date().toISOString()
+      };
+    }
+    setSettings(next);
+
+    if (options?.commit) {
+      setCommittedSettings(next);
+      setHasUnsavedSettings(false);
       saveStorefrontSettingsToFirestore(next, categoriesRef.current, slidersRef.current).catch(() => {});
       if (isFirebaseAdminConnectedRef.current) {
         saveAdminPrivateConfigToFirestore(next).catch(() => {});
       }
-      return next;
-    });
-    addToast('success', t('সেটিংস সংরক্ষিত হয়েছে', 'Settings Saved'), t('স্টোরের সকল পরিবর্তন সফলভাবে সংরক্ষিত।', 'Configurations updated.'));
+      addToast('success', t('সেটিংস সংরক্ষিত হয়েছে', 'Settings Saved'), t('সকল পরিবর্তন স্থায়ীভাবে সংরক্ষিত হয়েছে।', 'Changes committed successfully.'));
+    } else {
+      setHasUnsavedSettings(true);
+    }
+  };
+
+  const saveSettingsChanges = async (customTitle?: string, customMsg?: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    const draft = settingsRef.current;
+    setCommittedSettings(draft);
+    setHasUnsavedSettings(false);
+    try {
+      await saveStorefrontSettingsToFirestore(draft, categoriesRef.current, slidersRef.current).catch(() => {});
+      if (isFirebaseAdminConnectedRef.current) {
+        await saveAdminPrivateConfigToFirestore(draft).catch(() => {});
+      }
+      await fetch('/api/store/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(isAdminLoggedInRef.current ? { 'x-admin-session': 'buyone-admin-verified' } : {})
+        },
+        body: JSON.stringify({
+          settings: draft,
+          categories: categoriesRef.current,
+          sliders: slidersRef.current
+        })
+      }).catch(() => {});
+    } catch {}
+    addToast(
+      'success',
+      customTitle || t('সেটিংস সেভ সম্পন্ন!', 'Settings Saved!'),
+      customMsg || t('আপনার সকল পরিবর্তন স্থায়ীভাবে সংরক্ষণ করা হয়েছে।', 'All staged changes have been saved to database & cloud.')
+    );
+  };
+
+  const discardSettingsChanges = () => {
+    setSettings(committedSettingsRef.current);
+    setHasUnsavedSettings(false);
+    addToast(
+      'info',
+      t('অসংরক্ষিত পরিবর্তন বাতিল হয়েছে', 'Unsaved Changes Discarded'),
+      t('শেষ সংরক্ষিত সেটিংস ফিরিয়ে আনা হয়েছে।', 'Reverted to last saved configuration.')
+    );
+  };
+
+  // Reseller Registration, Login & Payout Management
+  const openPartnerPortal = (tab: 'reseller' | 'wholesale' = 'reseller') => {
+    setPartnerPortalTab(tab);
+    setIsPartnerPortalOpen(true);
+  };
+  const closePartnerPortal = () => setIsPartnerPortalOpen(false);
+
+  const registerReseller = async (
+    data: Omit<
+      ResellerAccount,
+      'id' | 'resellerCode' | 'commissionPercent' | 'walletBalance' | 'totalEarnings' | 'totalOrders' | 'status' | 'createdAt'
+    >
+  ): Promise<{ success: boolean; error?: string; reseller?: ResellerAccount }> => {
+    const cleanPhone = String(data.phone || '').replace(/[^0-9]/g, '').slice(-11);
+    if (cleanPhone.length < 10) {
+      return { success: false, error: t('সঠিক মোবাইল নম্বর দিন।', 'Please provide a valid phone number.') };
+    }
+    const existingLocal = resellersRef.current.find((r) => String(r.phone || '').replace(/[^0-9]/g, '').slice(-11) === cleanPhone);
+    if (existingLocal) {
+      return { success: false, error: t('এই নম্বরে রিসেলার অ্যাকাউন্ট রয়েছে।', 'A reseller account already exists for this phone.') };
+    }
+
+    const rCfg = settingsRef.current.resellerSettings || INITIAL_SETTINGS.resellerSettings!;
+    const status: ResellerAccount['status'] = rCfg.autoApprove ? 'approved' : 'pending';
+    const newReseller: ResellerAccount = {
+      ...data,
+      id: `res-${Date.now()}`,
+      resellerCode: `RES-${cleanPhone.slice(-4)}${Math.floor(10 + Math.random() * 89)}`,
+      commissionPercent: rCfg.defaultCommissionPercent || 18,
+      walletBalance: 0,
+      totalEarnings: 0,
+      totalOrders: 0,
+      status,
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      const apiRes = await fetch('/api/partner/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'reseller', partner: newReseller })
+      });
+      const json = await safeParseJson<{ success?: boolean; partner?: ResellerAccount; error?: string }>(apiRes);
+      if (apiRes.status === 409) {
+        return { success: false, error: json?.error || 'Account already registered.' };
+      }
+      const savedObj = json?.partner || newReseller;
+      setResellers((prev) => [savedObj, ...prev.filter((r) => r.id !== savedObj.id)]);
+      setActiveReseller(savedObj);
+      saveResellerToFirestore(savedObj).catch(() => {});
+      addToast(
+        'success',
+        t('রিসেলার আবেদন সফল!', 'Reseller Registration Submitted!'),
+        savedObj.status === 'approved'
+          ? t('আপনার রিসেলার অ্যাকাউন্ট সক্রিয় হয়েছে — এখন রিসেলার প্রাইস দেখতে পারবেন।', 'Your reseller account is active — reseller pricing is now unlocked.')
+          : t('অ্যাডমিন অনুমোদনের পর রিসেলার প্রাইস চালু হবে।', 'Admin will review & approve your reseller pricing access shortly.')
+      );
+      return { success: true, reseller: savedObj };
+    } catch {
+      setResellers((prev) => [newReseller, ...prev]);
+      setActiveReseller(newReseller);
+      saveResellerToFirestore(newReseller).catch(() => {});
+      return { success: true, reseller: newReseller };
+    }
+  };
+
+  const loginReseller = async (
+    identifier: string,
+    password?: string
+  ): Promise<{ success: boolean; error?: string; reseller?: ResellerAccount }> => {
+    const cleanId = identifier.trim().toLowerCase();
+    const digits = cleanId.replace(/[^0-9]/g, '').slice(-11);
+    const localMatch = resellersRef.current.find(
+      (r) =>
+        (digits && String(r.phone || '').replace(/[^0-9]/g, '').slice(-11) === digits) ||
+        (r.email && r.email.toLowerCase() === cleanId) ||
+        r.resellerCode.toLowerCase() === cleanId
+    );
+    if (localMatch && (!localMatch.password || !password || localMatch.password === password)) {
+      setActiveReseller(localMatch);
+      addToast(
+        'success',
+        t(`স্বাগতম ${localMatch.name}!`, `Welcome ${localMatch.name}!`),
+        localMatch.status === 'approved'
+          ? t('রিসেলার মূল্য আনলক হয়েছে।', 'Reseller pricing unlocked across storefront.')
+          : t('আপনার অ্যাকাউন্ট অনুমোদনের অপেক্ষায় আছে।', 'Your account is pending approval.')
+      );
+      return { success: true, reseller: localMatch };
+    }
+    try {
+      const apiRes = await fetch('/api/partner/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'reseller', identifier, password })
+      });
+      const json = await safeParseJson<{ success?: boolean; partner?: ResellerAccount; error?: string }>(apiRes);
+      if (apiRes.ok && json?.success && json.partner) {
+        setResellers((prev) => [json.partner!, ...prev.filter((r) => r.id !== json.partner!.id)]);
+        setActiveReseller(json.partner);
+        addToast('success', t('রিসেলার লগইন সফল!', 'Reseller Signed In!'), json.partner.name);
+        return { success: true, reseller: json.partner };
+      }
+      return { success: false, error: json?.error || t('তথ্য সঠিক নয়।', 'Invalid credentials.') };
+    } catch {
+      return { success: false, error: t('রিসেলার খুঁজে পাওয়া যায়নি।', 'Reseller account not found.') };
+    }
+  };
+
+  const logoutReseller = () => {
+    setActiveReseller(null);
+    addToast('info', t('রিসেলার লগআউট সম্পন্ন', 'Reseller Signed Out'), '');
+  };
+
+  const updateResellerAccount = (id: string, updates: Partial<ResellerAccount>) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setResellers((prev) =>
+      prev.map((r) => {
+        if (r.id !== id) return r;
+        const next = { ...r, ...updates };
+        saveResellerToFirestore(next).catch(() => {});
+        if (activeReseller?.id === id) setActiveReseller(next);
+        return next;
+      })
+    );
+    addToast('success', t('রিসেলার তথ্য আপডেট হয়েছে', 'Reseller Updated'), '');
+  };
+
+  const requestResellerPayout = (payload: {
+    method: ResellerPayoutRequest['method'];
+    accountNumber: string;
+    amount: number;
+  }): boolean => {
+    if (!activeReseller || activeReseller.status !== 'approved') return false;
+    const minPayout = settingsRef.current.resellerSettings?.minPayoutBdt || 500;
+    if (payload.amount < minPayout || payload.amount > (activeReseller.walletBalance || 0)) {
+      addToast(
+        'warning',
+        t('উইথড্র ব্যর্থ', 'Invalid Payout Amount'),
+        t(`সর্বনিম্ন ৳${minPayout} এবং ব্যালেন্স ৳${activeReseller.walletBalance} এর মধ্যে হতে হবে।`, `Minimum ৳${minPayout} up to ৳${activeReseller.walletBalance}.`)
+      );
+      return false;
+    }
+    const req: ResellerPayoutRequest = {
+      id: `rpay-${Date.now()}`,
+      resellerId: activeReseller.id,
+      resellerName: activeReseller.name,
+      resellerPhone: activeReseller.phone,
+      method: payload.method,
+      accountNumber: payload.accountNumber,
+      amount: Math.round(payload.amount),
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+    const updatedRes: ResellerAccount = {
+      ...activeReseller,
+      walletBalance: Math.max(0, (activeReseller.walletBalance || 0) - req.amount)
+    };
+    setActiveReseller(updatedRes);
+    setResellers((prev) => prev.map((r) => (r.id === updatedRes.id ? updatedRes : r)));
+    setResellerPayouts((prev) => [req, ...prev]);
+    saveResellerToFirestore(updatedRes).catch(() => {});
+    saveResellerPayoutToFirestore(req).catch(() => {});
+    addToast('success', t('পেআউট রিকোয়েস্ট পাঠানো হয়েছে!', 'Payout Request Submitted!'), `৳${req.amount} (${req.method.toUpperCase()})`);
+    return true;
+  };
+
+  const processResellerPayout = (id: string, status: 'paid' | 'rejected', trxId?: string, note?: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setResellerPayouts((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const next: ResellerPayoutRequest = {
+          ...p,
+          status,
+          ...(trxId ? { trxId } : {}),
+          ...(note ? { note } : {}),
+          processedAt: new Date().toISOString()
+        };
+        if (status === 'rejected' && p.status === 'pending') {
+          setResellers((rPrev) =>
+            rPrev.map((r) => {
+              if (r.id !== p.resellerId) return r;
+              const refunded = { ...r, walletBalance: (r.walletBalance || 0) + p.amount };
+              saveResellerToFirestore(refunded).catch(() => {});
+              if (activeReseller?.id === r.id) setActiveReseller(refunded);
+              return refunded;
+            })
+          );
+        }
+        saveResellerPayoutToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
+    addToast('success', status === 'paid' ? t('পেআউট পরিশোধ হয়েছে', 'Payout Marked Paid') : t('পেআউট বাতিল হয়েছে', 'Payout Rejected'), '');
+  };
+
+  // Wholesale / B2B Trade Registration, Login & Quotes
+  const registerWholesaler = async (
+    data: Omit<WholesaleAccount, 'id' | 'tier' | 'extraDiscountPercent' | 'status' | 'createdAt'>
+  ): Promise<{ success: boolean; error?: string; wholesaler?: WholesaleAccount }> => {
+    const cleanPhone = String(data.phone || '').replace(/[^0-9]/g, '').slice(-11);
+    if (cleanPhone.length < 10) {
+      return { success: false, error: t('সঠিক মোবাইল নম্বর দিন।', 'Please provide a valid business phone number.') };
+    }
+    const existingLocal = wholesalersRef.current.find((w) => String(w.phone || '').replace(/[^0-9]/g, '').slice(-11) === cleanPhone);
+    if (existingLocal) {
+      return { success: false, error: t('এই নম্বরে হোলসেল অ্যাকাউন্ট রয়েছে।', 'A wholesale account already exists for this phone.') };
+    }
+    const wCfg = settingsRef.current.wholesaleSettings || INITIAL_SETTINGS.wholesaleSettings!;
+    const status: WholesaleAccount['status'] = wCfg.autoApprove ? 'approved' : 'pending';
+    const newWholesaler: WholesaleAccount = {
+      ...data,
+      id: `whs-${Date.now()}`,
+      tier: 'Silver',
+      extraDiscountPercent: 5,
+      status,
+      createdAt: new Date().toISOString()
+    };
+    try {
+      const apiRes = await fetch('/api/partner/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'wholesale', partner: newWholesaler })
+      });
+      const json = await safeParseJson<{ success?: boolean; partner?: WholesaleAccount; error?: string }>(apiRes);
+      if (apiRes.status === 409) {
+        return { success: false, error: json?.error || 'Business account already registered.' };
+      }
+      const savedObj = json?.partner || newWholesaler;
+      setWholesalers((prev) => [savedObj, ...prev.filter((w) => w.id !== savedObj.id)]);
+      setActiveWholesaler(savedObj);
+      saveWholesalerToFirestore(savedObj).catch(() => {});
+      addToast(
+        'success',
+        t('হোলসেল আবেদন জমা হয়েছে!', 'Wholesale Application Submitted!'),
+        savedObj.status === 'approved'
+          ? t('B2B হোলসেল প্রাইসিং চালু হয়েছে।', 'B2B wholesale pricing unlocked.')
+          : t('যাচাই শেষে হোলসেল প্রাইস অ্যাক্সেস চালু হবে।', 'Trade verification pending — admin will approve your wholesale access.')
+      );
+      return { success: true, wholesaler: savedObj };
+    } catch {
+      setWholesalers((prev) => [newWholesaler, ...prev]);
+      setActiveWholesaler(newWholesaler);
+      saveWholesalerToFirestore(newWholesaler).catch(() => {});
+      return { success: true, wholesaler: newWholesaler };
+    }
+  };
+
+  const loginWholesaler = async (
+    identifier: string,
+    password?: string
+  ): Promise<{ success: boolean; error?: string; wholesaler?: WholesaleAccount }> => {
+    const cleanId = identifier.trim().toLowerCase();
+    const digits = cleanId.replace(/[^0-9]/g, '').slice(-11);
+    const localMatch = wholesalersRef.current.find(
+      (w) =>
+        (digits && String(w.phone || '').replace(/[^0-9]/g, '').slice(-11) === digits) ||
+        (w.email && w.email.toLowerCase() === cleanId)
+    );
+    if (localMatch && (!localMatch.password || !password || localMatch.password === password)) {
+      setActiveWholesaler(localMatch);
+      addToast(
+        'success',
+        t(`স্বাগতম ${localMatch.companyName}!`, `Welcome ${localMatch.companyName}!`),
+        localMatch.status === 'approved'
+          ? t('হোলসেল B2B মূল্য আনলক হয়েছে।', 'Wholesale MOQ & B2B slab pricing unlocked.')
+          : t('আপনার হোলসেল অ্যাকাউন্ট যাচাইয়ের অপেক্ষায় আছে।', 'Your wholesale application is pending approval.')
+      );
+      return { success: true, wholesaler: localMatch };
+    }
+    try {
+      const apiRes = await fetch('/api/partner/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'wholesale', identifier, password })
+      });
+      const json = await safeParseJson<{ success?: boolean; partner?: WholesaleAccount; error?: string }>(apiRes);
+      if (apiRes.ok && json?.success && json.partner) {
+        setWholesalers((prev) => [json.partner!, ...prev.filter((w) => w.id !== json.partner!.id)]);
+        setActiveWholesaler(json.partner);
+        addToast('success', t('হোলসেল লগইন সফল!', 'Wholesale Signed In!'), json.partner.companyName);
+        return { success: true, wholesaler: json.partner };
+      }
+      return { success: false, error: json?.error || t('তথ্য সঠিক নয়।', 'Invalid business credentials.') };
+    } catch {
+      return { success: false, error: t('হোলসেল অ্যাকাউন্ট পাওয়া যায়নি।', 'Wholesale account not found.') };
+    }
+  };
+
+  const logoutWholesaler = () => {
+    setActiveWholesaler(null);
+    addToast('info', t('হোলসেল লগআউট সম্পন্ন', 'Wholesale Signed Out'), '');
+  };
+
+  const updateWholesalerAccount = (id: string, updates: Partial<WholesaleAccount>) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setWholesalers((prev) =>
+      prev.map((w) => {
+        if (w.id !== id) return w;
+        const next = { ...w, ...updates };
+        saveWholesalerToFirestore(next).catch(() => {});
+        if (activeWholesaler?.id === id) setActiveWholesaler(next);
+        return next;
+      })
+    );
+    addToast('success', t('হোলসেল অ্যাকাউন্ট আপডেট হয়েছে', 'Wholesale Account Updated'), '');
+  };
+
+  const submitWholesaleQuote = (payload: {
+    productId?: string;
+    productTitle: string;
+    requestedQty: number;
+    targetUnitPrice?: number;
+    notes?: string;
+  }): WholesaleQuoteRequest | null => {
+    if (!activeWholesaler || activeWholesaler.status !== 'approved') return null;
+    const quote: WholesaleQuoteRequest = {
+      id: `wqt-${Date.now()}`,
+      wholesalerId: activeWholesaler.id,
+      companyName: activeWholesaler.companyName,
+      phone: activeWholesaler.phone,
+      productId: payload.productId,
+      productTitle: payload.productTitle,
+      requestedQty: Math.max(1, payload.requestedQty),
+      targetUnitPrice: payload.targetUnitPrice,
+      notes: payload.notes,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+    setWholesaleQuotes((prev) => [quote, ...prev]);
+    saveWholesaleQuoteToFirestore(quote).catch(() => {});
+    addToast('success', t('বাল্ক কোটেশন পাঠানো হয়েছে!', 'Bulk RFQ Submitted!'), quote.productTitle);
+    return quote;
+  };
+
+  const updateWholesaleQuote = (id: string, updates: Partial<WholesaleQuoteRequest>) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setWholesaleQuotes((prev) =>
+      prev.map((q) => {
+        if (q.id !== id) return q;
+        const next = { ...q, ...updates };
+        saveWholesaleQuoteToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
+    addToast('success', t('কোটেশন আপডেট হয়েছে', 'Quote Updated'), '');
+  };
+
+  // Bangladesh Bulk SMS Campaign Dispatcher
+  const dispatchBulkSmsCampaign = async (payload: {
+    title: string;
+    segment: BulkSmsCampaignLog['segment'];
+    recipients: string[];
+    message: string;
+  }): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const gmCfg = settingsRef.current.globalMarketingSettings || INITIAL_SETTINGS.globalMarketingSettings!;
+      const res = await fetch('/api/marketing/sms-campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...payload,
+          provider: gmCfg.smsGatewayProvider,
+          apiKey: gmCfg.smsApiKey,
+          senderId: gmCfg.smsSenderId
+        })
+      });
+      const json = await safeParseJson<{ success?: boolean; log?: BulkSmsCampaignLog; error?: string }>(res);
+      if (res.ok && json?.success && json.log) {
+        setBulkSmsLogs((prev) => [json.log!, ...prev].slice(0, 60));
+        addToast(
+          'success',
+          t('বাল্ক SMS ক্যাম্পেইন সম্পন্ন!', 'Bulk SMS Dispatched!'),
+          `${json.log.recipientCount} recipients (${json.log.status === 'sent' ? 'Live Gateway' : 'Preview Mode'})`
+        );
+        return { success: true };
+      }
+      return { success: false, error: json?.error || 'SMS dispatch failed' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error' };
+    }
   };
 
   const cloudCollectionCounts = React.useMemo(
@@ -6965,6 +7866,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       walletTopUps: walletTopUps.length,
       abandonedCarts: abandonedCarts.length,
       priceAlerts: priceAlerts.length,
+      resellers: resellers.length,
+      wholesalers: wholesalers.length,
       staffUsers: users.length
     }),
     [
@@ -6979,6 +7882,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       walletTopUps.length,
       abandonedCarts.length,
       priceAlerts.length,
+      resellers.length,
+      wholesalers.length,
       users.length
     ]
   );
@@ -7018,7 +7923,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const resetAllToDefault = () => {
     // Non-destructive update: preserves all orders, products, customers & existing configs
-    setSettings((prev) => mergeSettings(prev));
+    const merged = mergeSettings(settingsRef.current);
+    setSettings(merged);
+    setCommittedSettings(merged);
+    setHasUnsavedSettings(false);
     addToast(
       'success',
       t('নিরাপদ আপডেট সম্পন্ন', 'Safe Settings Sync Complete'),
@@ -7036,12 +7944,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     recordPageVisit('/checkout', t('১-ক্লিক চেকআউট', '1-Click Checkout'), product);
     trackPixelEvent('InitiateCheckout', {
       urlPath: '/checkout',
-      value: product ? product.price : cartTotal,
+      value: product ? getPartnerPriceInfo(product, 1).unitPrice : cartTotal,
       contentName: product ? product.title : 'Cart Checkout'
     });
   };
 
-  // Autonomous Human-Like Website Control AI Agent Log & Dispatcher
+  // Autonomous Store Operations AI Controller Log & Dispatcher
   const [agentActionLogs, setAgentActionLogs] = useState<
     { id: string; time: string; instruction: string; reply: string; actions: string[]; mode: string }[]
   >([]);
@@ -7134,20 +8042,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               minOrder: Math.max(0, Number(p.minOrder) || 0),
               active: true
             };
-            updateSettings({
-              promoCoupons: [nextCoupon, ...existing.filter((c) => c.code !== code)]
-            });
+            updateSettings(
+              {
+                promoCoupons: [nextCoupon, ...existing.filter((c) => c.code !== code)]
+              },
+              { commit: true }
+            );
             executed.push(`Created Coupon ${code}`);
           }
           break;
         }
         case 'toggle_flash_sale': {
-          updateSettings({
-            flashSale: {
-              ...settingsRef.current.flashSale,
-              enabled: Boolean(p.enabled)
-            }
-          });
+          updateSettings(
+            {
+              flashSale: {
+                ...settingsRef.current.flashSale,
+                enabled: Boolean(p.enabled)
+              }
+            },
+            { commit: true }
+          );
           executed.push(`Flash Sale ${p.enabled ? 'ON' : 'OFF'}`);
           break;
         }
@@ -7227,7 +8141,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             };
           }
           if (Object.keys(patch).length > 0) {
-            updateSettings(patch);
+            updateSettings(patch, { commit: true });
             executed.push('Updated Store Settings');
           }
           break;
@@ -7429,7 +8343,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         openOrCreateCustomerChatSession,
         markChatRead,
         toggleChatManualMode,
-        requestHumanSupport,
+        requestDirectDeskSupport,
         resolveSupportChatSession,
         deleteSupportChatSession,
         browserCalls,
@@ -7505,10 +8419,40 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         playVoiceSample,
         isPlayingVoiceSample,
         settings,
+        hasUnsavedSettings,
         updateSettings,
+        saveSettingsChanges,
+        discardSettingsChanges,
         generateBrandColorAttributes,
         clearAppCache,
         resetAllToDefault,
+        resellers,
+        activeReseller,
+        isResellerLoggedIn,
+        resellerPayouts,
+        registerReseller,
+        loginReseller,
+        logoutReseller,
+        updateResellerAccount,
+        requestResellerPayout,
+        processResellerPayout,
+        wholesalers,
+        activeWholesaler,
+        isWholesaleLoggedIn,
+        wholesaleQuotes,
+        registerWholesaler,
+        loginWholesaler,
+        logoutWholesaler,
+        updateWholesalerAccount,
+        submitWholesaleQuote,
+        updateWholesaleQuote,
+        isPartnerPortalOpen,
+        partnerPortalTab,
+        openPartnerPortal,
+        closePartnerPortal,
+        getPartnerPriceInfo,
+        bulkSmsLogs,
+        dispatchBulkSmsCampaign,
         cart,
         addToCart,
         removeFromCart,

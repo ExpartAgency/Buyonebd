@@ -40,7 +40,7 @@ export const WhatsAppAgentModal: React.FC = () => {
     activeChatSessionId,
     sendCustomerChatMessage,
     toggleChatManualMode,
-    requestHumanSupport,
+    requestDirectDeskSupport,
     playVoiceSample,
     isPlayingVoiceSample,
     openProductPage,
@@ -114,7 +114,7 @@ export const WhatsAppAgentModal: React.FC = () => {
     } else if (action === 'tab_flash') {
       setActiveTab('flash');
     } else if (action === 'request_human' || action === 'request_specialist') {
-      requestHumanSupport(currentSession?.id);
+      requestDirectDeskSupport(currentSession?.id);
     } else if (action === 'open_tracking') {
       setActiveView('tracking');
       navigateToPath('/tracking');
@@ -309,7 +309,7 @@ export const WhatsAppAgentModal: React.FC = () => {
                     if (currentSession.manualMode) {
                       toggleChatManualMode(currentSession.id, false);
                     } else {
-                      requestHumanSupport(currentSession.id);
+                      requestDirectDeskSupport(currentSession.id);
                     }
                   }}
                   className={`px-2.5 py-1 rounded-md font-semibold text-[11px] cursor-pointer shrink-0 transition-colors border ${

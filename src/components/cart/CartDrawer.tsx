@@ -13,6 +13,7 @@ export const CartDrawer: React.FC = () => {
     cartTotal,
     cartCount,
     openOneClickCheckout,
+    getPartnerPriceInfo,
     settings,
     lang,
     t
@@ -110,9 +111,26 @@ export const CartDrawer: React.FC = () => {
                     </div>
 
                     <div className="flex items-center justify-between mt-2">
-                      <span className="font-bold text-xs text-emerald-600 dark:text-emerald-400 tabular-nums">
-                        ৳ {(item.product.price * item.quantity).toLocaleString()}
-                      </span>
+                      {(() => {
+                        const pInfo = getPartnerPriceInfo(item.product, item.quantity);
+                        return (
+                          <div className="min-w-0">
+                            <span className="font-bold text-xs text-emerald-600 dark:text-emerald-400 tabular-nums block">
+                              ৳ {(pInfo.unitPrice * item.quantity).toLocaleString()}
+                            </span>
+                            {pInfo.mode === 'reseller' && (
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
+                                Reseller · Profit ৳{((pInfo.estimatedProfitPerUnit || 0) * item.quantity).toLocaleString()}
+                              </span>
+                            )}
+                            {pInfo.mode === 'wholesale' && (
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
+                                B2B ৳{pInfo.unitPrice.toLocaleString()}/pc · MOQ {pInfo.minQty}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {/* Quantity Controls */}
                       <div className="flex items-center border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800">

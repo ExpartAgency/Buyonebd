@@ -37,6 +37,9 @@
         "deliveryBoys": { "type": "array" },
         "brandAttributes": { "type": "object" },
         "loyaltySettings": { "type": "object" },
+        "resellerSettings": { "type": "object" },
+        "wholesaleSettings": { "type": "object" },
+        "globalMarketingSettings": { "type": "object" },
         "categories": { "type": "array" },
         "sliders": { "type": "array" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -76,6 +79,12 @@
         "brandBn": { "type": "string", "maxLength": 140 },
         "attributes": { "type": "array" },
         "isFlashSale": { "type": "boolean" },
+        "resellable": { "type": "boolean" },
+        "resellerPrice": { "type": "number" },
+        "wholesaleEnabled": { "type": "boolean" },
+        "wholesalePrice": { "type": "number" },
+        "wholesaleMinQty": { "type": "number" },
+        "wholesaleTiers": { "type": "array" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "title", "price", "stock", "updatedAt"]
@@ -99,6 +108,14 @@
         "courier": { "type": "object" },
         "fraudCheck": { "type": "object" },
         "source": { "type": "string", "enum": ["online", "pos"] },
+        "partnerType": { "type": "string", "enum": ["retail", "reseller", "wholesale"] },
+        "resellerId": { "type": "string", "maxLength": 80 },
+        "resellerName": { "type": "string", "maxLength": 120 },
+        "resellerCode": { "type": "string", "maxLength": 40 },
+        "resellerProfit": { "type": "number" },
+        "customerQuotedPrice": { "type": "number" },
+        "wholesaleBuyerId": { "type": "string", "maxLength": 80 },
+        "wholesaleCompany": { "type": "string", "maxLength": 160 },
         "createdAt": { "type": "string", "format": "date-time" },
         "serverCreatedAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -261,6 +278,98 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "email", "createdAt"]
+    },
+    "ResellerAccountRecord": {
+      "title": "ResellerAccountRecord",
+      "description": "Registered reseller partner account managed by Admin.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "name": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "email": { "type": "string", "maxLength": 160 },
+        "district": { "type": "string", "maxLength": 120 },
+        "address": { "type": "string", "maxLength": 400 },
+        "fbPageUrl": { "type": "string", "maxLength": 240 },
+        "bkashNumber": { "type": "string", "maxLength": 32 },
+        "nagadNumber": { "type": "string", "maxLength": 32 },
+        "bankDetails": { "type": "string", "maxLength": 300 },
+        "resellerCode": { "type": "string", "maxLength": 40 },
+        "commissionPercent": { "type": "number" },
+        "walletBalance": { "type": "number" },
+        "totalEarnings": { "type": "number" },
+        "totalOrders": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved", "suspended"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "phone", "resellerCode", "status", "createdAt"]
+    },
+    "ResellerPayoutRecord": {
+      "title": "ResellerPayoutRecord",
+      "description": "Reseller commission withdrawal payout request.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "resellerId": { "type": "string", "maxLength": 80 },
+        "resellerName": { "type": "string", "maxLength": 120 },
+        "resellerPhone": { "type": "string", "maxLength": 32 },
+        "method": { "type": "string", "enum": ["bkash", "nagad", "rocket", "bank"] },
+        "accountNumber": { "type": "string", "maxLength": 160 },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "paid", "rejected"] },
+        "trxId": { "type": "string", "maxLength": 80 },
+        "note": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "resellerId", "resellerName", "method", "accountNumber", "amount", "status", "createdAt"]
+    },
+    "WholesaleAccountRecord": {
+      "title": "WholesaleAccountRecord",
+      "description": "Approved or pending B2B wholesale buyer account.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "contactName": { "type": "string", "maxLength": 120 },
+        "companyName": { "type": "string", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "email": { "type": "string", "maxLength": 160 },
+        "tradeLicenseNo": { "type": "string", "maxLength": 80 },
+        "nidNumber": { "type": "string", "maxLength": 40 },
+        "district": { "type": "string", "maxLength": 120 },
+        "address": { "type": "string", "maxLength": 400 },
+        "businessType": { "type": "string", "maxLength": 60 },
+        "monthlyVolumeEstimate": { "type": "string", "maxLength": 80 },
+        "tier": { "type": "string", "enum": ["Silver", "Gold", "Platinum"] },
+        "extraDiscountPercent": { "type": "number" },
+        "creditLimitBdt": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved", "suspended"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "contactName", "companyName", "phone", "tier", "status", "createdAt"]
+    },
+    "WholesaleQuoteRecord": {
+      "title": "WholesaleQuoteRecord",
+      "description": "B2B bulk quotation request submitted by wholesale buyers.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "wholesalerId": { "type": "string", "maxLength": 80 },
+        "companyName": { "type": "string", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "productId": { "type": "string", "maxLength": 80 },
+        "productTitle": { "type": "string", "maxLength": 200 },
+        "requestedQty": { "type": "number" },
+        "targetUnitPrice": { "type": "number" },
+        "adminQuotedPrice": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["pending", "quoted", "accepted", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "wholesalerId", "companyName", "productTitle", "requestedQty", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -315,6 +424,22 @@
     "/admins/{uid}": {
       "schema": { "$ref": "#/backend/entities/AdminUser" },
       "description": "Admin role allowlist collection."
+    },
+    "/resellers/{resellerId}": {
+      "schema": { "$ref": "#/backend/entities/ResellerAccountRecord" },
+      "description": "Reseller partner accounts."
+    },
+    "/reseller_payouts/{payoutId}": {
+      "schema": { "$ref": "#/backend/entities/ResellerPayoutRecord" },
+      "description": "Reseller payout requests."
+    },
+    "/wholesalers/{wholesalerId}": {
+      "schema": { "$ref": "#/backend/entities/WholesaleAccountRecord" },
+      "description": "Wholesale B2B buyer accounts."
+    },
+    "/wholesale_quotes/{quoteId}": {
+      "schema": { "$ref": "#/backend/entities/WholesaleQuoteRecord" },
+      "description": "Wholesale B2B quote requests."
     }
   }
 }

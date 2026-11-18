@@ -25,6 +25,7 @@ export const CustomerLoginModal: React.FC = () => {
     registerCustomer,
     sendPasswordResetOtp,
     resetCustomerPassword,
+    openPartnerPortal,
     settings,
     t,
     addToast
@@ -464,9 +465,34 @@ export const CustomerLoginModal: React.FC = () => {
             </form>
           )}
 
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-center gap-1.5 text-[10px] text-slate-400">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-            <span>{t('নিরাপদ কাস্টমার পোর্টাল • BuyOne BD', 'Protected Customer Portal • BuyOne BD')}</span>
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+            <div className="flex items-center justify-center gap-3 text-[11px] font-bold">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCustomerLoginOpen(false);
+                  openPartnerPortal('reseller');
+                }}
+                className="text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+              >
+                {t('রিসেলার পোর্টাল', 'Reseller Login / Join')}
+              </button>
+              <span className="text-slate-300 dark:text-slate-700">·</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCustomerLoginOpen(false);
+                  openPartnerPortal('wholesale');
+                }}
+                className="text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+              >
+                {t('হোলসেল B2B', 'Wholesale B2B')}
+              </button>
+            </div>
+            <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+              <span>{t('নিরাপদ কাস্টমার পোর্টাল • BuyOne BD', 'Protected Customer Portal • BuyOne BD')}</span>
+            </div>
           </div>
         </div>
       </div>

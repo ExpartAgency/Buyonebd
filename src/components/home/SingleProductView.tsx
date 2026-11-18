@@ -50,6 +50,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
     selectCategoryFilter,
     initiateCustomerBrowserCall,
     goHome,
+    getPartnerPriceInfo,
     lang,
     t,
     addToast
@@ -224,8 +225,10 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
     return match ? `https://www.youtube.com/embed/${match[1]}` : '';
   }, [product.videoUrl]);
 
-  const unitSavings = Math.max(0, (product.originalPrice - product.price) * quantity);
-  const totalPayable = product.price * quantity;
+  const partnerPrice = getPartnerPriceInfo(product, quantity);
+  const effectiveUnitPrice = partnerPrice.unitPrice;
+  const unitSavings = Math.max(0, (product.originalPrice - effectiveUnitPrice) * quantity);
+  const totalPayable = effectiveUnitPrice * quantity;
   const cms = settings.singleProductCms;
   const loyaltyEarn =
     product.loyaltyPoints !== undefined
@@ -577,7 +580,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     <span className="text-3xl sm:text-4xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
                       ৳{totalPayable.toLocaleString()}
                     </span>
-                    {product.originalPrice > product.price && (
+                    {product.originalPrice > effectiveUnitPrice && (
                       <span className="text-base text-slate-400 line-through font-mono">
                         ৳{(product.originalPrice * quantity).toLocaleString()}
                       </span>
@@ -590,6 +593,40 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     </span>
                   )}
                 </div>
+
+                {partnerPrice.mode === 'reseller' && (
+                  <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex flex-wrap items-center justify-between gap-2 text-xs tabular-nums">
+                    <span className="font-bold text-emerald-700 dark:text-emerald-300">
+                      {t('রিসেলার মূল্য', 'Reseller Rate')}: ৳{effectiveUnitPrice.toLocaleString()} / {t('পিস', 'unit')} (Retail ৳{product.price.toLocaleString()})
+                    </span>
+                    <span className="font-bold text-slate-900 dark:text-white">
+                      {t('প্রতি পিসে লাভ', 'Margin')}: ৳{(partnerPrice.estimatedProfitPerUnit || 0).toLocaleString()}
+                    </span>
+                  </div>
+                )}
+
+                {partnerPrice.mode === 'wholesale' && (
+                  <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 space-y-1.5 text-xs tabular-nums">
+                    <div className="flex items-center justify-between font-bold text-emerald-800 dark:text-emerald-300">
+                      <span>{t('হোলসেল B2B ট্রেড রেট', 'Wholesale B2B Rate')}: ৳{effectiveUnitPrice.toLocaleString()}/unit</span>
+                      <span>MOQ {partnerPrice.minQty || 10} pcs</span>
+                    </div>
+                    {product.wholesaleTiers && product.wholesaleTiers.length > 0 && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {product.wholesaleTiers.map((tier) => (
+                          <button
+                            key={tier.minQty}
+                            type="button"
+                            onClick={() => setQuantity(tier.minQty)}
+                            className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200 cursor-pointer hover:border-emerald-500"
+                          >
+                            {tier.minQty}+ pcs → ৳{tier.unitPrice.toLocaleString()}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {(cms?.showLoyaltyBadge !== false) && (
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-200/70 dark:border-slate-700/70 text-[11px] text-slate-600 dark:text-slate-300">
