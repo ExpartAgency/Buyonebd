@@ -1060,3 +1060,20 @@ export interface GlobalMarketingSettings {
   defaultUtmSource: string;
   defaultUtmMedium: string;
 }
+
+export interface WhatsAppChatMessage {
+  id: string;
+  phone: string;
+  contactName: string;
+  contactType: 'reseller' | 'customer';
+  direction: 'outbound' | 'inbound';
+  sender: 'admin' | 'ai' | 'contact';
+  text: string;
+  templateName?: string;
+  orderId?: string;
+  mode: 'live' | 'simulated' | 'webhook';
+  status: 'sent' | 'received' | 'simulated' | 'failed';
+  messageId?: string;
+  timestamp: string;
+}
+

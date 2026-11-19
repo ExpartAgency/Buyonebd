@@ -30,6 +30,7 @@ export const MobileCategoryDrawer: React.FC<MobileCategoryDrawerProps> = ({
     settings,
     openProductPage,
     openOneClickCheckout,
+    openPartnerPortal,
     lang,
     t
   } = useStore();
@@ -282,24 +283,48 @@ export const MobileCategoryDrawer: React.FC<MobileCategoryDrawerProps> = ({
           </div>
         </div>
 
-        {/* Bottom Support Bar */}
-        <div className="px-3 py-2.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center gap-2 shrink-0">
-          <a
-            href={`tel:${settings.hotline}`}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-[11px] font-bold"
-          >
-            <PhoneCall className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="truncate">{t('কল হটলাইন', 'Hotline')}</span>
-          </a>
-          <a
-            href={`https://wa.me/${settings.whatsappNumber.replace(/[^0-9]/g, '')}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-emerald-600 text-white text-[11px] font-bold"
-          >
-            <MessageCircle className="w-3.5 h-3.5" />
-            <span>{t('হোয়াটসঅ্যাপ', 'WhatsApp')}</span>
-          </a>
+        {/* Bottom Partner & Support Bar */}
+        <div className="px-3 py-2.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 space-y-2 shrink-0">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                openPartnerPortal('reseller');
+              }}
+              className="py-2 px-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-[11px] font-extrabold cursor-pointer truncate"
+            >
+              🤝 {t('রিসেলার ড্যাশবোর্ড', 'Reseller Portal')}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                openPartnerPortal('wholesale');
+              }}
+              className="py-2 px-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-700 dark:text-sky-300 text-[11px] font-extrabold cursor-pointer truncate"
+            >
+              🏢 {t('হোলসেল B2B', 'Wholesale B2B')}
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={`tel:${settings.hotline}`}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white text-[11px] font-bold"
+            >
+              <PhoneCall className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="truncate">{t('কল হটলাইন', 'Hotline')}</span>
+            </a>
+            <a
+              href={`https://wa.me/${settings.whatsappNumber.replace(/[^0-9]/g, '')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-emerald-600 text-white text-[11px] font-bold"
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              <span>{t('হোয়াটসঅ্যাপ', 'WhatsApp')}</span>
+            </a>
+          </div>
         </div>
       </div>
     </div>

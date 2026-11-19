@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Users,
   Wallet,
@@ -7,28 +7,59 @@ import {
   Save,
   Search,
   ExternalLink,
-  ShoppingBag
+  ShoppingBag,
+  MessageCircle,
+  Sparkles,
+  Download,
+  Plus,
+  Minus,
+  Send,
+  Copy,
+  Check,
+  X
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { ResellerAccount } from '../../types';
 
-export const ResellerAdminView: React.FC = () => {
+interface ResellerAdminViewProps {
+  onOpenWhatsAppDesk?: (phone: string) => void;
+}
+
+export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhatsAppDesk }) => {
   const {
     settings,
     updateSettings,
     saveSettingsChanges,
     resellers,
     updateResellerAccount,
+    bulkUpdateResellers,
+    adjustResellerWallet,
     resellerPayouts,
     processResellerPayout,
     orders,
-    adminLang
+    sendMetaWhatsAppMessage,
+    generateWhatsAppAiDraft,
+    syncStoreFromServer,
+    adminLang,
+    addToast
   } = useStore();
 
   const at = (bn: string, en: string) => (adminLang === 'en' ? en : bn);
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'suspended'>('all');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [trxInputs, setTrxInputs] = useState<Record<string, string>>({});
+  const [walletModalReseller, setWalletModalReseller] = useState<ResellerAccount | null>(null);
+  const [walletDelta, setWalletDelta] = useState<number>(200);
+  const [walletNote, setWalletNote] = useState('');
+
+  // Inline Quick WhatsApp & AI Support Modal for a Reseller
+  const [supportReseller, setSupportReseller] = useState<ResellerAccount | null>(null);
+  const [waDraft, setWaDraft] = useState('');
+  const [isDraftingAi, setIsDraftingAi] = useState(false);
+  const [isSendingWa, setIsSendingWa] = useState(false);
+  const [copiedResOrder, setCopiedResOrder] = useState(false);
 
   const cfg = settings.resellerSettings || {
     enabled: true,
@@ -51,21 +82,97 @@ export const ResellerAdminView: React.FC = () => {
 
   const pendingCount = resellers.filter((r) => r.status === 'pending').length;
   const approvedCount = resellers.filter((r) => r.status === 'approved').length;
+  const suspendedCount = resellers.filter((r) => r.status === 'suspended').length;
   const resellerOrderCount = orders.filter((o) => o.partnerType === 'reseller').length;
   const pendingPayoutTotal = resellerPayouts
     .filter((p) => p.status === 'pending')
     .reduce((sum, p) => sum + p.amount, 0);
 
-  const filteredResellers = resellers.filter((r) => {
+  const filteredResellers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return true;
-    return (
-      r.name.toLowerCase().includes(q) ||
-      r.phone.toLowerCase().includes(q) ||
-      r.resellerCode.toLowerCase().includes(q) ||
-      r.district.toLowerCase().includes(q)
-    );
-  });
+    return resellers.filter((r) => {
+      if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+      if (!q) return true;
+      return (
+        r.name.toLowerCase().includes(q) ||
+        r.phone.toLowerCase().includes(q) ||
+        r.resellerCode.toLowerCase().includes(q) ||
+        r.district.toLowerCase().includes(q)
+      );
+    });
+  }, [resellers, statusFilter, searchQuery]);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const toggleSelectAllFiltered = () => {
+    const visibleIds = filteredResellers.map((r) => r.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+    setSelectedIds(allSelected ? [] : visibleIds);
+  };
+
+  const handleExportCsv = () => {
+    const header = ['Reseller Code', 'Name', 'Phone', 'Email', 'District', 'Status', 'Commission %', 'Wallet BDT', 'Total Earnings', 'Orders', 'Joined'];
+    const rows = filteredResellers.map((r) => [
+      r.resellerCode,
+      `"${(r.name || '').replace(/"/g, '""')}"`,
+      r.phone,
+      r.email || '',
+      `"${(r.district || '').replace(/"/g, '""')}"`,
+      r.status,
+      r.commissionPercent,
+      r.walletBalance,
+      r.totalEarnings,
+      r.totalOrders,
+      r.createdAt
+    ]);
+    const csv = [header.join(','), ...rows.map((row) => row.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `buyonebd-resellers-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    addToast('success', at('CSV এক্সপোর্ট সম্পন্ন', 'Resellers CSV Exported'), `${filteredResellers.length} rows`);
+  };
+
+  const latestResellerOrder = (resId: string) =>
+    orders.find((o) => o.resellerId === resId) || null;
+
+  const openQuickSupport = async (reseller: ResellerAccount) => {
+    setSupportReseller(reseller);
+    setWaDraft('');
+    setIsDraftingAi(true);
+    try {
+      const draft = await generateWhatsAppAiDraft({
+        contactName: reseller.name,
+        contactType: 'reseller',
+        resellerInfo: reseller,
+        latestOrder: latestResellerOrder(reseller.id),
+        intent: reseller.status === 'approved' ? 'approval' : 'general'
+      });
+      if (draft) setWaDraft(draft);
+    } finally {
+      setIsDraftingAi(false);
+    }
+  };
+
+  const handleCopyResellerOrderInfo = async (reseller: ResellerAccount) => {
+    const ord = latestResellerOrder(reseller.id);
+    const infoText = ord
+      ? `Reseller: ${reseller.name} (${reseller.resellerCode})\nOrder #${ord.id} · Total: ৳${ord.pricing.total} · Profit: ৳${ord.resellerProfit || 0}\nCustomer: ${ord.customer.name} (${ord.customer.phone}) · ${ord.customer.district}\nStatus: ${ord.status}${ord.courier?.trackingCode ? ` · Tracking: ${ord.courier.trackingCode}` : ''}`
+      : `Reseller: ${reseller.name} (${reseller.resellerCode})\nPhone: ${reseller.phone} · District: ${reseller.district}\nStatus: ${reseller.status.toUpperCase()} · Commission: ${reseller.commissionPercent}% · Wallet: ৳${reseller.walletBalance}`;
+    try {
+      await navigator.clipboard.writeText(infoText);
+      setCopiedResOrder(true);
+      setTimeout(() => setCopiedResOrder(false), 1800);
+      addToast('success', at('রিসেলার অর্ডার তথ্য কপি হয়েছে!', 'Order Info Copied!'), '');
+    } catch {
+      setWaDraft((prev) => (prev ? `${prev}\n${infoText}` : infoText));
+    }
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -74,29 +181,46 @@ export const ResellerAdminView: React.FC = () => {
         <div>
           <h3 className="text-xl font-black text-white flex items-center gap-2">
             <Users className="w-5 h-5 text-emerald-400" />
-            <span>{at('রিসেলার নেটওয়ার্ক ও পে-আউট ম্যানেজার', 'Reseller Program & Payout Console')}</span>
+            <span>{at('রিসেলার নেটওয়ার্ক, পে-আউট ও WhatsApp AI সাপোর্ট', 'Reseller Program, Payouts & WhatsApp AI Desk')}</span>
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
             {at(
-              'শুধুমাত্র অনুমোদিত রিসেলাররাই লগইন করে স্টোরের গোপন রিসেলার প্রাইস দেখতে পারবেন।',
-              'Manage reseller applications, commissions, wallet balances, and withdrawal settlements.'
+              'নতুন রিসেলার আবেদন অনুমোদন করুন, ওয়ালেট বোনাস দিন এবং WhatsApp ও AI দিয়ে সরাসরি সাপোর্ট দিন।',
+              'Approve reseller applications live, manage commissions/wallets, and send WhatsApp + AI support in 1 click.'
             )}
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() =>
-            saveSettingsChanges(
-              at('রিসেলার সেটিংস সংরক্ষিত!', 'Reseller Settings Saved!'),
-              at('রিসেলার প্রোগ্রাম কনফিগারেশন ডাটাবেজে সেভ হয়েছে।', 'Reseller rules persisted.')
-            )
-          }
-          className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer shrink-0"
-        >
-          <Save className="w-4 h-4" />
-          <span>{at('রিসেলার সেটিংস সেভ করুন', 'Save Reseller Settings')}</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => syncStoreFromServer()}
+            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold cursor-pointer"
+          >
+            {at('রিফ্রেশ আবেদন', 'Refresh List')}
+          </button>
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>CSV</span>
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              saveSettingsChanges(
+                at('রিসেলার সেটিংস সংরক্ষিত!', 'Reseller Settings Saved!'),
+                at('রিসেলার প্রোগ্রাম কনফিগারেশন ডাটাবেজে সেভ হয়েছে।', 'Reseller rules persisted.')
+              )
+            }
+            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer shrink-0"
+          >
+            <Save className="w-4 h-4" />
+            <span>{at('সেটিংস সেভ করুন', 'Save Settings')}</span>
+          </button>
+        </div>
       </div>
 
       {/* Metrics Strip */}
@@ -104,7 +228,7 @@ export const ResellerAdminView: React.FC = () => {
         <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
           <span className="text-xs text-slate-400 block">{at('মোট রিসেলার', 'Total Resellers')}</span>
           <span className="text-2xl font-bold text-white font-mono mt-1 block">{resellers.length}</span>
-          <span className="text-[11px] text-emerald-400">{approvedCount} approved</span>
+          <span className="text-[11px] text-emerald-400">{approvedCount} approved · {suspendedCount} suspended</span>
         </div>
         <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
           <span className="text-xs text-slate-400 block">{at('অ্যাপ্রুভাল বাকি', 'Pending Approval')}</span>
@@ -127,7 +251,7 @@ export const ResellerAdminView: React.FC = () => {
         </div>
       </div>
 
-      {/* Program Rules Form (Stages draft only; Save button above/below commits) */}
+      {/* Program Rules Form */}
       <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
           <h4 className="text-sm font-bold text-white">{at('রিসেলার প্রোগ্রাম কনফিগারেশন', 'Program Rules & Defaults')}</h4>
@@ -149,6 +273,15 @@ export const ResellerAdminView: React.FC = () => {
                 className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
               />
               <span>{at('অটো অ্যাপ্রুভাল চালু', 'Auto-Approve New Signups')}</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={cfg.allowCustomMarginPricing !== false}
+                onChange={(e) => patchCfg({ allowCustomMarginPricing: e.target.checked })}
+                className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
+              />
+              <span>{at('কাস্টম কাস্টমার মূল্য সেট', 'Allow Custom Margin Quotes')}</span>
             </label>
           </div>
         </div>
@@ -182,11 +315,28 @@ export const ResellerAdminView: React.FC = () => {
         </div>
       </div>
 
-      {/* Reseller Directory */}
+      {/* Reseller Directory with Filter Tabs, Bulk Actions & WhatsApp AI Support */}
       <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <h4 className="text-sm font-bold text-white">{at('নিবন্ধিত রিসেলার তালিকা', 'Registered Resellers')}</h4>
-          <div className="relative w-full sm:w-64">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-sm font-bold text-white mr-2">{at('নিবন্ধিত রিসেলার তালিকা', 'Registered Resellers')}</h4>
+            {(['all', 'pending', 'approved', 'suspended'] as const).map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setStatusFilter(st)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase cursor-pointer ${
+                  statusFilter === st
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                {st} ({st === 'all' ? resellers.length : resellers.filter((r) => r.status === st).length})
+              </button>
+            ))}
+          </div>
+
+          <div className="relative w-full lg:w-64">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
@@ -198,6 +348,34 @@ export const ResellerAdminView: React.FC = () => {
           </div>
         </div>
 
+        {selectedIds.length > 0 && (
+          <div className="p-3 rounded-xl bg-emerald-950/50 border border-emerald-700/60 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="font-bold text-emerald-300">{selectedIds.length} resellers selected</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  bulkUpdateResellers(selectedIds, { status: 'approved' });
+                  setSelectedIds([]);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+              >
+                {at('সবাইকে অনুমোদন দিন', 'Approve Selected')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  bulkUpdateResellers(selectedIds, { status: 'suspended' });
+                  setSelectedIds([]);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold cursor-pointer"
+              >
+                {at('স্থগিত করুন', 'Suspend Selected')}
+              </button>
+            </div>
+          </div>
+        )}
+
         {filteredResellers.length === 0 ? (
           <p className="text-xs text-slate-400 py-6 text-center">
             {at('কোনো রিসেলার অ্যাকাউন্ট পাওয়া যায়নি।', 'No reseller accounts match your filter.')}
@@ -207,17 +385,33 @@ export const ResellerAdminView: React.FC = () => {
             <table className="w-full text-left text-xs border-collapse tabular-nums">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400">
+                  <th className="py-2.5 px-2">
+                    <input
+                      type="checkbox"
+                      checked={filteredResellers.length > 0 && filteredResellers.every((r) => selectedIds.includes(r.id))}
+                      onChange={toggleSelectAllFiltered}
+                      className="accent-emerald-500 rounded"
+                    />
+                  </th>
                   <th className="py-2.5 px-3 font-semibold">{at('রিসেলার', 'Reseller')}</th>
                   <th className="py-2.5 px-3 font-semibold">{at('জেলা ও পেজ', 'District & Store')}</th>
                   <th className="py-2.5 px-3 font-semibold">{at('কমিশন %', 'Comm %')}</th>
                   <th className="py-2.5 px-3 font-semibold">{at('ওয়ালেট / আয়', 'Wallet / Earned')}</th>
                   <th className="py-2.5 px-3 font-semibold">{at('অবস্থা', 'Status')}</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">{at('অ্যাকশন', 'Actions')}</th>
+                  <th className="py-2.5 px-3 font-semibold text-right">{at('অ্যাকশন ও সাপোর্ট', 'Actions & WhatsApp AI')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80">
                 {filteredResellers.map((r: ResellerAccount) => (
                   <tr key={r.id} className="hover:bg-slate-950/50">
+                    <td className="py-3 px-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(r.id)}
+                        onChange={() => toggleSelect(r.id)}
+                        className="accent-emerald-500 rounded"
+                      />
+                    </td>
                     <td className="py-3 px-3">
                       <p className="font-bold text-white">{r.name}</p>
                       <p className="text-[11px] text-slate-400 font-mono">
@@ -253,10 +447,26 @@ export const ResellerAdminView: React.FC = () => {
                       />
                     </td>
                     <td className="py-3 px-3">
-                      <p className="font-mono font-bold text-emerald-400">৳{r.walletBalance.toLocaleString()}</p>
-                      <p className="text-[11px] text-slate-400">
-                        Earned ৳{r.totalEarnings.toLocaleString()} · {r.totalOrders} ord
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <div>
+                          <p className="font-mono font-bold text-emerald-400">৳{r.walletBalance.toLocaleString()}</p>
+                          <p className="text-[11px] text-slate-400">
+                            Earned ৳{r.totalEarnings.toLocaleString()} · {r.totalOrders} ord
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWalletModalReseller(r);
+                            setWalletDelta(200);
+                            setWalletNote('');
+                          }}
+                          title={at('ওয়ালেট ব্যালেন্স সমন্বয়', 'Adjust Wallet Balance')}
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-700 text-emerald-300 hover:text-white cursor-pointer"
+                        >
+                          <Wallet className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                     <td className="py-3 px-3">
                       <span
@@ -272,6 +482,25 @@ export const ResellerAdminView: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => openQuickSupport(r)}
+                        title={at('WhatsApp ও AI দিয়ে সাপোর্ট দিন', 'WhatsApp & AI Support')}
+                        className="px-2.5 py-1 rounded-lg bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/40 font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        <span>WA + AI</span>
+                      </button>
+                      {onOpenWhatsAppDesk && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenWhatsAppDesk(r.phone)}
+                          title={at('ডিরেক্ট WhatsApp API কনসোল খুলুন', 'Open WhatsApp API Thread')}
+                          className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-emerald-600 text-emerald-300 hover:text-white font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <MessageCircle className="w-3 h-3" />
+                        </button>
+                      )}
                       {r.status !== 'approved' && (
                         <button
                           type="button"
@@ -376,7 +605,7 @@ export const ResellerAdminView: React.FC = () => {
           <div className="divide-y divide-slate-800 text-xs tabular-nums">
             {orders
               .filter((o) => o.partnerType === 'reseller')
-              .slice(0, 8)
+              .slice(0, 10)
               .map((ord) => (
                 <div key={ord.id} className="py-2.5 flex items-center justify-between gap-2">
                   <div>
@@ -384,7 +613,7 @@ export const ResellerAdminView: React.FC = () => {
                       #{ord.id} · {ord.resellerName} ({ord.resellerCode})
                     </p>
                     <p className="text-[11px] text-slate-400">
-                      Customer: {ord.customer.name} ({ord.customer.district})
+                      Customer: {ord.customer.name} ({ord.customer.district}) · {ord.status}
                     </p>
                   </div>
                   <div className="text-right">
@@ -395,6 +624,196 @@ export const ResellerAdminView: React.FC = () => {
                   </div>
                 </div>
               ))}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Wallet Balance Adjustment */}
+      {walletModalReseller && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h4 className="font-bold text-sm text-white">{at('রিসেলার ওয়ালেট সমন্বয়', 'Adjust Reseller Wallet')}</h4>
+                <p className="text-[11px] text-slate-400">{walletModalReseller.name} · Current: ৳{walletModalReseller.walletBalance}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWalletModalReseller(null)}
+                className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">{at('টাকার পরিমাণ (৳)', 'Amount (BDT)')}</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={walletDelta}
+                  onChange={(e) => setWalletDelta(Math.max(1, Number(e.target.value) || 0))}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">{at('নোট / কারণ', 'Reason / Bonus Note')}</label>
+                <input
+                  type="text"
+                  value={walletNote}
+                  onChange={(e) => setWalletNote(e.target.value)}
+                  placeholder="Monthly target bonus / adjustment"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    adjustResellerWallet(walletModalReseller.id, walletDelta, walletNote);
+                    setWalletModalReseller(null);
+                  }}
+                  className="py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{at('বোনাস যোগ করুন', 'Add +৳' + walletDelta)}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    adjustResellerWallet(walletModalReseller.id, -walletDelta, walletNote);
+                    setWalletModalReseller(null);
+                  }}
+                  className="py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white font-bold flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                  <span>{at('সমন্বয় (-)', 'Deduct -৳' + walletDelta)}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Quick WhatsApp API + AI Support for Selected Reseller */}
+      {supportReseller && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-2xl bg-slate-900 border border-emerald-700/60 p-5 space-y-4">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3">
+              <div>
+                <h4 className="font-bold text-sm text-white flex items-center gap-2">
+                  <MessageCircle className="w-4 h-4 text-emerald-400" />
+                  <span>{at('রিসেলার WhatsApp ও AI সাপোর্ট', 'Reseller WhatsApp API & AI Support')}</span>
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {supportReseller.name} ({supportReseller.resellerCode}) · {supportReseller.phone} · Wallet ৳{supportReseller.walletBalance}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSupportReseller(null)}
+                className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(['approval', 'payout', 'order', 'general'] as const).map((intent) => (
+                <button
+                  key={intent}
+                  type="button"
+                  disabled={isDraftingAi}
+                  onClick={async () => {
+                    setIsDraftingAi(true);
+                    try {
+                      const draft = await generateWhatsAppAiDraft({
+                        contactName: supportReseller.name,
+                        contactType: 'reseller',
+                        resellerInfo: supportReseller,
+                        latestOrder: latestResellerOrder(supportReseller.id),
+                        intent
+                      });
+                      if (draft) setWaDraft(draft);
+                    } finally {
+                      setIsDraftingAi(false);
+                    }
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-bold text-amber-300 flex items-center gap-1 cursor-pointer capitalize"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>AI {intent}</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => handleCopyResellerOrderInfo(supportReseller)}
+                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer ml-auto"
+              >
+                {copiedResOrder ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                <span>Copy Order Info</span>
+              </button>
+            </div>
+
+            <textarea
+              rows={5}
+              value={waDraft}
+              onChange={(e) => setWaDraft(e.target.value)}
+              placeholder={isDraftingAi ? at('AI মেসেজ লিখছে...', 'Generating AI draft...') : at('মেসেজ লিখুন...', 'Type WhatsApp message...')}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+            />
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {onOpenWhatsAppDesk && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const phone = supportReseller.phone;
+                    setSupportReseller(null);
+                    onOpenWhatsAppDesk(phone);
+                  }}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 text-xs font-bold cursor-pointer"
+                >
+                  {at('সম্পূর্ণ চ্যাট থ্রেডে খুলুন →', 'Open Full Thread →')}
+                </button>
+              )}
+
+              <div className="flex items-center gap-2 ml-auto">
+                <a
+                  href={`https://wa.me/${supportReseller.phone.replace(/[^0-9]/g, '').replace(/^0/, '880')}?text=${encodeURIComponent(waDraft)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-bold flex items-center gap-1"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>wa.me</span>
+                </a>
+                <button
+                  type="button"
+                  disabled={isSendingWa || !waDraft.trim()}
+                  onClick={async () => {
+                    setIsSendingWa(true);
+                    try {
+                      const res = await sendMetaWhatsAppMessage({
+                        to: supportReseller.phone,
+                        message: waDraft.trim(),
+                        contactName: supportReseller.name,
+                        contactType: 'reseller',
+                        orderId: latestResellerOrder(supportReseller.id)?.id,
+                        senderRole: 'ai'
+                      });
+                      if (res.success) setSupportReseller(null);
+                    } finally {
+                      setIsSendingWa(false);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{isSendingWa ? at('পাঠানো হচ্ছে...', 'Sending...') : at('WhatsApp API পাঠান', 'Send via WhatsApp API')}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

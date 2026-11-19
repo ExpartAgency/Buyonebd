@@ -176,7 +176,7 @@ export const SEOManagerView: React.FC<SEOManagerViewProps> = ({ onImageUpload })
         <div className="flex flex-wrap items-center gap-2">
           <span className="px-3 py-1.5 rounded-xl bg-emerald-950/70 border border-emerald-700/60 text-emerald-300 text-xs font-bold flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>{at('লাইভ DOM সিঙ্ক চালু', 'Live Head Sync Active')}</span>
+            <span>{at('লাইভ DOM + ডাটাবেজ সিঙ্ক', 'Live Head + DB Sync')}</span>
           </span>
           <button
             type="button"
@@ -185,7 +185,7 @@ export const SEOManagerView: React.FC<SEOManagerViewProps> = ({ onImageUpload })
             className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 cursor-pointer disabled:opacity-60"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isVerifyingServer ? 'animate-spin' : ''}`} />
-            <span>{isVerifyingServer ? at('যাচাই হচ্ছে...', 'Verifying...') : at('সেভ ও index.html যাচাই', 'Save & Verify index.html')}</span>
+            <span>{isVerifyingServer ? at('ডাটাবেজে সেভ হচ্ছে...', 'Saving to Database...') : at('ডাটাবেজে সেভ ও যাচাই করুন', 'Save to Database & Verify')}</span>
           </button>
         </div>
       </div>
@@ -209,10 +209,38 @@ export const SEOManagerView: React.FC<SEOManagerViewProps> = ({ onImageUpload })
             </button>
           </div>
 
+          {/* Site Title & Tagline (Store Name + Browser Title Base) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-slate-950/80 border border-slate-800">
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-slate-200">
+                {at('ওয়েবসাইটের মূল নাম (Site Title)', 'Website Site Title (Store Name)')}
+              </label>
+              <input
+                type="text"
+                value={settings.storeName || ''}
+                onChange={(e) => updateSettings({ storeName: e.target.value })}
+                placeholder="BuyOne BD"
+                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm font-bold text-white focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-slate-200">
+                {at('স্টোর ট্যাগলাইন (Site Tagline)', 'Store Tagline')}
+              </label>
+              <input
+                type="text"
+                value={settings.tagline || ''}
+                onChange={(e) => updateSettings({ tagline: e.target.value })}
+                placeholder="Premium Smart Gadgets & Lifestyle BD"
+                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+          </div>
+
           {/* Meta Title */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
-              <label className="font-bold text-slate-200">{at('মেটা টাইটেল (Meta Title)', 'Meta Title (<title>)')}</label>
+              <label className="font-bold text-slate-200">{at('SEO টাইটেল / <title> ট্যাগ (Site Title Override)', 'Dynamic Meta Title (<title> tag)')}</label>
               <span className={`font-mono font-bold ${titleScoreColor}`}>
                 {titleLen} / 60 {at('অক্ষর', 'chars')}
               </span>

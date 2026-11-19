@@ -122,6 +122,7 @@ import { SEOManagerView } from './SEOManagerView';
 import { ResellerAdminView } from './ResellerAdminView';
 import { WholesaleAdminView } from './WholesaleAdminView';
 import { GlobalMarketingHub } from './GlobalMarketingHub';
+import { WhatsAppSupportConsole } from './WhatsAppSupportConsole';
 
 const parseJsonSafe = async (res: Response): Promise<any> => {
   const txt = await res.text();
@@ -214,6 +215,7 @@ export const AdminDashboard: React.FC = () => {
     addToast,
     priceAlerts,
     whatsappLogs,
+    whatsappMessages,
     sendMetaWhatsAppMessage,
     applyBusinessTheme,
     serverPixelEvents,
@@ -329,6 +331,7 @@ export const AdminDashboard: React.FC = () => {
     | 'overview'
     | 'ai_operator'
     | 'support_desk'
+    | 'whatsapp_desk'
     | 'orders'
     | 'partial_orders'
     | 'pos_system'
@@ -356,6 +359,7 @@ export const AdminDashboard: React.FC = () => {
     | 'settings';
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const [waConsolePhone, setWaConsolePhone] = useState<string>('');
   const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
   const [sidebarSearch, setSidebarSearch] = useState('');
   const [openSidebarGroups, setOpenSidebarGroups] = useState<Record<string, boolean>>({
@@ -363,7 +367,7 @@ export const AdminDashboard: React.FC = () => {
     catalog: true,
     partners: true,
     growth: true,
-    support_ai: false,
+    support_ai: true,
     appearance: false,
     infra: false
   });
@@ -1539,9 +1543,10 @@ export const AdminDashboard: React.FC = () => {
     },
     {
       key: 'support_ai',
-      titleBn: '৫. এআই ও লাইভ সাপোর্ট',
-      titleEn: '5. AI & Support Desk',
+      titleBn: '৫. এআই, WhatsApp ও লাইভ সাপোর্ট',
+      titleEn: '5. AI, WhatsApp & Support',
       items: [
+        { id: 'whatsapp_desk', labelBn: 'ডিরেক্ট WhatsApp API ও AI চ্যাট', labelEn: 'WhatsApp API & AI Chat', icon: MessageCircle, badge: whatsappMessages.length || undefined },
         { id: 'ai_operator', labelBn: 'এআই ওয়েবসাইট এজেন্ট', labelEn: 'AI Website Agent', icon: Sparkles },
         { id: 'support_desk', labelBn: 'লাইভ চ্যাট ও ব্রাউজার কল', labelEn: 'Live Chat & Calls', icon: Headphones, badge: supportDeskBadge || undefined },
         { id: 'ai_hub', labelBn: 'এআই ও ভয়েস কল সেটআপ', labelEn: 'AI Voice Hub', icon: Bot },
@@ -3072,13 +3077,27 @@ export const AdminDashboard: React.FC = () => {
                   <h3 className="text-xl font-black text-white">{t('ওভারভিউ ড্যাশবোর্ড', 'Overview & Analytics')}</h3>
                   <p className="text-xs text-slate-400">{t('আজকের বিক্রয়, এআই ভেরিফিকেশন ও কুরিয়ার ডেলিভারি চিত্র', 'Live sales performance, AI calls, and delivery stats')}</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('whatsapp_desk')}
+                    className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 cursor-pointer"
+                  >
+                    💬 {at('WhatsApp API চ্যাট', 'WhatsApp API Desk')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('resellers')}
+                    className="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 cursor-pointer"
+                  >
+                    🤝 {at(`রিসেলার (${pendingResellerCount} পেন্ডিং)`, `Resellers (${pendingResellerCount})`)}
+                  </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('seo_metadata')}
                     className="px-3 py-1 rounded-full text-xs font-bold bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 cursor-pointer"
                   >
-                    🌐 {at('SEO মেটাডাটা', 'SEO Studio')}
+                    🌐 {at('SEO ও সাইট টাইটেল', 'Site Title & SEO')}
                   </button>
                   <button
                     type="button"
@@ -10370,9 +10389,18 @@ export const AdminDashboard: React.FC = () => {
                     </h4>
                     <p className="text-[11px] text-slate-400">Live updates `&lt;title&gt;`, `&lt;meta&gt;`, OpenGraph, Twitter Card & Schema.org</p>
                   </div>
-                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
-                    SEO Live Sync Active
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('seo_metadata')}
+                      className="text-[11px] font-bold px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                    >
+                      {at('SEO স্টুডিওতে যান →', 'Open SEO Studio →')}
+                    </button>
+                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                      SEO Live Sync Active
+                    </span>
+                  </div>
                 </div>
 
                 {/* Live Google Search Snippet Preview */}
@@ -14526,7 +14554,17 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
             );
           })()}
 
-          {activeTab === 'resellers' && <ResellerAdminView />}
+          {activeTab === 'resellers' && (
+            <ResellerAdminView
+              onOpenWhatsAppDesk={(phone) => {
+                setWaConsolePhone(phone);
+                setActiveTab('whatsapp_desk');
+              }}
+            />
+          )}
+          {activeTab === 'whatsapp_desk' && (
+            <WhatsAppSupportConsole initialPhone={waConsolePhone} />
+          )}
           {activeTab === 'wholesale' && <WholesaleAdminView />}
           {activeTab === 'global_marketing' && <GlobalMarketingHub />}
         </main>

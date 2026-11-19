@@ -1041,6 +1041,42 @@ app.post('/api/store/sync', (req, res) => {
       return old?.password ? { ...item, password: old.password } : item;
     });
 
+  const unionMergePartners = (incomingList: any[], currentList: any[]) => {
+    const map = new Map<string, any>();
+    (Array.isArray(currentList) ? currentList : []).forEach((item) => {
+      if (item && item.id) map.set(item.id, item);
+    });
+    (Array.isArray(incomingList) ? incomingList : []).forEach((item) => {
+      if (!item || !item.id) return;
+      const prev = map.get(item.id);
+      if (!prev) {
+        map.set(item.id, item);
+        return;
+      }
+      const prevTs = new Date(prev.updatedAt || prev.createdAt || 0).getTime();
+      const incTs = new Date(item.updatedAt || item.createdAt || 0).getTime();
+      const winner = incTs >= prevTs ? { ...prev, ...item } : { ...item, ...prev };
+      if (!winner.password && prev.password) winner.password = prev.password;
+      map.set(item.id, winner);
+    });
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+    );
+  };
+
+  const unionMergeById = (incomingList: any[], currentList: any[]) => {
+    const map = new Map<string, any>();
+    (Array.isArray(currentList) ? currentList : []).forEach((item) => {
+      if (item && item.id) map.set(item.id, item);
+    });
+    (Array.isArray(incomingList) ? incomingList : []).forEach((item) => {
+      if (!item || !item.id) return;
+      const prev = map.get(item.id);
+      map.set(item.id, prev ? { ...prev, ...item } : item);
+    });
+    return Array.from(map.values());
+  };
+
   const updated = {
     ...current,
     products: products !== undefined ? products : current.products,
@@ -1055,11 +1091,22 @@ app.post('/api/store/sync', (req, res) => {
     reviews: reviews !== undefined ? reviews : current.reviews,
     priceAlerts: priceAlerts !== undefined ? priceAlerts : current.priceAlerts,
     waitlist: waitlist !== undefined ? waitlist : current.waitlist,
-    resellers: Array.isArray(resellers) ? preservePasswords(resellers, current.resellers) : current.resellers,
-    resellerPayouts: resellerPayouts !== undefined ? resellerPayouts : current.resellerPayouts,
-    wholesalers: Array.isArray(wholesalers) ? preservePasswords(wholesalers, current.wholesalers) : current.wholesalers,
-    wholesaleQuotes: wholesaleQuotes !== undefined ? wholesaleQuotes : current.wholesaleQuotes,
+    resellers: Array.isArray(resellers)
+      ? unionMergePartners(preservePasswords(resellers, current.resellers), current.resellers)
+      : current.resellers,
+    resellerPayouts: Array.isArray(resellerPayouts)
+      ? unionMergeById(resellerPayouts, current.resellerPayouts)
+      : current.resellerPayouts,
+    wholesalers: Array.isArray(wholesalers)
+      ? unionMergePartners(preservePasswords(wholesalers, current.wholesalers), current.wholesalers)
+      : current.wholesalers,
+    wholesaleQuotes: Array.isArray(wholesaleQuotes)
+      ? unionMergeById(wholesaleQuotes, current.wholesaleQuotes)
+      : current.wholesaleQuotes,
     bulkSmsLogs: bulkSmsLogs !== undefined ? bulkSmsLogs : current.bulkSmsLogs,
+    whatsappMessages: Array.isArray(req.body?.whatsappMessages)
+      ? unionMergeById(req.body.whatsappMessages, current.whatsappMessages)
+      : current.whatsappMessages,
     users: users !== undefined ? users : current.users,
     mediaLibrary: mediaLibrary !== undefined ? mediaLibrary : current.mediaLibrary,
     lastUpdated: new Date().toISOString()
@@ -1074,15 +1121,17 @@ app.post('/api/store/sync', (req, res) => {
   });
 });
 
-// Partner Portal (Reseller & Wholesale) Cross-Device Registration & Authentication
+// Partner Portal (Reseller & Wholesale) Cross-Device Registration, Update & Authentication
 app.post('/api/partner/register', (req, res) => {
-  const { type, account } = req.body || {};
-  if (!type || !account || !account.phone) {
+  const body = req.body || {};
+  const partnerType = body.type || body.role;
+  const account = body.account || body.partner;
+  if (!partnerType || !account || !account.phone) {
     return res.status(400).json({ success: false, error: 'Partner type and account details required.' });
   }
   const current = loadStoreData() || {};
   const cleanPhone = String(account.phone || '').replace(/[^0-9]/g, '').slice(-11);
-  if (type === 'reseller') {
+  if (partnerType === 'reseller') {
     const list: any[] = Array.isArray(current.resellers) ? current.resellers : [];
     const dup = list.find((r) => String(r.phone || '').replace(/[^0-9]/g, '').slice(-11) === cleanPhone);
     if (dup) {
@@ -1093,13 +1142,15 @@ app.post('/api/partner/register', (req, res) => {
       ...account,
       id: account.id || `res-${Date.now()}`,
       status: account.status || (autoApprove ? 'approved' : 'pending'),
-      createdAt: account.createdAt || new Date().toISOString()
+      createdAt: account.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
     current.resellers = [created, ...list];
     saveStoreData(current);
+    broadcastWs({ type: 'partner:sync', resellers: current.resellers.map((r: any) => ({ ...r, password: '' })) });
     return res.json({ success: true, partner: { ...created, password: '' } });
   }
-  if (type === 'wholesale') {
+  if (partnerType === 'wholesale') {
     const list: any[] = Array.isArray(current.wholesalers) ? current.wholesalers : [];
     const dup = list.find((w) => String(w.phone || '').replace(/[^0-9]/g, '').slice(-11) === cleanPhone);
     if (dup) {
@@ -1110,21 +1161,63 @@ app.post('/api/partner/register', (req, res) => {
       ...account,
       id: account.id || `whs-${Date.now()}`,
       status: account.status || (autoApprove ? 'approved' : 'pending'),
-      createdAt: account.createdAt || new Date().toISOString()
+      createdAt: account.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
     current.wholesalers = [created, ...list];
     saveStoreData(current);
+    broadcastWs({ type: 'partner:sync', wholesalers: current.wholesalers.map((w: any) => ({ ...w, password: '' })) });
     return res.json({ success: true, partner: { ...created, password: '' } });
   }
   return res.status(400).json({ success: false, error: 'Invalid partner type.' });
 });
 
+app.post('/api/partner/update', (req, res) => {
+  const body = req.body || {};
+  const partnerType = body.type || body.role || 'reseller';
+  const id = String(body.id || '').trim();
+  const updates = body.updates || body.account || body.partner || {};
+  if (!id) {
+    return res.status(400).json({ success: false, error: 'Partner id is required.' });
+  }
+  const current = loadStoreData() || {};
+  if (partnerType === 'reseller') {
+    const list: any[] = Array.isArray(current.resellers) ? current.resellers : [];
+    const idx = list.findIndex((r) => r && r.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ success: false, error: 'Reseller not found.' });
+    }
+    const updatedAcc = { ...list[idx], ...updates, id, updatedAt: new Date().toISOString() };
+    list[idx] = updatedAcc;
+    current.resellers = list;
+    saveStoreData(current);
+    broadcastWs({ type: 'partner:sync', resellers: list.map((r: any) => ({ ...r, password: '' })) });
+    return res.json({ success: true, partner: { ...updatedAcc, password: '' } });
+  }
+  if (partnerType === 'wholesale') {
+    const list: any[] = Array.isArray(current.wholesalers) ? current.wholesalers : [];
+    const idx = list.findIndex((w) => w && w.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ success: false, error: 'Wholesaler not found.' });
+    }
+    const updatedAcc = { ...list[idx], ...updates, id, updatedAt: new Date().toISOString() };
+    list[idx] = updatedAcc;
+    current.wholesalers = list;
+    saveStoreData(current);
+    broadcastWs({ type: 'partner:sync', wholesalers: list.map((w: any) => ({ ...w, password: '' })) });
+    return res.json({ success: true, partner: { ...updatedAcc, password: '' } });
+  }
+  return res.status(400).json({ success: false, error: 'Invalid partner type.' });
+});
+
 app.post('/api/partner/login', (req, res) => {
-  const { type, identifier, password } = req.body || {};
+  const body = req.body || {};
+  const partnerType = body.type || body.role || 'reseller';
+  const { identifier, password } = body;
   const rawIdent = String(identifier || '').trim().toLowerCase();
   const phoneIdent = rawIdent.replace(/[^0-9]/g, '').slice(-11);
   const current = loadStoreData() || {};
-  const list: any[] = type === 'wholesale'
+  const list: any[] = partnerType === 'wholesale'
     ? (Array.isArray(current.wholesalers) ? current.wholesalers : [])
     : (Array.isArray(current.resellers) ? current.resellers : []);
 
@@ -2313,7 +2406,64 @@ app.get('/api/whatsapp/webhook', (req, res) => {
   return res.sendStatus(403);
 });
 
-// Meta WhatsApp Cloud API Live / Simulated Message Sender
+// Incoming Meta WhatsApp Cloud API Messages Webhook
+app.post('/api/whatsapp/webhook', (req, res) => {
+  try {
+    const entry = req.body?.entry?.[0];
+    const change = entry?.changes?.[0]?.value;
+    const incomingMsgs = Array.isArray(change?.messages) ? change.messages : [];
+    const contacts = Array.isArray(change?.contacts) ? change.contacts : [];
+    if (incomingMsgs.length > 0) {
+      const saved = loadStoreData() || {};
+      const existing: any[] = Array.isArray(saved.whatsappMessages) ? saved.whatsappMessages : [];
+      const resellersList: any[] = Array.isArray(saved.resellers) ? saved.resellers : [];
+
+      for (const m of incomingMsgs) {
+        const fromDigits = String(m.from || '').replace(/[^0-9]/g, '');
+        const last11 = fromDigits.slice(-11);
+        const matchedReseller = resellersList.find(
+          (r) => String(r.phone || '').replace(/[^0-9]/g, '').slice(-11) === last11
+        );
+        const profileName = contacts[0]?.profile?.name || matchedReseller?.name || `+${fromDigits}`;
+        const textBody = m?.text?.body || m?.button?.text || `[${m.type || 'message'}]`;
+        const nextMsg = {
+          id: m.id || `wamsg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          phone: last11 || fromDigits,
+          contactName: profileName,
+          contactType: matchedReseller ? 'reseller' : 'customer',
+          direction: 'inbound',
+          sender: 'contact',
+          text: String(textBody),
+          mode: 'webhook',
+          status: 'received',
+          messageId: m.id,
+          timestamp: new Date().toISOString()
+        };
+        if (!existing.some((x) => x.id === nextMsg.id)) {
+          existing.push(nextMsg);
+        }
+      }
+      saved.whatsappMessages = existing.slice(-300);
+      saveStoreData(saved);
+      broadcastWs({ type: 'whatsapp:sync', whatsappMessages: saved.whatsappMessages });
+    }
+    return res.sendStatus(200);
+  } catch (err) {
+    console.error('WhatsApp webhook error:', err);
+    return res.sendStatus(200);
+  }
+});
+
+// Get WhatsApp Conversation Thread History
+app.get('/api/whatsapp/messages', (_req, res) => {
+  const saved = loadStoreData() || {};
+  return res.json({
+    success: true,
+    messages: Array.isArray(saved.whatsappMessages) ? saved.whatsappMessages : []
+  });
+});
+
+// Meta WhatsApp Cloud API Live / Simulated Message Sender (Persists to Thread & Broadcasts Live)
 app.post('/api/whatsapp/send', async (req, res) => {
   try {
     const {
@@ -2322,7 +2472,11 @@ app.post('/api/whatsapp/send', async (req, res) => {
       templateName,
       phoneNumberId,
       accessToken,
-      apiVersion = 'v21.0'
+      apiVersion = 'v21.0',
+      contactName,
+      contactType,
+      orderId,
+      senderRole = 'admin'
     } = req.body || {};
 
     if (!to || (!message && !templateName)) {
@@ -2331,10 +2485,40 @@ app.post('/api/whatsapp/send', async (req, res) => {
 
     const cleanPhone = String(to).replace(/[^0-9]/g, '');
     const formattedPhone = cleanPhone.startsWith('88') ? cleanPhone : `88${cleanPhone}`;
+    const shortPhone = cleanPhone.slice(-11) || cleanPhone;
+    const saved = loadStoreData() || {};
+    const cloudCfg = saved?.settings?.marketingSettings?.whatsappCloudApi;
+    const activePhoneId = phoneNumberId || (cloudCfg?.enabled ? cloudCfg.phoneNumberId : '');
+    const activeToken = accessToken || (cloudCfg?.enabled ? cloudCfg.accessToken : '');
+
+    const appendToThread = (status: 'sent' | 'simulated' | 'failed', mode: 'live' | 'simulated', messageId?: string) => {
+      const existing: any[] = Array.isArray(saved.whatsappMessages) ? saved.whatsappMessages : [];
+      const resellersList: any[] = Array.isArray(saved.resellers) ? saved.resellers : [];
+      const matchedRes = resellersList.find((r) => String(r.phone || '').replace(/[^0-9]/g, '').slice(-11) === shortPhone);
+      const item = {
+        id: `wa-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        phone: shortPhone,
+        contactName: contactName || matchedRes?.name || shortPhone,
+        contactType: contactType || (matchedRes ? 'reseller' : 'customer'),
+        direction: 'outbound',
+        sender: senderRole === 'ai' ? 'ai' : 'admin',
+        text: String(message || `[Template: ${templateName}]`),
+        templateName: templateName || undefined,
+        orderId: orderId || undefined,
+        mode,
+        status,
+        messageId,
+        timestamp: new Date().toISOString()
+      };
+      saved.whatsappMessages = [...existing, item].slice(-300);
+      saveStoreData(saved);
+      broadcastWs({ type: 'whatsapp:sync', whatsappMessages: saved.whatsappMessages });
+      return item;
+    };
 
     // If Meta Cloud API credentials are configured, send real Graph API request
-    if (phoneNumberId && accessToken) {
-      const endpoint = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
+    if (activePhoneId && activeToken) {
+      const endpoint = `https://graph.facebook.com/${apiVersion}/${activePhoneId}/messages`;
       const payload = templateName && !message
         ? {
             messaging_product: 'whatsapp',
@@ -2353,7 +2537,7 @@ app.post('/api/whatsapp/send', async (req, res) => {
       const metaRes = await fetch(endpoint, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${accessToken || activeToken}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
@@ -2361,11 +2545,14 @@ app.post('/api/whatsapp/send', async (req, res) => {
 
       const metaJson: any = await metaRes.json().catch(() => ({}));
       if (metaRes.ok) {
+        const msgId = metaJson?.messages?.[0]?.id || `wamid.${Date.now()}`;
+        const threadMsg = appendToThread('sent', 'live', msgId);
         return res.json({
           success: true,
           mode: 'live',
-          messageId: metaJson?.messages?.[0]?.id || `wamid.${Date.now()}`,
+          messageId: msgId,
           to: formattedPhone,
+          threadMsg,
           data: metaJson
         });
       }
@@ -2379,16 +2566,119 @@ app.post('/api/whatsapp/send', async (req, res) => {
     }
 
     // Demo / Sandbox fallback when credentials are not yet entered
+    const msgId = `sim_wamid_${Date.now()}`;
+    const threadMsg = appendToThread('simulated', 'simulated', msgId);
     return res.json({
       success: true,
       mode: 'simulated',
-      messageId: `sim_wamid_${Date.now()}`,
+      messageId: msgId,
       to: formattedPhone,
+      threadMsg,
       preview: String(message || templateName)
     });
   } catch (err: any) {
     console.error('WhatsApp Cloud API send error:', err);
     return res.status(500).json({ success: false, error: err?.message || 'WhatsApp dispatch failed' });
+  }
+});
+
+// AI Draft Assistant for WhatsApp Reseller & Customer Support (Admin Dashboard)
+app.post('/api/whatsapp/ai-reply', async (req, res) => {
+  try {
+    const {
+      contactName = 'Partner',
+      contactType = 'customer',
+      resellerInfo,
+      latestOrder,
+      intent = 'general',
+      lang = 'bn',
+      customPrompt = ''
+    } = req.body || {};
+
+    const saved = loadStoreData() || {};
+    const storeName = saved?.settings?.storeName || 'BuyOne BD';
+    const hotline = saved?.settings?.hotline || '+8801917942662';
+    const isBn = lang !== 'en';
+
+    const buildSmartDraft = () => {
+      if (contactType === 'reseller') {
+        const code = resellerInfo?.resellerCode || 'RES-PARTNER';
+        const comm = resellerInfo?.commissionPercent || 18;
+        const bal = resellerInfo?.walletBalance ?? 0;
+        const st = resellerInfo?.status || 'pending';
+
+        if (intent === 'approval' || st === 'approved') {
+          return isBn
+            ? `আসসালামু আলাইকুম ${contactName} ভাই/আপু! 🎉 ${storeName}-এ আপনার রিসেলার একাউন্ট (${code}) এখন অ্যাক্টিভ হয়েছে (কমিশন ${comm}%)। এখন লগইন করেই সব পণ্যের গোপন রিসেলার প্রাইস দেখে কাস্টমারের জন্য অর্ডার করতে পারবেন। ড্যাশবোর্ডে বর্তমান ব্যালেন্স: ৳${bal}। হেল্পলাইন: ${hotline}`
+            : `Hello ${contactName}! Your ${storeName} Reseller Account (${code}) is active (${comm}% margin). Sign in to unlock exclusive reseller rates, share catalog links, and place customer COD orders with custom margins. Current wallet: ৳${bal}.`;
+        }
+        if (intent === 'payout') {
+          return isBn
+            ? `আসসালামু আলাইকুম ${contactName}, আপনার ${storeName} রিসেলার (${code}) পে-আউট ওয়ালেট ব্যালেন্স এখন ৳${bal}। সর্বনিম্ন ৳${saved?.settings?.resellerSettings?.minPayoutBdt || 500} হলেই পার্টনার পোর্টাল থেকে bKash/Nagad-এ উত্তোলনের রিকোয়েস্ট দিতে পারবেন। কোনো সহায়তা লাগলে এখানেই মেসেজ করুন!`
+            : `Hi ${contactName}, your ${storeName} reseller (${code}) wallet balance is ৳${bal}. Submit a withdrawal request anytime via the Partner Portal once above ৳${saved?.settings?.resellerSettings?.minPayoutBdt || 500}.`;
+        }
+        if (intent === 'order' && latestOrder) {
+          return isBn
+            ? `প্রিয় রিসেলার ${contactName} (${code}), অর্ডার #${latestOrder.id} (${latestOrder.customer?.name || ''}) এর বর্তমান স্ট্যাটাস: ${latestOrder.status}${latestOrder.courier?.trackingCode ? ` · কুরিয়ার ট্র্যাকিং: ${latestOrder.courier.trackingCode}` : ''}। মোট বিল: ৳${latestOrder.pricing?.total || 0}, আপনার প্রফিট: ৳${latestOrder.resellerProfit || 0}।`
+            : `Hi ${contactName} (${code}), Order #${latestOrder.id} status is ${latestOrder.status}${latestOrder.courier?.trackingCode ? ` (Tracking: ${latestOrder.courier.trackingCode})` : ''}. Total: ৳${latestOrder.pricing?.total || 0}, Reseller Profit: ৳${latestOrder.resellerProfit || 0}.`;
+        }
+        return isBn
+          ? `আসসালামু আলাইকুম ${contactName} (${code}), ${storeName} রিসেলার সাপোর্ট ডেস্ক থেকে বলছি! রিসেলিং, কাস্টমার প্রাইস সেটিং, অর্ডার ট্র্যাকিং বা পে-আউট সংক্রান্ত যেকোনো সহায়তার জন্য জানান। আপনার বর্তমান কমিশন হার ${comm}% এবং ওয়ালেট ব্যালেন্স ৳${bal}।`
+          : `Hello ${contactName} (${code}) from ${storeName} Reseller Support Desk! How can we assist you today with reseller pricing, customer orders, or payouts? Current balance: ৳${bal}.`;
+      }
+
+      // Customer draft
+      if (latestOrder) {
+        const itemsText = Array.isArray(latestOrder.items)
+          ? latestOrder.items.map((i: any) => `${i.productTitleBn || i.productTitle} x${i.quantity}`).join(', ')
+          : '';
+        return isBn
+          ? `আসসালামু আলাইকুম ${contactName}, ${storeName}-এ আপনার অর্ডার #${latestOrder.id} (${itemsText}) এর বর্তমান স্ট্যাটাস: ${latestOrder.status}। মোট বিল: ৳${latestOrder.pricing?.total || 0}${latestOrder.courier?.trackingCode ? ` · Steadfast ট্র্যাকিং: ${latestOrder.courier.trackingCode}` : ''}। বিস্তারিত সহায়তায় ${hotline}।`
+          : `Hello ${contactName}, your ${storeName} order #${latestOrder.id} (${itemsText}) is currently ${latestOrder.status}. Total: ৳${latestOrder.pricing?.total || 0}${latestOrder.courier?.trackingCode ? ` (Tracking: ${latestOrder.courier.trackingCode})` : ''}. Helpline: ${hotline}.`;
+      }
+      return isBn
+        ? `আসসালামু আলাইকুম ${contactName}! ${storeName}-এ স্বাগতম। সারা বাংলাদেশে ২৪-৭২ ঘন্টায় ক্যাশ অন ডেলিভারি সুবিধা রয়েছে। আপনার পছন্দের পণ্যের নাম বা অর্ডার নম্বর দিলে এখনই সহায়তা করছি। হটলাইন: ${hotline}`
+        : `Hello ${contactName}! Welcome to ${storeName}. We offer 24-72h Cash on Delivery across all 64 districts of Bangladesh. Let us know your product or order ID for instant assistance!`;
+    };
+
+    const geminiKey = saved?.settings?.aiSettings?.geminiApiKey || process.env.GEMINI_API_KEY;
+    if (geminiKey) {
+      try {
+        const genClient = new GoogleGenAI({ apiKey: geminiKey });
+        const contextStr = JSON.stringify({
+          storeName,
+          hotline,
+          contactName,
+          contactType,
+          intent,
+          resellerInfo: resellerInfo ? { code: resellerInfo.resellerCode, status: resellerInfo.status, commissionPercent: resellerInfo.commissionPercent, walletBalance: resellerInfo.walletBalance } : null,
+          latestOrder: latestOrder ? { id: latestOrder.id, status: latestOrder.status, total: latestOrder.pricing?.total, tracking: latestOrder.courier?.trackingCode } : null
+        });
+        const resp = await genClient.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: `You are ${storeName}'s WhatsApp Support Desk Assistant. Write a concise, helpful WhatsApp reply in ${isBn ? 'Bengali' : 'English'} (2-4 sentences, warm e-commerce tone). Strict rule: NEVER use the word "human", "হিউম্যান", "মানুষ", "Admin Portal", or "/hossain". Context: ${contextStr}. Extra instruction: ${customPrompt || intent}`
+                }
+              ]
+            }
+          ]
+        });
+        const aiText = sanitizeCustomerFacingReply(resp?.text || '');
+        if (aiText.trim().length > 10) {
+          return res.json({ success: true, draft: aiText.trim(), provider: 'gemini' });
+        }
+      } catch {
+        // fall through to smart fallback
+      }
+    }
+
+    return res.json({ success: true, draft: sanitizeCustomerFacingReply(buildSmartDraft()), provider: 'smart_auto' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'AI draft generation failed' });
   }
 });
 
@@ -2911,11 +3201,11 @@ function escapeHtmlAttr(val: string): string {
 function injectDynamicSeoIntoHtml(html: string): string {
   const saved = loadStoreData();
   const seo = saved?.settings?.seoSettings;
-  if (!seo) return html;
+  if (!seo && !saved?.settings?.storeName) return html;
   let out = html;
-  const title = String(seo.metaTitle || '').trim();
-  const desc = String(seo.metaDescription || '').trim();
-  const keywords = String(seo.keywords || '').trim();
+  const title = String(seo?.metaTitle || saved?.settings?.storeName || '').trim();
+  const desc = String(seo?.metaDescription || '').trim();
+  const keywords = String(seo?.keywords || '').trim();
   if (title) {
     out = out.replace(/<title>[^<]*<\/title>/i, `<title>${escapeHtmlAttr(title)}</title>`);
     out = out.replace(
@@ -2947,7 +3237,7 @@ function injectDynamicSeoIntoHtml(html: string): string {
       `<meta name="keywords" content="${escapeHtmlAttr(keywords)}" />`
     );
   }
-  const canonicalUrl = String(seo.canonicalUrl || '').trim();
+  const canonicalUrl = String(seo?.canonicalUrl || '').trim();
   if (canonicalUrl) {
     if (/<link\s+rel="canonical"/i.test(out)) {
       out = out.replace(/<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i, `<link rel="canonical" href="${escapeHtmlAttr(canonicalUrl)}" />`);
@@ -2955,7 +3245,7 @@ function injectDynamicSeoIntoHtml(html: string): string {
       out = out.replace('</head>', `  <link rel="canonical" href="${escapeHtmlAttr(canonicalUrl)}" />\n</head>`);
     }
   }
-  const googleVerif = String(seo.googleSiteVerification || '').trim();
+  const googleVerif = String(seo?.googleSiteVerification || '').trim();
   if (googleVerif && !out.includes('google-site-verification')) {
     out = out.replace('</head>', `  <meta name="google-site-verification" content="${escapeHtmlAttr(googleVerif)}" />\n</head>`);
   }
@@ -3004,7 +3294,8 @@ async function startServer() {
         JSON.stringify({
           type: 'support:init',
           supportChats: initialSaved.supportChats || [],
-          browserCalls: initialSaved.browserCalls || []
+          browserCalls: initialSaved.browserCalls || [],
+          whatsappMessages: initialSaved.whatsappMessages || []
         })
       );
     } catch {}

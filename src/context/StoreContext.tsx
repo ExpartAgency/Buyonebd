@@ -18,6 +18,7 @@ import {
   CustomerProfile,
   CustomerCoupon,
   WhatsAppCloudLog,
+  WhatsAppChatMessage,
   StoreTheme,
   CustomerBrowsingEvent,
   SupportChatSession,
@@ -366,9 +367,26 @@ interface StoreContextType {
   refreshOrderScore: (orderId: string) => Promise<OrderFraudCheck>;
   checkCustomerFraudRisk: (phone: string) => Promise<OrderFraudCheck>;
 
-  // Meta WhatsApp Cloud API CRM & Business Theme Presets
+  // Meta WhatsApp Cloud API CRM & Direct Chat Console
   whatsappLogs: WhatsAppCloudLog[];
-  sendMetaWhatsAppMessage: (payload: { to: string; message?: string; templateName?: string }) => Promise<{ success: boolean; mode?: string; error?: string }>;
+  whatsappMessages: WhatsAppChatMessage[];
+  sendMetaWhatsAppMessage: (payload: {
+    to: string;
+    message?: string;
+    templateName?: string;
+    contactName?: string;
+    contactType?: 'reseller' | 'customer';
+    orderId?: string;
+    senderRole?: 'admin' | 'ai';
+  }) => Promise<{ success: boolean; mode?: string; error?: string; threadMsg?: WhatsAppChatMessage }>;
+  generateWhatsAppAiDraft: (payload: {
+    contactName: string;
+    contactType: 'reseller' | 'customer';
+    resellerInfo?: ResellerAccount | null;
+    latestOrder?: Order | null;
+    intent?: string;
+    customPrompt?: string;
+  }) => Promise<string>;
   applyBusinessTheme: (themeId: StoreTheme, includeCategories?: boolean) => void;
 
   // Server-Side Pixel CAPI & Customer Browsing Logs
@@ -513,6 +531,9 @@ interface StoreContextType {
   loginReseller: (identifier: string, password?: string) => Promise<{ success: boolean; error?: string; reseller?: ResellerAccount }>;
   logoutReseller: () => void;
   updateResellerAccount: (id: string, updates: Partial<ResellerAccount>) => void;
+  bulkUpdateResellers: (ids: string[], updates: Partial<ResellerAccount>) => void;
+  adjustResellerWallet: (id: string, delta: number, note?: string) => void;
+  updateActiveResellerProfile: (updates: Partial<Pick<ResellerAccount, 'name' | 'district' | 'address' | 'fbPageUrl' | 'bkashNumber' | 'nagadNumber' | 'bankDetails'>>) => void;
   requestResellerPayout: (payload: {
     method: ResellerPayoutRequest['method'];
     accountNumber: string;
@@ -922,6 +943,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     } catch {}
   }, [activeReseller]);
+
+  // Keep activeReseller synced live when Admin approves/updates/credits them
+  useEffect(() => {
+    if (!activeReseller) return;
+    const match = resellers.find((r) => r.id === activeReseller.id);
+    if (!match) return;
+    if (
+      match.status !== activeReseller.status ||
+      match.commissionPercent !== activeReseller.commissionPercent ||
+      match.walletBalance !== activeReseller.walletBalance ||
+      match.totalEarnings !== activeReseller.totalEarnings ||
+      match.totalOrders !== activeReseller.totalOrders
+    ) {
+      const wasPending = activeReseller.status !== 'approved' && match.status === 'approved';
+      setActiveReseller((prev) => (prev ? { ...prev, ...match, password: prev.password || match.password } : match));
+      if (wasPending) {
+        addToast(
+          'success',
+          t('রিসেলার অ্যাকাউন্ট অনুমোদিত হয়েছে!', 'Reseller Account Approved!'),
+          t('সব পণ্যের রিসেলার প্রাইস এবং ড্যাশবোর্ড এখন সক্রিয় হয়েছে।', 'Exclusive reseller pricing and dashboard tools are now unlocked!')
+        );
+      }
+    }
+  }, [resellers]);
 
   const isResellerLoggedIn = Boolean(activeReseller);
 
@@ -1495,10 +1540,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return norm === '/hossain' || norm.startsWith('/hossain/') || h === '#hossain';
   };
 
-  // Require explicit admin credential input every visit/reload on /hossain
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(false);
+  // Keep admin authenticated across page reloads on /hossain until explicit logout
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState<boolean>(() => {
-    return isHossainPathInitial();
+    if (typeof window === 'undefined') return false;
+    let persisted = false;
+    try {
+      persisted = localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true';
+    } catch {}
+    return isHossainPathInitial() && !persisted;
   });
   const [firebaseAdminUserEmail, setFirebaseAdminUserEmail] = useState<string | null>(() => {
     return auth.currentUser?.email || null;
@@ -3533,6 +3590,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (typeof window !== 'undefined') {
       const p = window.location.pathname.replace(/\/+$/, '').toLowerCase() || '/';
       if (p === '/tracking') return 'tracking';
+      let persistedAdmin = false;
+      try {
+        persistedAdmin = localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true';
+      } catch {}
+      if (isHossainPathInitial() && persistedAdmin) return 'admin';
     }
     return 'store';
   });
@@ -4146,17 +4208,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               setWaitlistEntries(data.waitlist);
             }
             if (Array.isArray(data.resellers) && data.resellers.length > 0) {
+              const prevIds = new Set(resellersRef.current.map((r) => r.id));
+              const newlySubmitted = data.resellers.filter(
+                (rr: ResellerAccount) => rr?.id && !prevIds.has(rr.id) && rr.status === 'pending'
+              );
               setResellers((prev) => {
                 const map = new Map(prev.map((r) => [r.id, r]));
                 data.resellers.forEach((rr: ResellerAccount) => {
                   const existing = map.get(rr.id);
                   map.set(
                     rr.id,
-                    existing && rr.password === '••••••••' ? { ...rr, password: existing.password } : rr
+                    existing && (!rr.password || rr.password === '••••••••')
+                      ? { ...rr, password: existing.password }
+                      : rr
                   );
                 });
-                return Array.from(map.values());
+                return Array.from(map.values()).sort(
+                  (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+                );
               });
+              if (hasHydratedFromServerRef.current && activeViewRef.current === 'admin' && newlySubmitted.length > 0) {
+                addToast(
+                  'info',
+                  t('নতুন রিসেলার আবেদন এসেছে!', 'New Reseller Application Received!'),
+                  `${newlySubmitted[0].name} (${newlySubmitted[0].phone})`
+                );
+              }
             }
             if (Array.isArray(data.resellerPayouts) && data.resellerPayouts.length > 0) {
               setResellerPayouts(data.resellerPayouts);
@@ -4168,7 +4245,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   const existing = map.get(rw.id);
                   map.set(
                     rw.id,
-                    existing && rw.password === '••••••••' ? { ...rw, password: existing.password } : rw
+                    existing && (!rw.password || rw.password === '••••••••')
+                      ? { ...rw, password: existing.password }
+                      : rw
                   );
                 });
                 return Array.from(map.values());
@@ -4176,6 +4255,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
             if (Array.isArray(data.wholesaleQuotes) && data.wholesaleQuotes.length > 0) {
               setWholesaleQuotes(data.wholesaleQuotes);
+            }
+            if (Array.isArray(data.whatsappMessages) && data.whatsappMessages.length > 0) {
+              setWhatsappMessages((prev) => {
+                const map = new Map(prev.map((m) => [m.id, m]));
+                data.whatsappMessages.forEach((m: WhatsAppChatMessage) => {
+                  if (m?.id) map.set(m.id, m);
+                });
+                return Array.from(map.values()).sort(
+                  (a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
+                );
+              });
             }
             if (Array.isArray(data.bulkSmsLogs) && data.bulkSmsLogs.length > 0) {
               setBulkSmsLogs(data.bulkSmsLogs);
@@ -4586,6 +4676,120 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       () => {}
     );
 
+    const unsubResellers = onSnapshot(
+      collection(db, 'resellers'),
+      (snap) => {
+        if (snap.empty) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const remoteList = snap.docs.map((d) => {
+          const data = d.data();
+          const createdTs = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : undefined;
+          return {
+            id: data.id || d.id,
+            name: String(data.name || ''),
+            phone: String(data.phone || ''),
+            email: data.email ? String(data.email) : undefined,
+            district: String(data.district || 'Dhaka - Inside City'),
+            address: data.address ? String(data.address) : undefined,
+            fbPageUrl: data.fbPageUrl ? String(data.fbPageUrl) : undefined,
+            bkashNumber: data.bkashNumber ? String(data.bkashNumber) : undefined,
+            nagadNumber: data.nagadNumber ? String(data.nagadNumber) : undefined,
+            bankDetails: data.bankDetails ? String(data.bankDetails) : undefined,
+            resellerCode: String(data.resellerCode || ''),
+            commissionPercent: Number(data.commissionPercent) || 18,
+            walletBalance: Number(data.walletBalance) || 0,
+            totalEarnings: Number(data.totalEarnings) || 0,
+            totalOrders: Number(data.totalOrders) || 0,
+            status: (data.status || 'pending') as ResellerAccount['status'],
+            createdAt: createdTs || String(data.createdAt || new Date().toISOString())
+          } as ResellerAccount;
+        });
+        setResellers((prev) => {
+          const map = new Map(prev.map((r) => [r.id, r]));
+          remoteList.forEach((rr) => {
+            const existing = map.get(rr.id);
+            map.set(rr.id, existing?.password ? { ...rr, password: existing.password } : rr);
+          });
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          );
+        });
+      },
+      () => {}
+    );
+
+    const unsubResellerPayouts = onSnapshot(
+      collection(db, 'reseller_payouts'),
+      (snap) => {
+        if (snap.empty) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const remoteList = snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: data.id || d.id,
+            resellerId: String(data.resellerId || ''),
+            resellerName: String(data.resellerName || ''),
+            resellerPhone: String(data.resellerPhone || ''),
+            method: (data.method || 'bkash') as ResellerPayoutRequest['method'],
+            accountNumber: String(data.accountNumber || ''),
+            amount: Number(data.amount) || 0,
+            status: (data.status || 'pending') as ResellerPayoutRequest['status'],
+            trxId: data.trxId ? String(data.trxId) : undefined,
+            note: data.note ? String(data.note) : undefined,
+            createdAt: String(data.submittedAt || new Date().toISOString()),
+            processedAt: data.processedAt ? String(data.processedAt) : undefined
+          } as ResellerPayoutRequest;
+        });
+        setResellerPayouts((prev) => {
+          const map = new Map(prev.map((p) => [p.id, p]));
+          remoteList.forEach((p) => map.set(p.id, p));
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          );
+        });
+      },
+      () => {}
+    );
+
+    const unsubWholesalers = onSnapshot(
+      collection(db, 'wholesalers'),
+      (snap) => {
+        if (snap.empty) return;
+        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
+        const remoteList = snap.docs.map((d) => {
+          const data = d.data();
+          const createdTs = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : undefined;
+          return {
+            id: data.id || d.id,
+            contactName: String(data.contactName || ''),
+            companyName: String(data.companyName || ''),
+            phone: String(data.phone || ''),
+            email: data.email ? String(data.email) : undefined,
+            tradeLicenseNo: data.tradeLicenseNo ? String(data.tradeLicenseNo) : undefined,
+            nidNumber: data.nidNumber ? String(data.nidNumber) : undefined,
+            district: String(data.district || 'Dhaka - Inside City'),
+            address: String(data.address || ''),
+            businessType: (data.businessType || 'Retail Shop') as WholesaleAccount['businessType'],
+            monthlyVolumeEstimate: data.monthlyVolumeEstimate ? String(data.monthlyVolumeEstimate) : undefined,
+            tier: (data.tier || 'Silver') as WholesaleAccount['tier'],
+            extraDiscountPercent: Number(data.extraDiscountPercent) || 5,
+            creditLimitBdt: data.creditLimitBdt !== undefined ? Number(data.creditLimitBdt) : undefined,
+            status: (data.status || 'pending') as WholesaleAccount['status'],
+            createdAt: createdTs || String(data.createdAt || new Date().toISOString())
+          } as WholesaleAccount;
+        });
+        setWholesalers((prev) => {
+          const map = new Map(prev.map((w) => [w.id, w]));
+          remoteList.forEach((rw) => {
+            const existing = map.get(rw.id);
+            map.set(rw.id, existing?.password ? { ...rw, password: existing.password } : rw);
+          });
+          return Array.from(map.values());
+        });
+      },
+      () => {}
+    );
+
     return () => {
       unsubPrivateConfig();
       unsubOrders();
@@ -4596,6 +4800,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       unsubAlerts();
       unsubWaitlist();
       unsubStaff();
+      unsubResellers();
+      unsubResellerPayouts();
+      unsubWholesalers();
     };
   }, [isFirebaseAdminConnected]);
 
@@ -4795,6 +5002,51 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
           if (Array.isArray(msg.browserCalls) && msg.browserCalls.length > 0) {
             setBrowserCalls((prev) => mergeCallsLocal(prev, msg.browserCalls));
+          }
+          if (Array.isArray(msg.whatsappMessages) && msg.whatsappMessages.length > 0) {
+            setWhatsappMessages((prev) => {
+              const map = new Map(prev.map((m) => [m.id, m]));
+              msg.whatsappMessages.forEach((m: WhatsAppChatMessage) => {
+                if (m?.id) map.set(m.id, m);
+              });
+              return Array.from(map.values()).sort(
+                (a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
+              );
+            });
+          }
+          return;
+        }
+
+        if (msg.type === 'whatsapp:sync' && Array.isArray(msg.whatsappMessages)) {
+          setWhatsappMessages(msg.whatsappMessages);
+          try {
+            localStorage.setItem('buyonebd_wa_messages_v1', JSON.stringify(msg.whatsappMessages));
+          } catch {}
+          return;
+        }
+
+        if (msg.type === 'partner:sync') {
+          if (Array.isArray(msg.resellers)) {
+            setResellers((prev) => {
+              const map = new Map(prev.map((r) => [r.id, r]));
+              msg.resellers.forEach((rr: ResellerAccount) => {
+                const existing = map.get(rr.id);
+                map.set(rr.id, existing?.password && !rr.password ? { ...rr, password: existing.password } : rr);
+              });
+              return Array.from(map.values()).sort(
+                (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+              );
+            });
+          }
+          if (Array.isArray(msg.wholesalers)) {
+            setWholesalers((prev) => {
+              const map = new Map(prev.map((w) => [w.id, w]));
+              msg.wholesalers.forEach((rw: WholesaleAccount) => {
+                const existing = map.get(rw.id);
+                map.set(rw.id, existing?.password && !rw.password ? { ...rw, password: existing.password } : rw);
+              });
+              return Array.from(map.values());
+            });
           }
           return;
         }
@@ -5823,11 +6075,49 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
 
+  const [whatsappMessages, setWhatsappMessages] = useState<WhatsAppChatMessage[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_wa_messages_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_wa_messages_v1', JSON.stringify(whatsappMessages));
+    } catch {}
+  }, [whatsappMessages]);
+
+  useEffect(() => {
+    fetch('/api/whatsapp/messages')
+      .then((r) => safeParseJson<{ success?: boolean; messages?: WhatsAppChatMessage[] }>(r))
+      .then((data) => {
+        if (data?.success && Array.isArray(data.messages) && data.messages.length > 0) {
+          setWhatsappMessages((prev) => {
+            const map = new Map(prev.map((m) => [m.id, m]));
+            data.messages!.forEach((m) => {
+              if (m?.id) map.set(m.id, m);
+            });
+            return Array.from(map.values()).sort(
+              (a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
+            );
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const sendMetaWhatsAppMessage = async (payload: {
     to: string;
     message?: string;
     templateName?: string;
-  }): Promise<{ success: boolean; mode?: string; error?: string }> => {
+    contactName?: string;
+    contactType?: 'reseller' | 'customer';
+    orderId?: string;
+    senderRole?: 'admin' | 'ai';
+  }): Promise<{ success: boolean; mode?: string; error?: string; threadMsg?: WhatsAppChatMessage }> => {
     const cloudCfg = settings.marketingSettings?.whatsappCloudApi;
     try {
       const res = await fetch('/api/whatsapp/send', {
@@ -5839,7 +6129,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           templateName: payload.templateName || cloudCfg?.defaultTemplate,
           phoneNumberId: cloudCfg?.enabled ? cloudCfg.phoneNumberId : '',
           accessToken: cloudCfg?.enabled ? cloudCfg.accessToken : '',
-          apiVersion: cloudCfg?.apiVersion || 'v21.0'
+          apiVersion: cloudCfg?.apiVersion || 'v21.0',
+          contactName: payload.contactName,
+          contactType: payload.contactType,
+          orderId: payload.orderId,
+          senderRole: payload.senderRole || 'admin'
         })
       });
       const data = (await safeParseJson<any>(res)) || { success: false, error: `HTTP ${res.status}` };
@@ -5856,6 +6150,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         localStorage.setItem('buyonebd_wa_logs_v3', JSON.stringify(next));
         return next;
       });
+      if (data.success && data.threadMsg) {
+        setWhatsappMessages((prev) => {
+          if (prev.some((m) => m.id === data.threadMsg.id)) return prev;
+          return [...prev, data.threadMsg];
+        });
+      }
       if (data.success) {
         addToast(
           'success',
@@ -5870,6 +6170,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return data;
     } catch (err: any) {
       return { success: false, error: err?.message || 'Network error' };
+    }
+  };
+
+  const generateWhatsAppAiDraft = async (payload: {
+    contactName: string;
+    contactType: 'reseller' | 'customer';
+    resellerInfo?: ResellerAccount | null;
+    latestOrder?: Order | null;
+    intent?: string;
+    customPrompt?: string;
+  }): Promise<string> => {
+    try {
+      const res = await fetch('/api/whatsapp/ai-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...payload,
+          lang: adminLang
+        })
+      });
+      const json = await safeParseJson<{ success?: boolean; reply?: string }>(res);
+      return json?.reply || '';
+    } catch {
+      return '';
     }
   };
 
@@ -7509,13 +7833,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const apiRes = await fetch('/api/partner/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'reseller', partner: newReseller })
+        body: JSON.stringify({
+          type: 'reseller',
+          role: 'reseller',
+          account: newReseller,
+          partner: newReseller
+        })
       });
       const json = await safeParseJson<{ success?: boolean; partner?: ResellerAccount; error?: string }>(apiRes);
       if (apiRes.status === 409) {
         return { success: false, error: json?.error || 'Account already registered.' };
       }
-      const savedObj = json?.partner || newReseller;
+      const savedObj: ResellerAccount = json?.partner
+        ? { ...newReseller, ...json.partner, password: newReseller.password }
+        : newReseller;
       setResellers((prev) => [savedObj, ...prev.filter((r) => r.id !== savedObj.id)]);
       setActiveReseller(savedObj);
       saveResellerToFirestore(savedObj).catch(() => {});
@@ -7523,8 +7854,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         'success',
         t('রিসেলার আবেদন সফল!', 'Reseller Registration Submitted!'),
         savedObj.status === 'approved'
-          ? t('আপনার রিসেলার অ্যাকাউন্ট সক্রিয় হয়েছে — এখন রিসেলার প্রাইস দেখতে পারবেন।', 'Your reseller account is active — reseller pricing is now unlocked.')
-          : t('অ্যাডমিন অনুমোদনের পর রিসেলার প্রাইস চালু হবে।', 'Admin will review & approve your reseller pricing access shortly.')
+          ? t('আপনার রিসেলার অ্যাকাউন্ট ও ড্যাশবোর্ড সক্রিয় হয়েছে!', 'Your reseller account & dashboard are active now!')
+          : t('আপনার রিসেলার ড্যাশবোর্ড খোলা হয়েছে; অ্যাডমিন অনুমোদনের পর প্রাইস আনলক হবে।', 'Reseller dashboard opened! Admin will review & unlock reseller pricing shortly.')
       );
       return { success: true, reseller: savedObj };
     } catch {
@@ -7541,6 +7872,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   ): Promise<{ success: boolean; error?: string; reseller?: ResellerAccount }> => {
     const cleanId = identifier.trim().toLowerCase();
     const digits = cleanId.replace(/[^0-9]/g, '').slice(-11);
+    try {
+      const apiRes = await fetch('/api/partner/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'reseller', role: 'reseller', identifier, password })
+      });
+      const json = await safeParseJson<{ success?: boolean; partner?: ResellerAccount; error?: string }>(apiRes);
+      if (apiRes.ok && json?.success && json.partner) {
+        setResellers((prev) => [json.partner!, ...prev.filter((r) => r.id !== json.partner!.id)]);
+        setActiveReseller(json.partner);
+        addToast('success', t('রিসেলার লগইন সফল!', 'Reseller Signed In!'), json.partner.name);
+        return { success: true, reseller: json.partner };
+      }
+    } catch {}
     const localMatch = resellersRef.current.find(
       (r) =>
         (digits && String(r.phone || '').replace(/[^0-9]/g, '').slice(-11) === digits) ||
@@ -7558,23 +7903,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       );
       return { success: true, reseller: localMatch };
     }
-    try {
-      const apiRes = await fetch('/api/partner/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'reseller', identifier, password })
-      });
-      const json = await safeParseJson<{ success?: boolean; partner?: ResellerAccount; error?: string }>(apiRes);
-      if (apiRes.ok && json?.success && json.partner) {
-        setResellers((prev) => [json.partner!, ...prev.filter((r) => r.id !== json.partner!.id)]);
-        setActiveReseller(json.partner);
-        addToast('success', t('রিসেলার লগইন সফল!', 'Reseller Signed In!'), json.partner.name);
-        return { success: true, reseller: json.partner };
-      }
-      return { success: false, error: json?.error || t('তথ্য সঠিক নয়।', 'Invalid credentials.') };
-    } catch {
-      return { success: false, error: t('রিসেলার খুঁজে পাওয়া যায়নি।', 'Reseller account not found.') };
-    }
+    return { success: false, error: t('তথ্য সঠিক নয়।', 'Invalid credentials.') };
   };
 
   const logoutReseller = () => {
@@ -7589,11 +7918,70 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (r.id !== id) return r;
         const next = { ...r, ...updates };
         saveResellerToFirestore(next).catch(() => {});
+        fetch('/api/partner/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'reseller', id, updates })
+        }).catch(() => {});
         if (activeReseller?.id === id) setActiveReseller(next);
         return next;
       })
     );
     addToast('success', t('রিসেলার তথ্য আপডেট হয়েছে', 'Reseller Updated'), '');
+  };
+
+  const bulkUpdateResellers = (ids: string[], updates: Partial<ResellerAccount>) => {
+    if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const idSet = new Set(ids);
+    setResellers((prev) =>
+      prev.map((r) => {
+        if (!idSet.has(r.id)) return r;
+        const next = { ...r, ...updates };
+        saveResellerToFirestore(next).catch(() => {});
+        fetch('/api/partner/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'reseller', id: r.id, updates })
+        }).catch(() => {});
+        if (activeReseller?.id === r.id) setActiveReseller(next);
+        return next;
+      })
+    );
+    addToast('success', t(`${ids.length} জন রিসেলার আপডেট হয়েছে`, `${ids.length} Resellers Updated`), '');
+  };
+
+  const adjustResellerWallet = (id: string, delta: number, note?: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setResellers((prev) =>
+      prev.map((r) => {
+        if (r.id !== id) return r;
+        const nextBalance = Math.max(0, Math.round((r.walletBalance || 0) + delta));
+        const nextEarnings = delta > 0 ? Math.round((r.totalEarnings || 0) + delta) : r.totalEarnings || 0;
+        const updates = { walletBalance: nextBalance, totalEarnings: nextEarnings };
+        const next = { ...r, ...updates };
+        saveResellerToFirestore(next).catch(() => {});
+        fetch('/api/partner/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'reseller', id, updates })
+        }).catch(() => {});
+        if (activeReseller?.id === id) setActiveReseller(next);
+        return next;
+      })
+    );
+    addToast(
+      'success',
+      delta >= 0 ? t(`ওয়ালেট +৳${delta} বোনাস যুক্ত`, `Wallet Credited +৳${delta}`) : t(`ওয়ালেট ৳${Math.abs(delta)} সমন্বয়`, `Wallet Adjusted -৳${Math.abs(delta)}`),
+      note || ''
+    );
+  };
+
+  const updateActiveResellerProfile = (
+    updates: Partial<Pick<ResellerAccount, 'name' | 'district' | 'address' | 'fbPageUrl' | 'bkashNumber' | 'nagadNumber' | 'bankDetails'>>
+  ) => {
+    if (!activeReseller) return;
+    updateResellerAccount(activeReseller.id, updates);
   };
 
   const requestResellerPayout = (payload: {
@@ -7691,13 +8079,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const apiRes = await fetch('/api/partner/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'wholesale', partner: newWholesaler })
+        body: JSON.stringify({
+          type: 'wholesale',
+          role: 'wholesale',
+          account: newWholesaler,
+          partner: newWholesaler
+        })
       });
       const json = await safeParseJson<{ success?: boolean; partner?: WholesaleAccount; error?: string }>(apiRes);
       if (apiRes.status === 409) {
         return { success: false, error: json?.error || 'Business account already registered.' };
       }
-      const savedObj = json?.partner || newWholesaler;
+      const savedObj = json?.partner ? { ...newWholesaler, ...json.partner, password: newWholesaler.password } : newWholesaler;
       setWholesalers((prev) => [savedObj, ...prev.filter((w) => w.id !== savedObj.id)]);
       setActiveWholesaler(savedObj);
       saveWholesalerToFirestore(savedObj).catch(() => {});
@@ -7743,7 +8136,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const apiRes = await fetch('/api/partner/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'wholesale', identifier, password })
+        body: JSON.stringify({ type: 'wholesale', role: 'wholesale', identifier, password })
       });
       const json = await safeParseJson<{ success?: boolean; partner?: WholesaleAccount; error?: string }>(apiRes);
       if (apiRes.ok && json?.success && json.partner) {
@@ -7770,6 +8163,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (w.id !== id) return w;
         const next = { ...w, ...updates };
         saveWholesalerToFirestore(next).catch(() => {});
+        fetch('/api/partner/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'wholesale', id, updates })
+        }).catch(() => {});
         if (activeWholesaler?.id === id) setActiveWholesaler(next);
         return next;
       })
@@ -8327,7 +8725,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         refreshOrderScore,
         checkCustomerFraudRisk,
         whatsappLogs,
+        whatsappMessages,
         sendMetaWhatsAppMessage,
+        generateWhatsAppAiDraft,
         applyBusinessTheme,
         serverPixelEvents,
         customerBrowsingLogs,
@@ -8434,6 +8834,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         loginReseller,
         logoutReseller,
         updateResellerAccount,
+        bulkUpdateResellers,
+        adjustResellerWallet,
+        updateActiveResellerProfile,
         requestResellerPayout,
         processResellerPayout,
         wholesalers,
