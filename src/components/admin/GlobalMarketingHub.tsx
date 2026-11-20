@@ -9,7 +9,8 @@ import {
   Sparkles,
   Calculator,
   Send,
-  Link2
+  Link2,
+  Users
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BulkSmsCampaignLog } from '../../types';
@@ -22,6 +23,7 @@ export const GlobalMarketingHub: React.FC = () => {
     products,
     orders,
     users,
+    customerAccounts,
     resellers,
     wholesalers,
     waitlistEntries,
@@ -74,6 +76,25 @@ export const GlobalMarketingHub: React.FC = () => {
   );
   const [isSendingSms, setIsSendingSms] = useState(false);
 
+  // AI RFM Smart Audience & Campaign Generator
+  const [rfmGoal, setRfmGoal] = useState('Flash Weekend COD Offer & VIP Repeat Reactivation');
+  const [isGeneratingRfm, setIsGeneratingRfm] = useState(false);
+  const [rfmData, setRfmData] = useState<{
+    segments?: {
+      vipRepeatCount?: number;
+      singleOrderCount?: number;
+      resellerCount?: number;
+      topProductTitle?: string;
+    };
+    campaign?: {
+      headline?: string;
+      smsCopy?: string;
+      whatsappBroadcast?: string;
+      offerAngle?: string;
+      targetAudience?: string;
+    };
+  } | null>(null);
+
   // Global AI Ad & Reel Copy Studio
   const [selectedProdId, setSelectedProdId] = useState(products[0]?.id || '');
   const [targetRegion, setTargetRegion] = useState('UK/USA Probashi Gift Buyers (Deliver in Bangladesh)');
@@ -93,6 +114,35 @@ export const GlobalMarketingHub: React.FC = () => {
   const [calcCpa, setCalcCpa] = useState(210);
   const [calcCourier, setCalcCourier] = useState(110);
   const [calcReturnRate, setCalcReturnRate] = useState(12);
+
+  const handleRunRfmMarketing = async () => {
+    setIsGeneratingRfm(true);
+    try {
+      const res = await fetch('/api/ai/marketing/campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          goal: rfmGoal,
+          orders,
+          products,
+          customerAccounts,
+          resellers,
+          lang: adminLang
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data?.ok) {
+        setRfmData(data);
+        addToast('success', at('AI RFM সেগমেন্ট ও ক্যাম্পেইন তৈরি!', 'AI RFM Audience & Campaign Ready'), data.campaign?.headline || '');
+      } else {
+        addToast('error', 'AI RFM Failed', data?.error || 'Could not generate campaign.');
+      }
+    } catch (err: any) {
+      addToast('error', 'Network Error', err?.message || 'Failed to reach /api/ai/marketing/campaign');
+    } finally {
+      setIsGeneratingRfm(false);
+    }
+  };
 
   const segmentRecipients = useMemo(() => {
     const phoneSet = new Set<string>();
@@ -600,6 +650,112 @@ export const GlobalMarketingHub: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 4. AI RFM Smart Audience Segmenter & Campaign Generator */}
+      <div className="p-5 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-4 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h4 className="text-sm font-bold text-white flex items-center gap-2">
+              <Users className="w-4 h-4 text-emerald-400" />
+              <span>{at('AI RFM কাস্টমার সেগমেন্টেশন ও স্মার্ট ক্যাম্পেইন', 'AI RFM Audience Segmenter & Smart Campaign Studio')}</span>
+            </h4>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {at(
+                'VIP রিপিট কাস্টমার, ১-বার ক্রেতা ও রিসেলার ডাটা বিশ্লেষণ করে AI দিয়ে হাই-কনভার্টিং SMS ও WhatsApp ক্যাম্পেইন তৈরি করুন',
+                'Analyze live order RFM segments (VIP repeat buyers, single-order shoppers, active resellers) & generate 1-click SMS/WhatsApp campaigns'
+              )}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleRunRfmMarketing}
+            disabled={isGeneratingRfm}
+            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span>{isGeneratingRfm ? at('বিশ্লেষণ হচ্ছে...', 'Analyzing RFM...') : at('AI অডিয়েন্স ও ক্যাম্পেইন তৈরি করুন', 'Analyze RFM & Generate Campaign')}</span>
+          </button>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2.5">
+          <input
+            type="text"
+            value={rfmGoal}
+            onChange={(e) => setRfmGoal(e.target.value)}
+            placeholder={at('ক্যাম্পেইনের লক্ষ্য লিখুন (যেমন: ঈদ / উইকেন্ড ফ্ল্যাশ সেল)...', 'Campaign goal (e.g. Weekend Flash COD Deal, Reactivate VIP Shoppers)...')}
+            className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
+          />
+        </div>
+
+        {rfmData && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 pt-1">
+            <div className="lg:col-span-4 grid grid-cols-2 gap-2.5 tabular-nums">
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">VIP Repeat Shoppers</span>
+                <span className="text-lg font-black text-emerald-400 font-mono">{rfmData.segments?.vipRepeatCount ?? 0}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">1-Order COD Ready</span>
+                <span className="text-lg font-black text-sky-400 font-mono">{rfmData.segments?.singleOrderCount ?? 0}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Active Resellers</span>
+                <span className="text-lg font-black text-amber-400 font-mono">{rfmData.segments?.resellerCount ?? resellers.length}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Top Moving Item</span>
+                <span className="text-[11px] font-bold text-white line-clamp-2">{rfmData.segments?.topProductTitle || products[0]?.title || 'Storefront'}</span>
+              </div>
+            </div>
+
+            {rfmData.campaign && (
+              <div className="lg:col-span-8 p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-bold text-emerald-400">{rfmData.campaign.headline}</p>
+                  {rfmData.campaign.targetAudience && (
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-sky-300 font-semibold">
+                      {rfmData.campaign.targetAudience}
+                    </span>
+                  )}
+                </div>
+                {rfmData.campaign.offerAngle && (
+                  <p className="text-[11px] text-amber-300 font-semibold">{rfmData.campaign.offerAngle}</p>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">SMS Broadcast Copy</span>
+                    <p className="text-slate-200 leading-relaxed">{rfmData.campaign.smsCopy}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSmsTitle(rfmData.campaign?.headline || 'AI Smart SMS');
+                        setSmsBody(rfmData.campaign?.smsCopy || smsBody);
+                        addToast('success', at('SMS বক্সে লোড হয়েছে!', 'Loaded into SMS Composer'), '');
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                    >
+                      {at('বাল্ক SMS বক্সে ব্যবহার করুন', 'Load into Bulk SMS')}
+                    </button>
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">WhatsApp Broadcast Copy</span>
+                    <p className="text-slate-200 leading-relaxed">{rfmData.campaign.whatsappBroadcast}</p>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy('rfm-wa', rfmData.campaign?.whatsappBroadcast || '')}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedFeed === 'rfm-wa' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{at('হোয়াটসঅ্যাপ কপি', 'Copy Broadcast')}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

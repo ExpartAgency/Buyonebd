@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   Bot,
   Send,
@@ -12,9 +12,21 @@ import {
   Flame,
   Award,
   MessageCircle,
-  Truck
+  Truck,
+  ShieldCheck,
+  Volume2,
+  VolumeX,
+  Wrench,
+  AlertTriangle,
+  RefreshCw,
+  Check,
+  X,
+  RotateCcw
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
+import { AIAutopilotSettings, AIReviewTask, CourierProvider } from '../../types';
+import { speakClearText, stopAllVoicePlayback } from '../../utils/voiceAudio';
+import { INITIAL_SETTINGS } from '../../data/initialData';
 
 interface AIWebsiteAgentViewProps {
   onNavigateTab: (tab: string) => void;
@@ -24,11 +36,23 @@ export const AIWebsiteAgentView: React.FC<AIWebsiteAgentViewProps> = ({ onNaviga
   const {
     executeAIAgentCommand,
     agentActionLogs,
+    aiReviewQueue,
+    isScanningAutopilot,
+    maintenanceAuditReport,
+    scanWebsiteForAIReview,
+    runWebsiteMaintenanceAudit,
+    restoreStoreFromServerBackup,
+    approveAIReviewTask,
+    approveAllPendingAIReviewTasks,
+    dismissAIReviewTask,
+    clearCompletedAIReviewTasks,
     orders,
     products,
     customerAccounts,
     abandonedCarts,
     settings,
+    updateSettings,
+    saveSettingsChanges,
     adminLang
   } = useStore();
 
@@ -37,13 +61,43 @@ export const AIWebsiteAgentView: React.FC<AIWebsiteAgentViewProps> = ({ onNaviga
   const [commandInput, setCommandInput] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
   const [isListeningVoice, setIsListeningVoice] = useState(false);
+  const [isRunningAudit, setIsRunningAudit] = useState(false);
+  const [isSpeakingBrief, setIsSpeakingBrief] = useState(false);
+  const [queueFilter, setQueueFilter] = useState<'pending' | 'executed' | 'all'>('pending');
+  const [taskEdits, setTaskEdits] = useState<Record<string, Partial<AIReviewTask['payload']>>>({});
+  const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
+
+  const autopilotCfg: AIAutopilotSettings = {
+    ...(INITIAL_SETTINGS.aiAutopilotSettings as AIAutopilotSettings),
+    ...(settings.aiAutopilotSettings || {})
+  };
+
+  const patchAutopilot = (partial: Partial<AIAutopilotSettings>) => {
+    updateSettings(
+      {
+        aiAutopilotSettings: {
+          ...autopilotCfg,
+          ...partial
+        }
+      },
+      { commit: true }
+    );
+  };
 
   const pendingOrdersCount = orders.filter((o) => o.status === 'pending' || o.status === 'on_hold').length;
   const partialOrdersCount = orders.filter(
     (o) => o.status === 'partial' || ((o.pricing?.advancePaid || 0) > 0 && (o.payment?.dueAmount || 0) > 0)
   ).length;
   const unrecoveredCartsCount = abandonedCarts.filter((c) => !c.recovered).length;
+  const pendingReviewTasks = useMemo(() => aiReviewQueue.filter((t) => t.status === 'pending_review'), [aiReviewQueue]);
+  const executedReviewTasks = useMemo(() => aiReviewQueue.filter((t) => t.status === 'executed'), [aiReviewQueue]);
+
+  const visibleQueueTasks = useMemo(() => {
+    if (queueFilter === 'pending') return pendingReviewTasks;
+    if (queueFilter === 'executed') return executedReviewTasks;
+    return aiReviewQueue;
+  }, [aiReviewQueue, queueFilter, pendingReviewTasks, executedReviewTasks]);
 
   const handleRunCommand = async (rawText?: string) => {
     const query = (rawText ?? commandInput).trim();
@@ -89,50 +143,87 @@ export const AIWebsiteAgentView: React.FC<AIWebsiteAgentViewProps> = ({ onNaviga
     }
   };
 
+  const handleSpeakMaintenanceBrief = async () => {
+    if (isSpeakingBrief) {
+      stopAllVoicePlayback();
+      setIsSpeakingBrief(false);
+      return;
+    }
+    const score = maintenanceAuditReport?.healthScore ?? 96;
+    const summaryText =
+      adminLang === 'en'
+        ? `BuyOne BD Store Maintenance Brief. Website health score is ${score} percent. You have ${pendingOrdersCount} pending orders and ${pendingReviewTasks.length} AI tasks waiting for your review.`
+        : `বাইওয়ান বিডি স্টোর মেইনটেন্যান্স ব্রিফ। আপনার ওয়েবসাইট হেলথ স্কোর ${score} শতাংশ। বর্তমানে ${pendingOrdersCount}টি পেন্ডিং অর্ডার এবং ${pendingReviewTasks.length}টি এআই কাজ আপনার অনুমোদনের জন্য অপেক্ষা করছে।`;
+    setIsSpeakingBrief(true);
+    try {
+      await speakClearText(summaryText, {
+        lang: adminLang,
+        voice: settings.aiCallSettings?.voiceName || (settings.aiCallSettings?.agentGender === 'male' ? 'Puck' : 'Kore')
+      });
+    } finally {
+      setIsSpeakingBrief(false);
+    }
+  };
+
+  const getEditedPayload = (task: AIReviewTask) => ({
+    ...task.payload,
+    ...(taskEdits[task.id] || {})
+  });
+
+  const patchTaskPayload = (taskId: string, patch: Partial<AIReviewTask['payload']>) => {
+    setTaskEdits((prev) => ({
+      ...prev,
+      [taskId]: {
+        ...(prev[taskId] || {}),
+        ...patch
+      }
+    }));
+  };
+
   const quickPresets = [
     {
       labelBn: `সকল পেন্ডিং অর্ডার AI কনফার্ম (${pendingOrdersCount})`,
-      labelEn: `AI Confirm Latest Pending Orders (${pendingOrdersCount})`,
+      labelEn: `AI Confirm Pending Orders (${pendingOrdersCount})`,
       cmd: orders.find((o) => o.status === 'pending')
         ? `AI confirm order #${orders.find((o) => o.status === 'pending')?.id}`
         : 'Open orders tab',
       icon: CheckCircle2
     },
     {
-      labelBn: 'ফ্ল্যাশ সেল চালু / বন্ধ করুন',
+      labelBn: 'ফ্ল্যাশ সেল চালু / বন্ধ',
       labelEn: settings.flashSale?.enabled ? 'Turn OFF Flash Sale' : 'Turn ON Flash Sale',
       cmd: settings.flashSale?.enabled ? 'Turn off flash sale' : 'Turn on flash sale',
       icon: Flame
     },
     {
-      labelBn: 'নতুন কুপন EID200 তৈরি করুন',
-      labelEn: 'Create Coupon EID200 (৳200 Off)',
+      labelBn: 'নতুন কুপন EID200 তৈরি',
+      labelEn: 'Create Coupon EID200',
       cmd: 'Create coupon EID200 with 200 taka discount',
       icon: Zap
     },
     {
-      labelBn: 'অ্যাবানডন্ড কার্টে রিকভারি মেসেজ',
-      labelEn: `Recover All Abandoned Carts (${unrecoveredCartsCount})`,
+      labelBn: `অ্যাবানডন্ড কার্ট রিকভার (${unrecoveredCartsCount})`,
+      labelEn: `Recover Carts (${unrecoveredCartsCount})`,
       cmd: 'Send WhatsApp recovery to all pending abandoned carts',
       icon: MessageCircle
     },
     {
-      labelBn: 'পার্শিয়াল অর্ডার সেকশন খুলুন',
-      labelEn: `Open Partial Orders (${partialOrdersCount})`,
+      labelBn: `পার্শিয়াল অর্ডার (${partialOrdersCount})`,
+      labelEn: `Partial Orders (${partialOrdersCount})`,
       cmd: 'Open partial orders section',
       icon: ShoppingCart
     },
     {
       labelBn: 'কুরিয়ারে অর্ডার পাঠান',
-      labelEn: 'Book Steadfast on Confirmed Order',
+      labelEn: 'Book Courier',
       cmd: orders.find((o) => o.status === 'ai_confirmed' && !o.courier?.trackingCode)
-        ? `Book Steadfast courier for order #${orders.find((o) => o.status === 'ai_confirmed' && !o.courier?.trackingCode)?.id}`
+        ? `Book ${autopilotCfg.preferredCourier} courier for order #${orders.find((o) => o.status === 'ai_confirmed' && !o.courier?.trackingCode)?.id}`
         : 'Open courier hub',
       icon: Truck
     },
     {
-      labelBn: 'প্রথম কাস্টমারকে +50 পয়েন্ট দিন',
-      labelEn: 'Give +50 Loyalty Points to Top Customer',
+      labelBn: 'কাস্টমারকে +50 পয়েন্ট',
+      labelEn: '+50 Loyalty Points',
       cmd: customerAccounts[0]
         ? `Add 50 loyalty points to ${customerAccounts[0].phone}`
         : 'Open customers tab',
@@ -140,56 +231,403 @@ export const AIWebsiteAgentView: React.FC<AIWebsiteAgentViewProps> = ({ onNaviga
     }
   ];
 
+  const healthScore = maintenanceAuditReport?.healthScore ?? 96;
+
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* 1. Full Website Maintenance & Review Control Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h3 className="text-xl font-black text-white flex items-center gap-2">
             <Bot className="w-6 h-6 text-emerald-400" />
-            <span>{at('স্মার্ট ফুল-ওয়েবসাইট কন্ট্রোল এআই এজেন্ট', 'Autonomous Store Control AI Agent')}</span>
+            <span>{at('ফুল ওয়েবসাইট মেইনটেন্যান্স ও কন্ট্রোল এআই সিস্টেম', 'Full Website Maintenance & Review Control AI')}</span>
           </h3>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-400 mt-0.5">
             {at(
-              'বাংলা বা ইংরেজিতে নির্দেশ দিন অথবা ভয়েসে বলুন — এআই নিজেই অর্ডার কনফার্ম, কুরিয়ার বুকিং, পয়েন্ট, কুপন, প্রোডাক্ট প্রাইস ও স্টোর সেটিংস পরিচালনা করবে',
-              'Command your entire store in plain Bengali or English — AI executes order confirmations, Steadfast dispatch, loyalty adjustments, coupons, pricing & navigation automatically'
+              'এআই পুরো ওয়েবসাইট স্ক্যান করে সমস্যা ও অর্ডার/কুরিয়ার/কল/SEO প্রস্তাব তৈরি করবে — আপনার অনুমোদন ছাড়া কোনো পরিবর্তন হবে না',
+              'AI audits SEO, stock, pending orders, voice calls & courier bookings — everything queues cleanly for your explicit review & approval'
             )}
           </p>
         </div>
 
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/70 border border-emerald-700/60 text-emerald-300 text-xs font-bold shrink-0">
-          <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-          <span>Gemini Autonomous Operator Active</span>
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSpeakMaintenanceBrief}
+            className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
+              isSpeakingBrief
+                ? 'bg-emerald-600 border-emerald-500 text-white'
+                : 'bg-slate-900 border-slate-700 text-emerald-300 hover:bg-slate-800'
+            }`}
+          >
+            {isSpeakingBrief ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+            <span>{isSpeakingBrief ? at('থামান', 'Stop Voice') : at('ভয়েস ব্রিফ শুনুন', 'Clear Voice Brief')}</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={isRunningAudit}
+            onClick={async () => {
+              setIsRunningAudit(true);
+              await runWebsiteMaintenanceAudit();
+              setIsRunningAudit(false);
+            }}
+            className="px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+          >
+            <Wrench className={`w-3.5 h-3.5 ${isRunningAudit ? 'animate-spin' : ''}`} />
+            <span>{isRunningAudit ? at('অডিট চলছে...', 'Scanning Site...') : at('ফুল ওয়েবসাইট মেইনটেন্যান্স স্ক্যান', 'Run Full Maintenance Scan')}</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={isScanningAutopilot}
+            onClick={() => scanWebsiteForAIReview()}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isScanningAutopilot ? 'animate-spin' : ''}`} />
+            <span>{isScanningAutopilot ? at('স্ক্যান হচ্ছে...', 'Queueing...') : at('অর্ডার ও রিভিউ কিউ তৈরি', 'Scan Orders & Queue')}</span>
+          </button>
+        </div>
       </div>
 
-      {/* Live Store Telemetry Snapshot */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs tabular-nums">
-        <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800">
-          <span className="text-[10px] text-slate-400 uppercase font-bold block">{at('পেন্ডিং অর্ডার', 'Pending Orders')}</span>
-          <span className="text-lg font-black text-amber-400 font-mono">{pendingOrdersCount}</span>
+      {/* 2. Health Score, "Only I Review" Mode & Non-Destructive Backup Bar */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div className="lg:col-span-5 p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <span className="text-[11px] font-bold uppercase text-slate-400 block">
+              {at('ওয়েবসাইট হেলথ স্কোর', 'Website Maintenance Score')}
+            </span>
+            <div className="flex items-baseline gap-2 tabular-nums">
+              <span className={`text-3xl font-black font-mono ${healthScore >= 85 ? 'text-emerald-400' : healthScore >= 65 ? 'text-amber-400' : 'text-rose-400'}`}>
+                {healthScore}%
+              </span>
+              <span className="text-xs text-slate-400">
+                {maintenanceAuditReport ? `Audited ${new Date(maintenanceAuditReport.auditedAt).toLocaleTimeString()}` : at('সিস্টেম সুরক্ষিত', 'Protected Mode')}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded">
+                <ShieldCheck className="w-3 h-3" />
+                {at('ডাটা ডিলিট সুরক্ষা সক্রিয়', 'Zero Data Loss Guard Active')}
+              </span>
+              <button
+                type="button"
+                onClick={() => restoreStoreFromServerBackup()}
+                className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-300 hover:text-white bg-slate-800 px-2 py-0.5 rounded cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>{at('সার্ভার ব্যাকআপ রিস্টোর', 'Restore Backup')}</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-center tabular-nums shrink-0">
+            <div className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800">
+              <span className="text-[10px] text-slate-400 block">{at('পেন্ডিং অর্ডার', 'Orders')}</span>
+              <span className="font-mono font-black text-amber-400 text-sm">{pendingOrdersCount}</span>
+            </div>
+            <div className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800">
+              <span className="text-[10px] text-slate-400 block">{at('পণ্য', 'Catalog')}</span>
+              <span className="font-mono font-black text-emerald-400 text-sm">{products.length}</span>
+            </div>
+          </div>
         </div>
-        <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800">
-          <span className="text-[10px] text-slate-400 uppercase font-bold block">{at('পার্শিয়াল অর্ডার', 'Partial Orders')}</span>
-          <span className="text-lg font-black text-sky-400 font-mono">{partialOrdersCount}</span>
-        </div>
-        <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800">
-          <span className="text-[10px] text-slate-400 uppercase font-bold block">{at('মোট পণ্য', 'Catalog')}</span>
-          <span className="text-lg font-black text-emerald-400 font-mono">{products.length}</span>
-        </div>
-        <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800">
-          <span className="text-[10px] text-slate-400 uppercase font-bold block">{at('ড্রপ কার্ট', 'Abandoned Carts')}</span>
-          <span className="text-lg font-black text-rose-400 font-mono">{unrecoveredCartsCount}</span>
-        </div>
-        <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 col-span-2 sm:col-span-1">
-          <span className="text-[10px] text-slate-400 uppercase font-bold block">{at('ফ্ল্যাশ সেল', 'Flash Sale')}</span>
-          <span className={`text-lg font-black font-mono ${settings.flashSale?.enabled ? 'text-emerald-400' : 'text-slate-500'}`}>
-            {settings.flashSale?.enabled ? 'ACTIVE' : 'OFF'}
-          </span>
+
+        <div className="lg:col-span-7 p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="font-black text-white">
+                {at('অ্যাডমিন রিভিউ কন্ট্রোল ("শুধুমাত্র আমি রিভিউ করব")', 'Human-in-the-Loop Control ("Only I Review")')}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              {at(
+                'চালু থাকলে AI কল, অর্ডার কনফার্ম, কুরিয়ার বুকিং ও SEO পরিবর্তনের আগে আপনার অনুমোদন নেবে।',
+                'When ON, AI proposes order confirmations, voice calls, courier bookings & SEO fixes into your approval queue before execution.'
+              )}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <select
+              value={autopilotCfg.preferredCourier}
+              onChange={(e) => patchAutopilot({ preferredCourier: e.target.value as CourierProvider })}
+              className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-bold"
+              title="Preferred Courier"
+            >
+              <option value="Steadfast">Steadfast Default</option>
+              <option value="Pathao">Pathao Default</option>
+              <option value="RedX">RedX Default</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={() => {
+                patchAutopilot({ requireAdminReview: !autopilotCfg.requireAdminReview });
+                saveSettingsChanges(
+                  at('AI মোড আপডেট', 'AI Review Policy Updated'),
+                  !autopilotCfg.requireAdminReview
+                    ? at('এখন সকল AI কাজ আপনার রিভিউ কিউতে আসবে।', 'AI will always ask your approval before executing actions.')
+                    : at('দ্রুত ডাইরেক্ট এক্সিকিউশন চালু হয়েছে।', 'Direct execution mode enabled.')
+                );
+              }}
+              className={`px-3.5 py-2 rounded-xl font-black cursor-pointer transition-colors ${
+                autopilotCfg.requireAdminReview
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-amber-600 text-white'
+              }`}
+            >
+              {autopilotCfg.requireAdminReview ? at('অনুমোদন মোড: চালু', 'Only I Review: ON') : at('ডাইরেক্ট মোড: চালু', 'Only I Review: OFF')}
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Main Prompt Console */}
+      {/* 3. Detected Website Maintenance Issues */}
+      {maintenanceAuditReport && maintenanceAuditReport.issues.length > 0 && (
+        <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="font-black text-sm text-white flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
+              <span>{at('শনাক্তকৃত ওয়েবসাইট মেইনটেন্যান্স আইটেম', 'Detected Store Health & Maintenance Items')}</span>
+            </h4>
+            <span className="text-[11px] font-mono text-slate-400">{maintenanceAuditReport.issues.length} checks</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+            {maintenanceAuditReport.issues.map((iss) => (
+              <div
+                key={iss.id}
+                className={`p-3.5 rounded-xl border space-y-1.5 ${
+                  iss.severity === 'critical'
+                    ? 'bg-rose-950/35 border-rose-700/60'
+                    : iss.severity === 'warning'
+                    ? 'bg-amber-950/30 border-amber-700/50'
+                    : 'bg-emerald-950/25 border-emerald-700/40'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-slate-950 text-slate-200">
+                    {iss.area}
+                  </span>
+                  <span className="font-mono font-bold text-xs text-white">×{iss.count}</span>
+                </div>
+                <p className="font-bold text-white">{at(iss.titleBn, iss.title)}</p>
+                <p className="text-[11px] text-slate-300 leading-relaxed">{iss.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 4. AI Review Queue ("Approve Before Execute") */}
+      <div className="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="font-black text-sm text-white flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>{at('এআই রিভিউ ও অ্যাপ্রুভাল কিউ', 'AI Operations Review Queue')}</span>
+            </h4>
+            <div className="flex items-center gap-1 ml-1">
+              {[
+                { id: 'pending', label: `${at('অপেক্ষমাণ', 'Pending')} (${pendingReviewTasks.length})` },
+                { id: 'executed', label: `${at('সম্পন্ন', 'Executed')} (${executedReviewTasks.length})` },
+                { id: 'all', label: `${at('সবগুলো', 'All')} (${aiReviewQueue.length})` }
+              ].map((tTab) => (
+                <button
+                  key={tTab.id}
+                  type="button"
+                  onClick={() => setQueueFilter(tTab.id as any)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer ${
+                    queueFilter === tTab.id
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  {tTab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {pendingReviewTasks.length > 0 && (
+              <button
+                type="button"
+                onClick={() => approveAllPendingAIReviewTasks()}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>{at('নিরাপদ পেন্ডিং সব অনুমোদন করুন', 'Approve Safe Pending')}</span>
+              </button>
+            )}
+            {executedReviewTasks.length > 0 && (
+              <button
+                type="button"
+                onClick={() => clearCompletedAIReviewTasks()}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold cursor-pointer"
+              >
+                {at('সম্পন্ন কিউ পরিষ্কার', 'Clear Done')}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {visibleQueueTasks.length === 0 ? (
+          <div className="p-6 text-center rounded-2xl bg-slate-950 border border-dashed border-slate-800 text-slate-400 text-xs space-y-2">
+            <p>
+              {at(
+                'রিভিউ কিউতে কোনো পেন্ডিং কাজ নেই। "অর্ডার ও রিভিউ কিউ তৈরি" বা "ফুল ওয়েবসাইট মেইনটেন্যান্স স্ক্যান" চাপুন।',
+                'No items in this view. Click "Scan Orders & Queue" or "Run Full Maintenance Scan" above.'
+              )}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+            {visibleQueueTasks.map((task) => {
+              const edited = getEditedPayload(task);
+              const isBusy = busyTaskId === task.id;
+              return (
+                <div
+                  key={task.id}
+                  className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5 text-xs"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                          task.priority === 'high'
+                            ? 'bg-rose-500/20 text-rose-300'
+                            : task.priority === 'medium'
+                            ? 'bg-amber-500/20 text-amber-300'
+                            : 'bg-sky-500/20 text-sky-300'
+                        }`}
+                      >
+                        {task.actionType.replace('_', ' ')}
+                      </span>
+                      <span className="font-bold text-white">{at(task.titleBn || task.title, task.title)}</span>
+                      {task.targetId && <span className="font-mono text-emerald-400 text-[11px]">{task.targetId}</span>}
+                    </div>
+                    <span
+                      className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                        task.status === 'executed'
+                          ? 'bg-emerald-500/20 text-emerald-300'
+                          : task.status === 'dismissed'
+                          ? 'bg-slate-800 text-slate-400'
+                          : 'bg-amber-500/20 text-amber-300'
+                      }`}
+                    >
+                      {task.status.replace('_', ' ')}
+                    </span>
+                  </div>
+
+                  <p className="text-slate-300">{at(task.summaryBn || task.summary, task.summary)}</p>
+
+                  {/* Inline Admin Review Editable Fields before approving */}
+                  {task.status === 'pending_review' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pt-1">
+                      {(task.actionType === 'send_courier' || task.actionType === 'confirm_order') && (
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-0.5">Courier Provider</label>
+                          <select
+                            value={String(edited.provider || autopilotCfg.preferredCourier)}
+                            onChange={(e) => patchTaskPayload(task.id, { provider: e.target.value as CourierProvider })}
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white"
+                          >
+                            <option value="Steadfast">Steadfast</option>
+                            <option value="Pathao">Pathao</option>
+                            <option value="RedX">RedX</option>
+                          </select>
+                        </div>
+                      )}
+                      {(task.actionType === 'whatsapp_followup' || task.actionType === 'ai_voice_call') && (
+                        <>
+                          <div>
+                            <label className="block text-[10px] text-slate-400 mb-0.5">Customer Phone</label>
+                            <input
+                              type="text"
+                              value={String(edited.phone || '')}
+                              onChange={(e) => patchTaskPayload(task.id, { phone: e.target.value })}
+                              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono"
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-[10px] text-slate-400 mb-0.5">Message / AI Script</label>
+                            <input
+                              type="text"
+                              value={String(edited.message || edited.script || '')}
+                              onChange={(e) =>
+                                patchTaskPayload(
+                                  task.id,
+                                  task.actionType === 'ai_voice_call'
+                                    ? { script: e.target.value }
+                                    : { message: e.target.value }
+                                )
+                              }
+                              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white"
+                            />
+                          </div>
+                        </>
+                      )}
+                      {task.actionType === 'update_product' && (
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-0.5">Updated Stock Qty</label>
+                          <input
+                            type="number"
+                            value={Number(edited.stock ?? 25)}
+                            onChange={(e) => patchTaskPayload(task.id, { stock: Number(e.target.value) })}
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono"
+                          />
+                        </div>
+                      )}
+                      {task.actionType === 'fix_product_seo' && (
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-0.5">SEO Meta Title / Slug</label>
+                          <input
+                            type="text"
+                            value={String(edited.slug || edited.title || '')}
+                            onChange={(e) => patchTaskPayload(task.id, { slug: e.target.value })}
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {task.status === 'pending_review' && (
+                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-800/70">
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => dismissAIReviewTask(task.id)}
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>{at('বাতিল', 'Dismiss')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={async () => {
+                          setBusyTaskId(task.id);
+                          await approveAIReviewTask(task.id, taskEdits[task.id]);
+                          setBusyTaskId(null);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>{isBusy ? at('চালু হচ্ছে...', 'Running...') : at('অনুমোদন ও এক্সিকিউট', 'Approve & Execute')}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 5. Main AI Command Console */}
       <div className="p-5 rounded-3xl bg-slate-900 border border-emerald-500/35 space-y-4 shadow-xl">
         <form
           onSubmit={(e) => {
@@ -205,8 +643,8 @@ export const AIWebsiteAgentView: React.FC<AIWebsiteAgentViewProps> = ({ onNaviga
               value={commandInput}
               onChange={(e) => setCommandInput(e.target.value)}
               placeholder={at(
-                'কমান্ড লিখুন (যেমন: "অর্ডার #BD-1001 AI কনফার্ম করো" বা "ঢাকা ডেলিভারি চার্জ ৭০ টাকা করো")...',
-                'Tell AI Operator what to do (e.g. "AI confirm order #BD-1001", "Create coupon SAVE15 15%", "Set 01917942662 points to 200")...'
+                'এআই-কে নির্দেশ দিন (যেমন: "অর্ডার #BD-1001 AI কল কনফার্ম করো" বা "প্রোডাক্ট SEO ঠিক করো")...',
+                'Command Website AI (e.g. "Confirm pending orders", "Send Steadfast courier", "Update site meta title")...'
               )}
               className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-2xl text-xs sm:text-sm text-white outline-none"
             />
@@ -238,10 +676,9 @@ export const AIWebsiteAgentView: React.FC<AIWebsiteAgentViewProps> = ({ onNaviga
           </div>
         </form>
 
-        {/* Quick Command Buttons */}
         <div className="space-y-2">
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-            {at('১-ক্লিক অটোনোমাস কমান্ড শর্টকাট:', '1-Click Autonomous Shortcuts:')}
+            {at('১-ক্লিক অটোনোমাস কমান্ড শর্টকাট:', '1-Click Quick Shortcuts:')}
           </span>
           <div className="flex flex-wrap gap-2">
             {quickPresets.map((preset, idx) => {
@@ -263,25 +700,25 @@ export const AIWebsiteAgentView: React.FC<AIWebsiteAgentViewProps> = ({ onNaviga
         </div>
       </div>
 
-      {/* Live Action Execution Feed */}
+      {/* 6. Live Action Execution Log */}
       <div className="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-3">
         <div className="flex items-center justify-between">
           <h4 className="font-black text-sm text-white flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-amber-400" />
-            <span>{at('এআই এজেন্ট অ্যাকশন লগ', 'Autonomous Action Execution Log')}</span>
+            <span>{at('এআই এজেন্ট অ্যাকশন লগ', 'AI Agent Execution Log')}</span>
           </h4>
           <span className="text-[11px] text-slate-400 font-mono">{agentActionLogs.length} entries</span>
         </div>
 
         {agentActionLogs.length === 0 ? (
-          <div className="p-8 text-center rounded-2xl bg-slate-950 border border-dashed border-slate-800 text-slate-400 text-xs">
+          <div className="p-6 text-center rounded-2xl bg-slate-950 border border-dashed border-slate-800 text-slate-400 text-xs">
             {at(
-              'উপরের বক্সে যেকোনো নির্দেশ লিখে "এক্সিকিউট করুন" চাপুন — এআই সাথে সাথেই পুরো ওয়েবসাইটে পরিবর্তন প্রয়োগ করবে।',
-              'Type any command above or pick a shortcut — your AI Store Operator will execute it live across orders, products, customers & settings.'
+              'উপরের বক্সে যেকোনো নির্দেশ লিখুন বা কিউ থেকে কাজ অনুমোদন করুন।',
+              'Type a command above or approve tasks from your review queue to see execution history.'
             )}
           </div>
         ) : (
-          <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+          <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
             {agentActionLogs.map((log) => (
               <div
                 key={log.id}

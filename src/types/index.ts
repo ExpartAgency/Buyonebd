@@ -591,6 +591,48 @@ export interface StoreSettings {
   resellerSettings?: ResellerSettings;
   wholesaleSettings?: WholesaleSettings;
   globalMarketingSettings?: GlobalMarketingSettings;
+  aiAutopilotSettings?: AIAutopilotSettings;
+  invoiceSettings?: InvoiceSettings;
+}
+
+export interface InvoiceCustomField {
+  id: string;
+  label: string;
+  value: string;
+  showOnA4: boolean;
+  showOnLabel: boolean;
+  showOnReceipt: boolean;
+}
+
+export type InvoicePaperSize = 'A4' | 'label_4x6' | 'label_4x3' | 'label_3x2' | 'thermal_80mm';
+
+export interface InvoiceSettings {
+  companyName: string;
+  companyNameBn?: string;
+  tagline?: string;
+  phone: string;
+  email?: string;
+  websiteUrl?: string;
+  address: string;
+  binVatNumber?: string;
+  tradeLicense?: string;
+  logoUrl?: string;
+  defaultPaperSize: InvoicePaperSize;
+  invoicePrefix: string;
+  headerNote?: string;
+  footerNote: string;
+  termsText?: string;
+  authorizedSignatoryName?: string;
+  showProductImages: boolean;
+  showSku: boolean;
+  showCustomerEmail: boolean;
+  showOrderNotes: boolean;
+  showBarcode: boolean;
+  showCodBadge: boolean;
+  showResellerProfitOnInternal?: boolean;
+  showAuthorizedSignature: boolean;
+  accentColor?: string;
+  customFields: InvoiceCustomField[];
 }
 
 export interface LoyaltySettings {
@@ -1075,5 +1117,78 @@ export interface WhatsAppChatMessage {
   status: 'sent' | 'received' | 'simulated' | 'failed';
   messageId?: string;
   timestamp: string;
+}
+
+export type AIReviewActionType =
+  | 'ai_voice_call'
+  | 'confirm_order'
+  | 'send_courier'
+  | 'whatsapp_followup'
+  | 'fraud_hold'
+  | 'approve_reseller'
+  | 'update_product'
+  | 'fix_product_seo'
+  | 'create_coupon'
+  | 'toggle_flash_sale'
+  | 'adjust_loyalty_points'
+  | 'recover_abandoned_cart'
+  | 'update_store_settings';
+
+export interface AIReviewTask {
+  id: string;
+  actionType: AIReviewActionType;
+  title: string;
+  titleBn: string;
+  summary: string;
+  summaryBn: string;
+  targetType: 'order' | 'reseller' | 'wholesaler' | 'product' | 'cart' | 'customer' | 'store';
+  targetId: string;
+  payload: {
+    orderId?: string;
+    provider?: CourierProvider;
+    status?: OrderStatus;
+    phone?: string;
+    contactName?: string;
+    contactType?: 'reseller' | 'customer';
+    message?: string;
+    script?: string;
+    riskLevel?: 'safe' | 'moderate' | 'high_risk';
+    resellerId?: string;
+    productId?: string;
+    price?: number;
+    stock?: number;
+    isFlashSale?: boolean;
+    couponCode?: string;
+    discountType?: 'fixed' | 'percent' | 'free_shipping';
+    couponValue?: number;
+    minOrder?: number;
+    flashSaleEnabled?: boolean;
+    identifier?: string;
+    pointsDelta?: number;
+    cartId?: string;
+    dhakaInsideFee?: number;
+    dhakaOutsideFee?: number;
+    [key: string]: any;
+  };
+  priority: 'high' | 'medium' | 'low';
+  confidence: number;
+  reasoning: string;
+  reasoningBn?: string;
+  status: 'pending_review' | 'executed' | 'dismissed' | 'failed';
+  createdAt: string;
+  executedAt?: string;
+  executionResult?: string;
+}
+
+export interface AIAutopilotSettings {
+  enabled: boolean;
+  requireAdminReview: boolean;
+  autoScanNewOrders: boolean;
+  autoPrepareCall: boolean;
+  autoPrepareConfirm: boolean;
+  autoPrepareCourier: boolean;
+  autoPrepareWhatsapp: boolean;
+  preferredCourier: CourierProvider;
+  lastScanAt?: string;
 }
 

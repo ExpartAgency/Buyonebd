@@ -78,3 +78,55 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Isolated Invoice & Shipping Label Print Engine (No window.open needed) */
+@media print {
+  @page {
+    margin: 8mm;
+  }
+
+  html,
+  body,
+  #root {
+    background: #ffffff !important;
+    height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  #buyone-print-root,
+  #buyone-print-root * {
+    visibility: visible !important;
+  }
+
+  #buyone-print-root {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  #buyone-print-root .print-page-break {
+    page-break-after: always;
+    break-after: page;
+  }
+
+  #buyone-print-root .print-page-break:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
+

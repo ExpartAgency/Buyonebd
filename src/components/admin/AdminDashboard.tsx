@@ -112,7 +112,8 @@ import {
   ProductReview,
   WalletTopUpRequest,
   DeliveryBoy,
-  CustomerProfile
+  CustomerProfile,
+  InvoicePaperSize
 } from '../../types';
 import { CreativeMarketingStudio } from './CreativeMarketingStudio';
 import { PartialOrdersView } from './PartialOrdersView';
@@ -123,6 +124,8 @@ import { ResellerAdminView } from './ResellerAdminView';
 import { WholesaleAdminView } from './WholesaleAdminView';
 import { GlobalMarketingHub } from './GlobalMarketingHub';
 import { WhatsAppSupportConsole } from './WhatsAppSupportConsole';
+import { InvoicePrintModal } from './InvoicePrintModal';
+import { InvoiceSetupPanel } from './InvoiceSetupPanel';
 
 const parseJsonSafe = async (res: Response): Promise<any> => {
   const txt = await res.text();
@@ -239,6 +242,7 @@ export const AdminDashboard: React.FC = () => {
     endBrowserCallSession,
     executeAIAgentCommand,
     agentActionLogs,
+    aiReviewQueue,
     customerWalletBalance,
     walletLastPurchaseAt,
     walletDaysRemaining,
@@ -593,6 +597,9 @@ export const AdminDashboard: React.FC = () => {
     note: ''
   });
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
+  const [printOrdersList, setPrintOrdersList] = useState<Order[] | null>(null);
+  const [printPaperMode, setPrintPaperMode] = useState<InvoicePaperSize>('A4');
+  const [sliderGalleryTarget, setSliderGalleryTarget] = useState<'modal' | string | null>(null);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [isBookingSteadfast, setIsBookingSteadfast] = useState<string | null>(null);
   const [fraudCheckPhone, setFraudCheckPhone] = useState('');
@@ -1547,7 +1554,13 @@ export const AdminDashboard: React.FC = () => {
       titleEn: '5. AI, WhatsApp & Support',
       items: [
         { id: 'whatsapp_desk', labelBn: 'ডিরেক্ট WhatsApp API ও AI চ্যাট', labelEn: 'WhatsApp API & AI Chat', icon: MessageCircle, badge: whatsappMessages.length || undefined },
-        { id: 'ai_operator', labelBn: 'এআই ওয়েবসাইট এজেন্ট', labelEn: 'AI Website Agent', icon: Sparkles },
+        {
+          id: 'ai_operator',
+          labelBn: 'এআই ওয়েবসাইট এজেন্ট',
+          labelEn: 'AI Website Agent',
+          icon: Sparkles,
+          badge: aiReviewQueue.filter((t) => t.status === 'pending_review').length || undefined
+        },
         { id: 'support_desk', labelBn: 'লাইভ চ্যাট ও ব্রাউজার কল', labelEn: 'Live Chat & Calls', icon: Headphones, badge: supportDeskBadge || undefined },
         { id: 'ai_hub', labelBn: 'এআই ও ভয়েস কল সেটআপ', labelEn: 'AI Voice Hub', icon: Bot },
         { id: 'reviews', labelBn: 'কাস্টমার রিভিউ ও রেটিং', labelEn: 'Customer Reviews', icon: MessageCircle, badge: reviews.length }
@@ -1626,6 +1639,11 @@ export const AdminDashboard: React.FC = () => {
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-200" />
             <span className="hidden sm:inline">{at('AI এজেন্ট', 'AI Agent')}</span>
+            {aiReviewQueue.filter((t) => t.status === 'pending_review').length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black font-mono">
+                {aiReviewQueue.filter((t) => t.status === 'pending_review').length}
+              </span>
+            )}
           </button>
 
           {/* Cross-Device Cloud Order Sync Status / Quick Connect */}
@@ -3636,6 +3654,35 @@ export const AdminDashboard: React.FC = () => {
                     <RefreshCw className={`w-3.5 h-3.5 ${isSyncingOrders ? 'animate-spin' : ''}`} />
                     <span>{at('সিঙ্ক করুন', 'Sync Orders')}</span>
                   </button>
+                  {selectedOrderIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const chosen = orders.filter((o) => selectedOrderIds.includes(o.id));
+                        if (chosen.length > 0) {
+                          setPrintPaperMode(settings.invoiceSettings?.defaultPaperSize || 'A4');
+                          setPrintOrdersList(chosen);
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>{at(`বাল্ক প্রিন্ট (${selectedOrderIds.length})`, `Bulk Print (${selectedOrderIds.length})`)}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('settings');
+                      setTimeout(() => {
+                        document.getElementById('admin-invoice-setup-panel')?.scrollIntoView({ behavior: 'smooth' });
+                      }, 120);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>{at('ইনভয়েস সেটআপ', 'Invoice Setup')}</span>
+                  </button>
                   <button
                     type="button"
                     onClick={handleExportOrdersCsv}
@@ -4077,14 +4124,42 @@ export const AdminDashboard: React.FC = () => {
                                 </select>
                               </td>
                               <td className="py-3 px-3 whitespace-nowrap">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedOrderDetails(ord)}
-                                  className="px-2.5 py-1 rounded-md bg-sky-600 hover:bg-sky-500 text-white font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Printer className="w-3 h-3" />
-                                  <span>Print</span>
-                                </button>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPrintPaperMode('A4');
+                                      setPrintOrdersList([ord]);
+                                    }}
+                                    className="px-2 py-1 rounded-md bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer"
+                                    title="Print A4 Invoice"
+                                  >
+                                    <Printer className="w-3 h-3" />
+                                    <span>A4</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPrintPaperMode('label_4x6');
+                                      setPrintOrdersList([ord]);
+                                    }}
+                                    className="px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] cursor-pointer"
+                                    title="Print Shipping Label (4×6 / 4×3 / 3×2)"
+                                  >
+                                    Label
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPrintPaperMode('thermal_80mm');
+                                      setPrintOrdersList([ord]);
+                                    }}
+                                    className="px-1.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-[10px] cursor-pointer"
+                                    title="80mm POS Thermal Slip"
+                                  >
+                                    80mm
+                                  </button>
+                                </div>
                               </td>
                               <td className="py-3 px-3 font-mono text-[11px] text-emerald-400 font-bold whitespace-nowrap">
                                 {ord.courier?.trackingCode || '—'}
@@ -6680,7 +6755,17 @@ export const AdminDashboard: React.FC = () => {
                         {sl.isActive ? at('সক্রিয়', 'Active') : at('নিষ্ক্রিয়', 'Inactive')}
                       </button>
 
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSliderGalleryTarget((prev) => (prev === sl.id ? null : sl.id))
+                          }
+                          className="px-2.5 py-1.5 rounded-lg bg-sky-950/70 hover:bg-sky-900 border border-sky-700/60 text-sky-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <ImageIcon className="w-3 h-3" />
+                          <span>{at('গ্যালারি', 'Gallery')}</span>
+                        </button>
                         <label
                           title={at('নতুন ছবি আপলোড', 'Upload New Photo')}
                           className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-emerald-700 text-emerald-300 hover:text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
@@ -6693,7 +6778,7 @@ export const AdminDashboard: React.FC = () => {
                             className="hidden"
                             onChange={(e) => {
                               const file = e.target.files?.[0];
-                              handleImageFileUpload(file, (url) => updateSlide(sl.id, { image: url }));
+                              handleImageFileUpload(file, (url) => updateSlide(sl.id, { image: url }), 'slider');
                               e.currentTarget.value = '';
                             }}
                           />
@@ -6717,6 +6802,47 @@ export const AdminDashboard: React.FC = () => {
                         </button>
                       </div>
                     </div>
+
+                    {sliderGalleryTarget === sl.id && (
+                      <div className="p-3 rounded-xl bg-slate-950 border border-sky-500/40 space-y-2 animate-fade-in">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-sky-300">
+                            {at('মিডিয়া গ্যালারি থেকে স্লাইডার ছবি বাছুন', 'Pick Slider Banner from Gallery')} ({mediaLibrary.length})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setSliderGalleryTarget(null)}
+                            className="text-slate-400 hover:text-white font-bold cursor-pointer"
+                          >
+                            {at('বন্ধ করুন', 'Close')}
+                          </button>
+                        </div>
+                        {mediaLibrary.length === 0 ? (
+                          <p className="text-[11px] text-slate-500 py-2">
+                            {at('গ্যালারি খালি। প্রথমে ছবি আপলোড করুন।', 'Gallery is empty. Upload an image first.')}
+                          </p>
+                        ) : (
+                          <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-36 overflow-y-auto">
+                            {mediaLibrary.map((m) => (
+                              <button
+                                key={m.id}
+                                type="button"
+                                onClick={() => {
+                                  updateSlide(sl.id, { image: m.url });
+                                  setSliderGalleryTarget(null);
+                                  addToast('success', at('স্লাইডার ছবি আপডেট!', 'Slider Image Picked'), m.name || '');
+                                }}
+                                className={`relative aspect-[16/10] rounded-lg overflow-hidden border-2 cursor-pointer ${
+                                  sl.image === m.url ? 'border-emerald-500' : 'border-slate-800 hover:border-sky-400'
+                                }`}
+                              >
+                                <img src={m.url} alt={m.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -11794,13 +11920,16 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
+              {/* Dynamic Invoice & Courier Label Setup Panel (A4, Label, 80mm + Unlimited Custom Fields) */}
+              <InvoiceSetupPanel onImageUpload={handleImageFileUpload} />
+
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={() =>
                     saveSettingsChanges(
                       t('সংরক্ষিত!', 'Saved!'),
-                      t('পেমেন্ট, ডেলিভারি ও SMTP সেটিংস সংরক্ষিত হয়েছে!', 'Payment, Delivery & SMTP settings saved!')
+                      t('পেমেন্ট, ডেলিভারি, ইনভয়েস ও SMTP সেটিংস সংরক্ষিত হয়েছে!', 'Payment, Delivery, Invoice & SMTP settings saved!')
                     )
                   }
                   className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer inline-flex items-center gap-2"
@@ -14587,13 +14716,19 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                   <span className="text-xs text-emerald-400 font-mono font-bold">অর্ডার বিস্তারিত: {selectedOrderDetails.id}</span>
                   <h3 className="text-lg font-black text-white">{selectedOrderDetails.customer.name}</h3>
                 </div>
-                <button
-                  onClick={() => window.print()}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>চালান প্রিন্ট</span>
-                </button>
+                <div className="flex items-center gap-2 pr-8">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPrintPaperMode(settings.invoiceSettings?.defaultPaperSize || 'A4');
+                      setPrintOrdersList([selectedOrderDetails]);
+                    }}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>{at('A4 ইনভয়েস ও লেবেল প্রিন্ট', 'Print Invoice / Label')}</span>
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4 text-xs">
@@ -15948,7 +16083,17 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSliderGalleryTarget((prev) => (prev === 'modal' ? null : 'modal'))
+                      }
+                      className="px-3 py-2 bg-sky-950/70 hover:bg-sky-900 border border-sky-700/60 text-sky-300 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      <span>{at('গ্যালারি থেকে নিন', 'Pick from Gallery')} ({mediaLibrary.length})</span>
+                    </button>
                     <label className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md">
                       <Upload className="w-3.5 h-3.5" />
                       <span>{at('ডিভাইস থেকে আপলোড', 'Upload Image')}</span>
@@ -15958,8 +16103,10 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          handleImageFileUpload(file, (url) =>
-                            setSlideForm((prev) => ({ ...prev, image: url }))
+                          handleImageFileUpload(
+                            file,
+                            (url) => setSlideForm((prev) => ({ ...prev, image: url })),
+                            'slider'
                           );
                           e.currentTarget.value = '';
                         }}
@@ -15976,6 +16123,46 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                     )}
                   </div>
                 </div>
+
+                {sliderGalleryTarget === 'modal' && (
+                  <div className="p-3 rounded-xl bg-slate-900 border border-sky-500/40 space-y-2 animate-fade-in">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-sky-300">
+                        {at('মিডিয়া গ্যালারি থেকে স্লাইডার ছবি বেছে নিন', 'Select Slider Image from Media Gallery')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSliderGalleryTarget(null)}
+                        className="text-slate-400 hover:text-white font-bold cursor-pointer"
+                      >
+                        {at('বন্ধ করুন', 'Close')}
+                      </button>
+                    </div>
+                    {mediaLibrary.length === 0 ? (
+                      <p className="text-[11px] text-slate-500 py-2">
+                        {at('গ্যালারি খালি। প্রথমে ছবি আপলোড করুন।', 'Gallery is empty. Upload an image first.')}
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-40 overflow-y-auto">
+                        {mediaLibrary.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => {
+                              setSlideForm((prev) => ({ ...prev, image: m.url }));
+                              setSliderGalleryTarget(null);
+                            }}
+                            className={`relative aspect-[16/10] rounded-lg overflow-hidden border-2 cursor-pointer ${
+                              slideForm.image === m.url ? 'border-emerald-500' : 'border-slate-800 hover:border-sky-400'
+                            }`}
+                          >
+                            <img src={m.url} alt={m.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Live Banner Preview */}
                 {slideForm.image ? (
@@ -15994,8 +16181,10 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                       className="hidden"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
-                        handleImageFileUpload(file, (url) =>
-                          setSlideForm((prev) => ({ ...prev, image: url }))
+                        handleImageFileUpload(
+                          file,
+                          (url) => setSlideForm((prev) => ({ ...prev, image: url })),
+                          'slider'
                         );
                         e.currentTarget.value = '';
                       }}
@@ -16917,6 +17106,20 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
             </div>
           </div>
         </div>
+      )}
+      {/* INVOICE / SHIPPING LABEL / 80MM RECEIPT PRINT MODAL */}
+      {printOrdersList && printOrdersList.length > 0 && (
+        <InvoicePrintModal
+          orders={printOrdersList}
+          initialPaperSize={printPaperMode}
+          onClose={() => setPrintOrdersList(null)}
+          onOpenInvoiceSetup={() => {
+            setActiveTab('settings');
+            setTimeout(() => {
+              document.getElementById('admin-invoice-setup-panel')?.scrollIntoView({ behavior: 'smooth' });
+            }, 120);
+          }}
+        />
       )}
     </div>
   );

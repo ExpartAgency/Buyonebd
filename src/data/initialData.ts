@@ -1316,6 +1316,53 @@ export const INITIAL_SETTINGS: StoreSettings = {
     tiktokShopSyncEnabled: true,
     defaultUtmSource: 'facebook',
     defaultUtmMedium: 'cpc'
+  },
+  aiAutopilotSettings: {
+    enabled: true,
+    requireAdminReview: true,
+    autoScanNewOrders: true,
+    autoPrepareCall: true,
+    autoPrepareConfirm: true,
+    autoPrepareCourier: true,
+    autoPrepareWhatsapp: true,
+    preferredCourier: 'Steadfast'
+  },
+  invoiceSettings: {
+    companyName: 'BuyOne BD',
+    companyNameBn: 'বাইওয়ান বিডি',
+    tagline: 'Trusted Cash on Delivery E-Commerce Across All 64 Districts',
+    phone: '+8801917942662',
+    email: 'buyonebd@gmail.com',
+    websiteUrl: 'https://buyonebd.com',
+    address: 'House 24, Road 11, Banani, Dhaka-1213, Bangladesh',
+    binVatNumber: '',
+    tradeLicense: '',
+    logoUrl: '',
+    defaultPaperSize: 'A4',
+    invoicePrefix: 'INV-',
+    headerNote: 'Open-box inspection allowed before Cash on Delivery payment.',
+    footerNote: 'Thank you for shopping with BuyOne BD! Need help? Call +8801917942662.',
+    termsText: '1. 7-day replacement guarantee for manufacturing defects.\n2. Keep invoice & original packaging intact for returns or warranty claims.',
+    authorizedSignatoryName: 'Authorized Accounts Desk',
+    showProductImages: true,
+    showSku: true,
+    showCustomerEmail: false,
+    showOrderNotes: true,
+    showBarcode: true,
+    showCodBadge: true,
+    showResellerProfitOnInternal: false,
+    showAuthorizedSignature: true,
+    accentColor: '#059669',
+    customFields: [
+      {
+        id: 'inv-cf-1',
+        label: 'Return Hotline',
+        value: '+8801917942662 (10 AM - 10 PM)',
+        showOnA4: true,
+        showOnLabel: false,
+        showOnReceipt: true
+      }
+    ]
   }
 };
 

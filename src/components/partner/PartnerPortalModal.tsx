@@ -22,10 +22,16 @@ import {
   Settings,
   TrendingUp,
   Lock,
-  Save
+  Save,
+  Calculator,
+  Bot,
+  Volume2,
+  Plus
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BD_DISTRICTS } from '../../data/initialData';
+import { Product } from '../../types';
+import { speakClearText } from '../../utils/voiceAudio';
 
 export const PartnerPortalModal: React.FC = () => {
   const {
@@ -51,10 +57,11 @@ export const PartnerPortalModal: React.FC = () => {
     logoutWholesaler,
     submitWholesaleQuote,
     getPartnerPriceInfo,
+    createOrder,
     addToCart,
-    openOneClickCheckout,
     syncStoreFromServer,
     setIsWhatsAppOpen,
+    sendCustomerWhatsAppInquiry,
     addToast,
     lang,
     t
@@ -75,12 +82,37 @@ export const PartnerPortalModal: React.FC = () => {
   const [rSubmitting, setRSubmitting] = useState(false);
 
   // Expanded Mobile-Friendly Reseller Dashboard Sub-Tabs
-  const [resDashTab, setResDashTab] = useState<'overview' | 'catalog' | 'orders' | 'payouts' | 'profile'>('overview');
+  const [resDashTab, setResDashTab] = useState<'overview' | 'catalog' | 'orders' | 'payouts' | 'support' | 'profile'>('overview');
   const [catSearch, setCatSearch] = useState('');
   const [catFilter, setCatFilter] = useState('all');
   const [customQuotes, setCustomQuotes] = useState<Record<string, string>>({});
   const [copiedId, setCopiedId] = useState<string>('');
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
+
+  // In-Dashboard Place Order for Customer (Custom Margin)
+  const [quickOrderProduct, setQuickOrderProduct] = useState<Product | null>(null);
+  const [qoQty, setQoQty] = useState<number>(1);
+  const [qoSellPrice, setQoSellPrice] = useState<number>(0);
+  const [qoCustName, setQoCustName] = useState('');
+  const [qoCustPhone, setQoCustPhone] = useState('');
+  const [qoCustDistrict, setQoCustDistrict] = useState('Dhaka - Inside City');
+  const [qoCustThana, setQoCustThana] = useState('');
+  const [qoCustAddress, setQoCustAddress] = useState('');
+  const [qoNote, setQoNote] = useState('');
+  const [qoSubmitting, setQoSubmitting] = useState(false);
+
+  // Reseller Orders Filter
+  const [resOrderFilter, setResOrderFilter] = useState<'all' | 'pending' | 'processing' | 'shipped' | 'delivered'>('all');
+
+  // Interactive Margin Calculator
+  const [calcBasePrice, setCalcBasePrice] = useState<number>(850);
+  const [calcSellPrice, setCalcSellPrice] = useState<number>(1250);
+  const [calcQty, setCalcQty] = useState<number>(1);
+
+  // Built-in Reseller Support Desk (AI + Admin WhatsApp Sync)
+  const [supportQuestion, setSupportQuestion] = useState('');
+  const [supportThread, setSupportThread] = useState<{ id: string; sender: 'reseller' | 'ai' | 'whatsapp'; text: string; time: string }[]>([]);
+  const [isAskingSupportAi, setIsAskingSupportAi] = useState(false);
 
   // Reseller Profile Edit State
   const [profName, setProfName] = useState('');
@@ -142,6 +174,11 @@ export const PartnerPortalModal: React.FC = () => {
         (o.resellerCode && o.resellerCode === activeReseller.resellerCode)
     );
   }, [orders, activeReseller]);
+
+  const filteredResellerOrders = useMemo(() => {
+    if (resOrderFilter === 'all') return myResellerOrders;
+    return myResellerOrders.filter((o) => o.status === resOrderFilter);
+  }, [myResellerOrders, resOrderFilter]);
 
   const filteredCatalog = useMemo(() => {
     const q = catSearch.trim().toLowerCase();
@@ -288,6 +325,140 @@ export const PartnerPortalModal: React.FC = () => {
       setQuoteTargetPrice('');
       setQuoteNotes('');
     }
+  };
+
+  const handleOpenQuickCustomerOrder = (product: Product) => {
+    const info = getPartnerPriceInfo(product, 1);
+    const preferredQuote = Number(customQuotes[product.id] || product.price);
+    setQuickOrderProduct(product);
+    setQoQty(1);
+    setQoSellPrice(Math.max(info.unitPrice, preferredQuote));
+    setQoCustName('');
+    setQoCustPhone('');
+    setQoCustDistrict(activeReseller?.district || 'Dhaka - Inside City');
+    setQoCustThana('');
+    setQoCustAddress('');
+    setQoNote('');
+  };
+
+  const handleSubmitQuickCustomerOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickOrderProduct || !activeReseller) return;
+    if (!qoCustName.trim() || !qoCustPhone.trim() || !qoCustAddress.trim()) {
+      addToast('warning', t('তথ্য অসম্পূর্ণ', 'Missing Details'), t('কাস্টমারের নাম, ফোন ও ঠিকানা দিন।', 'Customer name, phone and address are required.'));
+      return;
+    }
+    setQoSubmitting(true);
+    try {
+      const distInfo = BD_DISTRICTS.find((d) => d.name === qoCustDistrict);
+      const deliveryZone = distInfo?.zone || 'dhaka_outside';
+      const customCustomerSubtotal = Math.max(0, qoSellPrice) * Math.max(1, qoQty);
+      const newOrd = createOrder({
+        customer: {
+          name: qoCustName.trim(),
+          phone: qoCustPhone.trim(),
+          address: qoCustAddress.trim(),
+          district: qoCustDistrict,
+          thana: qoCustThana.trim() || qoCustDistrict,
+          note: qoNote.trim() ? `[Reseller ${activeReseller.resellerCode}] ${qoNote.trim()}` : `[Reseller ${activeReseller.resellerCode}]`
+        },
+        items: [{ product: quickOrderProduct, quantity: Math.max(1, qoQty) }],
+        paymentMethod: 'cod',
+        deliveryZone,
+        partnerType: 'reseller',
+        customerQuotedPrice: customCustomerSubtotal
+      });
+      setQuickOrderProduct(null);
+      setResDashTab('orders');
+      addToast(
+        'success',
+        t('কাস্টমার COD অর্ডার সম্পন্ন!', 'Customer COD Order Placed!'),
+        `#${newOrd.id} · Profit +৳${(newOrd.resellerProfit || 0).toLocaleString()}`
+      );
+    } catch (err: any) {
+      addToast('error', t('অর্ডার ব্যর্থ', 'Order Failed'), err?.message || 'Could not place reseller order.');
+    } finally {
+      setQoSubmitting(false);
+    }
+  };
+
+  const handleAskSupportAi = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const q = supportQuestion.trim();
+    if (!q || isAskingSupportAi) return;
+    const userMsg = {
+      id: `rs-${Date.now()}`,
+      sender: 'reseller' as const,
+      text: q,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setSupportThread((prev) => [...prev, userMsg]);
+    setSupportQuestion('');
+    setIsAskingSupportAi(true);
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `Reseller ${activeReseller?.name || 'Partner'} (${activeReseller?.resellerCode || ''}, Status: ${activeReseller?.status || 'pending'}) asks: ${q}`,
+          lang,
+          products: products.slice(0, 8).map((p) => ({
+            title: p.title,
+            titleBn: p.titleBn,
+            price: p.price,
+            stock: p.stock
+          }))
+        })
+      });
+      const data = await res.json();
+      const aiText =
+        data?.reply ||
+        t(
+          'ধন্যবাদ! আপনার প্রশ্নটি পেয়েছি। দ্রুত সহায়তার জন্য নিচের WhatsApp বাটনে মেসেজ করতে পারেন।',
+          'Thanks for reaching out! Please also send directly to our Admin WhatsApp Desk below for fast priority assistance.'
+        );
+      setSupportThread((prev) => [
+        ...prev,
+        {
+          id: `rai-${Date.now()}`,
+          sender: 'ai',
+          text: aiText,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
+    } catch {
+      setSupportThread((prev) => [
+        ...prev,
+        {
+          id: `rai-err-${Date.now()}`,
+          sender: 'ai',
+          text: t('এই মুহূর্তে কানেক্ট করা যায়নি। নিচের WhatsApp সাপোর্টে পাঠান।', 'Could not reach assistant right now. Use Direct WhatsApp Desk below.'),
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
+    } finally {
+      setIsAskingSupportAi(false);
+    }
+  };
+
+  const handleSendResellerWhatsAppToAdmin = async (customText?: string) => {
+    const msgText = (customText || supportQuestion).trim();
+    if (!msgText || !activeReseller) return;
+    if (!customText) setSupportQuestion('');
+    setSupportThread((prev) => [
+      ...prev,
+      {
+        id: `rwa-${Date.now()}`,
+        sender: 'whatsapp',
+        text: `[Sent to Admin WhatsApp Desk] ${msgText}`,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+    ]);
+    await sendCustomerWhatsAppInquiry({
+      phone: activeReseller.phone,
+      name: `${activeReseller.name} (${activeReseller.resellerCode})`,
+      message: `[Reseller Dashboard Inquiry] ${msgText}`
+    });
   };
 
   const myPayouts = activeReseller
@@ -667,12 +838,13 @@ export const PartnerPortalModal: React.FC = () => {
                       { id: 'overview', label: t('ওভারভিউ', 'Overview'), icon: TrendingUp },
                       {
                         id: 'catalog',
-                        label: isApprovedReseller ? t('রিসেলার ক্যাটালগ', 'Catalog & Margin') : t('ক্যাটালগ 🔒', 'Catalog 🔒'),
+                        label: isApprovedReseller ? t('ক্যাটালগ ও অর্ডার', 'Catalog & Order') : t('ক্যাটালগ 🔒', 'Catalog 🔒'),
                         icon: ShoppingBag
                       },
                       { id: 'orders', label: `${t('আমার অর্ডার', 'Resold Orders')} (${myResellerOrders.length})`, icon: Package },
                       { id: 'payouts', label: t('ওয়ালেট ও পেআউট', 'Wallet & Payouts'), icon: Wallet },
-                      { id: 'profile', label: t('প্রোফাইল ও সাপোর্ট', 'Settings & Support'), icon: Settings }
+                      { id: 'support', label: t('AI ও WhatsApp সাপোর্ট', 'AI & WhatsApp Desk'), icon: MessageCircle },
+                      { id: 'profile', label: t('প্রোফাইল সেটিংস', 'Profile Settings'), icon: Settings }
                     ].map((tab) => {
                       const Icon = tab.icon;
                       const active = resDashTab === tab.id;
@@ -767,25 +939,72 @@ export const PartnerPortalModal: React.FC = () => {
                           </p>
                           <p className="text-[11px] text-slate-500">
                             {isApprovedReseller
-                              ? t('কাস্টমার প্রাইস বসিয়ে সরাসরি ১-ক্লিক COD অর্ডার করুন।', 'Set custom customer price and place 1-click COD orders.')
+                              ? t('কাস্টমার প্রাইস বসিয়ে সরাসরি ড্যাশবোর্ড থেকে COD অর্ডার করুন।', 'Set custom customer price and place COD orders right inside this dashboard.')
                               : t('অ্যাকাউন্ট অনুমোদন হলে সকল গোপন রিসেলার প্রাইস দেখবেন।', 'Unlocks confidential rates upon admin verification.')}
                           </p>
                         </button>
 
-                        <a
-                          href={supportWaHref}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30 hover:border-emerald-500 text-left space-y-1 block"
+                        <button
+                          type="button"
+                          onClick={() => setResDashTab('support')}
+                          className="p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30 hover:border-emerald-500 text-left space-y-1 cursor-pointer"
                         >
                           <p className="font-bold text-emerald-900 dark:text-emerald-300 flex items-center justify-between">
-                            <span>{t('হোয়াটসঅ্যাপ রিসেলার সাপোর্ট ডেস্ক', 'Direct WhatsApp Reseller Desk')}</span>
+                            <span>{t('AI ও WhatsApp রিসেলার সাপোর্ট ডেস্ক', 'AI & WhatsApp Reseller Desk')}</span>
                             <MessageCircle className="w-4 h-4 text-emerald-600" />
                           </p>
                           <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
-                            {t('অর্ডার হোল্ড, কুরিয়ার আপডেট বা পে-আউটের জন্য সরাসরি মেসেজ করুন।', 'Instant WhatsApp support for order verification, courier or payouts.')}
+                            {t('অ্যাডমিন প্যানেলের WhatsApp চ্যাটে সরাসরি মেসেজ ও AI সাপোর্ট পান।', 'Ask Store AI or send live WhatsApp inquiries to Admin Desk.')}
                           </p>
-                        </a>
+                        </button>
+                      </div>
+
+                      {/* Interactive Reseller Profit & Margin Calculator */}
+                      <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 space-y-3 text-xs tabular-nums">
+                        <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <Calculator className="w-4 h-4 text-emerald-600" />
+                          <span>{t('লাইভ রিসেলার প্রফিট ক্যালকুলেটর', 'Reseller Margin & Profit Calculator')}</span>
+                        </h4>
+                        <div className="grid grid-cols-3 gap-2.5">
+                          <div>
+                            <label className="block text-[11px] text-slate-500 mb-1">{t('রিসেলার রেট (৳)', 'Reseller Rate')}</label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={calcBasePrice}
+                              onChange={(e) => setCalcBasePrice(Number(e.target.value) || 0)}
+                              className="w-full px-2.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-slate-500 mb-1">{t('আপনার বিক্রয় মূল্য (৳)', 'Sell Price')}</label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={calcSellPrice}
+                              onChange={(e) => setCalcSellPrice(Number(e.target.value) || 0)}
+                              className="w-full px-2.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-slate-500 mb-1">{t('পরিমাণ', 'Qty')}</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={calcQty}
+                              onChange={(e) => setCalcQty(Math.max(1, Number(e.target.value) || 1))}
+                              className="w-full px-2.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60">
+                          <span className="font-semibold text-emerald-900 dark:text-emerald-300">
+                            {t('আপনার সম্ভাব্য নিট প্রফিট:', 'Estimated Net Profit:')}
+                          </span>
+                          <span className="font-mono font-black text-base text-emerald-700 dark:text-emerald-400">
+                            +৳{(Math.max(0, calcSellPrice - calcBasePrice) * calcQty).toLocaleString()}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -898,14 +1117,11 @@ export const PartnerPortalModal: React.FC = () => {
                                       <button
                                         type="button"
                                         disabled={p.stock <= 0}
-                                        onClick={() => {
-                                          closePartnerPortal();
-                                          openOneClickCheckout(p);
-                                        }}
+                                        onClick={() => handleOpenQuickCustomerOrder(p)}
                                         className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer disabled:opacity-50"
                                       >
-                                        <span>{t('অর্ডার', 'Order COD')}</span>
-                                        <ArrowUpRight className="w-3 h-3" />
+                                        <Plus className="w-3 h-3" />
+                                        <span>{t('কাস্টমার অর্ডার', 'Place Order')}</span>
                                       </button>
                                     </div>
                                   </div>
@@ -913,25 +1129,162 @@ export const PartnerPortalModal: React.FC = () => {
                               );
                             })}
                           </div>
+
+                          {/* In-Dashboard Quick Order for Customer Drawer / Panel */}
+                          {quickOrderProduct && (
+                            <form
+                              onSubmit={handleSubmitQuickCustomerOrder}
+                              className="p-4 rounded-2xl border-2 border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/30 space-y-3 text-xs animate-fade-in"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <span className="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-400 block">
+                                    {t('কাস্টমারের জন্য COD অর্ডার প্লেস', 'Place Customer COD Order (Custom Margin)')}
+                                  </span>
+                                  <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                                    {lang === 'bn' ? quickOrderProduct.titleBn : quickOrderProduct.title}
+                                  </h4>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setQuickOrderProduct(null)}
+                                  className="p-1.5 rounded-lg bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 tabular-nums">
+                                <div>
+                                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">{t('পরিমাণ', 'Qty')}</label>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={Math.max(1, quickOrderProduct.stock)}
+                                    value={qoQty}
+                                    onChange={(e) => setQoQty(Math.max(1, Number(e.target.value) || 1))}
+                                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">{t('কাস্টমার বিক্রয় মূল্য / পিস (৳)', 'Customer Rate / Unit (৳)')}</label>
+                                  <input
+                                    type="number"
+                                    min={getPartnerPriceInfo(quickOrderProduct, qoQty).unitPrice}
+                                    value={qoSellPrice}
+                                    onChange={(e) => setQoSellPrice(Number(e.target.value) || 0)}
+                                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                                  />
+                                </div>
+                                <div className="col-span-2 sm:col-span-1 p-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 flex flex-col justify-center">
+                                  <span className="text-[10px] text-slate-500">{t('আপনার নিট লাভ', 'Your Net Profit')}</span>
+                                  <span className="font-mono font-black text-sm text-emerald-600 dark:text-emerald-400">
+                                    +৳
+                                    {(
+                                      Math.max(0, qoSellPrice - getPartnerPriceInfo(quickOrderProduct, qoQty).unitPrice) * qoQty
+                                    ).toLocaleString()}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <input
+                                  type="text"
+                                  required
+                                  value={qoCustName}
+                                  onChange={(e) => setQoCustName(e.target.value)}
+                                  placeholder={t('কাস্টমারের নাম *', 'Customer Full Name *')}
+                                  className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                                />
+                                <input
+                                  type="tel"
+                                  required
+                                  value={qoCustPhone}
+                                  onChange={(e) => setQoCustPhone(e.target.value)}
+                                  placeholder={t('কাস্টমার মোবাইল নম্বর *', 'Customer Phone (01XXXXXXXXX) *')}
+                                  className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                                />
+                                <select
+                                  value={qoCustDistrict}
+                                  onChange={(e) => setQoCustDistrict(e.target.value)}
+                                  className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                                >
+                                  {BD_DISTRICTS.map((d) => (
+                                    <option key={d.name} value={d.name}>{d.name}</option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="text"
+                                  value={qoCustThana}
+                                  onChange={(e) => setQoCustThana(e.target.value)}
+                                  placeholder={t('থানা / এরিয়া', 'Thana / Area')}
+                                  className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                                />
+                                <input
+                                  type="text"
+                                  required
+                                  value={qoCustAddress}
+                                  onChange={(e) => setQoCustAddress(e.target.value)}
+                                  placeholder={t('পূর্ণ ডেলিভারি ঠিকানা *', 'Full Delivery Address *')}
+                                  className="sm:col-span-2 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                                />
+                                <input
+                                  type="text"
+                                  value={qoNote}
+                                  onChange={(e) => setQoNote(e.target.value)}
+                                  placeholder={t('নোট (কালার/সাইজ বা নির্দেশনা)', 'Order Note (Color/Size/Instructions)')}
+                                  className="sm:col-span-2 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                                />
+                              </div>
+
+                              <button
+                                type="submit"
+                                disabled={qoSubmitting}
+                                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black cursor-pointer disabled:opacity-60"
+                              >
+                                {qoSubmitting ? t('অর্ডার তৈরি হচ্ছে...', 'Placing Order...') : t('কাস্টমার COD অর্ডার কনফার্ম করুন', 'Confirm & Place Customer COD Order')}
+                              </button>
+                            </form>
+                          )}
                         </>
                       )}
                     </div>
                   )}
 
-                  {/* SUB-TAB 3: MY RESOLD ORDERS LIVE TRACKER */}
+                  {/* SUB-TAB 3: MY RESOLD ORDERS LIVE TRACKER + STATUS FILTERS */}
                   {resDashTab === 'orders' && (
                     <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 space-y-3 text-xs">
-                      <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                        <Package className="w-4 h-4 text-emerald-600" />
-                        <span>{t('আমার রিসেলার অর্ডার ট্র্যাকার', 'My Resold Customer Orders')}</span>
-                      </h4>
-                      {myResellerOrders.length === 0 ? (
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <Package className="w-4 h-4 text-emerald-600" />
+                          <span>{t('আমার রিসেলার অর্ডার ট্র্যাকার', 'My Resold Customer Orders')}</span>
+                        </h4>
+
+                        <div className="flex flex-wrap items-center gap-1">
+                          {(['all', 'pending', 'processing', 'shipped', 'delivered'] as const).map((st) => (
+                            <button
+                              key={st}
+                              type="button"
+                              onClick={() => setResOrderFilter(st)}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase cursor-pointer ${
+                                resOrderFilter === st
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                              }`}
+                            >
+                              {st}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {filteredResellerOrders.length === 0 ? (
                         <p className="text-slate-500 py-6 text-center">
-                          {t('এখনো আপনার কোনো রিসেলার অর্ডার প্লেস হয়নি। ক্যাটালগ থেকে প্রথম কাস্টমার অর্ডার করুন!', 'No reseller orders placed yet. Place your first customer COD order from the Catalog tab.')}
+                          {t('এই ফিল্টারে কোনো রিসেলার অর্ডার নেই।', 'No reseller orders match this filter.')}
                         </p>
                       ) : (
                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                          {myResellerOrders.map((ord) => (
+                          {filteredResellerOrders.map((ord) => (
                             <div key={ord.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 tabular-nums">
                               <div className="space-y-0.5">
                                 <p className="font-bold text-slate-900 dark:text-white">
@@ -942,13 +1295,31 @@ export const PartnerPortalModal: React.FC = () => {
                                   {ord.courier?.trackingCode ? ` · Tracking: ${ord.courier.trackingCode}` : ''}
                                 </p>
                               </div>
-                              <div className="flex sm:flex-col items-center sm:items-end justify-between gap-1">
+                              <div className="flex flex-wrap sm:flex-col items-center sm:items-end justify-between gap-1.5">
                                 <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
                                   Profit +৳{(ord.resellerProfit || 0).toLocaleString()}
                                 </span>
-                                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                                  {ord.status} · Bill ৳{ord.pricing.total.toLocaleString()}
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  {ord.courier?.trackingCode && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleCopyText(
+                                          `trk-${ord.id}`,
+                                          ord.courier?.trackingCode || '',
+                                          t('ট্র্যাকিং কোড কপি হয়েছে!', 'Tracking Code Copied!')
+                                        )
+                                      }
+                                      className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1 cursor-pointer"
+                                    >
+                                      {copiedId === `trk-${ord.id}` ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                                      <span>Track</span>
+                                    </button>
+                                  )}
+                                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                    {ord.status} · ৳{ord.pricing.total.toLocaleString()}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           ))}
@@ -1051,6 +1422,120 @@ export const PartnerPortalModal: React.FC = () => {
                             ))}
                           </div>
                         )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SUB-TAB 4B: BUILT-IN RESELLER AI + WHATSAPP SUPPORT DESK */}
+                  {resDashTab === 'support' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 text-xs">
+                      <div className="lg:col-span-7 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 space-y-3 flex flex-col">
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                            <Bot className="w-4 h-4 text-emerald-600" />
+                            <span>{t('রিসেলার AI ও ডিরেক্ট WhatsApp সাপোর্ট চ্যাট', 'Reseller AI & Admin WhatsApp Support')}</span>
+                          </h4>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                            {activeReseller.resellerCode}
+                          </span>
+                        </div>
+
+                        <div className="flex-1 min-h-[180px] max-h-[260px] overflow-y-auto p-3 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                          {supportThread.length === 0 ? (
+                            <p className="text-slate-500 text-center py-8">
+                              {t(
+                                'প্রোডাক্ট রেট, ডেলিভারি চার্জ বা পে-আউট সম্পর্কে AI কে প্রশ্ন করুন অথবা সরাসরি অ্যাডমিনের WhatsApp কনসোলে পাঠান।',
+                                'Ask Store AI about margins, COD rates, or dispatch — or click Send to Admin WhatsApp Desk.'
+                              )}
+                            </p>
+                          ) : (
+                            supportThread.map((m) => (
+                              <div
+                                key={m.id}
+                                className={`p-2.5 rounded-xl max-w-[90%] ${
+                                  m.sender === 'reseller'
+                                    ? 'ml-auto bg-emerald-600 text-white'
+                                    : m.sender === 'whatsapp'
+                                    ? 'ml-auto bg-sky-600 text-white'
+                                    : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700'
+                                }`}
+                              >
+                                <p className="leading-relaxed whitespace-pre-line">{m.text}</p>
+                                <div className="flex items-center justify-between gap-2 mt-1 text-[10px] opacity-80">
+                                  <span>{m.time}</span>
+                                  {m.sender === 'ai' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => speakClearText(m.text, { lang })}
+                                      className="inline-flex items-center gap-1 font-bold hover:underline cursor-pointer"
+                                    >
+                                      <Volume2 className="w-3 h-3" />
+                                      <span>{t('শুনুন', 'Listen')}</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+
+                        <form onSubmit={handleAskSupportAi} className="space-y-2">
+                          <input
+                            type="text"
+                            value={supportQuestion}
+                            onChange={(e) => setSupportQuestion(e.target.value)}
+                            placeholder={t('আপনার প্রশ্ন বা অর্ডার সমস্যা লিখুন...', 'Type your question or reseller support message...')}
+                            className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                          />
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="submit"
+                              disabled={isAskingSupportAi || !supportQuestion.trim()}
+                              className="flex-1 py-2 px-3 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            >
+                              <Bot className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>{isAskingSupportAi ? t('AI লিখছে...', 'Thinking...') : t('Store AI-কে জিজ্ঞাসা করুন', 'Ask Store AI')}</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!supportQuestion.trim()}
+                              onClick={() => handleSendResellerWhatsAppToAdmin()}
+                              className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              <span>{t('অ্যাডমিন WhatsApp ডেস্কে পাঠান', 'Send to Admin WhatsApp Desk')}</span>
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+
+                      <div className="lg:col-span-5 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 space-y-3">
+                        <h4 className="font-bold text-slate-900 dark:text-white">{t('দ্রুত WhatsApp হেল্পলাইন', 'Direct WhatsApp App & Shortcuts')}</h4>
+                        <div className="space-y-2">
+                          {[
+                            t('আমার রিসেলার একাউন্ট অনুমোদন করুন', 'Please review & approve my reseller account'),
+                            t('অর্ডার কুরিয়ার ট্র্যাকিং আপডেট প্রয়োজন', 'Need courier tracking update on my reseller order'),
+                            t('পে-আউট ওয়ালেট সেটেলমেন্ট স্ট্যাটাস', 'Check status of my commission payout request')
+                          ].map((tpl, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => handleSendResellerWhatsAppToAdmin(tpl)}
+                              className="w-full text-left px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 text-[11px] font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"
+                            >
+                              {tpl}
+                            </button>
+                          ))}
+                        </div>
+                        <a
+                          href={supportWaHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center justify-center gap-1.5"
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                          <span>{t('সরাসরি WhatsApp অ্যাপ খুলুন', 'Open WhatsApp App Directly')}</span>
+                        </a>
                       </div>
                     </div>
                   )}
@@ -1485,6 +1970,43 @@ export const PartnerPortalModal: React.FC = () => {
                       <LogOut className="w-3.5 h-3.5" />
                       <span>{t('সাইন আউট', 'Sign Out')}</span>
                     </button>
+                  </div>
+
+                  {/* Wholesale Tier Progress Bar */}
+                  <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 space-y-2 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-bold text-slate-900 dark:text-white">
+                        {t('হোলসেল B2B টায়ার সুবিধা', 'Wholesale B2B Tier Progress')}:{' '}
+                        <span className="uppercase text-emerald-600">{activeWholesaler.tier}</span>
+                      </span>
+                      <a
+                        href={supportWaHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-emerald-600 font-bold hover:underline"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>{t('B2B WhatsApp ম্যানেজার', 'Message B2B WhatsApp Desk')}</span>
+                      </a>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 pt-1 tabular-nums">
+                      {[
+                        { key: 'silver', label: `Silver (${wholesaleCfg.silverDiscountPercent}% Off)` },
+                        { key: 'gold', label: `Gold (${wholesaleCfg.goldDiscountPercent}% Off)` },
+                        { key: 'platinum', label: `Platinum (${wholesaleCfg.platinumDiscountPercent}% Off)` }
+                      ].map((tr) => (
+                        <div
+                          key={tr.key}
+                          className={`p-2 rounded-xl border text-center font-bold text-[11px] ${
+                            activeWholesaler.tier === tr.key
+                              ? 'bg-emerald-600 text-white border-emerald-500'
+                              : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800'
+                          }`}
+                        >
+                          {tr.label}
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
                   {/* Trade Catalog with Search & MOQ Quick Add */}

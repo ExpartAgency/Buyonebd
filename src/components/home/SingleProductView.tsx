@@ -22,7 +22,10 @@ import {
   Award,
   PlayCircle,
   MessageSquarePlus,
-  Tag
+  Tag,
+  MessageCircle,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
@@ -51,10 +54,15 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
     initiateCustomerBrowserCall,
     goHome,
     getPartnerPriceInfo,
+    getProductCanonicalUrl,
+    buildProductWhatsAppUrl,
+    openWhatsAppWidgetForProduct,
     lang,
     t,
     addToast
   } = useStore();
+
+  const [copiedProductLink, setCopiedProductLink] = useState(false);
 
   useEffect(() => {
     recordProductView(product.id);
@@ -836,6 +844,76 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 </div>
               </div>
 
+              {/* Direct WhatsApp Chat With This Product URL */}
+              {(() => {
+                const canonicalUrl = getProductCanonicalUrl(product);
+                const variantParts = [
+                  selectedColor ? `Color: ${selectedColor}` : '',
+                  selectedSize ? `Size: ${selectedSize}` : '',
+                  ...Object.entries(selectedAttributes || {}).map(([k, v]) => `${k}: ${v}`)
+                ].filter(Boolean);
+                const variantSummary = variantParts.join(', ');
+                const directWaHref = buildProductWhatsAppUrl(product, {
+                  variantText: variantSummary,
+                  quantity
+                });
+
+                return (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70 space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                      <a
+                        href={directWaHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer whitespace-nowrap"
+                      >
+                        <MessageCircle className="w-4 h-4 shrink-0" />
+                        <span>
+                          {t('পণ্যের লিংকসহ WhatsApp-এ চ্যাট করুন', 'Chat on WhatsApp (With Product URL)')}
+                        </span>
+                        <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                      </a>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openWhatsAppWidgetForProduct(product, {
+                            variantText: variantSummary,
+                            quantity
+                          })
+                        }
+                        className="py-2.5 px-3.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-slate-800 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
+                      >
+                        <Send className="w-3.5 h-3.5 shrink-0" />
+                        <span>{t('ইন-সাইট WhatsApp ডেস্ক', 'In-Site WhatsApp Desk')}</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-emerald-200/80 dark:border-slate-800 rounded-xl px-2.5 py-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 shrink-0">
+                        {t('প্রোডাক্ট URL:', 'Product URL:')}
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-600 dark:text-slate-300 truncate flex-1">
+                        {canonicalUrl}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(canonicalUrl).catch(() => {});
+                          setCopiedProductLink(true);
+                          addToast('success', t('লিংক কপি হয়েছে!', 'Product Link Copied!'), canonicalUrl);
+                          setTimeout(() => setCopiedProductLink(false), 1800);
+                        }}
+                        className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-slate-700 dark:text-slate-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        {copiedProductLink ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedProductLink ? t('কপিড', 'Copied') : t('কপি', 'Copy')}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Price Drop Alert Toggle */}
               {cms?.showPriceAlertButton !== false && (
               <div>
@@ -924,7 +1002,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <a
-                      href={`https://wa.me/?text=${encodeURIComponent(`${lang === 'bn' ? product.titleBn : product.title} — ${window.location.href}?ref=${organic?.socialShareDiscount?.couponCode || 'SHARE50'}`)}`}
+                      href={`https://wa.me/?text=${encodeURIComponent(`${lang === 'bn' ? product.titleBn : product.title} — ${getProductCanonicalUrl(product)}?ref=${organic?.socialShareDiscount?.couponCode || 'SHARE50'}`)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px]"
@@ -932,7 +1010,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                       WhatsApp
                     </a>
                     <a
-                      href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`}
+                      href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(getProductCanonicalUrl(product))}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px]"

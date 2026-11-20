@@ -16,7 +16,10 @@ import {
   Bell,
   BellRing,
   ArrowRight,
-  Tag
+  Tag,
+  MessageCircle,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
@@ -39,7 +42,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
     addProductReview,
     addPriceAlert,
     recordProductView,
-    getPartnerPriceInfo
+    getPartnerPriceInfo,
+    getProductCanonicalUrl,
+    buildProductWhatsAppUrl,
+    openWhatsAppWidgetForProduct
   } = useStore();
 
   useEffect(() => {
@@ -113,14 +119,23 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
   const partnerPrice = getPartnerPriceInfo(product, quantity);
   const displayUnitPrice = partnerPrice.unitPrice;
 
+  const canonicalProductUrl = getProductCanonicalUrl(product);
+  const variantSummary = [
+    activeColor ? `Color: ${activeColor}` : '',
+    activeSize ? `Size: ${activeSize}` : '',
+    ...Object.entries(selectedAttributes || {}).map(([k, v]) => `${k}: ${v}`)
+  ]
+    .filter(Boolean)
+    .join(', ');
+
   const handleShare = () => {
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href);
+      navigator.clipboard.writeText(canonicalProductUrl);
     }
     addToast(
       'info',
       t('লিংক কপি হয়েছে!', 'Link Copied!'),
-      t('পণ্যের লিংকটি ক্লিপবোর্ডে কপি করা হয়েছে।', 'Product URL copied to clipboard.')
+      canonicalProductUrl
     );
   };
 
@@ -565,8 +580,40 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
                     className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-bold text-xs py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <Share2 className="w-3.5 h-3.5" />
-                    <span>{t('শেয়ার', 'Share')}</span>
+                    <span>{t('লিংক কপি', 'Copy URL')}</span>
                   </button>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={buildProductWhatsAppUrl(product, { variantText: variantSummary, quantity })}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{t('পণ্যের URL সহ WhatsApp চ্যাট', 'Chat on WhatsApp (With Product URL)')}</span>
+                      <ExternalLink className="w-3 h-3 shrink-0" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        openWhatsAppWidgetForProduct(product, { variantText: variantSummary, quantity });
+                      }}
+                      className="py-2 px-2.5 rounded-lg bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 font-bold text-[11px] cursor-pointer whitespace-nowrap"
+                    >
+                      {t('ইন-সাইট চ্যাট', 'In-Site Desk')}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 px-2 py-1 rounded-lg border border-emerald-100 dark:border-slate-800">
+                    <span className="truncate flex-1">{canonicalProductUrl}</span>
+                    <button type="button" onClick={handleShare} className="text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-0.5 cursor-pointer shrink-0">
+                      <Copy className="w-3 h-3" />
+                      <span>Copy</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

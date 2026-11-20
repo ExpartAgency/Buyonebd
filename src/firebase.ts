@@ -32,7 +32,8 @@ import {
   WaitlistEntry,
   WalletTopUpRequest,
   WholesaleAccount,
-  WholesaleQuoteRequest
+  WholesaleQuoteRequest,
+  AIReviewTask
 } from './types';
 
 const app = initializeApp(firebaseConfig);
@@ -136,7 +137,7 @@ const ALLOWED_PUBLIC_SETTINGS_KEYS = [
   'cmsTexts', 'spinSettings', 'whatsappTemplates', 'marketingTemplates',
   'aiSettings', 'seoSettings', 'flashSale', 'footerSettings', 'singleProductCms',
   'organicMarketing', 'walletSettings', 'promoCoupons', 'deliveryBoys', 'brandAttributes',
-  'loyaltySettings', 'resellerSettings', 'wholesaleSettings', 'globalMarketingSettings'
+  'loyaltySettings', 'resellerSettings', 'wholesaleSettings', 'globalMarketingSettings', 'aiAutopilotSettings', 'invoiceSettings'
 ] as const;
 
 const ALLOWED_PRODUCT_KEYS = [
@@ -1398,6 +1399,59 @@ export async function saveWholesaleQuoteToFirestore(quote: WholesaleQuoteRequest
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+// ======================= AI REVIEW QUEUE =======================
+export async function saveAIReviewTaskToFirestore(task: AIReviewTask) {
+  if (!auth.currentUser) return;
+  const cleanId = sanitizeFirestoreId(task.id, 'aiq');
+  const path = `ai_review_queue/${cleanId}`;
+  try {
+    const cleanPayload = stripUndefinedDeep({
+      id: cleanId,
+      actionType: String(task.actionType || 'confirm_order').slice(0, 60),
+      title: String(task.title || 'AI Task').slice(0, 200),
+      ...(task.titleBn ? { titleBn: String(task.titleBn).slice(0, 240) } : {}),
+      ...(task.summary ? { summary: String(task.summary).slice(0, 500) } : {}),
+      ...(task.summaryBn ? { summaryBn: String(task.summaryBn).slice(0, 500) } : {}),
+      targetType: String(task.targetType || 'order').slice(0, 40),
+      targetId: String(task.targetId || cleanId).slice(0, 120),
+      payload: stripUndefinedDeep(task.payload || {}),
+      priority: task.priority || 'medium',
+      confidence: Number.isFinite(task.confidence) ? Number(task.confidence) : 90,
+      ...(task.reasoning ? { reasoning: String(task.reasoning).slice(0, 500) } : {}),
+      ...(task.reasoningBn ? { reasoningBn: String(task.reasoningBn).slice(0, 500) } : {}),
+      status: task.status || 'pending_review',
+      createdAt: String(task.createdAt || new Date().toISOString()).slice(0, 64),
+      ...(task.executedAt ? { executedAt: String(task.executedAt).slice(0, 64) } : {}),
+      ...(task.executionResult ? { executionResult: String(task.executionResult).slice(0, 300) } : {}),
+      updatedAt: serverTimestamp()
+    });
+    await setDoc(doc(db, 'ai_review_queue', cleanId), cleanPayload, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteAIReviewTaskFromFirestore(taskId: string) {
+  if (!auth.currentUser) return;
+  const cleanId = sanitizeFirestoreId(taskId, 'aiq');
+  try {
+    await deleteDoc(doc(db, 'ai_review_queue', cleanId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `ai_review_queue/${cleanId}`);
+  }
+}
+
+export async function fetchAIReviewQueueFromFirestore(): Promise<AIReviewTask[]> {
+  if (!auth.currentUser) return [];
+  try {
+    const snap = await getDocs(collection(db, 'ai_review_queue'));
+    return snap.docs.map((d) => d.data() as AIReviewTask);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'ai_review_queue');
+    return [];
   }
 }
 

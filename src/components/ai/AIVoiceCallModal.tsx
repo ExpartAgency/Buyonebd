@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { audioEngine } from '../../utils/soundEffects';
+import { speakClearText, stopAllVoicePlayback } from '../../utils/voiceAudio';
 import confetti from 'canvas-confetti';
 
 export const AIVoiceCallModal: React.FC = () => {
@@ -73,7 +74,7 @@ export const AIVoiceCallModal: React.FC = () => {
   const stopAllAudio = () => {
     try {
       audioEngine.stopPhoneRingtone();
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      stopAllVoicePlayback();
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
@@ -255,7 +256,7 @@ export const AIVoiceCallModal: React.FC = () => {
       window.speechSynthesis.cancel();
     }
 
-    if (preloadedAudioRef.current) {
+      if (preloadedAudioRef.current) {
       const pAudio = preloadedAudioRef.current;
       preloadedAudioRef.current = null;
       audioRef.current = pAudio;
@@ -271,42 +272,20 @@ export const AIVoiceCallModal: React.FC = () => {
     }
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          voice: settings.aiCallSettings.voiceName || 'Kore',
-          style:
-            settings.aiCallSettings.humanTone ||
-            'A warm, natural, sweet native Bangladeshi Bengali female customer care officer in Dhaka.'
-        }),
-        signal: controller.signal
+      await speakClearText(text, {
+        voice: settings.aiCallSettings.voiceName || 'Kore',
+        style:
+          settings.aiCallSettings.humanTone ||
+          'A warm, natural, sweet native Bangladeshi Bengali female customer care officer in Dhaka.',
+        speed: settings.aiCallSettings.voiceSpeed || 1,
+        lang: lang === 'en' ? 'en' : 'bn',
+        preferStudioTts: true,
+        onStart: () => setAiSpeaking(true),
+        onEnd: () => setAiSpeaking(false)
       });
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
-        const rawText = await res.text();
-        let data: any = null;
-        try {
-          data = JSON.parse(rawText);
-        } catch {
-          data = null;
-        }
-        if (data?.audioUrl) {
-          const audio = new Audio(data.audioUrl);
-          audioRef.current = audio;
-          audio.onplay = () => setAiSpeaking(true);
-          audio.onended = () => setAiSpeaking(false);
-          audio.onerror = () => fallbackSpeechSynthesis(text);
-          await audio.play();
-          return;
-        }
-      }
+      return;
     } catch {
-      // Fallback to browser synthesis
+      // Fallback below
     }
 
     fallbackSpeechSynthesis(text);
@@ -533,9 +512,9 @@ export const AIVoiceCallModal: React.FC = () => {
               <ShieldCheck className="w-4 h-4 shrink-0" />
               <span>
                 {isBackendBrowserCall && activeBrowserCall.status === 'ringing_backend'
-                  ? t('ব্যাকএন্ড অ্যাসিস্ট্যান্ট কল রিসিভ করার জন্য অপেক্ষমান...', 'Waiting for backend assistant in /hossain to answer...')
+                  ? t('সাপোর্ট অ্যাসিস্ট্যান্ট কল রিসিভ করার জন্য অপেক্ষমান...', 'Connecting to official support specialist...')
                   : isBackendBrowserCall && activeBrowserCall.status === 'ringing_customer'
-                  ? t('BuyOne BD অ্যাডমিন ডেস্ক থেকে সরাসরি কল — রিসিভ করুন', 'Direct live voice call from BuyOne BD Admin Desk — press Answer')
+                  ? t('BuyOne BD অফিসিয়াল ডেস্ক থেকে কল — রিসিভ করুন', 'Incoming call from BuyOne BD Support Desk — press Answer')
                   : `${settings.storeName} Official Hotline`}
               </span>
             </p>

@@ -78,6 +78,7 @@ const ai = new GoogleGenAI({
 // Server-side storage for full e-commerce persistence
 const DATA_DIR = path.join(__dirname, 'data');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');
+const STORE_BACKUP_FILE = path.join(DATA_DIR, 'store.backup.json');
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -97,9 +98,60 @@ function loadStoreData() {
 
 function saveStoreData(data: any) {
   try {
-    fs.writeFileSync(STORE_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    const serialized = JSON.stringify(data, null, 2);
+    fs.writeFileSync(STORE_FILE, serialized, 'utf-8');
+    // Maintain a rolling non-empty backup snapshot ("Not data delete, please")
+    const hasCoreData =
+      (Array.isArray(data?.products) && data.products.length > 0) ||
+      (Array.isArray(data?.orders) && data.orders.length > 0);
+    if (hasCoreData) {
+      fs.writeFileSync(STORE_BACKUP_FILE, serialized, 'utf-8');
+    }
   } catch (err) {
     console.error('Error saving store data:', err);
+  }
+}
+
+// Wrap raw headerless PCM (audio/L16) from Gemini TTS in a valid 44-byte RIFF WAV header
+function ensureWavDataUri(base64Data: string, mimeType = ''): string {
+  try {
+    const cleanMime = String(mimeType || '').toLowerCase();
+    const rawBuf = Buffer.from(base64Data, 'base64');
+    if (rawBuf.length >= 12 && rawBuf.subarray(0, 4).toString('ascii') === 'RIFF') {
+      return `data:audio/wav;base64,${base64Data}`;
+    }
+    if (cleanMime.includes('mp3') || cleanMime.includes('mpeg')) {
+      return `data:audio/mpeg;base64,${base64Data}`;
+    }
+    if (cleanMime.includes('ogg')) {
+      return `data:audio/ogg;base64,${base64Data}`;
+    }
+    // Extract sample rate if specified e.g. audio/L16;codec=pcm;rate=24000
+    const rateMatch = cleanMime.match(/rate=(\d+)/);
+    const sampleRate = rateMatch ? Math.max(8000, Math.min(48000, parseInt(rateMatch[1], 10))) : 24000;
+    const numChannels = 1;
+    const bitsPerSample = 16;
+    const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+    const blockAlign = numChannels * (bitsPerSample / 8);
+    const dataSize = rawBuf.length;
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + dataSize, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16); // PCM subchunk size
+    header.writeUInt16LE(1, 20); // AudioFormat = 1 (PCM)
+    header.writeUInt16LE(numChannels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitsPerSample, 34);
+    header.write('data', 36);
+    header.writeUInt32LE(dataSize, 40);
+    const wavBuf = Buffer.concat([header, rawBuf]);
+    return `data:audio/wav;base64,${wavBuf.toString('base64')}`;
+  } catch {
+    return `data:audio/wav;base64,${base64Data}`;
   }
 }
 
@@ -187,13 +239,14 @@ app.post('/api/tts', async (req, res) => {
       },
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    const inlinePart = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+    const base64Audio = inlinePart?.data;
 
     if (!base64Audio) {
       return res.status(500).json({ error: 'No audio returned from Gemini TTS' });
     }
 
-    const audioUrl = `data:audio/wav;base64,${base64Audio}`;
+    const audioUrl = ensureWavDataUri(base64Audio, inlinePart?.mimeType || 'audio/L16;rate=24000');
     audioCache.set(cacheKey, audioUrl);
 
     return res.json({
@@ -214,7 +267,7 @@ app.post('/api/tts', async (req, res) => {
 app.get('/api/tts/sample', async (_req, res) => {
   try {
     const sampleText = "আসসালামু আলাইকুম তানভীর ভাই! বাইওয়ান বিডি থেকে আমি সুমনা বলছি। আশা করি আপনি ভালো আছেন। আপনার অর্ডারটি নিশ্চিত করতে অনুগ্রহ করে এক চাপুন।";
-    const cacheKey = `sample_Kore`;
+    const cacheKey = `sample_Kore_wav2`;
 
     if (audioCache.has(cacheKey)) {
       return res.json({ audioUrl: audioCache.get(cacheKey) });
@@ -245,9 +298,10 @@ app.get('/api/tts/sample', async (_req, res) => {
       },
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    const inlinePart = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+    const base64Audio = inlinePart?.data;
     if (base64Audio) {
-      const audioUrl = `data:audio/wav;base64,${base64Audio}`;
+      const audioUrl = ensureWavDataUri(base64Audio, inlinePart?.mimeType || 'audio/L16;rate=24000');
       audioCache.set(cacheKey, audioUrl);
       return res.json({ audioUrl });
     }
@@ -889,23 +943,749 @@ Live catalog & recent orders: ${JSON.stringify(compactContext)}`;
         : [];
 
       const rawReply = parsed.reply || fallback.reply;
+      const finalCommands = normalizedCommands.length > 0 ? normalizedCommands : fallback.commands;
+      const reviewTasks = req.body?.reviewMode && role === 'admin'
+        ? convertCommandsToReviewTasks(finalCommands, context, lang)
+        : [];
       return res.json({
         success: true,
         reply: role === 'customer' ? sanitizeCustomerFacingReply(rawReply) : rawReply,
-        commands: normalizedCommands.length > 0 ? normalizedCommands : fallback.commands,
+        commands: finalCommands,
+        reviewTasks,
         mode: 'gemini_live'
       });
     } catch (geminiErr: any) {
       console.warn('Gemini /api/agent fallback used:', geminiErr?.message || geminiErr);
+      const reviewTasks = req.body?.reviewMode && role === 'admin'
+        ? convertCommandsToReviewTasks(fallback.commands, context, lang)
+        : [];
       return res.json({
         success: true,
         ...fallback,
         reply: role === 'customer' ? sanitizeCustomerFacingReply(fallback.reply) : fallback.reply,
+        reviewTasks,
         mode: 'free_auto_fallback'
       });
     }
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Agent request failed' });
+  }
+});
+
+function convertCommandsToReviewTasks(commands: any[], context: any, lang = 'bn') {
+  const orders: any[] = Array.isArray(context?.orders) ? context.orders : [];
+  const preferredCourier = context?.preferredCourier || 'Steadfast';
+  const nowIso = new Date().toISOString();
+  return (commands || [])
+    .filter((c) => c && c.type && c.type !== 'navigate_admin_tab')
+    .map((c, idx) => {
+      const p = c.payload || {};
+      const ord = p.orderId ? orders.find((o) => o.id === p.orderId) : null;
+      let actionType: string = c.type;
+      let title = `AI Task: ${c.type}`;
+      let titleBn = `AI কাজ: ${c.type}`;
+      let summary = JSON.stringify(p);
+      let summaryBn = summary;
+      let targetType = 'store';
+      let targetId = String(p.orderId || p.productId || p.identifier || p.cartId || p.code || `task-${idx}`);
+      const payload: Record<string, any> = { ...p };
+
+      if (c.type === 'ai_confirm_order') {
+        actionType = 'confirm_order';
+        targetType = 'order';
+        title = `Confirm Order #${p.orderId}`;
+        titleBn = `অর্ডার #${p.orderId} কনফার্ম করুন`;
+        summary = ord
+          ? `${ord.customer?.name || 'Customer'} · ৳${ord.pricing?.total || 0} (${ord.customer?.district || 'BD'})`
+          : `Confirm pending order #${p.orderId}`;
+        summaryBn = summary;
+      } else if (c.type === 'book_courier') {
+        actionType = 'send_courier';
+        targetType = 'order';
+        payload.provider = p.provider || preferredCourier;
+        title = `Send #${p.orderId} to ${payload.provider}`;
+        titleBn = `অর্ডার #${p.orderId} ${payload.provider} কুরিয়ারে পাঠান`;
+        summary = ord ? `${ord.customer?.name || ''} · ${ord.customer?.address || ''} · COD ৳${ord.payment?.dueAmount ?? ord.pricing?.total ?? 0}` : `Dispatch #${p.orderId}`;
+        summaryBn = summary;
+      } else if (c.type === 'update_order_status') {
+        actionType = 'confirm_order';
+        targetType = 'order';
+        title = `Update #${p.orderId} → ${p.status}`;
+        titleBn = `#${p.orderId} স্ট্যাটাস → ${p.status}`;
+      } else if (c.type === 'update_product') {
+        targetType = 'product';
+        title = `Update Product ${p.productId || p.query || ''}`;
+        titleBn = `পণ্য আপডেট করুন (${p.productId || p.query || ''})`;
+      } else if (c.type === 'create_coupon') {
+        payload.couponCode = p.code;
+        payload.couponValue = p.value;
+        title = `Create Coupon ${p.code}`;
+        titleBn = `নতুন কুপন তৈরি: ${p.code}`;
+      } else if (c.type === 'toggle_flash_sale') {
+        payload.flashSaleEnabled = Boolean(p.enabled);
+        title = `${p.enabled ? 'Enable' : 'Pause'} Flash Sale`;
+        titleBn = `ফ্ল্যাশ সেল ${p.enabled ? 'চালু' : 'বন্ধ'} করুন`;
+      } else if (c.type === 'adjust_loyalty_points') {
+        targetType = 'customer';
+        payload.pointsDelta = p.delta ?? p.exactPoints ?? 0;
+        title = `Adjust Loyalty Points (${p.identifier})`;
+        titleBn = `লয়্যালটি পয়েন্ট আপডেট (${p.identifier})`;
+      } else if (c.type === 'recover_abandoned_cart') {
+        targetType = 'cart';
+        title = `Send Cart Recovery Follow-up`;
+        titleBn = `পরিত্যক্ত কার্ট রিকভারি মেসেজ পাঠান`;
+      } else if (c.type === 'update_store_settings') {
+        targetType = 'store';
+        title = `Update Store Settings`;
+        titleBn = `স্টোর সেটিংস আপডেট করুন`;
+      }
+
+      return {
+        id: `aiq-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+        actionType,
+        title,
+        titleBn,
+        summary,
+        summaryBn,
+        targetType,
+        targetId,
+        payload,
+        priority: actionType === 'fraud_hold' || actionType === 'send_courier' ? 'high' : 'medium',
+        confidence: 92,
+        reasoning: lang === 'en' ? 'Prepared from Admin AI command for your review & approval.' : 'অ্যাডমিন কমান্ড থেকে রিভিউ ও অনুমোদনের জন্য প্রস্তুত করা হয়েছে।',
+        reasoningBn: 'অ্যাডমিন কমান্ড থেকে রিভিউ ও অনুমোদনের জন্য প্রস্তুত করা হয়েছে।',
+        status: 'pending_review',
+        createdAt: nowIso
+      };
+    });
+}
+
+// Full Website Control AI: Autonomous Store Scanner & Review Queue Persistence
+function buildAutopilotReviewTasks(input: any) {
+  const {
+    orders = [],
+    products = [],
+    abandonedCarts = [],
+    resellers = [],
+    settings = {},
+    existingQueue = []
+  } = input || {};
+
+  const autoCfg = settings?.aiAutopilotSettings || {};
+  const preferredCourier = autoCfg.preferredCourier || 'Steadfast';
+  const pendingExistingKeys = new Set(
+    (Array.isArray(existingQueue) ? existingQueue : [])
+      .filter((t: any) => t && t.status === 'pending_review')
+      .map((t: any) => `${t.actionType}:${t.targetId}`)
+  );
+
+  const storeName = settings?.storeName || 'BuyOne BD';
+  const generated: any[] = [];
+  const nowIso = new Date().toISOString();
+
+  const pushTask = (task: any) => {
+    const key = `${task.actionType}:${task.targetId}`;
+    if (pendingExistingKeys.has(key)) return;
+    pendingExistingKeys.add(key);
+    generated.push({
+      ...task,
+      id: `aiq-${Date.now()}-${generated.length}-${Math.random().toString(36).slice(2, 6)}`,
+      status: 'pending_review',
+      createdAt: nowIso
+    });
+  };
+
+  // 1. Scan Orders: AI Voice Call, Risk/Hold, Confirm Order, Send Courier, WhatsApp Tracking
+  (Array.isArray(orders) ? orders : []).slice(0, 40).forEach((ord: any) => {
+    if (!ord || !ord.id) return;
+    const custName = ord.customer?.name || 'Customer';
+    const custPhone = ord.customer?.phone || '';
+    const district = ord.customer?.district || 'Bangladesh';
+    const total = Number(ord.pricing?.total || 0);
+    const itemsText = Array.isArray(ord.items)
+      ? ord.items.map((i: any) => `${i.productTitleBn || i.productTitle} x${i.quantity}`).join(', ')
+      : 'Order items';
+
+    if (ord.status === 'pending' || ord.status === 'on_hold') {
+      const isHighRisk = ord.fraudCheck?.riskLevel === 'high_risk' || (typeof ord.fraudCheck?.successRate === 'number' && ord.fraudCheck.successRate < 50);
+
+      if (isHighRisk && ord.status !== 'on_hold') {
+        pushTask({
+          actionType: 'fraud_hold',
+          title: `Hold High-Risk Order #${ord.id} (${ord.fraudCheck?.successRate ?? 45}% Success Rate)`,
+          titleBn: `উচ্চ ঝুঁকিপূর্ণ অর্ডার #${ord.id} হোল্ড ও ভেরিফাই করুন`,
+          summary: `${custName} (${custPhone}) · ৳${total} · Risk: ${ord.fraudCheck?.riskLevel || 'high_risk'}`,
+          summaryBn: `${custName} (${custPhone}) · ৳${total} · ডেলিভারি সফলতা ${ord.fraudCheck?.successRate ?? 45}%`,
+          targetType: 'order',
+          targetId: ord.id,
+          payload: {
+            orderId: ord.id,
+            phone: custPhone,
+            contactName: custName,
+            riskLevel: 'high_risk',
+            status: 'on_hold'
+          },
+          priority: 'high',
+          confidence: 95,
+          reasoning: 'Low historical delivery success score detected. Recommend holding or requiring advance delivery fee before dispatch.',
+          reasoningBn: 'কাস্টমারের পূর্ববর্তী ডেলিভারি সফলতার হার কম। কুরিয়ার পাঠানোর আগে কল করে ঠিকানা ও অগ্রিম যাচাই করার পরামর্শ দেওয়া হচ্ছে।'
+        });
+      }
+
+      if (autoCfg.autoPrepareCall !== false && !ord.aiCallStatus?.called) {
+        pushTask({
+          actionType: 'ai_voice_call',
+          title: `AI Voice Verification Call for #${ord.id}`,
+          titleBn: `অর্ডার #${ord.id}-এ AI ভয়েস কনফার্মেশন কল করুন`,
+          summary: `Call ${custName} (${custPhone}) in ${district} · ৳${total} (${itemsText})`,
+          summaryBn: `${custName} (${custPhone}), ${district} · ৳${total} (${itemsText})`,
+          targetType: 'order',
+          targetId: ord.id,
+          payload: {
+            orderId: ord.id,
+            phone: custPhone,
+            contactName: custName,
+            script: `আসসালামু আলাইকুম ${custName}! ${storeName} থেকে আপনার অর্ডার #${ord.id} (${itemsText}, মোট ৳${total}) নিশ্চিত করতে কল করা হয়েছে।`
+          },
+          priority: 'high',
+          confidence: 94,
+          reasoning: 'New COD order has not received an AI verification call yet.',
+          reasoningBn: 'নতুন ক্যাশ-অন-ডেলিভারি অর্ডারটিতে এখনো এআই কনফার্মেশন কল করা হয়নি।'
+        });
+      }
+
+      if (autoCfg.autoPrepareConfirm !== false && !isHighRisk) {
+        pushTask({
+          actionType: 'confirm_order',
+          title: `Approve & Confirm Order #${ord.id}`,
+          titleBn: `অর্ডার #${ord.id} কনফার্ম করুন`,
+          summary: `${custName} (${custPhone}) · ৳${total} · Delivery score ${ord.fraudCheck?.successRate ?? 92}%`,
+          summaryBn: `${custName} (${custPhone}) · ৳${total} · ডেলিভারি স্কোর ${ord.fraudCheck?.successRate ?? 92}%`,
+          targetType: 'order',
+          targetId: ord.id,
+          payload: {
+            orderId: ord.id,
+            phone: custPhone,
+            contactName: custName,
+            status: 'ai_confirmed'
+          },
+          priority: 'high',
+          confidence: 91,
+          reasoning: 'Safe customer profile & valid Bangladesh shipping details ready for confirmation.',
+          reasoningBn: 'গ্রাহকের ঠিকানা ও ডেলিভারি স্কোর নিরাপদ। কনফার্ম করলে সাথে সাথেই কুরিয়ার বুকিংয়ের জন্য প্রস্তুত হবে।'
+        });
+      }
+    }
+
+    const needsCourierDispatch =
+      (ord.status === 'ai_confirmed' || ord.status === 'processing') &&
+      !ord.courier?.consignmentId &&
+      (!ord.courier?.trackingCode || /^STDF-BD-|^POS-INVOICE-/.test(String(ord.courier?.trackingCode || '')));
+
+    if (autoCfg.autoPrepareCourier !== false && needsCourierDispatch) {
+      pushTask({
+        actionType: 'send_courier',
+        title: `Dispatch #${ord.id} via ${preferredCourier}`,
+        titleBn: `অর্ডার #${ord.id} ${preferredCourier} কুরিয়ারে পাঠান`,
+        summary: `${custName} · ${ord.customer?.address || ''}, ${district} · COD ৳${ord.payment?.dueAmount ?? total}`,
+        summaryBn: `${custName} · ${ord.customer?.address || ''}, ${district} · COD ৳${ord.payment?.dueAmount ?? total}`,
+        targetType: 'order',
+        targetId: ord.id,
+        payload: {
+          orderId: ord.id,
+          provider: preferredCourier,
+          phone: custPhone,
+          contactName: custName
+        },
+        priority: 'high',
+        confidence: 96,
+        reasoning: 'Confirmed order is awaiting real courier parcel booking.',
+        reasoningBn: 'কনফার্মড অর্ডারটি কুরিয়ার পিকআপ বুকিংয়ের জন্য অপেক্ষমাণ রয়েছে।'
+      });
+    }
+
+    if (autoCfg.autoPrepareWhatsapp !== false && ord.status === 'shipped' && ord.courier?.trackingCode) {
+      pushTask({
+        actionType: 'whatsapp_followup',
+        title: `Send Tracking Update on WhatsApp (#${ord.id})`,
+        titleBn: `#${ord.id} কুরিয়ার ট্র্যাকিং লিংক WhatsApp-এ পাঠান`,
+        summary: `To ${custName} (${custPhone}) · Code: ${ord.courier.trackingCode}`,
+        summaryBn: `${custName} (${custPhone}) · ট্র্যাকিং: ${ord.courier.trackingCode}`,
+        targetType: 'order',
+        targetId: ord.id,
+        payload: {
+          orderId: ord.id,
+          phone: custPhone,
+          contactName: custName,
+          contactType: 'customer',
+          message: `আসসালামু আলাইকুম ${custName}, ${storeName}-এ আপনার অর্ডার #${ord.id} কুরিয়ারে (${ord.courier.provider || preferredCourier}) বুকিং হয়েছে। ট্র্যাকিং কোড: ${ord.courier.trackingCode}। যেকোনো সহায়তায় মেসেজ করুন!`
+        },
+        priority: 'medium',
+        confidence: 89,
+        reasoning: 'Proactive WhatsApp tracking notification reduces courier return/cancellation rate.',
+        reasoningBn: 'শিপড অর্ডারে গ্রাহককে WhatsApp-এ ট্র্যাকিং কোড পাঠালে কুরিয়ার রিটার্ন কমে।'
+      });
+    }
+  });
+
+  // 2. Scan Abandoned Carts
+  if (autoCfg.autoPrepareWhatsapp !== false) {
+    (Array.isArray(abandonedCarts) ? abandonedCarts : [])
+      .filter((c: any) => c && !c.recovered && !c.whatsappSent && c.customerPhone)
+      .slice(0, 8)
+      .forEach((cart: any) => {
+        const cName = cart.customerName || 'Customer';
+        pushTask({
+          actionType: 'recover_abandoned_cart',
+          title: `Recover Abandoned Cart (${cName} · ৳${cart.total || 0})`,
+          titleBn: `অসম্পূর্ণ কার্ট রিকভারি (${cName} · ৳${cart.total || 0})`,
+          summary: `Send WhatsApp comeback coupon WELCOME100 to ${cart.customerPhone}`,
+          summaryBn: `${cart.customerPhone} নম্বরে WhatsApp ডিসকাউন্ট রিমাইন্ডার পাঠান`,
+          targetType: 'cart',
+          targetId: cart.id,
+          payload: {
+            cartId: cart.id,
+            phone: cart.customerPhone,
+            contactName: cName,
+            contactType: 'customer',
+            message: `আসসালামু আলাইকুম ${cName}! ${storeName}-এ আপনার পছন্দের পণ্যটি কার্টে রয়েছে (মোট ৳${cart.total || 0})। আজই অর্ডার করলে WELCOME100 কুপনে ৳১০০ ছাড় পাবেন!`
+          },
+          priority: 'medium',
+          confidence: 88,
+          reasoning: 'Unrecovered abandoned cart with valid Bangladesh phone number ready for WhatsApp conversion.',
+          reasoningBn: 'গ্রাহকের মোবাইল নম্বর পাওয়া গেছে — WhatsApp রিকভারি পাঠালে অর্ডার কনভার্ট হতে পারে।'
+        });
+      });
+  }
+
+  // 3. Scan Pending Resellers
+  (Array.isArray(resellers) ? resellers : [])
+    .filter((r: any) => r && r.status === 'pending')
+    .slice(0, 6)
+    .forEach((reseller: any) => {
+      pushTask({
+        actionType: 'approve_reseller',
+        title: `Approve Reseller: ${reseller.name} (${reseller.district || 'BD'})`,
+        titleBn: `রিসেলার অনুমোদন: ${reseller.name} (${reseller.resellerCode})`,
+        summary: `Phone: ${reseller.phone} · Default Margin: ${reseller.commissionPercent || 18}%`,
+        summaryBn: `মোবাইল: ${reseller.phone} · কমিশন: ${reseller.commissionPercent || 18}%`,
+        targetType: 'reseller',
+        targetId: reseller.id,
+        payload: {
+          resellerId: reseller.id,
+          phone: reseller.phone,
+          contactName: reseller.name
+        },
+        priority: 'medium',
+        confidence: 90,
+        reasoning: 'New reseller registration waiting for admin review.',
+        reasoningBn: 'নতুন রিসেলার আবেদন অ্যাডমিন রিভিউয়ের জন্য অপেক্ষমাণ রয়েছে।'
+      });
+    });
+
+  // 4. Scan Low Stock Products (<= 5 units)
+  (Array.isArray(products) ? products : [])
+    .filter((p: any) => p && typeof p.stock === 'number' && p.stock <= 5)
+    .slice(0, 4)
+    .forEach((prod: any) => {
+      pushTask({
+        actionType: 'update_product',
+        title: `Restock Low Inventory: ${prod.title}`,
+        titleBn: `স্টক সতর্কতা ও রিস্টক: ${prod.titleBn || prod.title}`,
+        summary: `Only ${prod.stock} unit(s) left · Suggest restocking +25 units`,
+        summaryBn: `মাত্র ${prod.stock}টি বাকি আছে — +২৫ পিস স্টক আপডেট করুন`,
+        targetType: 'product',
+        targetId: prod.id,
+        payload: {
+          productId: prod.id,
+          stock: Math.max(25, Number(prod.stock || 0) + 25)
+        },
+        priority: 'low',
+        confidence: 85,
+        reasoning: 'Product stock dropped to 5 units or below.',
+        reasoningBn: 'পণ্যের স্টক ৫ পিসের নিচে নেমে এসেছে।'
+      });
+    });
+
+  return generated;
+}
+
+app.post('/api/ai/autopilot/scan', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const current = loadStoreData() || {};
+    const existingQueue = Array.isArray(body.existingQueue)
+      ? body.existingQueue
+      : Array.isArray(current.aiReviewQueue)
+      ? current.aiReviewQueue
+      : [];
+
+    const heuristicTasks = buildAutopilotReviewTasks({
+      orders: Array.isArray(body.orders) ? body.orders : current.orders || [],
+      products: Array.isArray(body.products) ? body.products : current.products || [],
+      abandonedCarts: Array.isArray(body.abandonedCarts) ? body.abandonedCarts : current.abandonedCarts || [],
+      resellers: Array.isArray(body.resellers) ? body.resellers : current.resellers || [],
+      settings: body.settings || current.settings || {},
+      existingQueue
+    });
+
+    let instructionTasks: any[] = [];
+    if (body.instruction && String(body.instruction).trim()) {
+      const plan = buildLocalAgentPlan({
+        instruction: String(body.instruction),
+        role: 'admin',
+        lang: body.lang || 'bn',
+        context: {
+          orders: Array.isArray(body.orders) ? body.orders : current.orders || [],
+          products: Array.isArray(body.products) ? body.products : current.products || [],
+          customers: Array.isArray(body.customers) ? body.customers : current.customerAccounts || []
+        }
+      });
+      instructionTasks = convertCommandsToReviewTasks(
+        plan.commands,
+        {
+          orders: Array.isArray(body.orders) ? body.orders : current.orders || [],
+          preferredCourier: body.settings?.aiAutopilotSettings?.preferredCourier || 'Steadfast'
+        },
+        body.lang || 'bn'
+      );
+    }
+
+    const newTasks = [...instructionTasks, ...heuristicTasks];
+    const mergedQueue = [...newTasks, ...existingQueue].slice(0, 120);
+    current.aiReviewQueue = mergedQueue;
+    saveStoreData(current);
+    broadcastWs({ type: 'ai_queue:sync', aiReviewQueue: mergedQueue });
+
+    return res.json({
+      success: true,
+      addedCount: newTasks.length,
+      newTasks,
+      queue: mergedQueue
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'AI Autopilot scan failed' });
+  }
+});
+
+app.post('/api/ai/autopilot/queue', (req, res) => {
+  try {
+    const { tasks } = req.body || {};
+    if (!Array.isArray(tasks)) {
+      return res.status(400).json({ success: false, error: 'tasks array required' });
+    }
+    const current = loadStoreData() || {};
+    current.aiReviewQueue = tasks.slice(0, 120);
+    saveStoreData(current);
+    broadcastWs({ type: 'ai_queue:sync', aiReviewQueue: current.aiReviewQueue });
+    return res.json({ success: true, queue: current.aiReviewQueue });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to update AI review queue' });
+  }
+});
+
+// Full Website Maintenance & Health Audit AI Endpoint
+app.post('/api/ai/maintenance/audit', (req, res) => {
+  try {
+    const body = req.body || {};
+    const current = loadStoreData() || {};
+    const products: any[] = Array.isArray(body.products) ? body.products : (current.products || []);
+    const orders: any[] = Array.isArray(body.orders) ? body.orders : (current.orders || []);
+    const abandonedCarts: any[] = Array.isArray(body.abandonedCarts) ? body.abandonedCarts : (current.abandonedCarts || []);
+    const resellers: any[] = Array.isArray(body.resellers) ? body.resellers : (current.resellers || []);
+    const sliders: any[] = Array.isArray(body.sliders) ? body.sliders : (current.sliders || []);
+    const settings: any = body.settings || current.settings || {};
+    const existingQueue: any[] = Array.isArray(body.existingQueue)
+      ? body.existingQueue
+      : Array.isArray(current.aiReviewQueue)
+      ? current.aiReviewQueue
+      : [];
+
+    const nowIso = new Date().toISOString();
+    const pendingKeys = new Set(
+      existingQueue.filter((t: any) => t?.status === 'pending_review').map((t: any) => `${t.actionType}:${t.targetId}`)
+    );
+
+    const issues: {
+      id: string;
+      area: 'seo' | 'inventory' | 'orders' | 'media' | 'backup' | 'resellers';
+      severity: 'critical' | 'warning' | 'healthy';
+      title: string;
+      titleBn: string;
+      detail: string;
+      count: number;
+    }[] = [];
+
+    const maintenanceTasks: any[] = [];
+    const addTask = (task: any) => {
+      const k = `${task.actionType}:${task.targetId}`;
+      if (pendingKeys.has(k)) return;
+      pendingKeys.add(k);
+      maintenanceTasks.push({
+        ...task,
+        id: `aiq-maint-${Date.now()}-${maintenanceTasks.length}-${Math.random().toString(36).slice(2, 6)}`,
+        status: 'pending_review',
+        createdAt: nowIso
+      });
+    };
+
+    // 1. SEO & Slug audit on products
+    const missingSeoProds = products.filter(
+      (p) => p && (!p.seo?.slug || !p.seo?.metaTitle || !p.seo?.metaDescription || !p.seo?.keywords)
+    );
+    if (missingSeoProds.length > 0) {
+      issues.push({
+        id: 'audit-seo-prods',
+        area: 'seo',
+        severity: missingSeoProds.length > 3 ? 'critical' : 'warning',
+        title: `${missingSeoProds.length} product(s) missing SEO meta title/description/slug`,
+        titleBn: `${missingSeoProds.length}টি পণ্যে SEO মেটা টাইটেল/স্লাগ অসম্পূর্ণ`,
+        detail: 'Prepared auto-generated Bangla & English SEO metadata tasks for review.',
+        count: missingSeoProds.length
+      });
+      missingSeoProds.slice(0, 6).forEach((p) => {
+        const cleanSlug = String(p.seo?.slug || p.title || p.id || 'product')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 64);
+        addTask({
+          actionType: 'fix_product_seo',
+          title: `Auto-Optimize SEO: ${p.title}`,
+          titleBn: `SEO ফিক্স করুন: ${p.titleBn || p.title}`,
+          summary: `Slug: /product/${cleanSlug} · Meta title + keywords ready`,
+          summaryBn: `লিংক: /product/${cleanSlug} · সম্পূর্ণ বাংলা ও ইংরেজি মেটা ট্যাগ`,
+          targetType: 'product',
+          targetId: p.id,
+          payload: {
+            productId: p.id,
+            seo: {
+              slug: cleanSlug,
+              metaTitle: `${p.title} Price in Bangladesh | ${settings.storeName || 'BuyOne BD'}`,
+              metaDescription: `Buy ${p.title} at ৳${p.price} with 24-72h Cash on Delivery across 64 districts in Bangladesh.`,
+              keywords: `${p.title}, ${p.category || 'Bangladesh Online Shop'}, Cash on Delivery BD`,
+              robots: 'index, follow'
+            }
+          },
+          priority: 'medium',
+          confidence: 95,
+          reasoning: 'Incomplete product SEO reduces Google search visibility and social sharing previews.',
+          reasoningBn: 'পণ্যটির SEO স্লাগ বা মেটা ট্যাগ অসম্পূর্ণ থাকায় সার্চ র‍্যাংকিং কমতে পারে।'
+        });
+      });
+    }
+
+    // 2. Inventory low/out-of-stock check
+    const lowStockProds = products.filter((p) => p && Number(p.stock || 0) <= 5);
+    if (lowStockProds.length > 0) {
+      issues.push({
+        id: 'audit-stock',
+        area: 'inventory',
+        severity: lowStockProds.some((p) => Number(p.stock || 0) === 0) ? 'critical' : 'warning',
+        title: `${lowStockProds.length} product(s) out of stock or critically low (≤5)`,
+        titleBn: `${lowStockProds.length}টি পণ্যের স্টক শেষ বা খুবই কম (≤৫টি)`,
+        detail: 'Prepared restock tasks (+30 qty) awaiting your review.',
+        count: lowStockProds.length
+      });
+      lowStockProds.slice(0, 6).forEach((p) => {
+        addTask({
+          actionType: 'update_product',
+          title: `Restock Inventory: ${p.title} (Now: ${p.stock ?? 0})`,
+          titleBn: `স্টক রিস্টক: ${p.titleBn || p.title} (বর্তমান: ${p.stock ?? 0})`,
+          summary: `Set safe buffer stock to ${Math.max(30, Number(p.stock || 0) + 30)} units`,
+          summaryBn: `নিরাপদ স্টক ${Math.max(30, Number(p.stock || 0) + 30)} পিসে আপডেট করুন`,
+          targetType: 'product',
+          targetId: p.id,
+          payload: { productId: p.id, stock: Math.max(30, Number(p.stock || 0) + 30) },
+          priority: Number(p.stock || 0) === 0 ? 'high' : 'medium',
+          confidence: 90,
+          reasoning: 'Prevent lost checkout sales due to zero/low stock.',
+          reasoningBn: 'স্টক কম থাকায় অর্ডার মিস হওয়া রোধ করতে রিস্টক সাজেশন।'
+        });
+      });
+    }
+
+    // 3. Broken images & inactive sliders audit
+    const missingImgProds = products.filter((p) => p && (!Array.isArray(p.images) || p.images.length === 0 || !p.images[0]));
+    const brokenSliders = sliders.filter((s) => s && !s.image);
+    if (missingImgProds.length + brokenSliders.length > 0) {
+      issues.push({
+        id: 'audit-media',
+        area: 'media',
+        severity: 'warning',
+        title: `${missingImgProds.length} product(s) & ${brokenSliders.length} slider(s) need image URLs`,
+        titleBn: `${missingImgProds.length}টি পণ্য ও ${brokenSliders.length}টি স্লাইডারে ছবি নেই`,
+        detail: 'Use Media Gallery picker in Products or Sliders tab to attach crisp photos.',
+        count: missingImgProds.length + brokenSliders.length
+      });
+    }
+
+    // 4. Orders & Autopilot review
+    const operationalTasks = buildAutopilotReviewTasks({
+      orders,
+      products,
+      abandonedCarts,
+      resellers,
+      settings,
+      existingQueue: [...existingQueue, ...maintenanceTasks]
+    });
+    const combinedNew = [...maintenanceTasks, ...operationalTasks];
+
+    const pendingOrdersCount = orders.filter((o) => o && (o.status === 'pending' || o.status === 'on_hold')).length;
+    if (pendingOrdersCount > 0) {
+      issues.push({
+        id: 'audit-orders',
+        area: 'orders',
+        severity: pendingOrdersCount > 5 ? 'critical' : 'warning',
+        title: `${pendingOrdersCount} pending/hold order(s) awaiting call or confirmation`,
+        titleBn: `${pendingOrdersCount}টি পেন্ডিং/হোল্ড অর্ডার কল ও কনফার্মেশনের অপেক্ষায়`,
+        detail: 'Review tasks added to AI Control Queue.',
+        count: pendingOrdersCount
+      });
+    }
+
+    const pendingResellersCount = resellers.filter((r) => r && r.status === 'pending').length;
+    if (pendingResellersCount > 0) {
+      issues.push({
+        id: 'audit-resellers',
+        area: 'resellers',
+        severity: 'warning',
+        title: `${pendingResellersCount} reseller application(s) waiting for approval`,
+        titleBn: `${pendingResellersCount}টি রিসেলার আবেদন অনুমোদনের অপেক্ষায়`,
+        detail: 'One-click approval tasks generated.',
+        count: pendingResellersCount
+      });
+    }
+
+    const backupExists = fs.existsSync(STORE_BACKUP_FILE);
+    const backupUpdatedAt = backupExists ? fs.statSync(STORE_BACKUP_FILE).mtime.toISOString() : null;
+    if (products.length > 0 && !backupExists) {
+      saveStoreData(current);
+    }
+
+    const mergedQueue = [...combinedNew, ...existingQueue].slice(0, 120);
+    current.aiReviewQueue = mergedQueue;
+    saveStoreData(current);
+    broadcastWs({ type: 'ai_queue:sync', aiReviewQueue: mergedQueue });
+
+    const penalty = issues.reduce((acc, it) => acc + (it.severity === 'critical' ? 14 : it.severity === 'warning' ? 7 : 0), 0);
+    const healthScore = Math.max(42, Math.min(100, 100 - penalty));
+
+    return res.json({
+      success: true,
+      auditedAt: nowIso,
+      healthScore,
+      backupProtected: fs.existsSync(STORE_BACKUP_FILE),
+      backupUpdatedAt: fs.existsSync(STORE_BACKUP_FILE) ? fs.statSync(STORE_BACKUP_FILE).mtime.toISOString() : backupUpdatedAt,
+      metrics: {
+        totalProducts: products.length,
+        totalOrders: orders.length,
+        pendingOrders: pendingOrdersCount,
+        lowStockCount: lowStockProds.length,
+        missingSeoCount: missingSeoProds.length,
+        unrecoveredCarts: abandonedCarts.filter((c) => c && !c.recovered).length,
+        pendingResellers: pendingResellersCount
+      },
+      issues,
+      addedCount: combinedNew.length,
+      queue: mergedQueue
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Website maintenance audit failed' });
+  }
+});
+
+// AI RFM Audience Segment & Campaign Generator
+app.post('/api/ai/marketing/campaign', async (req, res) => {
+  try {
+    const { lang = 'bn', segment = 'vip_buyers', goal = 'repeat_order' } = req.body || {};
+    const saved = loadStoreData() || {};
+    const orders: any[] = Array.isArray(saved.orders) ? saved.orders : [];
+    const customers: any[] = Array.isArray(saved.customerAccounts) ? saved.customerAccounts : [];
+    const products: any[] = Array.isArray(saved.products) ? saved.products : [];
+    const storeName = saved?.settings?.storeName || 'BuyOne BD';
+    const topProd = products[0] || { title: 'Trending Gadget', titleBn: 'ট্রেন্ডিং গ্যাজেট', price: 990 };
+
+    // Build real RFM customer stats
+    const spendByPhone = new Map<string, { name: string; phone: string; orders: number; totalSpent: number }>();
+    orders.forEach((o) => {
+      const phone = String(o?.customer?.phone || '').trim();
+      if (!phone || o.status === 'cancelled') return;
+      const cur = spendByPhone.get(phone) || { name: o?.customer?.name || 'Customer', phone, orders: 0, totalSpent: 0 };
+      cur.orders += 1;
+      cur.totalSpent += Number(o?.pricing?.total || 0);
+      spendByPhone.set(phone, cur);
+    });
+    customers.forEach((c) => {
+      if (c?.phone && !spendByPhone.has(c.phone)) {
+        spendByPhone.set(c.phone, { name: c.name || 'Customer', phone: c.phone, orders: 0, totalSpent: 0 });
+      }
+    });
+
+    const allBuyers = Array.from(spendByPhone.values());
+    const vipBuyers = allBuyers.filter((b) => b.totalSpent >= 3000 || b.orders >= 2);
+    const inactiveLeads = allBuyers.filter((b) => b.orders === 0);
+    const repeatCodBuyers = allBuyers.filter((b) => b.orders === 1);
+
+    const targetList =
+      segment === 'vip_buyers'
+        ? vipBuyers
+        : segment === 'inactive_leads'
+        ? inactiveLeads
+        : repeatCodBuyers;
+
+    const isEn = lang === 'en';
+    const fallbackCampaign = {
+      segmentTitle:
+        segment === 'vip_buyers'
+          ? isEn ? 'VIP Repeat Shoppers' : 'VIP প্রিমিয়াম ক্রেতা'
+          : segment === 'inactive_leads'
+          ? isEn ? 'Warm Cart / Registered Leads' : 'ওয়ার্ম লিডস ও অসম্পূর্ণ অর্ডার'
+          : isEn ? 'First-Time Buyers (Repeat Boost)' : 'নতুন ক্রেতা (রিপিট অফার)',
+      whatsappBroadcast: isEn
+        ? `Assalamu Alaikum from ${storeName}! Exclusive VIP reward: use code BUYONE15 on ${topProd.title} (৳${topProd.price}) today & get 15% OFF + priority Cash on Delivery.`
+        : `আসসালামু আলাইকুম! ${storeName} থেকে স্পেশাল গিফট—আমাদের জনপ্রিয় ${topProd.titleBn || topProd.title} (৳${topProd.price}) অর্ডারে আজই BUYONE15 কুপনে পাচ্ছেন ১৫% বিশেষ ছাড় ও দ্রুত ক্যাশ অন ডেলিভারি!`,
+      smsText: `${storeName}: Special 15% OFF on ${topProd.title}. Use BUYONE15 today! COD across BD. Hotline +8801917942662`,
+      subject: isEn ? `${storeName} VIP Offer: 15% OFF Inside!` : `${storeName} স্পেশাল ১৫% ছাড় আপনার জন্য!`,
+      suggestedCouponCode: 'BUYONE15'
+    };
+
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        const resp = await ai.models.generateContent({
+          model: 'gemini-4-hydrogen',
+          contents: `Create a high-converting Bangladesh e-commerce retention campaign in ${isEn ? 'English' : 'Bengali'} for "${storeName}". Target segment: ${segment} (${targetList.length} contacts), Goal: ${goal}, Featured item: ${topProd.title} (৳${topProd.price}). Return JSON with whatsappBroadcast, smsText (max 150 chars), subject, suggestedCouponCode.`,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                whatsappBroadcast: { type: Type.STRING },
+                smsText: { type: Type.STRING },
+                subject: { type: Type.STRING },
+                suggestedCouponCode: { type: Type.STRING }
+              }
+            }
+          }
+        });
+        const parsed = JSON.parse(resp?.text || '{}');
+        Object.assign(fallbackCampaign, parsed);
+      } catch {}
+    }
+
+    return res.json({
+      success: true,
+      segments: {
+        totalContacts: allBuyers.length,
+        vipCount: vipBuyers.length,
+        repeatReadyCount: repeatCodBuyers.length,
+        leadsCount: inactiveLeads.length
+      },
+      recipients: targetList.slice(0, 50),
+      campaign: fallbackCampaign
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Campaign generation failed' });
   }
 });
 
@@ -1077,18 +1857,27 @@ app.post('/api/store/sync', (req, res) => {
     return Array.from(map.values());
   };
 
+  const allowEmptyOverwrite = Boolean(req.body?.allowEmptyOverwrite);
+  const preserveNonEmpty = <T,>(incoming: T[] | undefined, existing: T[] | undefined): T[] | undefined => {
+    if (incoming === undefined) return existing;
+    if (Array.isArray(incoming) && incoming.length === 0 && Array.isArray(existing) && existing.length > 0 && !allowEmptyOverwrite) {
+      return existing;
+    }
+    return incoming;
+  };
+
   const updated = {
     ...current,
-    products: products !== undefined ? products : current.products,
+    products: preserveNonEmpty(products, current.products),
     orders: mergedOrders,
     settings: mergedSettings,
-    spinRewards: spinRewards !== undefined ? spinRewards : current.spinRewards,
-    categories: categories !== undefined ? categories : current.categories,
-    sliders: sliders !== undefined ? sliders : current.sliders,
-    customerAccounts: customerAccounts !== undefined ? customerAccounts : current.customerAccounts,
+    spinRewards: preserveNonEmpty(spinRewards, current.spinRewards),
+    categories: preserveNonEmpty(categories, current.categories),
+    sliders: preserveNonEmpty(sliders, current.sliders),
+    customerAccounts: preserveNonEmpty(customerAccounts, current.customerAccounts),
     walletTopUps: walletTopUps !== undefined ? walletTopUps : current.walletTopUps,
     abandonedCarts: abandonedCarts !== undefined ? abandonedCarts : current.abandonedCarts,
-    reviews: reviews !== undefined ? reviews : current.reviews,
+    reviews: preserveNonEmpty(reviews, current.reviews),
     priceAlerts: priceAlerts !== undefined ? priceAlerts : current.priceAlerts,
     waitlist: waitlist !== undefined ? waitlist : current.waitlist,
     resellers: Array.isArray(resellers)
@@ -1107,8 +1896,11 @@ app.post('/api/store/sync', (req, res) => {
     whatsappMessages: Array.isArray(req.body?.whatsappMessages)
       ? unionMergeById(req.body.whatsappMessages, current.whatsappMessages)
       : current.whatsappMessages,
-    users: users !== undefined ? users : current.users,
-    mediaLibrary: mediaLibrary !== undefined ? mediaLibrary : current.mediaLibrary,
+    aiReviewQueue: Array.isArray(req.body?.aiReviewQueue)
+      ? unionMergeById(req.body.aiReviewQueue, current.aiReviewQueue)
+      : current.aiReviewQueue,
+    users: preserveNonEmpty(users, current.users),
+    mediaLibrary: preserveNonEmpty(mediaLibrary, current.mediaLibrary),
     lastUpdated: new Date().toISOString()
   };
   saveStoreData(updated);
@@ -1119,6 +1911,52 @@ app.post('/api/store/sync', (req, res) => {
     message: 'Store synchronized',
     data: !isAdminSession && shouldMask ? redactSensitiveSettingsForPublic(updated) : updated
   });
+});
+
+// Safe Rolling Backup & Restore Endpoints (Guarantees No Data Loss)
+app.get('/api/store/backup', (_req, res) => {
+  try {
+    const hasBackup = fs.existsSync(STORE_BACKUP_FILE);
+    const hasMain = fs.existsSync(STORE_FILE);
+    const backup = hasBackup ? JSON.parse(fs.readFileSync(STORE_BACKUP_FILE, 'utf-8')) : loadStoreData();
+    return res.json({
+      success: true,
+      hasBackup: hasBackup || hasMain,
+      backupUpdatedAt: hasBackup
+        ? fs.statSync(STORE_BACKUP_FILE).mtime.toISOString()
+        : hasMain
+        ? fs.statSync(STORE_FILE).mtime.toISOString()
+        : null,
+      counts: {
+        products: Array.isArray(backup?.products) ? backup.products.length : 0,
+        orders: Array.isArray(backup?.orders) ? backup.orders.length : 0,
+        customers: Array.isArray(backup?.customerAccounts) ? backup.customerAccounts.length : 0,
+        resellers: Array.isArray(backup?.resellers) ? backup.resellers.length : 0,
+        sliders: Array.isArray(backup?.sliders) ? backup.sliders.length : 0
+      },
+      snapshot: backup ? redactSensitiveSettingsForPublic(backup) : null
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Backup inspect failed' });
+  }
+});
+
+app.post('/api/store/backup/restore', (_req, res) => {
+  try {
+    if (!fs.existsSync(STORE_BACKUP_FILE)) {
+      const current = loadStoreData();
+      if (!current) {
+        return res.status(404).json({ success: false, error: 'No backup file exists yet.' });
+      }
+      saveStoreData(current);
+      return res.json({ success: true, restored: true, data: redactSensitiveSettingsForPublic(current) });
+    }
+    const backup = JSON.parse(fs.readFileSync(STORE_BACKUP_FILE, 'utf-8'));
+    fs.writeFileSync(STORE_FILE, JSON.stringify(backup, null, 2), 'utf-8');
+    return res.json({ success: true, restored: true, data: redactSensitiveSettingsForPublic(backup) });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Backup restore failed' });
+  }
 });
 
 // Partner Portal (Reseller & Wholesale) Cross-Device Registration, Update & Authentication
@@ -1875,6 +2713,8 @@ app.get('/api/support/state', (_req, res) => {
     browsingHistory: saved.browsingHistory || [],
     supportChats: saved.supportChats || [],
     browserCalls: saved.browserCalls || [],
+    whatsappMessages: saved.whatsappMessages || [],
+    aiReviewQueue: saved.aiReviewQueue || [],
     pixelEvents: saved.pixelEvents || []
   });
 });
@@ -2463,6 +3303,58 @@ app.get('/api/whatsapp/messages', (_req, res) => {
   });
 });
 
+// Storefront Customer Inquiry -> Direct Admin WhatsApp Support Thread + Live WebSocket Push
+app.post('/api/whatsapp/customer-inquiry', (req, res) => {
+  try {
+    const {
+      phone,
+      name,
+      message,
+      productId,
+      productTitle,
+      productUrl,
+      productPrice
+    } = req.body || {};
+
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({ success: false, error: 'Message text is required.' });
+    }
+
+    const cleanDigits = String(phone || '').replace(/[^0-9]/g, '');
+    const shortPhone = cleanDigits.length >= 6 ? cleanDigits.slice(-11) : `web-${Date.now().toString().slice(-6)}`;
+    const senderName = String(name || '').trim() || shortPhone;
+    const saved = loadStoreData() || {};
+    const existing: any[] = Array.isArray(saved.whatsappMessages) ? saved.whatsappMessages : [];
+    const resellersList: any[] = Array.isArray(saved.resellers) ? saved.resellers : [];
+    const matchedRes = resellersList.find((r) => String(r.phone || '').replace(/[^0-9]/g, '').slice(-11) === shortPhone);
+
+    const productContext = productTitle
+      ? `[Product: ${productTitle}${productPrice ? ` (৳${productPrice})` : ''}${productId ? ` #${productId}` : ''}${productUrl ? `\nLink: ${productUrl}` : ''}]\n`
+      : '';
+
+    const threadMsg = {
+      id: `wa-cust-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      phone: shortPhone,
+      contactName: matchedRes?.name || senderName,
+      contactType: matchedRes ? 'reseller' : 'customer',
+      direction: 'inbound',
+      sender: 'contact',
+      text: `${productContext}${String(message).trim()}`,
+      mode: 'live',
+      status: 'received',
+      timestamp: new Date().toISOString()
+    };
+
+    saved.whatsappMessages = [...existing, threadMsg].slice(-300);
+    saveStoreData(saved);
+    broadcastWs({ type: 'whatsapp:sync', whatsappMessages: saved.whatsappMessages });
+
+    return res.json({ success: true, threadMsg });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to submit WhatsApp inquiry' });
+  }
+});
+
 // Meta WhatsApp Cloud API Live / Simulated Message Sender (Persists to Thread & Broadcasts Live)
 app.post('/api/whatsapp/send', async (req, res) => {
   try {
@@ -2655,7 +3547,7 @@ app.post('/api/whatsapp/ai-reply', async (req, res) => {
           latestOrder: latestOrder ? { id: latestOrder.id, status: latestOrder.status, total: latestOrder.pricing?.total, tracking: latestOrder.courier?.trackingCode } : null
         });
         const resp = await genClient.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-4-hydrogen',
           contents: [
             {
               role: 'user',
@@ -3295,7 +4187,8 @@ async function startServer() {
           type: 'support:init',
           supportChats: initialSaved.supportChats || [],
           browserCalls: initialSaved.browserCalls || [],
-          whatsappMessages: initialSaved.whatsappMessages || []
+          whatsappMessages: initialSaved.whatsappMessages || [],
+          aiReviewQueue: initialSaved.aiReviewQueue || []
         })
       );
     } catch {}

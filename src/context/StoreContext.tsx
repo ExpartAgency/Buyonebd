@@ -37,8 +37,10 @@ import {
   ResellerPayoutRequest,
   WholesaleAccount,
   WholesaleQuoteRequest,
-  BulkSmsCampaignLog
+  BulkSmsCampaignLog,
+  AIReviewTask
 } from '../types';
+import { speakClearText, stopAllVoicePlayback } from '../utils/voiceAudio';
 import {
   INITIAL_PRODUCTS,
   INITIAL_ORDERS,
@@ -114,7 +116,9 @@ import {
   saveResellerPayoutToFirestore,
   saveWholesalerToFirestore,
   fetchWholesalersFromFirestore,
-  saveWholesaleQuoteToFirestore
+  saveWholesaleQuoteToFirestore,
+  saveAIReviewTaskToFirestore,
+  deleteAIReviewTaskFromFirestore
 } from '../firebase';
 import { WebRTCAudioSession } from '../utils/webrtcAudio';
 
@@ -387,6 +391,65 @@ interface StoreContextType {
     intent?: string;
     customPrompt?: string;
   }) => Promise<string>;
+  whatsappProductDraft: {
+    product: Product;
+    quantity?: number;
+    selectedColor?: string;
+    selectedSize?: string;
+    selectedAttributes?: Record<string, string>;
+    variantText?: string;
+    customMessage?: string;
+    unitPrice?: number;
+    productUrl: string;
+  } | null;
+  setWhatsappProductDraft: (
+    draft: {
+      product: Product;
+      quantity?: number;
+      selectedColor?: string;
+      selectedSize?: string;
+      selectedAttributes?: Record<string, string>;
+      variantText?: string;
+      customMessage?: string;
+      unitPrice?: number;
+      productUrl: string;
+    } | null
+  ) => void;
+  getProductCanonicalUrl: (product: Product) => string;
+  buildProductWhatsAppUrl: (
+    product: Product,
+    opts?: {
+      quantity?: number;
+      selectedColor?: string;
+      selectedSize?: string;
+      selectedAttributes?: Record<string, string>;
+      variantText?: string;
+      unitPrice?: number;
+      customNote?: string;
+      customMessage?: string;
+    }
+  ) => string;
+  openWhatsAppWidgetForProduct: (
+    product: Product,
+    opts?: {
+      quantity?: number;
+      selectedColor?: string;
+      selectedSize?: string;
+      selectedAttributes?: Record<string, string>;
+      variantText?: string;
+      customMessage?: string;
+      unitPrice?: number;
+    }
+  ) => void;
+  sendCustomerWhatsAppInquiry: (payload: {
+    phone?: string;
+    name?: string;
+    message: string;
+    productId?: string;
+    productTitle?: string;
+    productUrl?: string;
+    productPrice?: number;
+  }) => Promise<{ success: boolean; threadMsg?: WhatsAppChatMessage; error?: string }>;
   applyBusinessTheme: (themeId: StoreTheme, includeCategories?: boolean) => void;
 
   // Server-Side Pixel CAPI & Customer Browsing Logs
@@ -431,13 +494,39 @@ interface StoreContextType {
   deleteAbandonedCart: (cartId: string) => void;
   bulkAbandonedCartsAction: (cartIds: string[], action: 'whatsapp' | 'recover' | 'delete') => void;
 
-  // Autonomous Store Operations AI Controller
+  // Autonomous Store Operations AI Controller & Admin Review Queue
   agentActionLogs: { id: string; time: string; instruction: string; reply: string; actions: string[]; mode: string }[];
   executeAIAgentCommand: (
     instruction: string,
     role?: 'admin' | 'customer',
-    adminTabSetter?: (tab: string) => void
-  ) => Promise<{ reply: string; executed: string[]; mode: string }>;
+    adminTabSetter?: (tab: string) => void,
+    options?: { directExecute?: boolean }
+  ) => Promise<{ reply: string; executed: string[]; queuedCount?: number; mode: string }>;
+  aiReviewQueue: AIReviewTask[];
+  isScanningAutopilot: boolean;
+  maintenanceAuditReport: {
+    auditedAt: string;
+    healthScore: number;
+    backupProtected: boolean;
+    backupUpdatedAt: string | null;
+    metrics: Record<string, number>;
+    issues: {
+      id: string;
+      area: string;
+      severity: 'critical' | 'warning' | 'healthy';
+      title: string;
+      titleBn: string;
+      detail: string;
+      count: number;
+    }[];
+  } | null;
+  scanWebsiteForAIReview: (instruction?: string) => Promise<{ addedCount: number; tasks: AIReviewTask[] }>;
+  runWebsiteMaintenanceAudit: () => Promise<boolean>;
+  restoreStoreFromServerBackup: () => Promise<boolean>;
+  approveAIReviewTask: (taskId: string, editedPayload?: Partial<AIReviewTask['payload']>) => Promise<boolean>;
+  approveAllPendingAIReviewTasks: (actionFilter?: string) => Promise<number>;
+  dismissAIReviewTask: (taskId: string) => void;
+  clearCompletedAIReviewTasks: () => void;
 
   // Product Comparison (up to 3 products)
   compareList: string[];
@@ -823,6 +912,17 @@ function mergeSettings(raw: any): StoreSettings {
         ...INITIAL_SETTINGS.globalMarketingSettings!.exchangeRates,
         ...(raw.globalMarketingSettings?.exchangeRates || {})
       }
+    },
+    aiAutopilotSettings: {
+      ...INITIAL_SETTINGS.aiAutopilotSettings!,
+      ...(raw.aiAutopilotSettings || {})
+    },
+    invoiceSettings: {
+      ...INITIAL_SETTINGS.invoiceSettings!,
+      ...(raw.invoiceSettings || {}),
+      customFields: Array.isArray(raw.invoiceSettings?.customFields)
+        ? raw.invoiceSettings.customFields
+        : INITIAL_SETTINGS.invoiceSettings!.customFields
     }
   };
 }
@@ -3584,6 +3684,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [checkoutProduct, setCheckoutProduct] = useState<Product | null>(null);
   const [isOneClickOpen, setIsOneClickOpen] = useState(false);
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
+  const [whatsappProductDraft, setWhatsappProductDraft] = useState<{
+    product: Product;
+    quantity?: number;
+    selectedColor?: string;
+    selectedSize?: string;
+    selectedAttributes?: Record<string, string>;
+    variantText?: string;
+    customMessage?: string;
+    unitPrice?: number;
+    productUrl: string;
+  } | null>(null);
   const [isSpinOpen, setIsSpinOpen] = useState(false);
   const [isMobileCategoryDrawerOpen, setIsMobileCategoryDrawerOpen] = useState(false);
   const [activeView, setActiveViewState] = useState<'store' | 'admin' | 'tracking'>(() => {
@@ -4001,11 +4112,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const isAdminLoggedInRef = useRef(isAdminLoggedIn);
   isAdminLoggedInRef.current = isAdminLoggedIn;
 
+  const findProductBySlugOrId = (slugOrId: string, list: Product[]) => {
+    const clean = decodeURIComponent(String(slugOrId || '')).trim().toLowerCase();
+    if (!clean) return undefined;
+    return list.find(
+      (item) =>
+        item.id.toLowerCase() === clean ||
+        (item.seo?.slug && item.seo.slug.toLowerCase() === clean)
+    );
+  };
+
   useEffect(() => {
     const applyRouteFromUrl = () => {
       const rawPath = window.location.pathname.replace(/\/+$/, '') || '/';
       const lowerPath = rawPath.toLowerCase();
       const lowerHash = window.location.hash.toLowerCase();
+      const searchParams = new URLSearchParams(window.location.search);
+      const queryProductSlug = searchParams.get('product');
+
       if (lowerPath === '/hossain' || lowerPath.startsWith('/hossain/') || lowerHash === '#hossain') {
         if (window.location.pathname !== '/hossain' || window.location.hash !== '') {
           window.history.replaceState({}, '', '/hossain');
@@ -4048,14 +4172,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setSelectedProductForPage(null);
         return;
       }
-      if (lowerPath.startsWith('/product/')) {
-        const slugOrId = decodeURIComponent(rawPath.replace(/^\/product\//i, ''));
-        const matched = products.find((item) => item.id === slugOrId || item.seo?.slug === slugOrId);
+      if (lowerPath.startsWith('/product/') || queryProductSlug) {
+        const slugOrId = queryProductSlug || rawPath.replace(/^\/product\//i, '');
+        const matched = findProductBySlugOrId(slugOrId, productsRef.current);
         if (matched) {
           setActiveViewState('store');
           setSelectedProductForPage(matched);
           return;
         }
+        if (lowerPath.startsWith('/product/')) return;
+      }
+      if (lowerPath === '/reseller' || lowerPath === '/reseller-dashboard' || lowerPath === '/partner') {
+        setActiveViewState('store');
+        setPartnerPortalTab('reseller');
+        setIsPartnerPortalOpen(true);
+        return;
+      }
+      if (lowerPath === '/wholesale') {
+        setActiveViewState('store');
+        setPartnerPortalTab('wholesale');
+        setIsPartnerPortalOpen(true);
+        return;
       }
       if (lowerPath.startsWith('/category/')) {
         const parts = rawPath.replace(/^\/category\//i, '').split('/').filter(Boolean);
@@ -4081,6 +4218,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     window.addEventListener('popstate', applyRouteFromUrl);
     return () => window.removeEventListener('popstate', applyRouteFromUrl);
   }, []);
+
+  // Resolve /product/:slug or ?product=:slug cleanly when async catalog finishes hydrating
+  useEffect(() => {
+    const rawPath = window.location.pathname.replace(/\/+$/, '') || '/';
+    const querySlug = new URLSearchParams(window.location.search).get('product');
+    const isProductUrl = rawPath.toLowerCase().startsWith('/product/') || Boolean(querySlug);
+    if (!isProductUrl || products.length === 0) return;
+    const slugOrId = querySlug || rawPath.replace(/^\/product\//i, '');
+    const matched = findProductBySlugOrId(slugOrId, products);
+    if (matched && (!selectedProductForPage || selectedProductForPage.id !== matched.id)) {
+      setActiveViewState('store');
+      setSelectedProductForPage(matched);
+    }
+  }, [products]);
 
   // Cross-Device Store & Order Synchronization (Express API + Real-Time Firestore Listeners)
   const hasHydratedFromServerRef = useRef(false);
@@ -4269,6 +4420,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
             if (Array.isArray(data.bulkSmsLogs) && data.bulkSmsLogs.length > 0) {
               setBulkSmsLogs(data.bulkSmsLogs);
+            }
+            if (Array.isArray(data.aiReviewQueue) && data.aiReviewQueue.length > 0) {
+              setAiReviewQueue(data.aiReviewQueue);
             }
           }
 
@@ -5014,6 +5168,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               );
             });
           }
+          if (Array.isArray(msg.aiReviewQueue) && msg.aiReviewQueue.length > 0) {
+            setAiReviewQueue(msg.aiReviewQueue);
+          }
           return;
         }
 
@@ -5021,6 +5178,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setWhatsappMessages(msg.whatsappMessages);
           try {
             localStorage.setItem('buyonebd_wa_messages_v1', JSON.stringify(msg.whatsappMessages));
+          } catch {}
+          return;
+        }
+
+        if (msg.type === 'ai_queue:sync' && Array.isArray(msg.aiReviewQueue)) {
+          setAiReviewQueue(msg.aiReviewQueue);
+          try {
+            localStorage.setItem('buyonebd_ai_review_queue_v1', JSON.stringify(msg.aiReviewQueue));
           } catch {}
           return;
         }
@@ -6197,6 +6362,123 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const getProductCanonicalUrl = (product: Product): string => {
+    const slug = product.seo?.slug || product.id;
+    const origin = typeof window !== 'undefined' && window.location.origin
+      ? window.location.origin
+      : (settings.seoSettings?.canonicalUrl || 'https://buyonebd.com').replace(/\/+$/, '');
+    return `${origin}/product/${encodeURIComponent(slug)}`;
+  };
+
+  const buildProductWhatsAppUrl = (
+    product: Product,
+    opts?: {
+      quantity?: number;
+      selectedColor?: string;
+      selectedSize?: string;
+      selectedAttributes?: Record<string, string>;
+      variantText?: string;
+      unitPrice?: number;
+      customNote?: string;
+      customMessage?: string;
+    }
+  ): string => {
+    const productUrl = getProductCanonicalUrl(product);
+    const qty = opts?.quantity || 1;
+    const effectiveUnit = opts?.unitPrice ?? getPartnerPriceInfo(product, qty).unitPrice;
+    const variantParts: string[] = [];
+    if (opts?.selectedColor) variantParts.push(`Color: ${opts.selectedColor}`);
+    if (opts?.selectedSize) variantParts.push(`Size: ${opts.selectedSize}`);
+    if (opts?.selectedAttributes) {
+      Object.entries(opts.selectedAttributes).forEach(([k, v]) => {
+        if (v) variantParts.push(`${k}: ${v}`);
+      });
+    }
+    const resolvedVariant = opts?.variantText?.trim() || variantParts.join(', ');
+    const resolvedCustomNote = opts?.customMessage?.trim() || opts?.customNote?.trim() || '';
+    const cleanWaNum = String(settings.whatsappNumber || '8801917942662').replace(/[^0-9]/g, '');
+    const title = lang === 'bn' ? (product.titleBn || product.title) : product.title;
+    const lines = [
+      lang === 'bn'
+        ? `আসসালামু আলাইকুম ${settings.storeName}! আমি এই পণ্যটি সম্পর্কে জানতে ও অর্ডার করতে চাই:`
+        : `Hello ${settings.storeName}! I want to chat & order this product:`,
+      `*${title}*`,
+      `Price: ৳${effectiveUnit.toLocaleString()} × ${qty} = ৳${(effectiveUnit * qty).toLocaleString()}`,
+      product.sku ? `SKU: ${product.sku}` : '',
+      resolvedVariant ? `Variant: ${resolvedVariant}` : '',
+      resolvedCustomNote ? `Message: ${resolvedCustomNote}` : '',
+      `Product Link: ${productUrl}`
+    ].filter(Boolean);
+    return `https://wa.me/${cleanWaNum}?text=${encodeURIComponent(lines.join('\n'))}`;
+  };
+
+  const openWhatsAppWidgetForProduct = (
+    product: Product,
+    opts?: {
+      quantity?: number;
+      selectedColor?: string;
+      selectedSize?: string;
+      selectedAttributes?: Record<string, string>;
+      variantText?: string;
+      customMessage?: string;
+      unitPrice?: number;
+    }
+  ) => {
+    const productUrl = getProductCanonicalUrl(product);
+    const variantParts: string[] = [];
+    if (opts?.selectedColor) variantParts.push(`Color: ${opts.selectedColor}`);
+    if (opts?.selectedSize) variantParts.push(`Size: ${opts.selectedSize}`);
+    if (opts?.selectedAttributes) {
+      Object.entries(opts.selectedAttributes).forEach(([k, v]) => {
+        if (v) variantParts.push(`${k}: ${v}`);
+      });
+    }
+    const computedVariant = opts?.variantText?.trim() || variantParts.join(', ') || undefined;
+    setWhatsappProductDraft({
+      product,
+      quantity: opts?.quantity || 1,
+      selectedColor: opts?.selectedColor,
+      selectedSize: opts?.selectedSize,
+      selectedAttributes: opts?.selectedAttributes,
+      variantText: computedVariant,
+      customMessage: opts?.customMessage,
+      unitPrice: opts?.unitPrice ?? getPartnerPriceInfo(product, opts?.quantity || 1).unitPrice,
+      productUrl
+    });
+    setIsWhatsAppOpen(true);
+  };
+
+  const sendCustomerWhatsAppInquiry = async (payload: {
+    phone?: string;
+    name?: string;
+    message: string;
+    productId?: string;
+    productTitle?: string;
+    productUrl?: string;
+    productPrice?: number;
+  }): Promise<{ success: boolean; threadMsg?: WhatsAppChatMessage; error?: string }> => {
+    try {
+      const res = await fetch('/api/whatsapp/customer-inquiry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = (await safeParseJson<{ success?: boolean; threadMsg?: WhatsAppChatMessage; error?: string }>(res)) || {
+        success: false,
+        error: 'Network error'
+      };
+      if (data.success && data.threadMsg) {
+        setWhatsappMessages((prev) => {
+          if (prev.some((m) => m.id === data.threadMsg!.id)) return prev;
+          return [...prev, data.threadMsg!];
+        });
+      }
+      return { success: Boolean(data.success), threadMsg: data.threadMsg, error: data.error };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error' };
+    }
+  };
+
   // Apply 1 of 10 Business Themes (Colors + Auto-Generated Brand Attributes + optional curated Categories)
   const applyBusinessTheme = (themeId: StoreTheme, includeCategories = false) => {
     const preset = BUSINESS_THEME_PRESETS.find((p) => p.id === themeId);
@@ -7021,6 +7303,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }, (settings.aiCallSettings.delaySeconds || 2) * 1000);
     }
 
+    // Prepare Human-in-the-Loop AI Review Queue items automatically for Admin review
+    if (
+      orderData.source !== 'pos' &&
+      settingsRef.current.aiAutopilotSettings?.enabled !== false &&
+      settingsRef.current.aiAutopilotSettings?.autoScanNewOrders !== false
+    ) {
+      fetch('/api/ai/autopilot/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orders: [newOrder],
+          products: productsRef.current.slice(0, 10),
+          abandonedCarts: [],
+          resellers: [],
+          settings: settingsRef.current,
+          existingQueue: aiReviewQueueRef.current,
+          lang: adminLang
+        })
+      })
+        .then((r) => safeParseJson<{ success?: boolean; queue?: AIReviewTask[] }>(r))
+        .then((d) => {
+          if (d?.success && Array.isArray(d.queue)) {
+            setAiReviewQueue(d.queue);
+          }
+        })
+        .catch(() => {});
+    }
+
     return newOrder;
   };
 
@@ -7503,10 +7813,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setActiveCallOrder(null);
   };
 
-  // Play voice sample to test audio live (Gemini Neural TTS + guaranteed Free Browser Speech fallback)
+  // Play crystal-clear voice sample using unified RIFF WAV + Bangla/English voice engine
   const playVoiceSample = async () => {
-    if (sampleAudioRef.current) {
-      sampleAudioRef.current.pause();
+    if (isPlayingVoiceSample) {
+      stopAllVoicePlayback();
       sampleAudioRef.current = null;
       setIsPlayingVoiceSample(false);
       return;
@@ -7516,47 +7826,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       settings.aiCallSettings.banglaScript ||
       'আসসালামু আলাইকুম! বাইওয়ান বিডি থেকে আমি সুমনা বলছি। আপনার অর্ডারটি নিশ্চিত করতে অনুগ্রহ করে এক চাপুন।';
 
-    const speakWithBrowserFallback = () => {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        try {
-          window.speechSynthesis.cancel();
-          const u = new SpeechSynthesisUtterance(sampleScript);
-          const voices = window.speechSynthesis.getVoices();
-          const bnVoice =
-            voices.find((v) => v.lang.includes('bn') || v.name.includes('Bangla') || v.name.includes('Bengali')) ||
-            voices[0];
-          if (bnVoice) u.voice = bnVoice;
-          u.rate = 0.94;
-          u.onend = () => setIsPlayingVoiceSample(false);
-          u.onerror = () => setIsPlayingVoiceSample(false);
-          window.speechSynthesis.speak(u);
-          return;
-        } catch {}
-      }
-      setIsPlayingVoiceSample(false);
-    };
-
+    setIsPlayingVoiceSample(true);
     try {
-      setIsPlayingVoiceSample(true);
-      const res = await fetch('/api/tts/sample');
-      const data = await safeParseJson<{ audioUrl?: string }>(res);
-      if (res.ok && data?.audioUrl) {
-        const audio = new Audio(data.audioUrl);
-        sampleAudioRef.current = audio;
-        audio.onended = () => {
-          setIsPlayingVoiceSample(false);
-          sampleAudioRef.current = null;
-        };
-        audio.onerror = () => {
-          sampleAudioRef.current = null;
-          speakWithBrowserFallback();
-        };
-        await audio.play();
-      } else {
-        speakWithBrowserFallback();
-      }
+      await speakClearText(sampleScript, {
+        voice: settings.aiCallSettings.voiceName || 'Kore',
+        style: settings.aiCallSettings.humanTone,
+        speed: settings.aiCallSettings.voiceSpeed || 1,
+        lang: 'bn',
+        preferStudioTts: true,
+        onStart: () => setIsPlayingVoiceSample(true),
+        onEnd: () => setIsPlayingVoiceSample(false)
+      });
     } catch {
-      speakWithBrowserFallback();
+      setIsPlayingVoiceSample(false);
     }
   };
 
@@ -7797,8 +8079,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const openPartnerPortal = (tab: 'reseller' | 'wholesale' = 'reseller') => {
     setPartnerPortalTab(tab);
     setIsPartnerPortalOpen(true);
+    navigateToPath(tab === 'wholesale' ? '/wholesale' : '/reseller');
   };
-  const closePartnerPortal = () => setIsPartnerPortalOpen(false);
+  const closePartnerPortal = () => {
+    setIsPartnerPortalOpen(false);
+    const p = window.location.pathname.toLowerCase();
+    if (p === '/reseller' || p === '/reseller-dashboard' || p === '/wholesale' || p === '/partner') {
+      navigateToPath('/', true);
+    }
+  };
 
   const registerReseller = async (
     data: Omit<
@@ -8347,6 +8636,445 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
+  // Autonomous Store Operations AI Controller + Human-in-the-Loop Admin Review Queue
+  const [aiReviewQueue, setAiReviewQueue] = useState<AIReviewTask[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_ai_review_queue_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const aiReviewQueueRef = useRef<AIReviewTask[]>(aiReviewQueue);
+  aiReviewQueueRef.current = aiReviewQueue;
+
+  const [isScanningAutopilot, setIsScanningAutopilot] = useState(false);
+  const [maintenanceAuditReport, setMaintenanceAuditReport] = useState<{
+    auditedAt: string;
+    healthScore: number;
+    backupProtected: boolean;
+    backupUpdatedAt: string | null;
+    metrics: Record<string, number>;
+    issues: {
+      id: string;
+      area: string;
+      severity: 'critical' | 'warning' | 'healthy';
+      title: string;
+      titleBn: string;
+      detail: string;
+      count: number;
+    }[];
+  } | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_ai_review_queue_v1', JSON.stringify(aiReviewQueue));
+    } catch {}
+  }, [aiReviewQueue]);
+
+  useEffect(() => {
+    fetch('/api/support/state')
+      .then((r) => safeParseJson<{ success?: boolean; aiReviewQueue?: AIReviewTask[] }>(r))
+      .then((data) => {
+        if (data?.success && Array.isArray(data.aiReviewQueue) && data.aiReviewQueue.length > 0) {
+          setAiReviewQueue(data.aiReviewQueue);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const persistReviewQueue = async (nextQueue: AIReviewTask[]) => {
+    const trimmed = nextQueue.slice(0, 120);
+    setAiReviewQueue(trimmed);
+    fetch('/api/ai/autopilot/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tasks: trimmed })
+    }).catch(() => {});
+  };
+
+  const runWebsiteMaintenanceAudit = async (): Promise<boolean> => {
+    setIsScanningAutopilot(true);
+    try {
+      const res = await fetch('/api/ai/maintenance/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          products: productsRef.current,
+          orders: ordersRef.current,
+          abandonedCarts: abandonedCartsRef.current,
+          resellers: resellersRef.current,
+          sliders: settingsRef.current.sliders,
+          settings: settingsRef.current,
+          existingQueue: aiReviewQueueRef.current
+        })
+      });
+      const data = await safeParseJson<any>(res);
+      if (data?.success) {
+        setMaintenanceAuditReport({
+          auditedAt: data.auditedAt,
+          healthScore: data.healthScore,
+          backupProtected: Boolean(data.backupProtected),
+          backupUpdatedAt: data.backupUpdatedAt || null,
+          metrics: data.metrics || {},
+          issues: Array.isArray(data.issues) ? data.issues : []
+        });
+        if (Array.isArray(data.queue)) {
+          setAiReviewQueue(data.queue);
+        }
+        addToast(
+          'success',
+          t('ওয়েবসাইট মেইনটেন্যান্স অডিট সম্পন্ন!', 'Website Maintenance Audit Complete!'),
+          t(
+            `হেলথ স্কোর: ${data.healthScore}% · ${data.addedCount || 0}টি রিভিউ কাজ প্রস্তুত।`,
+            `Health Score: ${data.healthScore}% · ${data.addedCount || 0} maintenance task(s) prepared.`
+          )
+        );
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    } finally {
+      setIsScanningAutopilot(false);
+    }
+  };
+
+  const restoreStoreFromServerBackup = async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/store/backup/restore', { method: 'POST' });
+      const data = await safeParseJson<any>(res);
+      if (data?.success) {
+        await fetchStoreSnapshotFromServer(true);
+        addToast(
+          'success',
+          t('ব্যাকআপ রিস্টোর সম্পন্ন!', 'Backup Restored Safely!'),
+          t('সকল পণ্য, অর্ডার ও সেটিংস সুরক্ষিত ব্যাকআপ থেকে লোড হয়েছে।', 'All products, orders & settings restored cleanly from backup.')
+        );
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const scanWebsiteForAIReview = async (
+    instruction?: string
+  ): Promise<{ addedCount: number; tasks: AIReviewTask[] }> => {
+    setIsScanningAutopilot(true);
+    try {
+      const res = await fetch('/api/ai/autopilot/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instruction,
+          orders: ordersRef.current,
+          products: productsRef.current,
+          customers: customerAccounts,
+          abandonedCarts: abandonedCartsRef.current,
+          resellers: resellersRef.current,
+          settings: settingsRef.current,
+          existingQueue: aiReviewQueueRef.current,
+          lang: adminLang
+        })
+      });
+      const data = await safeParseJson<{
+        success?: boolean;
+        addedCount?: number;
+        newTasks?: AIReviewTask[];
+        queue?: AIReviewTask[];
+      }>(res);
+      if (data?.success && Array.isArray(data.queue)) {
+        setAiReviewQueue(data.queue);
+        if (isFirebaseAdminConnectedRef.current && Array.isArray(data.newTasks)) {
+          data.newTasks.forEach((tsk) => {
+            saveAIReviewTaskToFirestore(tsk).catch(() => {});
+          });
+        }
+        addToast(
+          'success',
+          t('ওয়েবসাইট স্ক্যান সম্পন্ন!', 'Website Scan Complete!'),
+          t(
+            `${data.addedCount || 0}টি নতুন অ্যাকশন আপনার রিভিউয়ের জন্য প্রস্তুত।`,
+            `${data.addedCount || 0} action(s) prepared for your review.`
+          )
+        );
+        return { addedCount: data.addedCount || 0, tasks: data.newTasks || [] };
+      }
+      return { addedCount: 0, tasks: [] };
+    } catch {
+      return { addedCount: 0, tasks: [] };
+    } finally {
+      setIsScanningAutopilot(false);
+    }
+  };
+
+  const executeSingleReviewTask = async (
+    task: AIReviewTask,
+    editedPayload?: Partial<AIReviewTask['payload']>
+  ): Promise<{ ok: boolean; resultText: string }> => {
+    const p = { ...(task.payload || {}), ...(editedPayload || {}) };
+    switch (task.actionType) {
+      case 'ai_voice_call': {
+        const ord = ordersRef.current.find((o) => o.id === (p.orderId || task.targetId));
+        if (!ord) return { ok: false, resultText: 'Order not found' };
+        startAICall(ord);
+        return { ok: true, resultText: `AI verification call initiated for #${ord.id}` };
+      }
+      case 'confirm_order': {
+        const oid = String(p.orderId || task.targetId);
+        if (p.status && p.status !== 'ai_confirmed') {
+          updateOrderStatus(oid, p.status as OrderStatus);
+          return { ok: true, resultText: `Updated #${oid} → ${p.status}` };
+        }
+        const confirmed = aiConfirmOrderByCustomer(oid, 'Admin Approved AI Operator');
+        return confirmed
+          ? { ok: true, resultText: `Confirmed order #${oid}` }
+          : { ok: false, resultText: `Order #${oid} not found` };
+      }
+      case 'send_courier': {
+        const oid = String(p.orderId || task.targetId);
+        const provider = (p.provider || settingsRef.current.aiAutopilotSettings?.preferredCourier || 'Steadfast') as CourierProvider;
+        const booked = await bookOrderCourier(oid, provider);
+        return booked.success
+          ? { ok: true, resultText: `Booked ${provider} · ${booked.trackingCode || 'Consignment created'}` }
+          : { ok: false, resultText: booked.error || `Courier booking failed for #${oid}` };
+      }
+      case 'whatsapp_followup': {
+        if (!p.phone || !p.message) return { ok: false, resultText: 'Phone & message required' };
+        const resp = await sendMetaWhatsAppMessage({
+          to: String(p.phone),
+          message: String(p.message),
+          contactName: p.contactName,
+          contactType: p.contactType || 'customer',
+          orderId: p.orderId,
+          senderRole: 'ai'
+        });
+        return resp.success
+          ? { ok: true, resultText: `WhatsApp sent (${resp.mode || 'logged'}) to ${p.phone}` }
+          : { ok: false, resultText: resp.error || 'WhatsApp dispatch failed' };
+      }
+      case 'fraud_hold': {
+        const oid = String(p.orderId || task.targetId);
+        updateOrderStatus(oid, 'on_hold');
+        return { ok: true, resultText: `Order #${oid} placed on Hold for advance check` };
+      }
+      case 'approve_reseller': {
+        const rid = String(p.resellerId || task.targetId);
+        updateResellerAccount(rid, { status: 'approved' });
+        return { ok: true, resultText: `Approved Reseller ${p.contactName || rid}` };
+      }
+      case 'update_product': {
+        const pid = String(p.productId || task.targetId);
+        const patch: Partial<Product> = {};
+        if (typeof p.stock === 'number') patch.stock = p.stock;
+        if (typeof p.price === 'number') patch.price = p.price;
+        if (typeof p.isFlashSale === 'boolean') patch.isFlashSale = p.isFlashSale;
+        updateProduct(pid, patch);
+        return { ok: true, resultText: `Updated product ${pid}` };
+      }
+      case 'fix_product_seo': {
+        const pid = String(p.productId || task.targetId);
+        const existingProd = productsRef.current.find((pr) => pr.id === pid);
+        if (!existingProd || !p.seo) return { ok: false, resultText: 'Product or SEO payload missing' };
+        updateProduct(pid, { seo: { ...(existingProd.seo || {}), ...p.seo } });
+        return { ok: true, resultText: `Optimized SEO tags for ${existingProd.title}` };
+      }
+      case 'create_coupon': {
+        const code = String(p.couponCode || p.code || '').toUpperCase().trim();
+        if (!code) return { ok: false, resultText: 'Coupon code missing' };
+        const existing = settingsRef.current.promoCoupons || [];
+        updateSettings(
+          {
+            promoCoupons: [
+              {
+                id: `cpn-${Date.now()}`,
+                code,
+                discountType: (p.discountType || 'fixed') as 'fixed' | 'percent' | 'free_shipping',
+                value: Math.max(0, Number(p.couponValue ?? p.value ?? 100)),
+                minOrder: Math.max(0, Number(p.minOrder ?? 0)),
+                active: true
+              },
+              ...existing.filter((c) => c.code !== code)
+            ]
+          },
+          { commit: true }
+        );
+        return { ok: true, resultText: `Created coupon ${code}` };
+      }
+      case 'toggle_flash_sale': {
+        const enabled = Boolean(p.flashSaleEnabled ?? p.enabled);
+        updateSettings(
+          { flashSale: { ...settingsRef.current.flashSale, enabled } },
+          { commit: true }
+        );
+        return { ok: true, resultText: `Flash sale ${enabled ? 'ON' : 'OFF'}` };
+      }
+      case 'adjust_loyalty_points': {
+        const ident = String(p.identifier || task.targetId);
+        const delta = Number(p.pointsDelta ?? p.delta ?? 0);
+        const ok = adjustCustomerLoyaltyPoints(ident, delta, 'Approved via AI Review Queue');
+        return ok
+          ? { ok: true, resultText: `Adjusted ${delta} loyalty points for ${ident}` }
+          : { ok: false, resultText: `Customer ${ident} not found` };
+      }
+      case 'recover_abandoned_cart': {
+        const cid = String(p.cartId || task.targetId);
+        if (p.phone && p.message) {
+          await sendMetaWhatsAppMessage({
+            to: String(p.phone),
+            message: String(p.message),
+            contactName: p.contactName || 'Customer',
+            contactType: 'customer',
+            senderRole: 'ai'
+          });
+        }
+        markAbandonedCartWhatsAppSent(cid);
+        return { ok: true, resultText: `Recovery sent for cart ${cid}` };
+      }
+      case 'update_store_settings': {
+        const patch: Partial<StoreSettings> = {};
+        if (typeof p.dhakaInsideFee === 'number' || typeof p.dhakaOutsideFee === 'number') {
+          patch.deliveryFees = {
+            dhakaInside: p.dhakaInsideFee ?? settingsRef.current.deliveryFees.dhakaInside,
+            dhakaSub: settingsRef.current.deliveryFees.dhakaSub,
+            dhakaOutside: p.dhakaOutsideFee ?? settingsRef.current.deliveryFees.dhakaOutside
+          };
+        }
+        if (Object.keys(patch).length > 0) {
+          updateSettings(patch, { commit: true });
+          return { ok: true, resultText: 'Updated Store Settings' };
+        }
+        return { ok: false, resultText: 'No setting fields changed' };
+      }
+      default:
+        return { ok: false, resultText: `Unsupported action ${task.actionType}` };
+    }
+  };
+
+  const approveAIReviewTask = async (
+    taskId: string,
+    editedPayload?: Partial<AIReviewTask['payload']>
+  ): Promise<boolean> => {
+    const task = aiReviewQueueRef.current.find((t) => t.id === taskId);
+    if (!task) return false;
+    const outcome = await executeSingleReviewTask(task, editedPayload);
+    const nowIso = new Date().toISOString();
+    const updatedTask: AIReviewTask = {
+      ...task,
+      payload: { ...task.payload, ...(editedPayload || {}) },
+      status: outcome.ok ? 'executed' : 'failed',
+      executedAt: nowIso,
+      executionResult: outcome.resultText
+    };
+
+    let nextQueue = aiReviewQueueRef.current.map((t) => (t.id === taskId ? updatedTask : t));
+
+    // Smart chaining: after Admin approves Confirm Order, queue Send Courier for one-click review next
+    if (outcome.ok && task.actionType === 'confirm_order' && task.payload.orderId) {
+      const hasCourierPending = nextQueue.some(
+        (t) => t.actionType === 'send_courier' && t.targetId === task.payload.orderId && t.status === 'pending_review'
+      );
+      const ord = ordersRef.current.find((o) => o.id === task.payload.orderId);
+      if (!hasCourierPending && ord && !ord.courier?.consignmentId) {
+        const prefCourier = settingsRef.current.aiAutopilotSettings?.preferredCourier || 'Steadfast';
+        const courierTask: AIReviewTask = {
+          id: `aiq-${Date.now()}-cour-${Math.random().toString(36).slice(2, 6)}`,
+          actionType: 'send_courier',
+          title: `Dispatch #${ord.id} via ${prefCourier}`,
+          titleBn: `অর্ডার #${ord.id} ${prefCourier} কুরিয়ারে পাঠান`,
+          summary: `${ord.customer?.name || ''} · ${ord.customer?.address || ''}, ${ord.customer?.district || ''}`,
+          summaryBn: `${ord.customer?.name || ''} · ${ord.customer?.address || ''}, ${ord.customer?.district || ''}`,
+          targetType: 'order',
+          targetId: ord.id,
+          payload: {
+            orderId: ord.id,
+            provider: prefCourier,
+            phone: ord.customer?.phone,
+            contactName: ord.customer?.name
+          },
+          priority: 'high',
+          confidence: 96,
+          reasoning: 'Order just confirmed — ready for your courier approval.',
+          reasoningBn: 'অর্ডার কনফার্ম হয়েছে — এখন কুরিয়ার বুকিংয়ের জন্য আপনার অনুমোদনের অপেক্ষায়।',
+          status: 'pending_review',
+          createdAt: nowIso
+        };
+        nextQueue = [courierTask, ...nextQueue];
+        if (isFirebaseAdminConnectedRef.current) {
+          saveAIReviewTaskToFirestore(courierTask).catch(() => {});
+        }
+      }
+    }
+
+    await persistReviewQueue(nextQueue);
+    if (isFirebaseAdminConnectedRef.current) {
+      saveAIReviewTaskToFirestore(updatedTask).catch(() => {});
+    }
+
+    setAgentActionLogs((prev) => [
+      {
+        id: `agl-${Date.now()}`,
+        time: new Date().toLocaleTimeString(),
+        instruction: `Admin Approved: ${task.title}`,
+        reply: outcome.resultText,
+        actions: outcome.ok ? [outcome.resultText] : [],
+        mode: 'admin_reviewed'
+      },
+      ...prev
+    ].slice(0, 30));
+
+    addToast(
+      outcome.ok ? 'success' : 'error',
+      outcome.ok ? t('অনুমোদন ও সম্পন্ন হয়েছে!', 'Approved & Executed!') : t('কার্যকর হয়নি', 'Execution Failed'),
+      outcome.resultText
+    );
+    return outcome.ok;
+  };
+
+  const approveAllPendingAIReviewTasks = async (actionFilter?: string): Promise<number> => {
+    const targets = aiReviewQueueRef.current.filter(
+      (t) =>
+        t.status === 'pending_review' &&
+        t.actionType !== 'ai_voice_call' &&
+        (!actionFilter || actionFilter === 'all' || t.actionType === actionFilter)
+    );
+    let successCount = 0;
+    for (const item of targets) {
+      const ok = await approveAIReviewTask(item.id);
+      if (ok) successCount += 1;
+    }
+    return successCount;
+  };
+
+  const dismissAIReviewTask = (taskId: string) => {
+    const target = aiReviewQueueRef.current.find((t) => t.id === taskId);
+    const nextQueue = aiReviewQueueRef.current.map((t) =>
+      t.id === taskId
+        ? { ...t, status: 'dismissed' as const, executedAt: new Date().toISOString(), executionResult: 'Dismissed by Admin' }
+        : t
+    );
+    persistReviewQueue(nextQueue);
+    if (isFirebaseAdminConnectedRef.current && target) {
+      saveAIReviewTaskToFirestore({
+        ...target,
+        status: 'dismissed',
+        executedAt: new Date().toISOString(),
+        executionResult: 'Dismissed by Admin'
+      }).catch(() => {});
+    }
+  };
+
+  const clearCompletedAIReviewTasks = () => {
+    const toDelete = aiReviewQueueRef.current.filter((t) => t.status !== 'pending_review');
+    const kept = aiReviewQueueRef.current.filter((t) => t.status === 'pending_review');
+    persistReviewQueue(kept);
+    if (isFirebaseAdminConnectedRef.current) {
+      toDelete.forEach((t) => deleteAIReviewTaskFromFirestore(t.id).catch(() => {}));
+    }
+  };
+
   // Autonomous Store Operations AI Controller Log & Dispatcher
   const [agentActionLogs, setAgentActionLogs] = useState<
     { id: string; time: string; instruction: string; reply: string; actions: string[]; mode: string }[]
@@ -8355,8 +9083,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const executeAIAgentCommand = async (
     instruction: string,
     role: 'admin' | 'customer' = 'admin',
-    adminTabSetter?: (tab: string) => void
-  ): Promise<{ reply: string; executed: string[]; mode: string }> => {
+    adminTabSetter?: (tab: string) => void,
+    options?: { directExecute?: boolean }
+  ): Promise<{ reply: string; executed: string[]; queuedCount?: number; mode: string }> => {
+    const useReviewQueue =
+      role === 'admin' &&
+      !options?.directExecute &&
+      settingsRef.current.aiAutopilotSettings?.requireAdminReview !== false;
+
     const contextPayload = {
       storeName: settingsRef.current.storeName,
       orders: ordersRef.current.slice(0, 30),
@@ -8364,7 +9098,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       customers: customerAccounts.slice(0, 30),
       abandonedCarts: abandonedCartsRef.current.slice(0, 20),
       deliveryFees: settingsRef.current.deliveryFees,
-      flashSaleEnabled: settingsRef.current.flashSale?.enabled
+      flashSaleEnabled: settingsRef.current.flashSale?.enabled,
+      preferredCourier: settingsRef.current.aiAutopilotSettings?.preferredCourier || 'Steadfast'
     };
 
     const res = await fetch('/api/agent', {
@@ -8374,12 +9109,49 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         instruction,
         role,
         lang: role === 'admin' ? adminLang : lang,
+        reviewMode: useReviewQueue,
         context: contextPayload
       })
     });
-    const data = (await safeParseJson<{ reply?: string; commands?: any[]; mode?: string }>(res)) || {};
+    const data =
+      (await safeParseJson<{
+        reply?: string;
+        commands?: any[];
+        reviewTasks?: AIReviewTask[];
+        mode?: string;
+      }>(res)) || {};
     const commands: any[] = Array.isArray(data.commands) ? data.commands : [];
     const executed: string[] = [];
+
+    if (useReviewQueue && Array.isArray(data.reviewTasks) && data.reviewTasks.length > 0) {
+      const nextQueue = [...data.reviewTasks, ...aiReviewQueueRef.current];
+      await persistReviewQueue(nextQueue);
+      if (isFirebaseAdminConnectedRef.current) {
+        data.reviewTasks.forEach((tsk) => saveAIReviewTaskToFirestore(tsk).catch(() => {}));
+      }
+      const queuedMsg = t(
+        `রিভিউ কিউতে ${data.reviewTasks.length}টি প্রস্তাবিত অ্যাকশন যোগ করা হয়েছে — আপনার অনুমোদন পেলেই কার্যকর হবে।`,
+        `Queued ${data.reviewTasks.length} action(s) in your Review Queue — ready for your approval before execution.`
+      );
+      setAgentActionLogs((prev) => [
+        {
+          id: `agl-${Date.now()}`,
+          time: new Date().toLocaleTimeString(),
+          instruction,
+          reply: queuedMsg,
+          actions: data.reviewTasks!.map((rt) => `Queued: ${rt.title}`),
+          mode: 'queued_for_review'
+        },
+        ...prev
+      ].slice(0, 30));
+      addToast('info', t('রিভিউয়ের জন্য প্রস্তুত', 'Queued for Your Review'), queuedMsg);
+      return {
+        reply: queuedMsg,
+        executed: [],
+        queuedCount: data.reviewTasks.length,
+        mode: 'queued_for_review'
+      };
+    }
 
     for (const cmd of commands) {
       const p = cmd.payload || {};
@@ -8728,6 +9500,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         whatsappMessages,
         sendMetaWhatsAppMessage,
         generateWhatsAppAiDraft,
+        whatsappProductDraft,
+        setWhatsappProductDraft,
+        getProductCanonicalUrl,
+        buildProductWhatsAppUrl,
+        openWhatsAppWidgetForProduct,
+        sendCustomerWhatsAppInquiry,
+        agentActionLogs,
+        executeAIAgentCommand,
+        aiReviewQueue,
+        isScanningAutopilot,
+        maintenanceAuditReport,
+        scanWebsiteForAIReview,
+        runWebsiteMaintenanceAudit,
+        restoreStoreFromServerBackup,
+        approveAIReviewTask,
+        approveAllPendingAIReviewTasks,
+        dismissAIReviewTask,
+        clearCompletedAIReviewTasks,
         applyBusinessTheme,
         serverPixelEvents,
         customerBrowsingLogs,
@@ -8762,8 +9552,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         editAbandonedCart,
         deleteAbandonedCart,
         bulkAbandonedCartsAction,
-        agentActionLogs,
-        executeAIAgentCommand,
         compareList,
         toggleCompare,
         isComparing,

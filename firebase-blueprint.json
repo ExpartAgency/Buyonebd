@@ -40,6 +40,8 @@
         "resellerSettings": { "type": "object" },
         "wholesaleSettings": { "type": "object" },
         "globalMarketingSettings": { "type": "object" },
+        "aiAutopilotSettings": { "type": "object" },
+        "invoiceSettings": { "type": "object" },
         "categories": { "type": "array" },
         "sliders": { "type": "array" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -370,6 +372,32 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "wholesalerId", "companyName", "productTitle", "requestedQty", "status", "createdAt"]
+    },
+    "AIReviewTaskRecord": {
+      "title": "AIReviewTaskRecord",
+      "description": "AI Website Controller prepared action awaiting Admin review & execution.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "actionType": { "type": "string", "maxLength": 60 },
+        "title": { "type": "string", "maxLength": 200 },
+        "titleBn": { "type": "string", "maxLength": 240 },
+        "summary": { "type": "string", "maxLength": 500 },
+        "summaryBn": { "type": "string", "maxLength": 500 },
+        "targetType": { "type": "string", "maxLength": 40 },
+        "targetId": { "type": "string", "maxLength": 120 },
+        "payload": { "type": "object" },
+        "priority": { "type": "string", "enum": ["high", "medium", "low"] },
+        "confidence": { "type": "number" },
+        "reasoning": { "type": "string", "maxLength": 500 },
+        "reasoningBn": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["pending_review", "executed", "dismissed", "failed"] },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "executedAt": { "type": "string", "maxLength": 64 },
+        "executionResult": { "type": "string", "maxLength": 300 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "actionType", "title", "targetType", "targetId", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -440,6 +468,10 @@
     "/wholesale_quotes/{quoteId}": {
       "schema": { "$ref": "#/backend/entities/WholesaleQuoteRecord" },
       "description": "Wholesale B2B quote requests."
+    },
+    "/ai_review_queue/{taskId}": {
+      "schema": { "$ref": "#/backend/entities/AIReviewTaskRecord" },
+      "description": "Human-in-the-loop AI Website Controller review queue."
     }
   }
 }

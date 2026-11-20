@@ -509,28 +509,32 @@ function StoreMainContent() {
       />
 
       <main className="flex-1 max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-6 sm:space-y-8 w-full overflow-x-clip">
-        {/* Approved Partner Mode Active Bar (Only visible after approved login) */}
-        {(activeReseller?.status === 'approved' || activeWholesaler?.status === 'approved') && (
+        {/* Reseller & Wholesale Partner Dashboard Bar (Visible both Pending & Approved) */}
+        {(activeReseller || activeWholesaler) && (
           <div className="px-4 py-2.5 rounded-2xl bg-slate-900 text-white border border-emerald-500/40 flex flex-wrap items-center justify-between gap-2 text-xs tabular-nums">
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-wrap">
               <span className="font-bold text-emerald-400">
-                {activeReseller?.status === 'approved'
-                  ? t(`রিসেলার মোড সক্রিয়: ${activeReseller.name} (${activeReseller.resellerCode})`, `Reseller Pricing Unlocked: ${activeReseller.name} · ${activeReseller.resellerCode}`)
-                  : t(`হোলসেল B2B সক্রিয়: ${activeWholesaler?.companyName}`, `Wholesale B2B Active: ${activeWholesaler?.companyName} (${activeWholesaler?.tier?.toUpperCase()})`)}
+                {activeReseller
+                  ? activeReseller.status === 'approved'
+                    ? t(`রিসেলার মোড সক্রিয়: ${activeReseller.name} (${activeReseller.resellerCode})`, `Reseller Pricing Unlocked: ${activeReseller.name} · ${activeReseller.resellerCode}`)
+                    : t(`রিসেলার অ্যাকাউন্ট (${activeReseller.resellerCode}) — অনুমোদনের অপেক্ষায়`, `Reseller Account (${activeReseller.resellerCode}) — Pending Approval`)
+                  : activeWholesaler?.status === 'approved'
+                  ? t(`হোলসেল B2B সক্রিয়: ${activeWholesaler?.companyName}`, `Wholesale B2B Active: ${activeWholesaler?.companyName} (${activeWholesaler?.tier?.toUpperCase()})`)
+                  : t(`হোলসেল অ্যাকাউন্ট: ${activeWholesaler?.companyName} — অনুমোদনের অপেক্ষায়`, `Wholesale Account: ${activeWholesaler?.companyName} — Pending Approval`)}
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => openPartnerPortal(activeReseller?.status === 'approved' ? 'reseller' : 'wholesale')}
-                className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                onClick={() => openPartnerPortal(activeReseller ? 'reseller' : 'wholesale')}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
               >
-                {t('পার্টনার ড্যাশবোর্ড', 'Partner Dashboard')}
+                {activeReseller ? t('রিসেলার ড্যাশবোর্ড খুলুন', 'Reseller Dashboard') : t('হোলসেল ড্যাশবোর্ড খুলুন', 'Wholesale Dashboard')}
               </button>
               <button
                 type="button"
-                onClick={() => (activeReseller?.status === 'approved' ? logoutReseller() : logoutWholesaler())}
-                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[11px] cursor-pointer"
+                onClick={() => (activeReseller ? logoutReseller() : logoutWholesaler())}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[11px] cursor-pointer"
               >
                 {t('সাইন আউট', 'Sign Out')}
               </button>
