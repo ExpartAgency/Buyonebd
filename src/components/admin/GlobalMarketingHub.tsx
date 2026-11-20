@@ -10,10 +10,13 @@ import {
   Calculator,
   Send,
   Link2,
-  Users
+  Users,
+  Edit,
+  Trash2
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BulkSmsCampaignLog } from '../../types';
+import { BulkSectionShell } from './BulkSectionShell';
 
 export const GlobalMarketingHub: React.FC = () => {
   const {
@@ -29,9 +32,15 @@ export const GlobalMarketingHub: React.FC = () => {
     waitlistEntries,
     bulkSmsLogs,
     dispatchBulkSmsCampaign,
+    updateBulkSmsLog,
+    deleteBulkSmsLog,
     addToast,
     adminLang
   } = useStore();
+
+  const [editingSmsLogId, setEditingSmsLogId] = useState<string | null>(null);
+  const [editSmsLogTitle, setEditSmsLogTitle] = useState('');
+  const [editSmsLogMsg, setEditSmsLogMsg] = useState('');
 
   const at = (bn: string, en: string) => (adminLang === 'en' ? en : bn);
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://buyonebd.com';
@@ -384,86 +393,157 @@ export const GlobalMarketingHub: React.FC = () => {
 
       {/* 2. Bangladesh Bulk SMS Broadcast + Gateway Config */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <form
-          onSubmit={handleDispatchSms}
-          className="lg:col-span-7 p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 text-xs"
-        >
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-emerald-400" />
-              <span>{at('বাংলাদেশ বাল্ক SMS ক্যাম্পেইন', 'Bangladesh Bulk SMS Composer')}</span>
-            </h4>
-            <span className="font-mono text-[11px] text-emerald-400 tabular-nums">
-              {segmentRecipients.length} BD recipients ready
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-slate-400 font-bold mb-1">{at('ক্যাম্পেইন নাম', 'Campaign Name')}</label>
-              <input
-                type="text"
-                value={smsTitle}
-                onChange={(e) => setSmsTitle(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-slate-400 font-bold mb-1">{at('টার্গেট সেগমেন্ট', 'Audience Segment')}</label>
-              <select
-                value={smsSegment}
-                onChange={(e) => setSmsSegment(e.target.value as BulkSmsCampaignLog['segment'])}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
-              >
-                <option value="all_customers">All Customers & Resellers</option>
-                <option value="dhaka">Dhaka City & Metro Buyers</option>
-                <option value="outside_dhaka">Outside Dhaka (Nationwide)</option>
-                <option value="resellers">Registered Resellers</option>
-                <option value="wholesalers">Approved Wholesale Buyers</option>
-                <option value="waitlist">Stock Waitlist Phone Leads</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <div className="flex justify-between text-slate-400 mb-1">
-              <label className="font-bold">{at('SMS বার্তা (বাংলা / ইংরেজি)', 'SMS Message')}</label>
-              <span className="font-mono tabular-nums">{smsBody.length} chars (~৳{Math.round(Math.max(1, segmentRecipients.length) * 0.45)} est.)</span>
-            </div>
-            <textarea
-              rows={3}
-              required
-              value={smsBody}
-              onChange={(e) => setSmsBody(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={isSendingSms}
-            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black flex items-center gap-2 cursor-pointer disabled:opacity-60"
+        <div className="lg:col-span-7">
+          <BulkSectionShell
+            indexCode="BULK // BD SMS"
+            title={at('বাংলাদেশ বাল্ক SMS ক্যাম্পেইন', 'Bangladesh Bulk SMS Composer & History')}
+            subtitle={at('কাস্টমার, রিসেলার বা হোলসেল বায়ারদের জন্য SMS পাঠান এবং পূর্বের ক্যাম্পেইন এডিট/রিলোড/ডিলিট করুন।', 'Dispatch BD bulk SMS campaigns and edit, reload, or delete saved campaign logs.')}
+            totalCount={bulkSmsLogs.length}
+            accent="emerald"
+            headerActions={
+              <span className="font-mono text-[11px] font-bold text-emerald-300 tabular-nums px-2 py-1 rounded border border-emerald-500/40 bg-emerald-950/50">
+                {segmentRecipients.length} RECIPIENTS READY
+              </span>
+            }
           >
-            <Send className="w-3.5 h-3.5" />
-            <span>{isSendingSms ? at('পাঠানো হচ্ছে...', 'Dispatching...') : at('SMS ক্যাম্পেইন পাঠান', 'Dispatch Bulk SMS')}</span>
-          </button>
-
-          {bulkSmsLogs.length > 0 && (
-            <div className="pt-3 border-t border-slate-800 space-y-1.5">
-              <p className="text-[11px] font-bold text-slate-400">{at('সাম্প্রতিক SMS লগ', 'Recent SMS Campaigns')}</p>
-              <div className="max-h-28 overflow-y-auto divide-y divide-slate-800">
-                {bulkSmsLogs.slice(0, 5).map((log) => (
-                  <div key={log.id} className="py-1.5 flex items-center justify-between text-[11px] tabular-nums">
-                    <span className="font-semibold text-white truncate">{log.title}</span>
-                    <span className="text-emerald-400 font-mono">
-                      {log.recipientCount} sent · ৳{log.estimatedCostBdt}
-                    </span>
-                  </div>
-                ))}
+            <form onSubmit={handleDispatchSms} className="space-y-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 font-bold mb-1">{at('ক্যাম্পেইন নাম', 'Campaign Name')}</label>
+                  <input
+                    type="text"
+                    value={smsTitle}
+                    onChange={(e) => setSmsTitle(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 font-bold mb-1">{at('টার্গেট সেগমেন্ট', 'Audience Segment')}</label>
+                  <select
+                    value={smsSegment}
+                    onChange={(e) => setSmsSegment(e.target.value as BulkSmsCampaignLog['segment'])}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white"
+                  >
+                    <option value="all_customers">All Customers & Resellers</option>
+                    <option value="dhaka">Dhaka City & Metro Buyers</option>
+                    <option value="outside_dhaka">Outside Dhaka (Nationwide)</option>
+                    <option value="resellers">Registered Resellers</option>
+                    <option value="wholesalers">Approved Wholesale Buyers</option>
+                    <option value="waitlist">Stock Waitlist Phone Leads</option>
+                  </select>
+                </div>
               </div>
-            </div>
-          )}
-        </form>
+
+              <div>
+                <div className="flex justify-between text-slate-400 mb-1">
+                  <label className="font-bold">{at('SMS বার্তা (বাংলা / ইংরেজি)', 'SMS Message')}</label>
+                  <span className="font-mono tabular-nums">{smsBody.length} chars (~৳{Math.round(Math.max(1, segmentRecipients.length) * 0.45)} est.)</span>
+                </div>
+                <textarea
+                  rows={3}
+                  required
+                  value={smsBody}
+                  onChange={(e) => setSmsBody(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSendingSms}
+                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black inline-flex items-center gap-2 whitespace-nowrap cursor-pointer disabled:opacity-60"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{isSendingSms ? at('পাঠানো হচ্ছে...', 'Dispatching...') : at('SMS ক্যাম্পেইন পাঠান', 'Dispatch Bulk SMS')}</span>
+              </button>
+
+              {bulkSmsLogs.length > 0 && (
+                <div className="pt-3 border-t border-slate-800 space-y-2">
+                  <p className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                    {at('সকল SMS ক্যাম্পেইন লগ', 'All SMS Campaign Logs')} ({bulkSmsLogs.length})
+                  </p>
+                  <div className="max-h-60 overflow-y-auto divide-y divide-slate-800/80 rounded-lg border border-slate-800 bg-slate-900/60">
+                    {bulkSmsLogs.map((log) =>
+                      editingSmsLogId === log.id ? (
+                        <div key={log.id} className="p-2.5 space-y-2 text-[11px] bg-slate-900">
+                          <input
+                            type="text"
+                            value={editSmsLogTitle}
+                            onChange={(e) => setEditSmsLogTitle(e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded bg-slate-950 border border-slate-700 text-white font-bold"
+                          />
+                          <textarea
+                            rows={2}
+                            value={editSmsLogMsg}
+                            onChange={(e) => setEditSmsLogMsg(e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded bg-slate-950 border border-slate-700 text-white"
+                          />
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setEditingSmsLogId(null)}
+                              className="px-2.5 py-1 rounded bg-slate-800 text-slate-300 font-bold cursor-pointer"
+                            >
+                              {at('বাতিল', 'Cancel')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                updateBulkSmsLog(log.id, {
+                                  title: editSmsLogTitle.trim() || log.title,
+                                  message: editSmsLogMsg.trim() || log.message
+                                });
+                                setEditingSmsLogId(null);
+                              }}
+                              className="px-2.5 py-1 rounded bg-emerald-600 text-white font-bold cursor-pointer"
+                            >
+                              {at('সেভ', 'Save')}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={log.id} className="px-3 py-2 flex items-center justify-between gap-2 text-[11px] tabular-nums hover:bg-slate-900">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-white truncate">{log.title}</p>
+                            <p className="text-[10px] text-slate-400 truncate">{log.message}</p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-emerald-400 font-mono whitespace-nowrap">
+                              {log.recipientCount} sent · ৳{log.estimatedCostBdt}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSmsTitle(log.title);
+                                setSmsSegment(log.segment);
+                                setSmsBody(log.message);
+                                setEditingSmsLogId(log.id);
+                                setEditSmsLogTitle(log.title);
+                                setEditSmsLogMsg(log.message);
+                              }}
+                              title={at('এডিট / কম্পোজারে লোড', 'Edit & Load into Composer')}
+                              className="p-1 rounded bg-slate-800 hover:bg-amber-600 text-amber-300 hover:text-white cursor-pointer"
+                            >
+                              <Edit className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteBulkSmsLog(log.id)}
+                              title={at('লগ মুছুন', 'Delete Log')}
+                              className="p-1 rounded bg-rose-950/60 hover:bg-rose-600 text-rose-300 hover:text-white cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
+            </form>
+          </BulkSectionShell>
+        </div>
 
         {/* SMS Gateway + Multi-Currency Rates */}
         <div className="lg:col-span-5 p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 text-xs">

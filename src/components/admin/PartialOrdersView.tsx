@@ -11,16 +11,18 @@ import {
   PlusCircle,
   X,
   Trash2,
-  History
+  History,
+  Edit
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { Order, CourierProvider } from '../../types';
 
 interface PartialOrdersViewProps {
   onOpenInvoice: (order: Order) => void;
+  onEditOrder?: (order: Order) => void;
 }
 
-export const PartialOrdersView: React.FC<PartialOrdersViewProps> = ({ onOpenInvoice }) => {
+export const PartialOrdersView: React.FC<PartialOrdersViewProps> = ({ onOpenInvoice, onEditOrder }) => {
   const {
     orders,
     recordPartialPayment,
@@ -350,6 +352,16 @@ export const PartialOrdersView: React.FC<PartialOrdersViewProps> = ({ onOpenInvo
                           >
                             <Printer className="w-3.5 h-3.5" />
                           </button>
+                          {onEditOrder && (
+                            <button
+                              type="button"
+                              onClick={() => onEditOrder(ord)}
+                              title={at('অর্ডার এডিট করুন', 'Edit Order')}
+                              className="p-1.5 rounded-lg bg-amber-950/60 hover:bg-amber-600 text-amber-300 hover:text-white cursor-pointer"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => startAICall(ord)}

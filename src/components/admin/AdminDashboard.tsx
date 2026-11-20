@@ -113,7 +113,9 @@ import {
   WalletTopUpRequest,
   DeliveryBoy,
   CustomerProfile,
-  InvoicePaperSize
+  InvoicePaperSize,
+  PriceAlert,
+  WaitlistEntry
 } from '../../types';
 import { CreativeMarketingStudio } from './CreativeMarketingStudio';
 import { PartialOrdersView } from './PartialOrdersView';
@@ -126,6 +128,7 @@ import { GlobalMarketingHub } from './GlobalMarketingHub';
 import { WhatsAppSupportConsole } from './WhatsAppSupportConsole';
 import { InvoicePrintModal } from './InvoicePrintModal';
 import { InvoiceSetupPanel } from './InvoiceSetupPanel';
+import { BulkSectionShell, BulkCommandBar } from './BulkSectionShell';
 
 const parseJsonSafe = async (res: Response): Promise<any> => {
   const txt = await res.text();
@@ -143,6 +146,8 @@ export const AdminDashboard: React.FC = () => {
     addProduct,
     updateProduct,
     deleteProduct,
+    bulkUpdateProducts,
+    bulkDeleteProducts,
     categories,
     addCategory,
     updateCategory,
@@ -185,6 +190,7 @@ export const AdminDashboard: React.FC = () => {
     bulkDeleteReviews,
     waitlistEntries,
     markWaitlistNotified,
+    updateWaitlistEntry,
     deleteWaitlistEntry,
     users,
     addUser,
@@ -217,7 +223,10 @@ export const AdminDashboard: React.FC = () => {
     t,
     addToast,
     priceAlerts,
+    updatePriceAlert,
+    deletePriceAlert,
     whatsappLogs,
+    deleteWhatsappLog,
     whatsappMessages,
     sendMetaWhatsAppMessage,
     applyBusinessTheme,
@@ -260,6 +269,8 @@ export const AdminDashboard: React.FC = () => {
     resizeMediaItems,
     syncStoreMediaLibrary,
     customerAccounts,
+    updateCustomerAccountByAdmin,
+    deleteCustomerAccountByAdmin,
     adjustSpecificCustomerBalance,
     resetCustomerWalletExpiry,
     createOrder,
@@ -452,6 +463,8 @@ export const AdminDashboard: React.FC = () => {
 
   // Security Shield Blocklist State
   const [newBlockedPhone, setNewBlockedPhone] = useState('');
+  const [editingBlockedPhoneIdx, setEditingBlockedPhoneIdx] = useState<number | null>(null);
+  const [editingBlockedPhoneVal, setEditingBlockedPhoneVal] = useState('');
 
   // UTM Campaign Link Builder State
   const [utmSource, setUtmSource] = useState('facebook');
@@ -493,6 +506,12 @@ export const AdminDashboard: React.FC = () => {
   const [newCouponType, setNewCouponType] = useState<'fixed' | 'percent' | 'free_shipping'>('fixed');
   const [newCouponValue, setNewCouponValue] = useState(100);
   const [newCouponMinOrder, setNewCouponMinOrder] = useState(500);
+  const [editingCouponId, setEditingCouponId] = useState<string | null>(null);
+  const [editCouponCode, setEditCouponCode] = useState('');
+  const [editCouponTitle, setEditCouponTitle] = useState('');
+  const [editCouponType, setEditCouponType] = useState<'fixed' | 'percent' | 'free_shipping'>('fixed');
+  const [editCouponValue, setEditCouponValue] = useState(100);
+  const [editCouponMinOrder, setEditCouponMinOrder] = useState(500);
 
   // Steadfast Balance Test State
   const [steadfastBalanceInfo, setSteadfastBalanceInfo] = useState<{ ok: boolean; balance?: number; message: string } | null>(null);
@@ -534,6 +553,7 @@ export const AdminDashboard: React.FC = () => {
   const [newDeliveryBoyPhone, setNewDeliveryBoyPhone] = useState('');
   const [newDeliveryBoyZone, setNewDeliveryBoyZone] = useState('Dhaka City');
   const [newDeliveryBoyVehicle, setNewDeliveryBoyVehicle] = useState<'Bike' | 'Cycle' | 'Van'>('Bike');
+  const [editingDeliveryBoy, setEditingDeliveryBoy] = useState<DeliveryBoy | null>(null);
 
   // Server-Side Pixel Test & AI Quick Order Dialer State
   const [isTestingPixelCapi, setIsTestingPixelCapi] = useState(false);
@@ -564,10 +584,21 @@ export const AdminDashboard: React.FC = () => {
   const [dockAgentInput, setDockAgentInput] = useState<string>('');
   const [isDockAgentRunning, setIsDockAgentRunning] = useState<boolean>(false);
 
-  // AI Keyword Rules form state
+  // AI Keyword Rules form & inline edit state
   const [newRuleKeywords, setNewRuleKeywords] = useState('');
   const [newRuleReplyBn, setNewRuleReplyBn] = useState('');
   const [newRuleReplyEn, setNewRuleReplyEn] = useState('');
+  const [editingKeywordRuleId, setEditingKeywordRuleId] = useState<string | null>(null);
+  const [editRuleKeywords, setEditRuleKeywords] = useState('');
+  const [editRuleReplyBn, setEditRuleReplyBn] = useState('');
+  const [editRuleReplyEn, setEditRuleReplyEn] = useState('');
+
+  // Catalog Bulk Select, Price Alerts, Waitlist & Registered Customer Account Edit States
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [editingPriceAlert, setEditingPriceAlert] = useState<PriceAlert | null>(null);
+  const [editingWaitlistEntry, setEditingWaitlistEntry] = useState<WaitlistEntry | null>(null);
+  const [editingCustomerAccount, setEditingCustomerAccount] = useState<CustomerProfile | null>(null);
+  const [editingCustomerOriginalKey, setEditingCustomerOriginalKey] = useState<string>('');
 
   // Orders filters, bulk actions & manual creator
   const [orderSearch, setOrderSearch] = useState('');
@@ -3777,106 +3808,161 @@ export const AdminDashboard: React.FC = () => {
                 ))}
               </div>
 
-              {/* Bulk Actions, Date/Channel/Customer Filters & Search */}
-              <div className="flex flex-wrap items-center justify-between gap-2.5 text-xs">
-                <div className="flex flex-wrap items-center gap-2">
+              <BulkSectionShell
+                indexCode="BULK // ORDERS"
+                title={at('বাল্ক অর্ডার অপারেশন ও অর্ডার লেজার', 'Bulk Order Operations & Dispatch Ledger')}
+                subtitle={at('অর্ডার সিলেক্ট করে একসাথে স্ট্যাটাস পরিবর্তন, ইনভয়েস প্রিন্ট বা ডিলিট করুন', 'Multi-select orders for batch status transitions, invoice printing, or deletion')}
+                totalCount={filteredOrders.length}
+                selectedCount={selectedOrderIds.length}
+                accent="amber"
+                headerActions={
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+                      <input
+                        type="text"
+                        value={orderSearch}
+                        onChange={(e) => {
+                          setOrderSearch(e.target.value);
+                          setOrderPage(1);
+                        }}
+                        placeholder={at('অর্ডার আইডি / নাম / ফোন...', 'Search orders...')}
+                        className="pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 w-44 sm:w-52"
+                      />
+                    </div>
+                  </div>
+                }
+              >
+                <BulkCommandBar
+                  selectedCount={selectedOrderIds.length}
+                  totalCount={paginatedOrders.length}
+                  allSelected={allPageSelected}
+                  onToggleSelectAll={() => {
+                    if (allPageSelected) {
+                      const pageSet = new Set(paginatedOrders.map((o) => o.id));
+                      setSelectedOrderIds((prev) => prev.filter((id) => !pageSet.has(id)));
+                    } else {
+                      setSelectedOrderIds((prev) => Array.from(new Set([...prev, ...paginatedOrders.map((o) => o.id)])));
+                    }
+                  }}
+                  onClearSelection={() => setSelectedOrderIds([])}
+                  itemLabel="orders"
+                >
                   <select
                     value={bulkOrderAction}
                     onChange={(e) => setBulkOrderAction(e.target.value)}
-                    className="py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200"
+                    className="py-1.5 px-2.5 bg-slate-950 border border-slate-700 rounded text-xs text-slate-200 whitespace-nowrap shrink-0"
                   >
-                    <option value="">{at('বাল্ক অ্যাকশন', 'Bulk actions')}</option>
+                    <option value="">{at('বাল্ক স্ট্যাটাস', 'Bulk status')}</option>
                     <option value="processing">{at('প্রসেসিং করুন', 'Mark Processing')}</option>
                     <option value="on_hold">{at('অন হোল্ড করুন', 'Mark On Hold')}</option>
                     <option value="shipped">{at('শিপড করুন', 'Mark Shipped')}</option>
                     <option value="delivered">{at('ডেলিভারড / সম্পন্ন', 'Mark Completed')}</option>
                     <option value="cancelled">{at('বাতিল করুন', 'Mark Cancelled')}</option>
-                    <option value="delete">{at('ডিলিট করুন', 'Move to Trash / Delete')}</option>
+                    <option value="delete">{at('ডিলিট করুন', 'Delete Selected')}</option>
                   </select>
                   <button
                     type="button"
                     onClick={handleApplyBulkOrders}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-400 font-bold cursor-pointer"
+                    disabled={!bulkOrderAction || selectedOrderIds.length === 0}
+                    className="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
                   >
                     {at('প্রয়োগ', 'Apply')}
                   </button>
-
-                  <select
-                    value={orderDateFilter}
-                    onChange={(e) => {
-                      setOrderDateFilter(e.target.value as any);
-                      setOrderPage(1);
+                  <button
+                    type="button"
+                    disabled={selectedOrderIds.length === 0}
+                    onClick={() => {
+                      const chosen = orders.filter((o) => selectedOrderIds.includes(o.id));
+                      if (chosen.length > 0) {
+                        setPrintPaperMode(settings.invoiceSettings?.defaultPaperSize || 'A4');
+                        setPrintOrdersList(chosen);
+                      }
                     }}
-                    className="py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200"
+                    className="px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
                   >
-                    <option value="all">{at('সকল তারিখ', 'All dates')}</option>
-                    <option value="today">{at('আজকের অর্ডার', 'Today')}</option>
-                    <option value="7d">{at('গত ৭ দিন', 'Last 7 days')}</option>
-                    <option value="30d">{at('গত ৩০ দিন', 'Last 30 days')}</option>
-                  </select>
-
-                  <select
-                    value={orderChannelFilter}
-                    onChange={(e) => {
-                      setOrderChannelFilter(e.target.value as any);
-                      setOrderPage(1);
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>{at('বাল্ক প্রিন্ট', 'Bulk Print')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={selectedOrderIds.length === 0}
+                    onClick={() => {
+                      bulkUpdateOrders(selectedOrderIds, { deleteAll: true });
+                      setSelectedOrderIds([]);
                     }}
-                    className="py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200"
+                    className="px-2.5 py-1.5 rounded bg-rose-700 hover:bg-rose-600 disabled:opacity-40 text-white font-bold text-xs inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
                   >
-                    <option value="all">{at('সকল চ্যানেল', 'All channels')}</option>
-                    <option value="online">{at('অনলাইন স্টোর', 'Online Store')}</option>
-                    <option value="pos">{at('POS কাউন্টার', 'POS System')}</option>
-                  </select>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{at('বাল্ক ডিলিট', 'Delete')}</span>
+                  </button>
+                </BulkCommandBar>
 
-                  <select
-                    value={orderCustomerFilter}
-                    onChange={(e) => {
-                      setOrderCustomerFilter(e.target.value);
-                      setOrderPage(1);
-                    }}
-                    className="py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 max-w-[180px]"
-                  >
-                    <option value="all">{at('গ্রাহক অনুযায়ী ফিল্টার...', 'Filter by registered customer')}</option>
-                    {distinctCustomers.map(([ph, label]) => (
-                      <option key={ph} value={ph}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-
-                  {(statusFilter !== 'all' || orderDateFilter !== 'all' || orderChannelFilter !== 'all' || orderCustomerFilter !== 'all' || orderSearch) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStatusFilter('all');
-                        setOrderDateFilter('all');
-                        setOrderChannelFilter('all');
-                        setOrderCustomerFilter('all');
-                        setOrderSearch('');
-                        setOrderPage(1);
-                      }}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold cursor-pointer"
-                    >
-                      {at('রিসেট', 'Reset Filter')}
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
-                    <input
-                      type="text"
-                      value={orderSearch}
+                {/* Date/Channel/Customer Filters & Pagination */}
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={orderDateFilter}
                       onChange={(e) => {
-                        setOrderSearch(e.target.value);
+                        setOrderDateFilter(e.target.value as any);
                         setOrderPage(1);
                       }}
-                      placeholder={at('অর্ডার আইডি / নাম / ফোন...', 'Search orders...')}
-                      className="pl-8 pr-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 w-48"
-                    />
+                      className="py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200"
+                    >
+                      <option value="all">{at('সকল তারিখ', 'All dates')}</option>
+                      <option value="today">{at('আজকের অর্ডার', 'Today')}</option>
+                      <option value="7d">{at('গত ৭ দিন', 'Last 7 days')}</option>
+                      <option value="30d">{at('গত ৩০ দিন', 'Last 30 days')}</option>
+                    </select>
+
+                    <select
+                      value={orderChannelFilter}
+                      onChange={(e) => {
+                        setOrderChannelFilter(e.target.value as any);
+                        setOrderPage(1);
+                      }}
+                      className="py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200"
+                    >
+                      <option value="all">{at('সকল চ্যানেল', 'All channels')}</option>
+                      <option value="online">{at('অনলাইন স্টোর', 'Online Store')}</option>
+                      <option value="pos">{at('POS কাউন্টার', 'POS System')}</option>
+                    </select>
+
+                    <select
+                      value={orderCustomerFilter}
+                      onChange={(e) => {
+                        setOrderCustomerFilter(e.target.value);
+                        setOrderPage(1);
+                      }}
+                      className="py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 max-w-[180px]"
+                    >
+                      <option value="all">{at('গ্রাহক অনুযায়ী ফিল্টার...', 'Filter by registered customer')}</option>
+                      {distinctCustomers.map(([ph, label]) => (
+                        <option key={ph} value={ph}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+
+                    {(statusFilter !== 'all' || orderDateFilter !== 'all' || orderChannelFilter !== 'all' || orderCustomerFilter !== 'all' || orderSearch) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStatusFilter('all');
+                          setOrderDateFilter('all');
+                          setOrderChannelFilter('all');
+                          setOrderCustomerFilter('all');
+                          setOrderSearch('');
+                          setOrderPage(1);
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold cursor-pointer"
+                      >
+                        {at('রিসেট', 'Reset Filter')}
+                      </button>
+                    )}
                   </div>
-                  <div className="flex items-center gap-1 text-slate-400 font-mono">
+
+                  <div className="flex items-center gap-1.5 text-slate-400 font-mono tabular-nums">
                     <span>{filteredOrders.length} items</span>
                     <button
                       type="button"
@@ -3899,11 +3985,10 @@ export const AdminDashboard: React.FC = () => {
                     </button>
                   </div>
                 </div>
-              </div>
 
-              {/* WooCommerce / Steadfast Orders Table */}
-              <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-sm">
-                <div className="overflow-x-auto">
+                {/* WooCommerce / Steadfast Orders Table */}
+                <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-sm">
+                  <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs text-slate-300">
                     <thead className="bg-slate-950 text-sky-400 text-[11px] font-bold border-b border-slate-800 whitespace-nowrap">
                       <tr>
@@ -4271,13 +4356,17 @@ export const AdminDashboard: React.FC = () => {
                   </table>
                 </div>
               </div>
+              </BulkSectionShell>
             </div>
             );
           })()}
 
           {/* TAB 2A2: PARTIAL ORDERS DEDICATED SECTION */}
           {activeTab === 'partial_orders' && (
-            <PartialOrdersView onOpenInvoice={(ord) => setSelectedOrderDetails(ord)} />
+            <PartialOrdersView
+              onOpenInvoice={(ord) => setSelectedOrderDetails(ord)}
+              onEditOrder={(ord) => setEditingOrder(ord)}
+            />
           )}
 
           {/* TAB 1B: HUMAN-LIKE FULL WEBSITE CONTROL AI AGENT */}
@@ -5461,70 +5550,148 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Products Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {products.map((prod) => (
-                  <div key={prod.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col justify-between space-y-3">
-                    <div className="flex items-start gap-3">
-                      <div className="w-20 h-20 rounded-xl overflow-hidden bg-slate-950 shrink-0 border border-slate-800">
-                        {prod.images?.[0]?.trim() ? <img src={prod.images[0]} alt="" className="w-full h-full object-cover" /> : null}
-                      </div>
-                      <div className="overflow-hidden flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">{at(prod.categoryBn, prod.category)}</span>
-                          {prod.subcategory && (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">{prod.subcategory}</span>
-                          )}
-                        </div>
-                        <h4 className="font-bold text-sm text-white line-clamp-1">{at(prod.titleBn, prod.title)}</h4>
-                        <div className="flex items-baseline gap-2 mt-1">
-                          <span className="font-black text-sm text-emerald-400">৳ {prod.price.toLocaleString()}</span>
-                          <span className="text-xs text-slate-500 line-through">৳ {prod.originalPrice.toLocaleString()}</span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5 truncate">
-                          {at(`স্টক: ${prod.stock} টি • SKU: ${prod.sku}`, `Stock: ${prod.stock} • SKU: ${prod.sku}`)}
-                          {prod.seo?.slug && ` • /product/${prod.seo.slug}`}
-                        </div>
-                      </div>
-                    </div>
+              {/* Bulk Products Catalog Matrix */}
+              <BulkSectionShell
+                indexCode="BULK // PRODUCTS"
+                title={at('বাল্ক প্রোডাক্ট ক্যাটালগ ম্যানেজার', 'Bulk Product Catalog Matrix')}
+                subtitle={at('পণ্য সিলেক্ট করে একসাথে ফ্ল্যাশ সেল চালু/বন্ধ বা ডিলিট করুন', 'Select catalog products for batch Flash Sale toggles or deletion')}
+                totalCount={products.length}
+                selectedCount={selectedProductIds.length}
+                accent="emerald"
+              >
+                <BulkCommandBar
+                  selectedCount={selectedProductIds.length}
+                  totalCount={products.length}
+                  allSelected={products.length > 0 && products.every((p) => selectedProductIds.includes(p.id))}
+                  onToggleSelectAll={() => {
+                    if (products.length > 0 && products.every((p) => selectedProductIds.includes(p.id))) {
+                      setSelectedProductIds([]);
+                    } else {
+                      setSelectedProductIds(products.map((p) => p.id));
+                    }
+                  }}
+                  onClearSelection={() => setSelectedProductIds([])}
+                  itemLabel="products"
+                >
+                  <button
+                    type="button"
+                    disabled={selectedProductIds.length === 0}
+                    onClick={() => {
+                      bulkUpdateProducts(selectedProductIds, { isFlashSale: true });
+                      setSelectedProductIds([]);
+                    }}
+                    className="px-2.5 py-1.5 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    {at('ফ্ল্যাশ সেল চালু', 'Flash Sale ON')}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={selectedProductIds.length === 0}
+                    onClick={() => {
+                      bulkUpdateProducts(selectedProductIds, { isFlashSale: false });
+                      setSelectedProductIds([]);
+                    }}
+                    className="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 border border-slate-700 text-slate-200 font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    {at('ফ্ল্যাশ সেল বন্ধ', 'Flash Sale OFF')}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={selectedProductIds.length === 0}
+                    onClick={() => {
+                      bulkDeleteProducts(selectedProductIds);
+                      setSelectedProductIds([]);
+                    }}
+                    className="px-2.5 py-1.5 rounded bg-rose-700 hover:bg-rose-600 disabled:opacity-40 text-white font-bold text-xs inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{at('বাল্ক ডিলিট', 'Bulk Delete')}</span>
+                  </button>
+                </BulkCommandBar>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
-                      {/* Direct 1-Click Flash Sale Toggle */}
-                      <button
-                        onClick={() => toggleProductFlashSale(prod.id)}
-                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border ${
-                          prod.isFlashSale
-                            ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 hover:bg-rose-500/30'
-                            : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
+                {/* Products Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {products.map((prod) => {
+                    const isProdSelected = selectedProductIds.includes(prod.id);
+                    return (
+                      <div
+                        key={prod.id}
+                        className={`p-4 rounded-xl border flex flex-col justify-between space-y-3 transition-colors ${
+                          isProdSelected ? 'bg-emerald-950/20 border-emerald-500/70' : 'bg-slate-900 border-slate-800'
                         }`}
-                        title={at('ফ্ল্যাশ সেল অন/অফ করতে ক্লিক করুন', 'Click to toggle Flash Sale')}
                       >
-                        {prod.isFlashSale ? at('🔥 ফ্ল্যাশ সেল সক্রিয়', '🔥 Flash Sale Active') : at('+ ফ্ল্যাশ সেলে যোগ', '+ Add to Flash')}
-                      </button>
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={isProdSelected}
+                            onChange={(e) => {
+                              setSelectedProductIds((prev) =>
+                                e.target.checked ? [...prev, prod.id] : prev.filter((id) => id !== prod.id)
+                              );
+                            }}
+                            className="w-4 h-4 mt-1 accent-emerald-500 cursor-pointer shrink-0"
+                          />
+                          <div className="w-20 h-20 rounded-xl overflow-hidden bg-slate-950 shrink-0 border border-slate-800">
+                            {prod.images?.[0]?.trim() ? <img src={prod.images[0]} alt="" className="w-full h-full object-cover" /> : null}
+                          </div>
+                          <div className="overflow-hidden flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">{at(prod.categoryBn, prod.category)}</span>
+                              {prod.subcategory && (
+                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">{prod.subcategory}</span>
+                              )}
+                            </div>
+                            <h4 className="font-bold text-sm text-white line-clamp-1">{at(prod.titleBn, prod.title)}</h4>
+                            <div className="flex items-baseline gap-2 mt-1 tabular-nums">
+                              <span className="font-black text-sm text-emerald-400">৳ {prod.price.toLocaleString()}</span>
+                              <span className="text-xs text-slate-500 line-through">৳ {prod.originalPrice.toLocaleString()}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 mt-0.5 truncate tabular-nums">
+                              {at(`স্টক: ${prod.stock} টি • SKU: ${prod.sku}`, `Stock: ${prod.stock} • SKU: ${prod.sku}`)}
+                              {prod.seo?.slug && ` • /product/${prod.seo.slug}`}
+                            </div>
+                          </div>
+                        </div>
 
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => openEditProductModal(prod)}
-                          title={at('পণ্য এডিট করুন', 'Edit Product')}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
-                        >
-                          <Edit className="w-3.5 h-3.5" />
-                        </button>
-                        {/* Direct Delete - No blocking confirm */}
-                        <button
-                          onClick={() => {
-                            deleteProduct(prod.id);
-                          }}
-                          title={at('পণ্য মুছে ফেলুন', 'Delete Product')}
-                          className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
+                          {/* Direct 1-Click Flash Sale Toggle */}
+                          <button
+                            onClick={() => toggleProductFlashSale(prod.id)}
+                            className={`px-2.5 py-1 rounded-md text-[10px] font-bold cursor-pointer transition-all border ${
+                              prod.isFlashSale
+                                ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 hover:bg-rose-500/30'
+                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
+                            }`}
+                            title={at('ফ্ল্যাশ সেল অন/অফ করতে ক্লিক করুন', 'Click to toggle Flash Sale')}
+                          >
+                            {prod.isFlashSale ? at('ফ্ল্যাশ সেল সক্রিয়', 'Flash Sale Active') : at('+ ফ্ল্যাশ সেলে যোগ', '+ Add to Flash')}
+                          </button>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => openEditProductModal(prod)}
+                              title={at('পণ্য এডিট করুন', 'Edit Product')}
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            {/* Direct Delete - No blocking confirm */}
+                            <button
+                              onClick={() => {
+                                deleteProduct(prod.id);
+                              }}
+                              title={at('পণ্য মুছে ফেলুন', 'Delete Product')}
+                              className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    );
+                  })}
+                </div>
+              </BulkSectionShell>
             </div>
           )}
 
@@ -5632,62 +5799,75 @@ export const AdminDashboard: React.FC = () => {
 
             return (
               <div className="space-y-6 animate-fade-in">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <h3 className="text-xl font-black text-white">{at('ড্রপ-অফ কার্ট রিকভারি', 'Abandoned Cart Recovery')}</h3>
-                    <p className="text-xs text-slate-400">
-                      {at(
-                        'বাল্ক সিলেকশন, এডিট, ডিলিট এবং ১-ক্লিক WhatsApp রিকভারি মেসেজ পাঠান',
-                        'Follow up on incomplete checkouts with bulk actions, inline cart edit, delete & WhatsApp reminders'
-                      )}
-                    </p>
-                  </div>
-
-                  {selectedAbandonedIds.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-2 bg-slate-900 border border-emerald-500/40 px-3 py-2 rounded-2xl text-xs">
-                      <span className="font-bold text-emerald-300">
-                        {selectedAbandonedIds.length} {at('টি নির্বাচিত', 'selected')}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          bulkAbandonedCartsAction(selectedAbandonedIds, 'whatsapp');
-                          setSelectedAbandonedIds([]);
-                        }}
-                        className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer inline-flex items-center gap-1"
-                      >
-                        <MessageCircle className="w-3.5 h-3.5" />
-                        <span>{at('বাল্ক WhatsApp', 'Bulk WhatsApp')}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          bulkAbandonedCartsAction(selectedAbandonedIds, 'recover');
-                          setSelectedAbandonedIds([]);
-                        }}
-                        className="px-2.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold cursor-pointer inline-flex items-center gap-1"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{at('বাল্ক কনভার্ট', 'Bulk Convert')}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          bulkAbandonedCartsAction(selectedAbandonedIds, 'delete');
-                          setSelectedAbandonedIds([]);
-                        }}
-                        className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold cursor-pointer inline-flex items-center gap-1"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>{at('বাল্ক ডিলিট', 'Bulk Delete')}</span>
-                      </button>
-                    </div>
-                  )}
+                <div>
+                  <h3 className="text-xl font-black text-white">{at('ড্রপ-অফ কার্ট রিকভারি', 'Abandoned Cart Recovery')}</h3>
+                  <p className="text-xs text-slate-400">
+                    {at(
+                      'বাল্ক সিলেকশন, এডিট, ডিলিট এবং ১-ক্লিক WhatsApp রিকভারি মেসেজ পাঠান',
+                      'Follow up on incomplete checkouts with bulk actions, inline cart edit, delete & WhatsApp reminders'
+                    )}
+                  </p>
                 </div>
 
-                {/* Abandoned Carts Table */}
-                <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-sm">
-                  <div className="overflow-x-auto">
+                <BulkSectionShell
+                  indexCode="BULK // ABANDONED"
+                  title={at('ড্রপ-অফ কার্ট রিকভারি কিউ', 'Abandoned Cart Recovery Queue')}
+                  subtitle={at('সিলেক্ট করে একসাথে WhatsApp, অর্ডার কনভার্ট বা ডিলিট করুন', 'Select abandoned carts for batch WhatsApp reminders, order conversion, or deletion')}
+                  totalCount={abandonedCarts.length}
+                  selectedCount={selectedAbandonedIds.length}
+                  accent="cyan"
+                >
+                  <BulkCommandBar
+                    selectedCount={selectedAbandonedIds.length}
+                    totalCount={abandonedCarts.length}
+                    allSelected={allSelected}
+                    onToggleSelectAll={() =>
+                      setSelectedAbandonedIds(allSelected ? [] : abandonedCarts.map((c) => c.id))
+                    }
+                    onClearSelection={() => setSelectedAbandonedIds([])}
+                    itemLabel="carts"
+                  >
+                    <button
+                      type="button"
+                      disabled={selectedAbandonedIds.length === 0}
+                      onClick={() => {
+                        bulkAbandonedCartsAction(selectedAbandonedIds, 'whatsapp');
+                        setSelectedAbandonedIds([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed inline-flex items-center gap-1"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>{at('বাল্ক WhatsApp', 'Bulk WhatsApp')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedAbandonedIds.length === 0}
+                      onClick={() => {
+                        bulkAbandonedCartsAction(selectedAbandonedIds, 'recover');
+                        setSelectedAbandonedIds([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed inline-flex items-center gap-1"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>{at('বাল্ক কনভার্ট', 'Bulk Convert')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedAbandonedIds.length === 0}
+                      onClick={() => {
+                        bulkAbandonedCartsAction(selectedAbandonedIds, 'delete');
+                        setSelectedAbandonedIds([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded bg-rose-700 hover:bg-rose-600 disabled:opacity-40 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed inline-flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{at('বাল্ক ডিলিট', 'Bulk Delete')}</span>
+                    </button>
+                  </BulkCommandBar>
+
+                  {/* Abandoned Carts Table */}
+                  <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-sm">
+                    <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs text-slate-300">
                       <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
                         <tr>
@@ -5807,6 +5987,7 @@ export const AdminDashboard: React.FC = () => {
                     </table>
                   </div>
                 </div>
+                </BulkSectionShell>
               </div>
             );
           })()}
@@ -6316,7 +6497,7 @@ export const AdminDashboard: React.FC = () => {
                       {at('নিজস্ব ডেলিভারি বয় যোগ করুন এবং অর্ডার টেবিল থেকে সরাসরি অ্যাসাইন করুন', 'Add in-house riders & assign them directly to orders from the Orders tab')}
                     </p>
                   </div>
-                  <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full">
+                  <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded tabular-nums">
                     {(settings.deliveryBoys || []).filter((d) => d.active).length} {at('জন সক্রিয়', 'Active Riders')}
                   </span>
                 </div>
@@ -6383,40 +6564,114 @@ export const AdminDashboard: React.FC = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                   {(settings.deliveryBoys || []).map((rider) => (
-                    <div key={rider.id} className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="font-bold text-white truncate">{rider.name}</p>
-                        <p className="text-[11px] font-mono text-emerald-400">{rider.phone}</p>
-                        <p className="text-[10px] text-slate-400">{rider.zone} • {rider.vehicleType || 'Bike'}</p>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateSettings({
-                              deliveryBoys: (settings.deliveryBoys || []).map((x) =>
-                                x.id === rider.id ? { ...x, active: !x.active } : x
-                              )
-                            })
-                          }
-                          className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer ${
-                            rider.active ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-500'
-                          }`}
-                        >
-                          {rider.active ? 'Active' : 'Off'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateSettings({
-                              deliveryBoys: (settings.deliveryBoys || []).filter((x) => x.id !== rider.id)
-                            })
-                          }
-                          className="p-1.5 rounded bg-rose-950/60 hover:bg-rose-900 text-rose-300 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                    <div key={rider.id} className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                      {editingDeliveryBoy?.id === rider.id ? (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={editingDeliveryBoy.name}
+                            onChange={(e) => setEditingDeliveryBoy({ ...editingDeliveryBoy, name: e.target.value })}
+                            placeholder="Rider Name"
+                            className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-bold"
+                          />
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <input
+                              type="text"
+                              value={editingDeliveryBoy.phone}
+                              onChange={(e) => setEditingDeliveryBoy({ ...editingDeliveryBoy, phone: e.target.value })}
+                              placeholder="Phone"
+                              className="px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-emerald-400 font-mono"
+                            />
+                            <input
+                              type="text"
+                              value={editingDeliveryBoy.zone}
+                              onChange={(e) => setEditingDeliveryBoy({ ...editingDeliveryBoy, zone: e.target.value })}
+                              placeholder="Zone"
+                              className="px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <select
+                              value={editingDeliveryBoy.vehicleType || 'Bike'}
+                              onChange={(e) => setEditingDeliveryBoy({ ...editingDeliveryBoy, vehicleType: e.target.value as any })}
+                              className="flex-1 px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
+                            >
+                              <option value="Bike">Motorbike</option>
+                              <option value="Bicycle">Bicycle</option>
+                              <option value="Van">Delivery Van</option>
+                              <option value="Walk">Walk</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!editingDeliveryBoy.name.trim() || !editingDeliveryBoy.phone.trim()) return;
+                                updateSettings({
+                                  deliveryBoys: (settings.deliveryBoys || []).map((x) =>
+                                    x.id === rider.id ? editingDeliveryBoy : x
+                                  )
+                                });
+                                setEditingDeliveryBoy(null);
+                                addToast('success', at('রাইডার আপডেট হয়েছে', 'Rider Updated'), editingDeliveryBoy.name);
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                            >
+                              {at('সেভ', 'Save')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingDeliveryBoy(null)}
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold cursor-pointer"
+                            >
+                              {at('বাতিল', 'Cancel')}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-bold text-white truncate">{rider.name}</p>
+                            <p className="text-[11px] font-mono text-emerald-400">{rider.phone}</p>
+                            <p className="text-[10px] text-slate-400">{rider.zone} • {rider.vehicleType || 'Bike'}</p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateSettings({
+                                  deliveryBoys: (settings.deliveryBoys || []).map((x) =>
+                                    x.id === rider.id ? { ...x, active: !x.active } : x
+                                  )
+                                })
+                              }
+                              className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer ${
+                                rider.active ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-500'
+                              }`}
+                            >
+                              {rider.active ? 'Active' : 'Off'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingDeliveryBoy({ ...rider })}
+                              title={at('রাইডার এডিট করুন', 'Edit Rider')}
+                              className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 cursor-pointer"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateSettings({
+                                  deliveryBoys: (settings.deliveryBoys || []).filter((x) => x.id !== rider.id)
+                                })
+                              }
+                              title={at('রাইডার মুছুন', 'Delete Rider')}
+                              className="p-1.5 rounded bg-rose-950/60 hover:bg-rose-900 text-rose-300 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -7283,7 +7538,7 @@ export const AdminDashboard: React.FC = () => {
                       {t('গ্রাহকরা যে পণ্যগুলোর দাম কমলে অ্যালার্ট চেয়েছেন তাদের তালিকা ও ১-ক্লিক হোয়াটসঅ্যাপ নোটিফিকেশন', 'Live list of price drop requests with 1-click WhatsApp messaging')}
                     </p>
                   </div>
-                  <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  <span className="text-xs font-mono font-bold px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 tabular-nums">
                     {priceAlerts.length} {t('টি অ্যালার্ট', 'Alerts')}
                   </span>
                 </div>
@@ -7301,31 +7556,122 @@ export const AdminDashboard: React.FC = () => {
                           <th className="p-2.5">{t('যোগাযোগ নম্বর', 'Contact')}</th>
                           <th className="p-2.5">{t('বর্তমান মূল্য', 'Current Price')}</th>
                           <th className="p-2.5">{t('টার্গেট মূল্য', 'Target Price')}</th>
-                          <th className="p-2.5 text-right">{t('১-ক্লিক নোটিফিকেশন', '1-Click Action')}</th>
+                          <th className="p-2.5">{at('স্ট্যাটাস', 'Status')}</th>
+                          <th className="p-2.5 text-right">{at('অ্যাকশন (WA / Edit / Del)', 'Actions')}</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-800 text-slate-300">
+                      <tbody className="divide-y divide-slate-800 text-slate-300 tabular-nums">
                         {priceAlerts.map((alt) => (
                           <tr key={alt.id} className="hover:bg-slate-800/40">
                             <td className="p-2.5 font-bold text-white">{alt.productTitleBn || alt.productTitle}</td>
-                            <td className="p-2.5 font-mono text-emerald-400">{alt.contact}</td>
-                            <td className="p-2.5 font-mono">৳{alt.currentPrice}</td>
-                            <td className="p-2.5 font-mono font-bold text-amber-400">৳{alt.targetPrice}</td>
-                            <td className="p-2.5 text-right">
-                              <button
-                                onClick={() => {
-                                  const text = encodeURIComponent(
-                                    `আসসালামু আলাইকুম! আপনি ${alt.productTitleBn || alt.productTitle} এর জন্য প্রাইস অ্যালার্ট সেট করেছিলেন। পণ্যের দাম এখন ৳${alt.targetPrice} টাকায় অফার করা হচ্ছে! এখনই কিনুন BuyOne BD থেকে।`
-                                  );
-                                  window.open(`https://wa.me/${alt.contact.replace(/[^0-9]/g, '')}?text=${text}`, '_blank');
-                                  addToast('success', t('হোয়াটসঅ্যাপ ওপেন হয়েছে', 'WhatsApp Opened'), alt.contact);
-                                }}
-                                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
-                              >
-                                <MessageCircle className="w-3 h-3" />
-                                <span>{t('হোয়াটসঅ্যাপ অ্যালার্ট পাঠান', 'Send Alert')}</span>
-                              </button>
-                            </td>
+                            {editingPriceAlert?.id === alt.id ? (
+                              <>
+                                <td className="p-2">
+                                  <input
+                                    type="text"
+                                    value={editingPriceAlert.contact}
+                                    onChange={(e) => setEditingPriceAlert({ ...editingPriceAlert, contact: e.target.value })}
+                                    className="w-full px-2 py-1 bg-slate-950 border border-slate-700 rounded text-emerald-400 font-mono text-xs"
+                                  />
+                                </td>
+                                <td className="p-2">
+                                  <input
+                                    type="number"
+                                    value={editingPriceAlert.currentPrice}
+                                    onChange={(e) => setEditingPriceAlert({ ...editingPriceAlert, currentPrice: Number(e.target.value) || 0 })}
+                                    className="w-20 px-2 py-1 bg-slate-950 border border-slate-700 rounded text-white font-mono text-xs"
+                                  />
+                                </td>
+                                <td className="p-2">
+                                  <input
+                                    type="number"
+                                    value={editingPriceAlert.targetPrice}
+                                    onChange={(e) => setEditingPriceAlert({ ...editingPriceAlert, targetPrice: Number(e.target.value) || 0 })}
+                                    className="w-20 px-2 py-1 bg-slate-950 border border-slate-700 rounded text-amber-400 font-mono text-xs"
+                                  />
+                                </td>
+                                <td className="p-2">
+                                  <select
+                                    value={editingPriceAlert.status}
+                                    onChange={(e) => setEditingPriceAlert({ ...editingPriceAlert, status: e.target.value as 'active' | 'notified' })}
+                                    className="px-2 py-1 bg-slate-950 border border-slate-700 rounded text-white text-xs"
+                                  >
+                                    <option value="active">active</option>
+                                    <option value="notified">notified</option>
+                                  </select>
+                                </td>
+                                <td className="p-2 text-right whitespace-nowrap space-x-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      updatePriceAlert(alt.id, {
+                                        contact: editingPriceAlert.contact,
+                                        currentPrice: editingPriceAlert.currentPrice,
+                                        targetPrice: editingPriceAlert.targetPrice,
+                                        status: editingPriceAlert.status
+                                      });
+                                      setEditingPriceAlert(null);
+                                    }}
+                                    className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                                  >
+                                    {at('সেভ', 'Save')}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingPriceAlert(null)}
+                                    className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[11px] cursor-pointer"
+                                  >
+                                    {at('বাতিল', 'Cancel')}
+                                  </button>
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="p-2.5 font-mono text-emerald-400">{alt.contact}</td>
+                                <td className="p-2.5 font-mono">৳{alt.currentPrice}</td>
+                                <td className="p-2.5 font-mono font-bold text-amber-400">৳{alt.targetPrice}</td>
+                                <td className="p-2.5">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${alt.status === 'notified' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                                    {alt.status}
+                                  </span>
+                                </td>
+                                <td className="p-2.5 text-right whitespace-nowrap">
+                                  <div className="inline-flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const text = encodeURIComponent(
+                                          `আসসালামু আলাইকুম! আপনি ${alt.productTitleBn || alt.productTitle} এর জন্য প্রাইস অ্যালার্ট সেট করেছিলেন। পণ্যের দাম এখন ৳${alt.targetPrice} টাকায় অফার করা হচ্ছে! এখনই কিনুন BuyOne BD থেকে।`
+                                        );
+                                        window.open(`https://wa.me/${alt.contact.replace(/[^0-9]/g, '')}?text=${text}`, '_blank');
+                                        updatePriceAlert(alt.id, { status: 'notified' });
+                                        addToast('success', t('হোয়াটসঅ্যাপ ওপেন হয়েছে', 'WhatsApp Opened'), alt.contact);
+                                      }}
+                                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <MessageCircle className="w-3 h-3" />
+                                      <span>{at('অ্যালার্ট', 'Send Alert')}</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingPriceAlert({ ...alt })}
+                                      title={at('অ্যালার্ট এডিট', 'Edit Alert')}
+                                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 cursor-pointer"
+                                    >
+                                      <Edit className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => deletePriceAlert(alt.id)}
+                                      title={at('অ্যালার্ট ডিলিট', 'Delete Alert')}
+                                      className="p-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -7672,31 +8018,32 @@ export const AdminDashboard: React.FC = () => {
                     <CheckCheck className="w-4 h-4 text-emerald-400" />
                     <span>{at('হোয়াটসঅ্যাপ ক্লাউড API ডেলিভারি লগ', 'WhatsApp Cloud API Delivery Logs')}</span>
                   </h4>
-                  <span className="text-[11px] font-mono text-slate-400">{whatsappLogs.length} logs</span>
+                  <span className="text-[11px] font-mono text-slate-400 tabular-nums">{whatsappLogs.length} logs</span>
                 </div>
                 {whatsappLogs.length === 0 ? (
                   <p className="text-xs text-slate-500 py-4 text-center border border-slate-800 rounded-xl">
                     {at('এখনও কোনো API মেসেজ পাঠানো হয়নি। উপরের টেস্ট ফর্ম দিয়ে মেসেজ পাঠিয়ে দেখুন।', 'No API messages logged yet. Use the test sender above to test dispatch.')}
                   </p>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto max-h-80 overflow-y-auto rounded-xl border border-slate-800">
                     <table className="w-full text-left text-xs text-slate-300">
-                      <thead className="bg-slate-950 text-slate-400 text-[10px] uppercase">
+                      <thead className="bg-slate-950 text-slate-400 text-[10px] uppercase sticky top-0">
                         <tr>
                           <th className="p-2.5">Phone</th>
                           <th className="p-2.5">Template</th>
                           <th className="p-2.5">Status</th>
                           <th className="p-2.5">Preview</th>
                           <th className="p-2.5">Time</th>
+                          <th className="p-2.5 text-right">{at('অ্যাকশন', 'Actions')}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800">
-                        {whatsappLogs.slice(0, 12).map((log) => (
+                        {whatsappLogs.map((log) => (
                           <tr key={log.id} className="hover:bg-slate-800/40">
                             <td className="p-2.5 font-mono text-emerald-400">{log.phone}</td>
                             <td className="p-2.5 font-mono">{log.template}</td>
                             <td className="p-2.5">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                                 log.status === 'failed'
                                   ? 'bg-rose-500/20 text-rose-300'
                                   : log.status === 'simulated'
@@ -7707,7 +8054,31 @@ export const AdminDashboard: React.FC = () => {
                               </span>
                             </td>
                             <td className="p-2.5 max-w-xs truncate text-slate-400">{log.messagePreview}</td>
-                            <td className="p-2.5 text-slate-500">{log.time}</td>
+                            <td className="p-2.5 text-slate-500 whitespace-nowrap">{log.time}</td>
+                            <td className="p-2.5 text-right whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setWaTestPhone(log.phone);
+                                    setWaTestMsg(log.messagePreview);
+                                    addToast('info', at('মেসেজ লোড হয়েছে', 'Loaded into Sender'), log.phone);
+                                  }}
+                                  title={at('কম্পোজারে এডিট/পুনরায় পাঠান', 'Edit & Resend in Composer')}
+                                  className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 cursor-pointer"
+                                >
+                                  <Edit className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteWhatsappLog(log.id)}
+                                  title={at('লগ মুছে ফেলুন', 'Delete Log')}
+                                  className="p-1.5 rounded bg-rose-950/70 hover:bg-rose-900 text-rose-300 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -8208,52 +8579,153 @@ export const AdminDashboard: React.FC = () => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   {(settings.promoCoupons || []).map((cpn) => (
-                    <div key={cpn.id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-black text-emerald-400">{cpn.code}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
-                            {cpn.discountType === 'free_shipping'
-                              ? 'FREE SHIP'
-                              : cpn.discountType === 'percent'
-                              ? `${cpn.value}% OFF`
-                              : `৳${cpn.value} OFF`}
-                          </span>
+                    <div key={cpn.id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                      {editingCouponId === cpn.id ? (
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <input
+                              type="text"
+                              value={editCouponCode}
+                              onChange={(e) => setEditCouponCode(e.target.value.toUpperCase())}
+                              placeholder="CODE"
+                              className="px-2 py-1 bg-slate-900 border border-slate-700 rounded text-emerald-400 font-mono uppercase text-xs"
+                            />
+                            <input
+                              type="text"
+                              value={editCouponTitle}
+                              onChange={(e) => setEditCouponTitle(e.target.value)}
+                              placeholder="Promo Title"
+                              className="px-2 py-1 bg-slate-900 border border-slate-700 rounded text-white text-xs"
+                            />
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <select
+                              value={editCouponType}
+                              onChange={(e) => setEditCouponType(e.target.value as any)}
+                              className="px-2 py-1 bg-slate-900 border border-slate-700 rounded text-white text-xs"
+                            >
+                              <option value="fixed">Fixed ৳</option>
+                              <option value="percent">Percent %</option>
+                              <option value="free_shipping">Free Ship</option>
+                            </select>
+                            <input
+                              type="number"
+                              min={0}
+                              value={editCouponValue}
+                              onChange={(e) => setEditCouponValue(Number(e.target.value) || 0)}
+                              placeholder="Value"
+                              className="px-2 py-1 bg-slate-900 border border-slate-700 rounded text-white font-mono text-xs"
+                            />
+                            <input
+                              type="number"
+                              min={0}
+                              value={editCouponMinOrder}
+                              onChange={(e) => setEditCouponMinOrder(Number(e.target.value) || 0)}
+                              placeholder="Min Order"
+                              className="px-2 py-1 bg-slate-900 border border-slate-700 rounded text-white font-mono text-xs"
+                            />
+                          </div>
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const code = editCouponCode.trim().toUpperCase();
+                                if (!code) return;
+                                updateSettings({
+                                  promoCoupons: (settings.promoCoupons || []).map((x) =>
+                                    x.id === cpn.id
+                                      ? {
+                                          ...x,
+                                          code,
+                                          title: editCouponTitle.trim() || `${code} Offer`,
+                                          discountType: editCouponType,
+                                          value: editCouponType === 'free_shipping' ? 0 : editCouponValue,
+                                          minOrder: editCouponMinOrder
+                                        }
+                                      : x
+                                  )
+                                });
+                                setEditingCouponId(null);
+                                addToast('success', at('কুপন আপডেট হয়েছে!', 'Coupon Updated!'), code);
+                              }}
+                              className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                            >
+                              {at('সেভ', 'Save')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingCouponId(null)}
+                              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[11px] cursor-pointer"
+                            >
+                              {at('বাতিল', 'Cancel')}
+                            </button>
+                          </div>
                         </div>
-                        <p className="text-[11px] text-slate-400 truncate">
-                          {cpn.title} {cpn.minOrder ? `(Min ৳${cpn.minOrder})` : ''}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateSettings({
-                              promoCoupons: (settings.promoCoupons || []).map((x) =>
-                                x.id === cpn.id ? { ...x, active: x.active === false } : x
-                              )
-                            })
-                          }
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                            cpn.active !== false
-                              ? 'bg-emerald-500/20 text-emerald-300'
-                              : 'bg-slate-800 text-slate-500'
-                          }`}
-                        >
-                          {cpn.active !== false ? 'ON' : 'OFF'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateSettings({
-                              promoCoupons: (settings.promoCoupons || []).filter((x) => x.id !== cpn.id)
-                            })
-                          }
-                          className="p-1 text-rose-400 hover:text-rose-300 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-black text-emerald-400">{cpn.code}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 tabular-nums">
+                                {cpn.discountType === 'free_shipping'
+                                  ? 'FREE SHIP'
+                                  : cpn.discountType === 'percent'
+                                  ? `${cpn.value}% OFF`
+                                  : `৳${cpn.value} OFF`}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 truncate">
+                              {cpn.title} {cpn.minOrder ? `(Min ৳${cpn.minOrder})` : ''}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateSettings({
+                                  promoCoupons: (settings.promoCoupons || []).map((x) =>
+                                    x.id === cpn.id ? { ...x, active: x.active === false } : x
+                                  )
+                                })
+                              }
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
+                                cpn.active !== false
+                                  ? 'bg-emerald-500/20 text-emerald-300'
+                                  : 'bg-slate-800 text-slate-500'
+                              }`}
+                            >
+                              {cpn.active !== false ? 'ON' : 'OFF'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCouponId(cpn.id);
+                                setEditCouponCode(cpn.code);
+                                setEditCouponTitle(cpn.title || '');
+                                setEditCouponType(cpn.discountType);
+                                setEditCouponValue(cpn.value);
+                                setEditCouponMinOrder(cpn.minOrder || 0);
+                              }}
+                              title={at('কুপন এডিট', 'Edit Coupon')}
+                              className="p-1 text-sky-400 hover:text-sky-300 cursor-pointer"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateSettings({
+                                  promoCoupons: (settings.promoCoupons || []).filter((x) => x.id !== cpn.id)
+                                })
+                              }
+                              title={at('কুপন মুছুন', 'Delete Coupon')}
+                              className="p-1 text-rose-400 hover:text-rose-300 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -8681,34 +9153,102 @@ export const AdminDashboard: React.FC = () => {
                         {waitlistEntries.map((entry) => (
                           <tr key={entry.id} className="hover:bg-slate-900/60">
                             <td className="py-2.5 px-3 font-bold text-white">{entry.productTitleBn || entry.productTitle}</td>
-                            <td className="py-2.5 px-3 font-mono text-emerald-400">
-                              <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 mr-1.5">{entry.contactType}</span>
-                              {entry.contact}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-400">{new Date(entry.createdAt).toLocaleDateString()}</td>
-                            <td className="py-2.5 px-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${entry.status === 'notified' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
-                                {entry.status}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-right space-x-1.5">
-                              {entry.status !== 'notified' && (
-                                <button
-                                  type="button"
-                                  onClick={() => markWaitlistNotified(entry.id)}
-                                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
-                                >
-                                  {at('নটিফাইড করুন', 'Mark Notified')}
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => deleteWaitlistEntry(entry.id)}
-                                className="px-2 py-1 rounded-lg bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800 text-[11px] font-bold cursor-pointer"
-                              >
-                                <Trash2 className="w-3 h-3 inline" />
-                              </button>
-                            </td>
+                            {editingWaitlistEntry?.id === entry.id ? (
+                              <>
+                                <td className="py-2 px-3">
+                                  <div className="flex items-center gap-1.5">
+                                    <select
+                                      value={editingWaitlistEntry.contactType}
+                                      onChange={(e) => setEditingWaitlistEntry({ ...editingWaitlistEntry, contactType: e.target.value as 'phone' | 'email' })}
+                                      className="px-1.5 py-1 bg-slate-900 border border-slate-700 rounded text-slate-200 text-[11px]"
+                                    >
+                                      <option value="phone">phone</option>
+                                      <option value="email">email</option>
+                                    </select>
+                                    <input
+                                      type="text"
+                                      value={editingWaitlistEntry.contact}
+                                      onChange={(e) => setEditingWaitlistEntry({ ...editingWaitlistEntry, contact: e.target.value })}
+                                      className="px-2 py-1 bg-slate-900 border border-slate-700 rounded text-emerald-400 font-mono text-xs w-36"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-400">{new Date(entry.createdAt).toLocaleDateString()}</td>
+                                <td className="py-2 px-3">
+                                  <select
+                                    value={editingWaitlistEntry.status}
+                                    onChange={(e) => setEditingWaitlistEntry({ ...editingWaitlistEntry, status: e.target.value as 'waiting' | 'notified' })}
+                                    className="px-2 py-1 bg-slate-900 border border-slate-700 rounded text-white text-xs"
+                                  >
+                                    <option value="waiting">waiting</option>
+                                    <option value="notified">notified</option>
+                                  </select>
+                                </td>
+                                <td className="py-2 px-3 text-right whitespace-nowrap space-x-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      updateWaitlistEntry(entry.id, {
+                                        contact: editingWaitlistEntry.contact,
+                                        contactType: editingWaitlistEntry.contactType,
+                                        status: editingWaitlistEntry.status
+                                      });
+                                      setEditingWaitlistEntry(null);
+                                    }}
+                                    className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                                  >
+                                    {at('সেভ', 'Save')}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingWaitlistEntry(null)}
+                                    className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[11px] cursor-pointer"
+                                  >
+                                    {at('বাতিল', 'Cancel')}
+                                  </button>
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="py-2.5 px-3 font-mono text-emerald-400">
+                                  <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 mr-1.5">{entry.contactType}</span>
+                                  {entry.contact}
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-400">{new Date(entry.createdAt).toLocaleDateString()}</td>
+                                <td className="py-2.5 px-3">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${entry.status === 'notified' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                                    {entry.status}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 text-right whitespace-nowrap space-x-1">
+                                  {entry.status !== 'notified' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => markWaitlistNotified(entry.id)}
+                                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                                    >
+                                      {at('নটিফাইড করুন', 'Mark Notified')}
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingWaitlistEntry({ ...entry })}
+                                    title={at('এডিট', 'Edit Waitlist')}
+                                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 text-[11px] font-bold cursor-pointer"
+                                  >
+                                    <Edit className="w-3 h-3 inline" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteWaitlistEntry(entry.id)}
+                                    title={at('ডিলিট', 'Delete Waitlist')}
+                                    className="px-2 py-1 rounded-lg bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800 text-[11px] font-bold cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3 h-3 inline" />
+                                  </button>
+                                </td>
+                              </>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -8935,7 +9475,7 @@ export const AdminDashboard: React.FC = () => {
                       )}
                     </p>
                   </div>
-                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 tabular-nums">
                     {(settings.aiKeywordRules || []).filter((r) => r.enabled).length} Active Rules
                   </span>
                 </div>
@@ -9021,49 +9561,149 @@ export const AdminDashboard: React.FC = () => {
                   {(settings.aiKeywordRules || []).map((rule) => (
                     <div
                       key={rule.id}
-                      className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-3"
                     >
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {rule.keywords.map((kw, kIdx) => (
-                            <span
-                              key={kIdx}
-                              className="px-2 py-0.5 rounded-md bg-slate-800 text-emerald-300 font-mono text-[11px] font-bold"
+                      {editingKeywordRuleId === rule.id ? (
+                        <div className="space-y-3 text-xs">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                            <div>
+                              <label className="block text-slate-400 font-bold mb-1">
+                                {at('কীওয়ার্ড (কমা দিয়ে)', 'Keywords (comma separated)')}
+                              </label>
+                              <input
+                                type="text"
+                                value={editRuleKeywords}
+                                onChange={(e) => setEditRuleKeywords(e.target.value)}
+                                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-emerald-300 font-mono"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-400 font-bold mb-1">
+                                {at('অটো উত্তর (বাংলা)', 'Auto Reply (BN)')}
+                              </label>
+                              <input
+                                type="text"
+                                value={editRuleReplyBn}
+                                onChange={(e) => setEditRuleReplyBn(e.target.value)}
+                                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-400 font-bold mb-1">
+                                {at('অটো উত্তর (ইংরেজি)', 'Auto Reply (EN)')}
+                              </label>
+                              <input
+                                type="text"
+                                value={editRuleReplyEn}
+                                onChange={(e) => setEditRuleReplyEn(e.target.value)}
+                                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const kwList = editRuleKeywords
+                                  .split(',')
+                                  .map((k) => k.trim())
+                                  .filter(Boolean);
+                                if (kwList.length === 0 || (!editRuleReplyBn.trim() && !editRuleReplyEn.trim())) {
+                                  addToast('error', at('তথ্য দিন', 'Missing fields'), at('কীওয়ার্ড এবং উত্তর লিখুন।', 'Enter keywords and reply text.'));
+                                  return;
+                                }
+                                const updated = (settings.aiKeywordRules || []).map((r) =>
+                                  r.id === rule.id
+                                    ? {
+                                        ...r,
+                                        keywords: kwList,
+                                        replyBn: editRuleReplyBn.trim() || editRuleReplyEn.trim(),
+                                        replyEn: editRuleReplyEn.trim() || editRuleReplyBn.trim()
+                                      }
+                                    : r
+                                );
+                                updateSettings({ aiKeywordRules: updated });
+                                setEditingKeywordRuleId(null);
+                                addToast('success', at('কীওয়ার্ড রুল আপডেট হয়েছে', 'Keyword Rule Updated'), kwList.join(', '));
+                              }}
+                              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer inline-flex items-center gap-1"
                             >
-                              {kw}
-                            </span>
-                          ))}
+                              <Save className="w-3.5 h-3.5" />
+                              <span>{at('আপডেট সেভ করুন', 'Save Rule')}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingKeywordRuleId(null)}
+                              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold cursor-pointer"
+                            >
+                              {at('বাতিল', 'Cancel')}
+                            </button>
+                          </div>
                         </div>
-                        <p className="text-xs text-slate-200">{at(rule.replyBn, rule.replyEn)}</p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const updated = (settings.aiKeywordRules || []).map((r) =>
-                              r.id === rule.id ? { ...r, enabled: !r.enabled } : r
-                            );
-                            updateSettings({ aiKeywordRules: updated });
-                          }}
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold cursor-pointer border ${
-                            rule.enabled
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                              : 'bg-slate-800 text-slate-400 border-slate-700'
-                          }`}
-                        >
-                          {rule.enabled ? at('সক্রিয়', 'Active') : at('বন্ধ', 'Paused')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const filtered = (settings.aiKeywordRules || []).filter((r) => r.id !== rule.id);
-                            updateSettings({ aiKeywordRules: filtered });
-                          }}
-                          className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      ) : (
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {rule.keywords.map((kw, kIdx) => (
+                                <span
+                                  key={kIdx}
+                                  className="px-2 py-0.5 rounded bg-slate-800 text-emerald-300 font-mono text-[11px] font-bold"
+                                >
+                                  {kw}
+                                </span>
+                              ))}
+                            </div>
+                            <p className="text-xs text-slate-200">{at(rule.replyBn, rule.replyEn)}</p>
+                            {rule.replyBn && rule.replyEn && rule.replyBn !== rule.replyEn && (
+                              <p className="text-[11px] text-slate-400">{at(rule.replyEn, rule.replyBn)}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = (settings.aiKeywordRules || []).map((r) =>
+                                  r.id === rule.id ? { ...r, enabled: !r.enabled } : r
+                                );
+                                updateSettings({ aiKeywordRules: updated });
+                              }}
+                              className={`px-2.5 py-1 rounded text-[10px] font-bold cursor-pointer border ${
+                                rule.enabled
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700'
+                              }`}
+                            >
+                              {rule.enabled ? at('সক্রিয়', 'Active') : at('বন্ধ', 'Paused')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingKeywordRuleId(rule.id);
+                                setEditRuleKeywords(rule.keywords.join(', '));
+                                setEditRuleReplyBn(rule.replyBn || '');
+                                setEditRuleReplyEn(rule.replyEn || '');
+                              }}
+                              title={at('রুল এডিট করুন', 'Edit Rule')}
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-300 cursor-pointer"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const filtered = (settings.aiKeywordRules || []).filter((r) => r.id !== rule.id);
+                                updateSettings({ aiKeywordRules: filtered });
+                                if (editingKeywordRuleId === rule.id) setEditingKeywordRuleId(null);
+                                addToast('info', at('কীওয়ার্ড রুল ডিলিট হয়েছে', 'Keyword Rule Deleted'), '');
+                              }}
+                              title={at('রুল ডিলিট করুন', 'Delete Rule')}
+                              className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -9671,58 +10311,72 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
 
-                {selectedReviewIds.length > 0 && (
-                  <div className="p-3 rounded-2xl bg-slate-900 border border-emerald-500/40 flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <span className="font-black text-emerald-300">
-                      {at(`${selectedReviewIds.length}টি রিভিউ সিলেক্ট করা হয়েছে`, `${selectedReviewIds.length} review(s) selected`)}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          bulkUpdateReviews(selectedReviewIds, { isApproved: true });
-                          setSelectedReviewIds([]);
-                        }}
-                        className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
-                      >
-                        {at('সব অ্যাপ্রুভ', 'Approve All')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          bulkUpdateReviews(selectedReviewIds, { isApproved: false });
-                          setSelectedReviewIds([]);
-                        }}
-                        className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold cursor-pointer"
-                      >
-                        {at('হাইড করুন', 'Hide Selected')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          bulkUpdateReviews(selectedReviewIds, { verifiedPurchase: true });
-                          setSelectedReviewIds([]);
-                        }}
-                        className="px-2.5 py-1.5 rounded-lg bg-sky-700 hover:bg-sky-600 text-white font-bold cursor-pointer"
-                      >
-                        {at('ভেরিফাইড চিহ্নিত', 'Mark Verified')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          bulkDeleteReviews(selectedReviewIds);
-                          setSelectedReviewIds([]);
-                        }}
-                        className="px-2.5 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-600 text-white font-bold cursor-pointer flex items-center gap-1"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>{at('বাল্ক ডিলিট', 'Bulk Delete')}</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <BulkSectionShell
+                  indexCode="BULK // REVIEWS"
+                  title={at('কাস্টমার রিভিউ ও রেটিং বাল্ক মডারেশন', 'Customer Reviews Bulk Moderation')}
+                  subtitle={at('রিভিউ সিলেক্ট করে একসাথে অ্যাপ্রুভ, হাইড, ভেরিফাইড বা ডিলিট করুন', 'Filter, select and batch approve, hide, mark verified, or delete product reviews')}
+                  totalCount={visibleReviews.length}
+                  selectedCount={selectedReviewIds.length}
+                  accent="violet"
+                >
+                  <BulkCommandBar
+                    selectedCount={selectedReviewIds.length}
+                    totalCount={visibleReviews.length}
+                    allSelected={allVisibleSelected}
+                    onToggleSelectAll={() =>
+                      setSelectedReviewIds(allVisibleSelected ? [] : visibleReviews.map((r) => r.id))
+                    }
+                    onClearSelection={() => setSelectedReviewIds([])}
+                    itemLabel="reviews"
+                  >
+                    <button
+                      type="button"
+                      disabled={selectedReviewIds.length === 0}
+                      onClick={() => {
+                        bulkUpdateReviews(selectedReviewIds, { isApproved: true });
+                        setSelectedReviewIds([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      {at('সব অ্যাপ্রুভ', 'Approve All')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedReviewIds.length === 0}
+                      onClick={() => {
+                        bulkUpdateReviews(selectedReviewIds, { isApproved: false });
+                        setSelectedReviewIds([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 border border-slate-700 text-slate-200 font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      {at('হাইড করুন', 'Hide Selected')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedReviewIds.length === 0}
+                      onClick={() => {
+                        bulkUpdateReviews(selectedReviewIds, { verifiedPurchase: true });
+                        setSelectedReviewIds([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded bg-sky-700 hover:bg-sky-600 disabled:opacity-40 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      {at('ভেরিফাইড চিহ্নিত', 'Mark Verified')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedReviewIds.length === 0}
+                      onClick={() => {
+                        bulkDeleteReviews(selectedReviewIds);
+                        setSelectedReviewIds([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded bg-rose-700 hover:bg-rose-600 disabled:opacity-40 text-white font-bold text-xs inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{at('বাল্ক ডিলিট', 'Bulk Delete')}</span>
+                    </button>
+                  </BulkCommandBar>
 
-                <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-sm">
+                <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-sm">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs text-slate-300">
                       <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
@@ -9852,6 +10506,7 @@ export const AdminDashboard: React.FC = () => {
                     </table>
                   </div>
                 </div>
+                </BulkSectionShell>
               </div>
             );
           })()}
@@ -9893,7 +10548,8 @@ export const AdminDashboard: React.FC = () => {
                         <th className="py-3 px-4">{at('ফোন ও ইমেইল', 'Phone & Email')}</th>
                         <th className="py-3 px-4">{at('লয়্যালটি পয়েন্ট (Edit/Del)', 'Loyalty Points')}</th>
                         <th className="py-3 px-4">{at('বর্তমান ব্যালেন্স', 'Wallet Balance')}</th>
-                        <th className="py-3 px-4 text-right">{at('ব্যালেন্স কমান / বাড়ান', 'Wallet +/-')}</th>
+                        <th className="py-3 px-4">{at('ব্যালেন্স +/-', 'Wallet +/-')}</th>
+                        <th className="py-3 px-4 text-right">{at('একাউন্ট এডিট/ডিলিট', 'Account')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800 tabular-nums">
@@ -9993,7 +10649,7 @@ export const AdminDashboard: React.FC = () => {
                                 ৳{(acc.walletBalance || 0).toLocaleString()}
                               </td>
                               <td className="py-3 px-4">
-                                <div className="flex items-center justify-end gap-1.5">
+                                <div className="flex items-center gap-1.5">
                                   <input
                                     type="number"
                                     min={1}
@@ -10004,21 +10660,44 @@ export const AdminDashboard: React.FC = () => {
                                         [targetKey]: Math.max(1, Number(e.target.value))
                                       }))
                                     }
-                                    className="w-20 px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs text-center"
+                                    className="w-16 px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs text-center"
                                   />
                                   <button
                                     type="button"
                                     onClick={() => adjustSpecificCustomerBalance(targetKey, -Math.abs(stepAmt), 'Admin Decreased')}
-                                    className="px-2.5 py-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-700 text-rose-200 font-black text-xs cursor-pointer"
+                                    className="px-2 py-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-700 text-rose-200 font-black text-xs cursor-pointer whitespace-nowrap"
                                   >
-                                    - ৳{stepAmt}
+                                    -৳{stepAmt}
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => adjustSpecificCustomerBalance(targetKey, Math.abs(stepAmt), 'Admin Increased')}
-                                    className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs cursor-pointer"
+                                    className="px-2 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs cursor-pointer whitespace-nowrap"
                                   >
-                                    + ৳{stepAmt}
+                                    +৳{stepAmt}
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 text-right whitespace-nowrap">
+                                <div className="inline-flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingCustomerOriginalKey(targetKey);
+                                      setEditingCustomerAccount({ ...acc });
+                                    }}
+                                    title={at('কাস্টমার প্রোফাইল এডিট', 'Edit Customer Profile')}
+                                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 cursor-pointer"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteCustomerAccountByAdmin(targetKey)}
+                                    title={at('কাস্টমার অ্যাকাউন্ট মুছুন', 'Delete Customer Account')}
+                                    className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               </td>
@@ -10027,7 +10706,7 @@ export const AdminDashboard: React.FC = () => {
                         })}
                       {customerAccounts.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="py-6 text-center text-slate-500">
+                          <td colSpan={6} className="py-6 text-center text-slate-500">
                             {at('এখনও কোনো নিবন্ধিত কাস্টমার নেই।', 'No registered customers yet.')}
                           </td>
                         </tr>
@@ -11370,34 +12049,81 @@ export const AdminDashboard: React.FC = () => {
 
                 {/* Editable Home Storefront USP Feature Strip */}
                 <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <h4 className="font-bold text-white text-sm flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-emerald-400" />
-                      <span>{at('হোম স্টোরফ্রন্ট ফিচার স্ট্রিপ (৪টি USP কার্ড)', 'Editable Home USP Feature Strip')}</span>
+                      <span>{at('হোম স্টোরফ্রন্ট ফিচার স্ট্রিপ (USP কার্ডসমূহ)', 'Editable Home USP Feature Strip')}</span>
                     </h4>
-                    <label className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={settings.organicMarketing?.homeFeatureStrip?.enabled ?? true}
-                        onChange={(e) =>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentItems = settings.organicMarketing?.homeFeatureStrip?.items || [];
+                          const nextItem = {
+                            id: `usp-${Date.now()}`,
+                            titleBn: 'নতুন সুবিধা',
+                            titleEn: 'New Feature',
+                            subBn: '১০০% আসল পণ্য',
+                            subEn: '100% Authentic'
+                          };
                           updateSettings({
                             organicMarketing: {
                               ...settings.organicMarketing!,
                               homeFeatureStrip: {
                                 ...settings.organicMarketing!.homeFeatureStrip,
-                                enabled: e.target.checked
+                                items: [...currentItems, nextItem]
                               }
                             }
-                          })
-                        }
-                        className="w-4 h-4 rounded text-emerald-600"
-                      />
-                      <span>{at('চালু রাখুন', 'Show on Home')}</span>
-                    </label>
+                          });
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>{at('নতুন USP যোগ', 'Add USP Card')}</span>
+                      </button>
+                      <label className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={settings.organicMarketing?.homeFeatureStrip?.enabled ?? true}
+                          onChange={(e) =>
+                            updateSettings({
+                              organicMarketing: {
+                                ...settings.organicMarketing!,
+                                homeFeatureStrip: {
+                                  ...settings.organicMarketing!.homeFeatureStrip,
+                                  enabled: e.target.checked
+                                }
+                              }
+                            })
+                          }
+                          className="w-4 h-4 rounded text-emerald-600"
+                        />
+                        <span>{at('চালু রাখুন', 'Show on Home')}</span>
+                      </label>
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                     {(settings.organicMarketing?.homeFeatureStrip?.items || []).map((item, idx) => (
                       <div key={item.id || idx} className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between text-[10px] text-slate-400">
+                          <span className="font-mono uppercase font-bold">USP #{idx + 1}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = (settings.organicMarketing?.homeFeatureStrip?.items || []).filter((_, i) => i !== idx);
+                              updateSettings({
+                                organicMarketing: {
+                                  ...settings.organicMarketing!,
+                                  homeFeatureStrip: { ...settings.organicMarketing!.homeFeatureStrip, items: next }
+                                }
+                              });
+                            }}
+                            title={at('USP কার্ড মুছুন', 'Delete USP Card')}
+                            className="p-1 rounded bg-rose-950/70 hover:bg-rose-900 text-rose-300 cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
                         <div className="grid grid-cols-2 gap-2">
                           <input
                             type="text"
@@ -13469,19 +14195,65 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                             {at('কোনো ব্লকড নাম্বার নেই', 'No phone numbers blacklisted yet.')}
                           </span>
                         ) : (
-                          (sec.blockedPhones || []).map((bp) => (
+                          (sec.blockedPhones || []).map((bp, bpIdx) => (
                             <span
-                              key={bp}
+                              key={`${bp}-${bpIdx}`}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-200 font-mono text-[11px]"
                             >
-                              <span>{bp}</span>
-                              <button
-                                type="button"
-                                onClick={() => updateSec({ blockedPhones: (sec.blockedPhones || []).filter((x) => x !== bp) })}
-                                className="text-rose-400 hover:text-white cursor-pointer"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
+                              {editingBlockedPhoneIdx === bpIdx ? (
+                                <>
+                                  <input
+                                    type="tel"
+                                    value={editingBlockedPhoneVal}
+                                    onChange={(e) => setEditingBlockedPhoneVal(e.target.value)}
+                                    className="w-28 px-1.5 py-0.5 bg-slate-950 border border-rose-500 rounded text-white font-mono text-[11px]"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const clean = editingBlockedPhoneVal.replace(/[^0-9]/g, '').slice(-11);
+                                      if (clean.length < 10) return;
+                                      const updated = (sec.blockedPhones || []).map((item, i) => (i === bpIdx ? clean : item));
+                                      updateSec({ blockedPhones: Array.from(new Set(updated)) });
+                                      setEditingBlockedPhoneIdx(null);
+                                      addToast('success', at('ব্লকড নাম্বার আপডেট হয়েছে', 'Phone Updated'), clean);
+                                    }}
+                                    className="text-emerald-300 hover:text-white cursor-pointer"
+                                  >
+                                    <Check className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingBlockedPhoneIdx(null)}
+                                    className="text-slate-300 hover:text-white cursor-pointer"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <span>{bp}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingBlockedPhoneIdx(bpIdx);
+                                      setEditingBlockedPhoneVal(bp);
+                                    }}
+                                    title={at('নাম্বার এডিট', 'Edit Blocked Phone')}
+                                    className="text-sky-300 hover:text-white cursor-pointer"
+                                  >
+                                    <Edit className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateSec({ blockedPhones: (sec.blockedPhones || []).filter((_, i) => i !== bpIdx) })}
+                                    title={at('আনব্লক/ডিলিট', 'Remove Phone')}
+                                    className="text-rose-400 hover:text-white cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </>
+                              )}
                             </span>
                           ))
                         )}
@@ -13663,42 +14435,15 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                   </div>
                 </div>
 
-                {/* Resize Tool + Bulk Selection Toolbar */}
-                <div className="p-4 sm:p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleToggleSelectAll}
-                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                      >
-                        {allFilteredSelected ? (
-                          <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
-                        ) : (
-                          <Square className="w-3.5 h-3.5 text-slate-400" />
-                        )}
-                        <span>
-                          {allFilteredSelected
-                            ? at('সিলেকশন বাতিল', 'Deselect All')
-                            : at(`সব সিলেক্ট (${filteredMedia.length})`, `Select All (${filteredMedia.length})`)}
-                        </span>
-                      </button>
-
-                      <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono text-emerald-400">
-                        {at(`সিলেক্টেড: ${selectedMediaIds.length}টি`, `Selected: ${selectedMediaIds.length}`)}
-                      </span>
-
-                      <button
-                        type="button"
-                        disabled={selectedMediaIds.length === 0}
-                        onClick={handleBulkDelete}
-                        className="px-3 py-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 disabled:opacity-40 disabled:cursor-not-allowed border border-rose-700 text-rose-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>{at(`সিলেক্টেড মুছুন (${selectedMediaIds.length})`, `Bulk Delete (${selectedMediaIds.length})`)}</span>
-                      </button>
-                    </div>
-
+                {/* Resize Tool + Bulk Selection Toolbar inside BulkSectionShell */}
+                <BulkSectionShell
+                  indexCode="BULK // MEDIA"
+                  title={at('মিডিয়া ও গ্যালারি বাল্ক কমান্ড', 'Media & Gallery Bulk Studio')}
+                  subtitle={at('ছবি সিলেক্ট করে একসাথে রিসাইজ বা বাল্ক ডিলিট করুন', 'Batch select store assets, run live canvas resizing, or bulk delete')}
+                  totalCount={filteredMedia.length}
+                  selectedCount={selectedMediaIds.length}
+                  accent="indigo"
+                  headerActions={
                     <div className="relative min-w-[200px]">
                       <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input
@@ -13706,13 +14451,46 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                         value={mediaSearch}
                         onChange={(e) => setMediaSearch(e.target.value)}
                         placeholder={at('ছবির নাম খুঁজুন...', 'Search media name...')}
-                        className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                        className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white"
                       />
                     </div>
-                  </div>
+                  }
+                >
+                  <BulkCommandBar
+                    selectedCount={selectedMediaIds.length}
+                    totalCount={filteredMedia.length}
+                    allSelected={allFilteredSelected}
+                    onToggleSelectAll={handleToggleSelectAll}
+                    onClearSelection={() => setSelectedMediaIds([])}
+                    itemLabel="media"
+                  >
+                    <button
+                      type="button"
+                      disabled={selectedMediaIds.length === 0 || isResizingMedia}
+                      onClick={() => handleResizeAction(selectedMediaIds)}
+                      className="px-3 py-1.5 rounded bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-slate-950 font-black text-xs inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                      <span>
+                        {isResizingMedia
+                          ? at('রিসাইজ হচ্ছে...', 'Resizing...')
+                          : at(`রিসাইজ (${resizeWidth}×${resizeHeight})`, `Resize (${resizeWidth}×${resizeHeight})`)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedMediaIds.length === 0}
+                      onClick={handleBulkDelete}
+                      className="px-3 py-1.5 rounded bg-rose-700 hover:bg-rose-600 disabled:opacity-40 text-white font-bold text-xs inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{at('বাল্ক ডিলিট', 'Bulk Delete')}</span>
+                    </button>
+                  </BulkCommandBar>
 
+                  <div className="mb-4 space-y-4">
                   {/* Interactive Image Resizer Controls */}
-                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-xs font-black text-white flex items-center gap-1.5">
                         <Maximize2 className="w-4 h-4 text-amber-400" />
@@ -13733,10 +14511,10 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                               setResizeWidth(pre.w);
                               setResizeHeight(pre.h);
                             }}
-                            className={`px-2 py-1 rounded-lg border cursor-pointer ${
+                            className={`px-2 py-1 rounded border cursor-pointer ${
                               resizeWidth === pre.w && resizeHeight === pre.h
                                 ? 'bg-emerald-600 text-white border-emerald-500'
-                                : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-slate-500'
+                                : 'bg-slate-950 text-slate-300 border-slate-700 hover:border-slate-500'
                             }`}
                           >
                             {pre.label}
@@ -13754,7 +14532,7 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                           max={2400}
                           value={resizeWidth}
                           onChange={(e) => setResizeWidth(Number(e.target.value) || 600)}
-                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-white font-mono"
                         />
                       </div>
                       <div>
@@ -13766,7 +14544,7 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                           disabled={resizeKeepAspect}
                           value={resizeHeight}
                           onChange={(e) => setResizeHeight(Number(e.target.value) || 600)}
-                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono disabled:opacity-50"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-white font-mono disabled:opacity-50"
                         />
                       </div>
                       <div>
@@ -13793,7 +14571,7 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                         type="button"
                         disabled={selectedMediaIds.length === 0 || isResizingMedia}
                         onClick={() => handleResizeAction(selectedMediaIds)}
-                        className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="px-3.5 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <Maximize2 className="w-3.5 h-3.5" />
                         <span>
@@ -13805,17 +14583,17 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                     </div>
                   </div>
 
-                  {/* Source Filter Pills */}
+                  {/* Source Filter Buttons */}
                   <div className="flex flex-wrap gap-1.5 text-[11px] font-bold">
                     {(['all', 'product', 'slider', 'logo', 'category', 'seo', 'upload'] as const).map((src) => (
                       <button
                         key={src}
                         type="button"
                         onClick={() => setMediaSourceFilter(src)}
-                        className={`px-3 py-1 rounded-full border cursor-pointer ${
+                        className={`px-3 py-1 rounded border cursor-pointer ${
                           mediaSourceFilter === src
                             ? 'bg-emerald-600 text-white border-emerald-500'
-                            : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
                         }`}
                       >
                         {src === 'all'
@@ -13906,6 +14684,7 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                     })}
                   </div>
                 )}
+                </BulkSectionShell>
               </div>
             );
           })()}
@@ -14208,107 +14987,124 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                   };
 
                   return (
-                <div className="p-5 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-4">
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                    <div>
-                      <h4 className="font-black text-sm text-white flex items-center gap-2">
-                        <Users className="w-4 h-4 text-emerald-400" />
-                        <span>{at('কাস্টমার ওয়াইজ ওয়ালেট ব্যালেন্স (+/-) ও ৩০-দিন মেয়াদ কন্ট্রোল', 'Customer-Wise Wallet Balance (+/-) & 30-Day Inactivity Control')}</span>
-                      </h4>
-                      <p className="text-[11px] text-slate-400">
-                        {at(
-                          'প্রতিটি কাস্টমারের ব্যালেন্স বাড়ান/কমান, বাল্ক অ্যাকশন নিন, লেজার দেখুন এবং CSV এক্সপোর্ট করুন',
-                          'Adjust balance per customer or in bulk, inspect ledger/orders, send WhatsApp reminder, or export CSV'
-                        )}
-                      </p>
-                    </div>
+                <BulkSectionShell
+                  indexCode="BULK // WALLETS"
+                  title={at('কাস্টমার ওয়ালেট বাল্ক কন্ট্রোল ও ৩০-দিন মেয়াদ', 'Customer-Wise Wallet Bulk Control')}
+                  subtitle={at('সিলেক্ট করে একসাথে ব্যালেন্স যোগ/বিয়োগ, ৩০-দিন মেয়াদ রিসেট ও CSV এক্সপোর্ট করুন', 'Adjust customer wallet balances in bulk, reset 30-day expiry, inspect ledgers or export CSV')}
+                  totalCount={filteredWalletCustomers.length}
+                  selectedCount={selectedWalletPhones.length}
+                  accent="emerald"
+                  headerActions={
                     <div className="flex flex-wrap items-center gap-2">
-                      <div className="relative w-full sm:w-56">
+                      <div className="relative w-full sm:w-52">
                         <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
                         <input
                           type="text"
                           value={customerSearch}
                           onChange={(e) => setCustomerSearch(e.target.value)}
                           placeholder={at('নাম বা ফোন খুঁজুন...', 'Search name or phone...')}
-                          className="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
+                          className="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white"
                         />
                       </div>
                       <button
                         type="button"
                         onClick={handleExportWalletCsv}
-                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-300 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-300 text-xs font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
                       >
                         <Download className="w-3.5 h-3.5" />
                         <span>CSV</span>
                       </button>
                     </div>
-                  </div>
+                  }
+                >
+                  <BulkCommandBar
+                    selectedCount={selectedWalletPhones.length}
+                    totalCount={filteredWalletCustomers.length}
+                    allSelected={
+                      filteredWalletCustomers.length > 0 &&
+                      filteredWalletCustomers.every((c, idx) =>
+                        selectedWalletPhones.includes(c.phone || c.email || c.username || String(idx))
+                      )
+                    }
+                    onToggleSelectAll={() => {
+                      const allSel =
+                        filteredWalletCustomers.length > 0 &&
+                        filteredWalletCustomers.every((c, idx) =>
+                          selectedWalletPhones.includes(c.phone || c.email || c.username || String(idx))
+                        );
+                      if (allSel) {
+                        setSelectedWalletPhones([]);
+                      } else {
+                        setSelectedWalletPhones(
+                          filteredWalletCustomers.map((c, idx) => c.phone || c.email || c.username || String(idx))
+                        );
+                      }
+                    }}
+                    onClearSelection={() => setSelectedWalletPhones([])}
+                    itemLabel="wallets"
+                  >
+                    <input
+                      type="number"
+                      min={1}
+                      value={walletBulkStep}
+                      onChange={(e) => setWalletBulkStep(Math.max(1, Number(e.target.value)))}
+                      className="w-16 px-2 py-1 bg-slate-950 border border-slate-700 rounded text-white font-mono text-xs text-center"
+                    />
+                    <button
+                      type="button"
+                      disabled={selectedWalletPhones.length === 0}
+                      onClick={() => {
+                        selectedWalletPhones.forEach((ph) => adjustSpecificCustomerBalance(ph, walletBulkStep, 'Admin Bulk Bonus'));
+                        setSelectedWalletPhones([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      +৳{walletBulkStep}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedWalletPhones.length === 0}
+                      onClick={() => {
+                        selectedWalletPhones.forEach((ph) => adjustSpecificCustomerBalance(ph, -walletBulkStep, 'Admin Bulk Deduction'));
+                        setSelectedWalletPhones([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded bg-rose-700 hover:bg-rose-600 disabled:opacity-40 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      -৳{walletBulkStep}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedWalletPhones.length === 0}
+                      onClick={() => {
+                        selectedWalletPhones.forEach((ph) => resetCustomerWalletExpiry(ph, false));
+                        setSelectedWalletPhones([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      Reset 30d
+                    </button>
+                  </BulkCommandBar>
 
-                  {/* Filter Pills & Bulk Toolbar */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {([
-                        { id: 'all', bn: 'সকল কাস্টমার', en: 'All Customers' },
-                        { id: 'has_balance', bn: 'ব্যালেন্স আছে (>৳0)', en: 'Has Balance (>৳0)' },
-                        { id: 'expiring_soon', bn: 'মেয়াদ শেষ হচ্ছে (<=5d)', en: 'Expiring <=5d' }
-                      ] as const).map((pill) => (
-                        <button
-                          key={pill.id}
-                          type="button"
-                          onClick={() => setWalletCustomerFilter(pill.id)}
-                          className={`px-3 py-1 rounded-lg border cursor-pointer ${
-                            walletCustomerFilter === pill.id
-                              ? 'bg-emerald-600 border-emerald-500 text-white'
-                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          {at(pill.bn, pill.en)}
-                        </button>
-                      ))}
-                    </div>
-
-                    {selectedWalletPhones.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-950/40 border border-emerald-600/40">
-                        <span className="text-emerald-300 font-mono">{selectedWalletPhones.length} selected</span>
-                        <input
-                          type="number"
-                          min={1}
-                          value={walletBulkStep}
-                          onChange={(e) => setWalletBulkStep(Math.max(1, Number(e.target.value)))}
-                          className="w-16 px-2 py-0.5 bg-slate-950 border border-slate-700 rounded text-white font-mono text-center"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            selectedWalletPhones.forEach((ph) => adjustSpecificCustomerBalance(ph, walletBulkStep, 'Admin Bulk Bonus'));
-                            setSelectedWalletPhones([]);
-                          }}
-                          className="px-2 py-0.5 rounded bg-emerald-600 text-white cursor-pointer"
-                        >
-                          +৳{walletBulkStep}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            selectedWalletPhones.forEach((ph) => adjustSpecificCustomerBalance(ph, -walletBulkStep, 'Admin Bulk Deduction'));
-                            setSelectedWalletPhones([]);
-                          }}
-                          className="px-2 py-0.5 rounded bg-rose-600 text-white cursor-pointer"
-                        >
-                          -৳{walletBulkStep}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            selectedWalletPhones.forEach((ph) => resetCustomerWalletExpiry(ph, false));
-                            setSelectedWalletPhones([]);
-                          }}
-                          className="px-2 py-0.5 rounded bg-sky-600 text-white cursor-pointer"
-                        >
-                          Reset 30d
-                        </button>
-                      </div>
-                    )}
+                  {/* Filter Buttons */}
+                  <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
+                    {([
+                      { id: 'all', bn: 'সকল কাস্টমার', en: 'All Customers' },
+                      { id: 'has_balance', bn: 'ব্যালেন্স আছে (>৳0)', en: 'Has Balance (>৳0)' },
+                      { id: 'expiring_soon', bn: 'মেয়াদ শেষ হচ্ছে (<=5d)', en: 'Expiring <=5d' }
+                    ] as const).map((pill) => (
+                      <button
+                        key={pill.id}
+                        type="button"
+                        onClick={() => setWalletCustomerFilter(pill.id)}
+                        className={`px-3 py-1 rounded border cursor-pointer ${
+                          walletCustomerFilter === pill.id
+                            ? 'bg-emerald-600 border-emerald-500 text-white'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {at(pill.bn, pill.en)}
+                      </button>
+                    ))}
                   </div>
 
                   <div className="overflow-x-auto rounded-xl border border-slate-800">
@@ -14516,86 +15312,88 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                       </div>
                     </div>
                   )}
-                </div>
+                </BulkSectionShell>
                   );
                 })()}
 
-                {/* Top-Up Requests Queue */}
-                <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden">
-                  <div className="px-5 py-3.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-slate-950/60">
-                    <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={filteredTopUps.length > 0 && filteredTopUps.every((r) => selectedTopUpIds.includes(r.id))}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedTopUpIds(filteredTopUps.map((r) => r.id));
-                            } else {
-                              setSelectedTopUpIds([]);
-                            }
-                          }}
-                          className="w-4 h-4 rounded text-emerald-600 bg-slate-900 border-slate-700"
-                        />
-                        <span className="font-bold">{at('সব', 'All')}</span>
-                      </label>
-                      <h4 className="text-sm font-black text-white">
-                        {at(`কাস্টমার অ্যাড ব্যালেন্স রিকোয়েস্ট (${walletTopUps.length})`, `Customer Add Balance Requests (${walletTopUps.length})`)}
-                      </h4>
-                    </div>
+                {/* Top-Up Requests Queue inside BulkSectionShell */}
+                <BulkSectionShell
+                  indexCode="BULK // TOP-UPS"
+                  title={at('কাস্টমার অ্যাড ব্যালেন্স রিকোয়েস্ট (MFS)', 'MFS Wallet Top-Up Bulk Queue')}
+                  subtitle={at('bKash / Nagad / Rocket / Upay রিকোয়েস্ট বাল্ক অনুমোদন, বাতিল বা ডিলিট করুন', 'Select requests to batch approve, reject, edit, inspect activity or delete')}
+                  totalCount={filteredTopUps.length}
+                  selectedCount={selectedTopUpIds.length}
+                  accent="amber"
+                  headerActions={
                     <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
-                      {selectedTopUpIds.length > 0 && (
-                        <div className="flex items-center gap-1.5 mr-2 px-2 py-1 rounded-xl bg-slate-900 border border-emerald-500/40">
-                          <span className="text-emerald-300 font-mono">{selectedTopUpIds.length} selected</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              bulkActionWalletTopUps(selectedTopUpIds, 'approve');
-                              setSelectedTopUpIds([]);
-                            }}
-                            className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
-                          >
-                            {at('বাল্ক অনুমোদন', 'Approve')}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              bulkActionWalletTopUps(selectedTopUpIds, 'reject');
-                              setSelectedTopUpIds([]);
-                            }}
-                            className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white cursor-pointer"
-                          >
-                            {at('বাল্ক বাতিল', 'Reject')}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              bulkActionWalletTopUps(selectedTopUpIds, 'delete');
-                              setSelectedTopUpIds([]);
-                            }}
-                            className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
-                          >
-                            {at('বাল্ক ডিলিট', 'Delete')}
-                          </button>
-                        </div>
-                      )}
                       {(['all', 'pending', 'approved', 'rejected'] as const).map((st) => (
                         <button
                           key={st}
                           type="button"
                           onClick={() => setWalletStatusFilter(st)}
-                          className={`px-2.5 py-1 rounded-lg border cursor-pointer ${
+                          className={`px-2.5 py-1 rounded border cursor-pointer ${
                             walletStatusFilter === st
                               ? 'bg-emerald-600 text-white border-emerald-500'
-                              : 'bg-slate-950 text-slate-400 border-slate-800'
+                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
                           }`}
                         >
                           {st.toUpperCase()}
                         </button>
                       ))}
                     </div>
-                  </div>
+                  }
+                >
+                  <BulkCommandBar
+                    selectedCount={selectedTopUpIds.length}
+                    totalCount={filteredTopUps.length}
+                    allSelected={filteredTopUps.length > 0 && filteredTopUps.every((r) => selectedTopUpIds.includes(r.id))}
+                    onToggleSelectAll={() => {
+                      if (filteredTopUps.length > 0 && filteredTopUps.every((r) => selectedTopUpIds.includes(r.id))) {
+                        setSelectedTopUpIds([]);
+                      } else {
+                        setSelectedTopUpIds(filteredTopUps.map((r) => r.id));
+                      }
+                    }}
+                    onClearSelection={() => setSelectedTopUpIds([])}
+                    itemLabel="requests"
+                  >
+                    <button
+                      type="button"
+                      disabled={selectedTopUpIds.length === 0}
+                      onClick={() => {
+                        bulkActionWalletTopUps(selectedTopUpIds, 'approve');
+                        setSelectedTopUpIds([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      {at('বাল্ক অনুমোদন', 'Bulk Approve')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedTopUpIds.length === 0}
+                      onClick={() => {
+                        bulkActionWalletTopUps(selectedTopUpIds, 'reject');
+                        setSelectedTopUpIds([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      {at('বাল্ক বাতিল', 'Bulk Reject')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedTopUpIds.length === 0}
+                      onClick={() => {
+                        bulkActionWalletTopUps(selectedTopUpIds, 'delete');
+                        setSelectedTopUpIds([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded bg-rose-700 hover:bg-rose-600 disabled:opacity-40 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed inline-flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{at('বাল্ক ডিলিট', 'Bulk Delete')}</span>
+                    </button>
+                  </BulkCommandBar>
 
+                  <div className="rounded-xl bg-slate-900 border border-slate-800 overflow-hidden">
                   {filteredTopUps.length === 0 ? (
                     <div className="p-8 text-center text-xs text-slate-500">
                       {at('কোনো ব্যালেন্স রিকোয়েস্ট নেই', 'No top-up requests match this filter')}
@@ -14692,7 +15490,8 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                       ))}
                     </div>
                   )}
-                </div>
+                  </div>
+                </BulkSectionShell>
               </div>
             );
           })()}
@@ -17121,6 +17920,117 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
           </div>
         </div>
       )}
+      {/* EDIT REGISTERED CUSTOMER ACCOUNT MODAL */}
+      {editingCustomerAccount && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <button
+              type="button"
+              onClick={() => setEditingCustomerAccount(null)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h3 className="text-base font-black text-white">
+              {at('কাস্টমার প্রোফাইল এডিট করুন', 'Edit Customer Account')}
+            </h3>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                updateCustomerAccountByAdmin(editingCustomerOriginalKey, {
+                  name: editingCustomerAccount.name,
+                  phone: editingCustomerAccount.phone,
+                  email: editingCustomerAccount.email,
+                  district: editingCustomerAccount.district,
+                  address: editingCustomerAccount.address,
+                  walletBalance: Number(editingCustomerAccount.walletBalance) || 0,
+                  loyaltyPoints: Number(editingCustomerAccount.loyaltyPoints) || 0
+                });
+                setEditingCustomerAccount(null);
+              }}
+              className="space-y-3 text-xs"
+            >
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">{at('নাম', 'Full Name')}</label>
+                <input
+                  type="text"
+                  required
+                  value={editingCustomerAccount.name}
+                  onChange={(e) => setEditingCustomerAccount({ ...editingCustomerAccount, name: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('মোবাইল', 'Phone')}</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingCustomerAccount.phone}
+                    onChange={(e) => setEditingCustomerAccount({ ...editingCustomerAccount, phone: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-emerald-400 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('ইমেইল', 'Email')}</label>
+                  <input
+                    type="email"
+                    value={editingCustomerAccount.email}
+                    onChange={(e) => setEditingCustomerAccount({ ...editingCustomerAccount, email: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('জেলা', 'District')}</label>
+                  <input
+                    type="text"
+                    value={editingCustomerAccount.district}
+                    onChange={(e) => setEditingCustomerAccount({ ...editingCustomerAccount, district: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('ঠিকানা', 'Address')}</label>
+                  <input
+                    type="text"
+                    value={editingCustomerAccount.address}
+                    onChange={(e) => setEditingCustomerAccount({ ...editingCustomerAccount, address: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('ওয়ালেট (৳)', 'Wallet Balance (৳)')}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editingCustomerAccount.walletBalance}
+                    onChange={(e) => setEditingCustomerAccount({ ...editingCustomerAccount, walletBalance: Math.max(0, Number(e.target.value) || 0) })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-emerald-400 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('লয়্যালটি পয়েন্ট', 'Loyalty Points')}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editingCustomerAccount.loyaltyPoints}
+                    onChange={(e) => setEditingCustomerAccount({ ...editingCustomerAccount, loyaltyPoints: Math.max(0, Number(e.target.value) || 0) })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-amber-400 font-mono"
+                  />
+                </div>
+              </div>
+              <button type="submit" className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl cursor-pointer">
+                {at('কাস্টমার আপডেট সেভ করুন', 'Save Customer Account')}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* INVOICE / SHIPPING LABEL / 80MM RECEIPT PRINT MODAL */}
       {printOrdersList && printOrdersList.length > 0 && (
         <InvoicePrintModal

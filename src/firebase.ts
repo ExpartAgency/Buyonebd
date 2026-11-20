@@ -752,6 +752,17 @@ export async function saveCustomerToFirestore(customer: CustomerProfile): Promis
   }
 }
 
+export async function deleteCustomerFromFirestore(customer: Pick<CustomerProfile, 'phone' | 'email' | 'username'>): Promise<void> {
+  if (!auth.currentUser) return;
+  const cleanId = getCustomerFirestoreId(customer as CustomerProfile);
+  const path = `customers/${cleanId}`;
+  try {
+    await deleteDoc(doc(db, 'customers', cleanId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
 export async function fetchCustomersFromFirestore(): Promise<CustomerProfile[]> {
   if (!auth.currentUser) return [];
   const path = 'customers';
@@ -1026,6 +1037,16 @@ export async function savePriceAlertToFirestore(alert: PriceAlert): Promise<void
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deletePriceAlertFromFirestore(alertId: string): Promise<void> {
+  if (!auth.currentUser) return;
+  const cleanId = sanitizeFirestoreId(alertId, 'alert');
+  try {
+    await deleteDoc(doc(db, 'price_alerts', cleanId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `price_alerts/${cleanId}`);
   }
 }
 
@@ -1399,6 +1420,46 @@ export async function saveWholesaleQuoteToFirestore(quote: WholesaleQuoteRequest
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteResellerFromFirestore(resellerId: string): Promise<void> {
+  if (!auth.currentUser) return;
+  const cleanId = sanitizeFirestoreId(resellerId, 'res');
+  try {
+    await deleteDoc(doc(db, 'resellers', cleanId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `resellers/${cleanId}`);
+  }
+}
+
+export async function deleteResellerPayoutFromFirestore(payoutId: string): Promise<void> {
+  if (!auth.currentUser) return;
+  const cleanId = sanitizeFirestoreId(payoutId, 'pay');
+  try {
+    await deleteDoc(doc(db, 'reseller_payouts', cleanId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `reseller_payouts/${cleanId}`);
+  }
+}
+
+export async function deleteWholesalerFromFirestore(wholesalerId: string): Promise<void> {
+  if (!auth.currentUser) return;
+  const cleanId = sanitizeFirestoreId(wholesalerId, 'whs');
+  try {
+    await deleteDoc(doc(db, 'wholesalers', cleanId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `wholesalers/${cleanId}`);
+  }
+}
+
+export async function deleteWholesaleQuoteFromFirestore(quoteId: string): Promise<void> {
+  if (!auth.currentUser) return;
+  const cleanId = sanitizeFirestoreId(quoteId, 'qt');
+  try {
+    await deleteDoc(doc(db, 'wholesale_quotes', cleanId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `wholesale_quotes/${cleanId}`);
   }
 }
 

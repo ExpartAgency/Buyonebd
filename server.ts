@@ -2048,6 +2048,72 @@ app.post('/api/partner/update', (req, res) => {
   return res.status(400).json({ success: false, error: 'Invalid partner type.' });
 });
 
+app.post('/api/store/delete-item', (req, res) => {
+  const { type, ids } = req.body || {};
+  const idSet = new Set((Array.isArray(ids) ? ids : []).map((x) => String(x || '').trim()).filter(Boolean));
+  if (!type || idSet.size === 0) {
+    return res.status(400).json({ success: false, error: 'type and ids are required.' });
+  }
+  const current = loadStoreData() || {};
+  const filterList = (list: any[]) =>
+    Array.isArray(list) ? list.filter((item) => item && !idSet.has(String(item.id || ''))) : list;
+
+  if (type === 'reseller') {
+    current.resellers = filterList(current.resellers);
+    saveStoreData(current);
+    broadcastWs({ type: 'partner:sync', resellers: (current.resellers || []).map((r: any) => ({ ...r, password: '' })) });
+    return res.json({ success: true });
+  }
+  if (type === 'wholesaler') {
+    current.wholesalers = filterList(current.wholesalers);
+    saveStoreData(current);
+    broadcastWs({ type: 'partner:sync', wholesalers: (current.wholesalers || []).map((w: any) => ({ ...w, password: '' })) });
+    return res.json({ success: true });
+  }
+  if (type === 'resellerPayout') {
+    current.resellerPayouts = filterList(current.resellerPayouts);
+    saveStoreData(current);
+    return res.json({ success: true });
+  }
+  if (type === 'wholesaleQuote') {
+    current.wholesaleQuotes = filterList(current.wholesaleQuotes);
+    saveStoreData(current);
+    return res.json({ success: true });
+  }
+  if (type === 'bulkSmsLog') {
+    current.bulkSmsLogs = filterList(current.bulkSmsLogs);
+    saveStoreData(current);
+    return res.json({ success: true });
+  }
+  if (type === 'priceAlert') {
+    current.priceAlerts = filterList(current.priceAlerts);
+    saveStoreData(current);
+    return res.json({ success: true });
+  }
+  if (type === 'product') {
+    current.products = filterList(current.products);
+    saveStoreData(current);
+    return res.json({ success: true });
+  }
+  if (type === 'customerAccount') {
+    const cleanKey = (s: string) => String(s || '').trim().toLowerCase();
+    current.customerAccounts = Array.isArray(current.customerAccounts)
+      ? current.customerAccounts.filter((acc: any) => {
+          const phoneDigits = String(acc?.phone || '').replace(/[^0-9]/g, '').slice(-11);
+          return !(
+            idSet.has(cleanKey(acc?.phone)) ||
+            (phoneDigits && idSet.has(phoneDigits)) ||
+            idSet.has(cleanKey(acc?.email)) ||
+            idSet.has(cleanKey(acc?.username))
+          );
+        })
+      : current.customerAccounts;
+    saveStoreData(current);
+    return res.json({ success: true });
+  }
+  return res.status(400).json({ success: false, error: 'Unsupported delete item type.' });
+});
+
 app.post('/api/partner/login', (req, res) => {
   const body = req.body || {};
   const partnerType = body.type || body.role || 'reseller';

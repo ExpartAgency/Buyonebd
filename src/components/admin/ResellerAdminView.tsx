@@ -16,10 +16,13 @@ import {
   Send,
   Copy,
   Check,
-  X
+  X,
+  Edit,
+  Trash2
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
-import { ResellerAccount } from '../../types';
+import { ResellerAccount, ResellerPayoutRequest } from '../../types';
+import { BulkSectionShell, BulkCommandBar } from './BulkSectionShell';
 
 interface ResellerAdminViewProps {
   onOpenWhatsAppDesk?: (phone: string) => void;
@@ -33,9 +36,13 @@ export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhat
     resellers,
     updateResellerAccount,
     bulkUpdateResellers,
+    deleteResellerAccount,
+    bulkDeleteResellers,
     adjustResellerWallet,
     resellerPayouts,
     processResellerPayout,
+    updateResellerPayout,
+    deleteResellerPayout,
     orders,
     sendMetaWhatsAppMessage,
     generateWhatsAppAiDraft,
@@ -49,10 +56,13 @@ export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhat
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'suspended'>('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkCommissionVal, setBulkCommissionVal] = useState<string>('20');
   const [trxInputs, setTrxInputs] = useState<Record<string, string>>({});
   const [walletModalReseller, setWalletModalReseller] = useState<ResellerAccount | null>(null);
   const [walletDelta, setWalletDelta] = useState<number>(200);
   const [walletNote, setWalletNote] = useState('');
+  const [editingReseller, setEditingReseller] = useState<ResellerAccount | null>(null);
+  const [editingPayout, setEditingPayout] = useState<ResellerPayoutRequest | null>(null);
 
   // Inline Quick WhatsApp & AI Support Modal for a Reseller
   const [supportReseller, setSupportReseller] = useState<ResellerAccount | null>(null);
@@ -315,66 +325,111 @@ export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhat
         </div>
       </div>
 
-      {/* Reseller Directory with Filter Tabs, Bulk Actions & WhatsApp AI Support */}
-      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      {/* Reseller Directory with BulkSectionShell, Filter Tabs, Bulk Actions, Edit/Delete & WhatsApp AI Support */}
+      <BulkSectionShell
+        indexCode="BULK // RESELLERS"
+        title={at('নিবন্ধিত রিসেলার ডিরেক্টরি ও বাল্ক অ্যাকশন', 'Registered Resellers & Bulk Network Console')}
+        subtitle={at('সিলেক্ট করে একসাথে অ্যাপ্রুভ, সাসপেন্ড, কমিশন % আপডেট, এডিট বা ডিলিট করুন।', 'Select resellers to bulk approve, suspend, adjust commission %, edit profile, or remove.')}
+        totalCount={filteredResellers.length}
+        selectedCount={selectedIds.length}
+        accent="emerald"
+        headerActions={
           <div className="flex flex-wrap items-center gap-2">
-            <h4 className="text-sm font-bold text-white mr-2">{at('নিবন্ধিত রিসেলার তালিকা', 'Registered Resellers')}</h4>
-            {(['all', 'pending', 'approved', 'suspended'] as const).map((st) => (
-              <button
-                key={st}
-                type="button"
-                onClick={() => setStatusFilter(st)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase cursor-pointer ${
-                  statusFilter === st
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-                }`}
-              >
-                {st} ({st === 'all' ? resellers.length : resellers.filter((r) => r.status === st).length})
-              </button>
-            ))}
-          </div>
-
-          <div className="relative w-full lg:w-64">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={at('নাম, ফোন বা কোড দিয়ে খুঁজুন...', 'Search name, phone, code...')}
-              className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-            />
-          </div>
-        </div>
-
-        {selectedIds.length > 0 && (
-          <div className="p-3 rounded-xl bg-emerald-950/50 border border-emerald-700/60 flex flex-wrap items-center justify-between gap-2 text-xs">
-            <span className="font-bold text-emerald-300">{selectedIds.length} resellers selected</span>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  bulkUpdateResellers(selectedIds, { status: 'approved' });
-                  setSelectedIds([]);
-                }}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
-              >
-                {at('সবাইকে অনুমোদন দিন', 'Approve Selected')}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  bulkUpdateResellers(selectedIds, { status: 'suspended' });
-                  setSelectedIds([]);
-                }}
-                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold cursor-pointer"
-              >
-                {at('স্থগিত করুন', 'Suspend Selected')}
-              </button>
+            <div className="flex flex-wrap items-center gap-1">
+              {(['all', 'pending', 'approved', 'suspended'] as const).map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setStatusFilter(st)}
+                  className={`px-2.5 py-1 rounded text-[11px] font-bold uppercase whitespace-nowrap shrink-0 cursor-pointer ${
+                    statusFilter === st
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  {st} ({st === 'all' ? resellers.length : resellers.filter((r) => r.status === st).length})
+                </button>
+              ))}
+            </div>
+            <div className="relative w-full sm:w-56">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={at('নাম, ফোন বা কোড...', 'Search name, phone, code...')}
+                className="w-full pl-8 pr-3 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+              />
             </div>
           </div>
-        )}
+        }
+      >
+        <BulkCommandBar
+          selectedCount={selectedIds.length}
+          totalCount={filteredResellers.length}
+          allSelected={filteredResellers.length > 0 && filteredResellers.every((r) => selectedIds.includes(r.id))}
+          onToggleSelectAll={toggleSelectAllFiltered}
+          onClearSelection={() => setSelectedIds([])}
+          itemLabel="RESELLERS"
+        >
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              min={1}
+              max={60}
+              value={bulkCommissionVal}
+              onChange={(e) => setBulkCommissionVal(e.target.value)}
+              className="w-14 px-2 py-1 rounded bg-slate-950 border border-slate-700 text-xs font-mono text-white text-center tabular-nums"
+              title={at('কমিশন %', 'Commission %')}
+            />
+            <button
+              type="button"
+              disabled={selectedIds.length === 0}
+              onClick={() => {
+                const pct = Math.max(1, Math.min(60, Number(bulkCommissionVal) || 18));
+                bulkUpdateResellers(selectedIds, { commissionPercent: pct });
+                setSelectedIds([]);
+              }}
+              className="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-40"
+            >
+              {at('কমিশন % সেট', 'Set Comm %')}
+            </button>
+          </div>
+          <button
+            type="button"
+            disabled={selectedIds.length === 0}
+            onClick={() => {
+              bulkUpdateResellers(selectedIds, { status: 'approved' });
+              setSelectedIds([]);
+            }}
+            className="px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-40"
+          >
+            {at('অনুমোদন দিন', 'Approve')}
+          </button>
+          <button
+            type="button"
+            disabled={selectedIds.length === 0}
+            onClick={() => {
+              bulkUpdateResellers(selectedIds, { status: 'suspended' });
+              setSelectedIds([]);
+            }}
+            className="px-2.5 py-1.5 rounded bg-amber-600/90 hover:bg-amber-500 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-40"
+          >
+            {at('স্থগিত করুন', 'Suspend')}
+          </button>
+          <button
+            type="button"
+            disabled={selectedIds.length === 0}
+            onClick={() => {
+              bulkDeleteResellers(selectedIds);
+              setSelectedIds([]);
+            }}
+            className="px-2.5 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-40"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>{at('মুছুন', 'Delete')}</span>
+          </button>
+        </BulkCommandBar>
 
         {filteredResellers.length === 0 ? (
           <p className="text-xs text-slate-400 py-6 text-center">
@@ -403,7 +458,7 @@ export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhat
               </thead>
               <tbody className="divide-y divide-slate-800/80">
                 {filteredResellers.map((r: ResellerAccount) => (
-                  <tr key={r.id} className="hover:bg-slate-950/50">
+                  <tr key={r.id} className={`hover:bg-slate-900/60 ${selectedIds.includes(r.id) ? 'bg-emerald-950/20' : ''}`}>
                     <td className="py-3 px-2">
                       <input
                         type="checkbox"
@@ -443,7 +498,7 @@ export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhat
                             commissionPercent: Math.max(1, Math.min(60, Number(e.target.value) || 1))
                           })
                         }
-                        className="w-16 px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-white font-mono text-center"
+                        className="w-16 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-white font-mono text-center"
                       />
                     </td>
                     <td className="py-3 px-3">
@@ -462,7 +517,7 @@ export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhat
                             setWalletNote('');
                           }}
                           title={at('ওয়ালেট ব্যালেন্স সমন্বয়', 'Adjust Wallet Balance')}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-700 text-emerald-300 hover:text-white cursor-pointer"
+                          className="p-1.5 rounded bg-slate-800 hover:bg-emerald-700 text-emerald-300 hover:text-white cursor-pointer"
                         >
                           <Wallet className="w-3.5 h-3.5" />
                         </button>
@@ -484,9 +539,17 @@ export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhat
                     <td className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap">
                       <button
                         type="button"
+                        onClick={() => setEditingReseller({ ...r })}
+                        title={at('রিসেলার এডিট করুন', 'Edit Reseller')}
+                        className="p-1.5 rounded bg-slate-800 hover:bg-amber-600 text-amber-300 hover:text-white inline-flex items-center cursor-pointer"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => openQuickSupport(r)}
                         title={at('WhatsApp ও AI দিয়ে সাপোর্ট দিন', 'WhatsApp & AI Support')}
-                        className="px-2.5 py-1 rounded-lg bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/40 font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                        className="px-2 py-1 rounded bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/40 font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
                       >
                         <Sparkles className="w-3 h-3" />
                         <span>WA + AI</span>
@@ -496,16 +559,16 @@ export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhat
                           type="button"
                           onClick={() => onOpenWhatsAppDesk(r.phone)}
                           title={at('ডিরেক্ট WhatsApp API কনসোল খুলুন', 'Open WhatsApp API Thread')}
-                          className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-emerald-600 text-emerald-300 hover:text-white font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                          className="p-1.5 rounded bg-slate-800 hover:bg-emerald-600 text-emerald-300 hover:text-white font-bold text-[11px] inline-flex items-center cursor-pointer"
                         >
-                          <MessageCircle className="w-3 h-3" />
+                          <MessageCircle className="w-3.5 h-3.5" />
                         </button>
                       )}
                       {r.status !== 'approved' && (
                         <button
                           type="button"
                           onClick={() => updateResellerAccount(r.id, { status: 'approved' })}
-                          className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                          className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer whitespace-nowrap"
                         >
                           {at('অনুমোদন', 'Approve')}
                         </button>
@@ -514,11 +577,19 @@ export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhat
                         <button
                           type="button"
                           onClick={() => updateResellerAccount(r.id, { status: 'suspended' })}
-                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-200 hover:text-white font-bold text-[11px] cursor-pointer"
+                          className="px-2 py-1 rounded bg-slate-800 hover:bg-amber-600 text-slate-200 hover:text-white font-bold text-[11px] cursor-pointer whitespace-nowrap"
                         >
                           {at('স্থগিত', 'Suspend')}
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => deleteResellerAccount(r.id)}
+                        title={at('রিসেলার মুছুন', 'Delete Reseller')}
+                        className="p-1.5 rounded bg-rose-950/60 hover:bg-rose-600 text-rose-300 hover:text-white inline-flex items-center cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -526,7 +597,7 @@ export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhat
             </table>
           </div>
         )}
-      </div>
+      </BulkSectionShell>
 
       {/* Payout Requests Table */}
       <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
@@ -539,61 +610,289 @@ export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhat
           <p className="text-xs text-slate-400 py-4">{at('কোনো উত্তোলনের আবেদন নেই।', 'No payout requests submitted yet.')}</p>
         ) : (
           <div className="space-y-2.5">
-            {resellerPayouts.map((pay) => (
-              <div
-                key={pay.id}
-                className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs tabular-nums"
-              >
-                <div>
-                  <p className="font-bold text-white">
-                    {pay.resellerName} ({pay.resellerPhone}) · <span className="text-emerald-400 font-mono">৳{pay.amount.toLocaleString()}</span>
-                  </p>
-                  <p className="text-[11px] text-slate-400 uppercase mt-0.5">
-                    {pay.method} · {pay.accountNumber} · {new Date(pay.createdAt).toLocaleString()}
-                    {pay.trxId ? ` · TrxID: ${pay.trxId}` : ''}
-                  </p>
-                </div>
-
-                {pay.status === 'pending' ? (
+            {resellerPayouts.map((pay) =>
+              editingPayout?.id === pay.id ? (
+                <div
+                  key={pay.id}
+                  className="p-3.5 rounded-xl bg-slate-950 border border-amber-500/60 space-y-2.5 text-xs tabular-nums"
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      value={editingPayout.amount}
+                      onChange={(e) => setEditingPayout({ ...editingPayout, amount: Number(e.target.value) || 0 })}
+                      placeholder="Amount"
+                      className="px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-white font-mono"
+                    />
+                    <select
+                      value={editingPayout.method}
+                      onChange={(e) => setEditingPayout({ ...editingPayout, method: e.target.value as ResellerPayoutRequest['method'] })}
+                      className="px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-white"
+                    >
+                      <option value="bkash">bKash</option>
+                      <option value="nagad">Nagad</option>
+                      <option value="rocket">Rocket</option>
+                      <option value="bank">Bank</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={editingPayout.accountNumber}
+                      onChange={(e) => setEditingPayout({ ...editingPayout, accountNumber: e.target.value })}
+                      placeholder="Account Number"
+                      className="px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-white font-mono"
+                    />
+                    <input
+                      type="text"
+                      value={editingPayout.trxId || ''}
+                      onChange={(e) => setEditingPayout({ ...editingPayout, trxId: e.target.value })}
+                      placeholder="TrxID"
+                      className="px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-white font-mono"
+                    />
+                    <select
+                      value={editingPayout.status}
+                      onChange={(e) => setEditingPayout({ ...editingPayout, status: e.target.value as ResellerPayoutRequest['status'] })}
+                      className="px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-white"
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="paid">Paid</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <input
                       type="text"
-                      value={trxInputs[pay.id] || ''}
-                      onChange={(e) => setTrxInputs((prev) => ({ ...prev, [pay.id]: e.target.value.toUpperCase() }))}
-                      placeholder="TrxID..."
-                      className="w-32 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono text-[11px]"
+                      value={editingPayout.note || ''}
+                      onChange={(e) => setEditingPayout({ ...editingPayout, note: e.target.value })}
+                      placeholder={at('নোট...', 'Admin note...')}
+                      className="flex-1 min-w-[200px] px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-white"
                     />
                     <button
                       type="button"
-                      onClick={() => processResellerPayout(pay.id, 'paid', trxInputs[pay.id] || `TRX-${Date.now().toString().slice(-6)}`)}
-                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                      onClick={() => {
+                        updateResellerPayout(pay.id, {
+                          amount: editingPayout.amount,
+                          method: editingPayout.method,
+                          accountNumber: editingPayout.accountNumber,
+                          trxId: editingPayout.trxId,
+                          status: editingPayout.status,
+                          note: editingPayout.note
+                        });
+                        setEditingPayout(null);
+                      }}
+                      className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold whitespace-nowrap cursor-pointer"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>{at('পেইড মার্ক করুন', 'Mark Paid')}</span>
+                      {at('সেভ', 'Save')}
                     </button>
                     <button
                       type="button"
-                      onClick={() => processResellerPayout(pay.id, 'rejected', '', 'Rejected by admin & refunded')}
-                      className="px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                      onClick={() => setEditingPayout(null)}
+                      className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold whitespace-nowrap cursor-pointer"
                     >
-                      <XCircle className="w-3.5 h-3.5" />
-                      <span>{at('বাতিল ও রিফান্ড', 'Reject')}</span>
+                      {at('বাতিল', 'Cancel')}
                     </button>
                   </div>
-                ) : (
-                  <span
-                    className={`font-bold uppercase text-[11px] ${
-                      pay.status === 'paid' ? 'text-emerald-400' : 'text-rose-400'
-                    }`}
-                  >
-                    {pay.status}
-                  </span>
-                )}
-              </div>
-            ))}
+                </div>
+              ) : (
+                <div
+                  key={pay.id}
+                  className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs tabular-nums"
+                >
+                  <div>
+                    <p className="font-bold text-white">
+                      {pay.resellerName} ({pay.resellerPhone}) · <span className="text-emerald-400 font-mono">৳{pay.amount.toLocaleString()}</span>
+                    </p>
+                    <p className="text-[11px] text-slate-400 uppercase mt-0.5">
+                      {pay.method} · {pay.accountNumber} · {new Date(pay.createdAt).toLocaleString()}
+                      {pay.trxId ? ` · TrxID: ${pay.trxId}` : ''}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {pay.status === 'pending' ? (
+                      <>
+                        <input
+                          type="text"
+                          value={trxInputs[pay.id] || ''}
+                          onChange={(e) => setTrxInputs((prev) => ({ ...prev, [pay.id]: e.target.value.toUpperCase() }))}
+                          placeholder="TrxID..."
+                          className="w-32 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono text-[11px]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => processResellerPayout(pay.id, 'paid', trxInputs[pay.id] || `TRX-${Date.now().toString().slice(-6)}`)}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>{at('পেইড মার্ক করুন', 'Mark Paid')}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => processResellerPayout(pay.id, 'rejected', '', 'Rejected by admin & refunded')}
+                          className="px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                          <span>{at('বাতিল ও রিফান্ড', 'Reject')}</span>
+                        </button>
+                      </>
+                    ) : (
+                      <span
+                        className={`font-bold uppercase text-[11px] ${
+                          pay.status === 'paid' ? 'text-emerald-400' : 'text-rose-400'
+                        }`}
+                      >
+                        {pay.status}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setEditingPayout({ ...pay })}
+                      title={at('এডিট করুন', 'Edit Payout')}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-amber-600 text-amber-300 hover:text-white cursor-pointer"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteResellerPayout(pay.id)}
+                      title={at('মুছুন', 'Delete Payout')}
+                      className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-600 text-rose-300 hover:text-white cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )
+            )}
           </div>
         )}
       </div>
+
+      {/* Modal: Edit Reseller Account */}
+      {editingReseller && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h4 className="font-bold text-sm text-white">{at('রিসেলার তথ্য এডিট করুন', 'Edit Reseller Profile')}</h4>
+              <button
+                type="button"
+                onClick={() => setEditingReseller(null)}
+                className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div>
+                <label className="block text-slate-400 font-bold mb-1">{at('নাম', 'Name')}</label>
+                <input
+                  type="text"
+                  value={editingReseller.name}
+                  onChange={(e) => setEditingReseller({ ...editingReseller, name: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 font-bold mb-1">{at('ফোন', 'Phone')}</label>
+                <input
+                  type="text"
+                  value={editingReseller.phone}
+                  onChange={(e) => setEditingReseller({ ...editingReseller, phone: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 font-bold mb-1">{at('ইমেইল', 'Email')}</label>
+                <input
+                  type="email"
+                  value={editingReseller.email || ''}
+                  onChange={(e) => setEditingReseller({ ...editingReseller, email: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 font-bold mb-1">{at('জেলা', 'District')}</label>
+                <input
+                  type="text"
+                  value={editingReseller.district}
+                  onChange={(e) => setEditingReseller({ ...editingReseller, district: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-slate-400 font-bold mb-1">{at('ঠিকানা', 'Address')}</label>
+                <input
+                  type="text"
+                  value={editingReseller.address || ''}
+                  onChange={(e) => setEditingReseller({ ...editingReseller, address: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 font-bold mb-1">{at('রিসেলার কোড', 'Reseller Code')}</label>
+                <input
+                  type="text"
+                  value={editingReseller.resellerCode}
+                  onChange={(e) => setEditingReseller({ ...editingReseller, resellerCode: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 font-bold mb-1">{at('কমিশন %', 'Commission %')}</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={editingReseller.commissionPercent}
+                  onChange={(e) => setEditingReseller({ ...editingReseller, commissionPercent: Math.max(1, Math.min(60, Number(e.target.value) || 1)) })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 font-bold mb-1">Facebook Page URL</label>
+                <input
+                  type="text"
+                  value={editingReseller.fbPageUrl || ''}
+                  onChange={(e) => setEditingReseller({ ...editingReseller, fbPageUrl: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 font-bold mb-1">{at('অবস্থা', 'Status')}</label>
+                <select
+                  value={editingReseller.status}
+                  onChange={(e) => setEditingReseller({ ...editingReseller, status: e.target.value as ResellerAccount['status'] })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setEditingReseller(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold cursor-pointer"
+              >
+                {at('বাতিল', 'Cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const { id, ...rest } = editingReseller;
+                  updateResellerAccount(id, rest);
+                  setEditingReseller(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black cursor-pointer"
+              >
+                {at('সেভ করুন', 'Save Changes')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Attributed Reseller Orders Summary */}
       {resellerOrderCount > 0 && (

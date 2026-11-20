@@ -12,7 +12,11 @@ import {
   FileText,
   ExternalLink,
   Copy,
-  Check
+  Check,
+  Edit,
+  Trash2,
+  Plus,
+  X
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { SEOSettings } from '../../types';
@@ -75,6 +79,9 @@ export const SEOManagerView: React.FC<SEOManagerViewProps> = ({ onImageUpload })
   const [isVerifyingServer, setIsVerifyingServer] = useState(false);
   const [serverHtmlHeadStatus, setServerHtmlHeadStatus] = useState<string | null>(null);
   const [copiedHead, setCopiedHead] = useState(false);
+  const [editingKeywordIdx, setEditingKeywordIdx] = useState<number | null>(null);
+  const [editingKeywordVal, setEditingKeywordVal] = useState('');
+  const [newKeywordDraft, setNewKeywordDraft] = useState('');
 
   const readLiveHead = () => {
     if (typeof document === 'undefined') return;
@@ -310,16 +317,113 @@ export const SEOManagerView: React.FC<SEOManagerViewProps> = ({ onImageUpload })
             />
             {keywordChips.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-1">
-                {keywordChips.map((kw, i) => (
-                  <span
-                    key={`${kw}-${i}`}
-                    className="px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-[11px] text-emerald-300 font-medium"
-                  >
-                    #{kw}
-                  </span>
-                ))}
+                {keywordChips.map((kw, i) =>
+                  editingKeywordIdx === i ? (
+                    <div key={`edit-${i}`} className="inline-flex items-center gap-1 rounded-lg bg-slate-900 border border-emerald-500 px-1.5 py-0.5">
+                      <input
+                        type="text"
+                        value={editingKeywordVal}
+                        onChange={(e) => setEditingKeywordVal(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const next = keywordChips
+                              .map((item, idx) => (idx === i ? editingKeywordVal.trim() : item))
+                              .filter(Boolean);
+                            patchSeo({ keywords: next.join(', ') });
+                            setEditingKeywordIdx(null);
+                          }
+                          if (e.key === 'Escape') setEditingKeywordIdx(null);
+                        }}
+                        autoFocus
+                        className="w-28 bg-transparent text-[11px] text-white focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = keywordChips
+                            .map((item, idx) => (idx === i ? editingKeywordVal.trim() : item))
+                            .filter(Boolean);
+                          patchSeo({ keywords: next.join(', ') });
+                          setEditingKeywordIdx(null);
+                        }}
+                        className="p-0.5 text-emerald-400 hover:text-emerald-300 cursor-pointer"
+                        title="Save keyword"
+                      >
+                        <Check className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingKeywordIdx(null)}
+                        className="p-0.5 text-slate-400 hover:text-white cursor-pointer"
+                        title="Cancel"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <span
+                      key={`${kw}-${i}`}
+                      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-[11px] text-emerald-300 font-medium"
+                    >
+                      <span>#{kw}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingKeywordIdx(i);
+                          setEditingKeywordVal(kw);
+                        }}
+                        className="text-slate-400 hover:text-amber-300 cursor-pointer"
+                        title={at('এডিট করুন', 'Edit keyword')}
+                      >
+                        <Edit className="w-2.5 h-2.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = keywordChips.filter((_, idx) => idx !== i);
+                          patchSeo({ keywords: next.join(', ') });
+                        }}
+                        className="text-slate-400 hover:text-rose-400 cursor-pointer"
+                        title={at('মুছুন', 'Delete keyword')}
+                      >
+                        <Trash2 className="w-2.5 h-2.5" />
+                      </button>
+                    </span>
+                  )
+                )}
               </div>
             )}
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="text"
+                value={newKeywordDraft}
+                onChange={(e) => setNewKeywordDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newKeywordDraft.trim()) {
+                    e.preventDefault();
+                    const next = [...keywordChips, newKeywordDraft.trim()];
+                    patchSeo({ keywords: next.join(', ') });
+                    setNewKeywordDraft('');
+                  }
+                }}
+                placeholder={at('নতুন কীওয়ার্ড যোগ করুন...', 'Add single keyword...')}
+                className="flex-1 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!newKeywordDraft.trim()) return;
+                  const next = [...keywordChips, newKeywordDraft.trim()];
+                  patchSeo({ keywords: next.join(', ') });
+                  setNewKeywordDraft('');
+                }}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-emerald-600 border border-slate-700 text-xs font-bold text-slate-200 hover:text-white inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{at('যোগ করুন', 'Add Keyword')}</span>
+              </button>
+            </div>
           </div>
 
           {/* Advanced Technical SEO */}

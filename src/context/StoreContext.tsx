@@ -82,6 +82,7 @@ import {
   fetchMediaLibraryFromFirestore,
   mapFirestoreDocToMedia,
   saveCustomerToFirestore,
+  deleteCustomerFromFirestore,
   fetchCustomersFromFirestore,
   mapFirestoreDocToCustomer,
   getCustomerFirestoreId,
@@ -94,6 +95,7 @@ import {
   fetchAbandonedCartsFromFirestore,
   mapFirestoreDocToAbandonedCart,
   savePriceAlertToFirestore,
+  deletePriceAlertFromFirestore,
   fetchPriceAlertsFromFirestore,
   mapFirestoreDocToPriceAlert,
   saveWaitlistEntryToFirestore,
@@ -112,11 +114,15 @@ import {
   fetchProductsFromFirestore,
   fetchOrdersFromFirestore,
   saveResellerToFirestore,
+  deleteResellerFromFirestore,
   fetchResellersFromFirestore,
   saveResellerPayoutToFirestore,
+  deleteResellerPayoutFromFirestore,
   saveWholesalerToFirestore,
+  deleteWholesalerFromFirestore,
   fetchWholesalersFromFirestore,
   saveWholesaleQuoteToFirestore,
+  deleteWholesaleQuoteFromFirestore,
   saveAIReviewTaskToFirestore,
   deleteAIReviewTaskFromFirestore
 } from '../firebase';
@@ -236,6 +242,8 @@ interface StoreContextType {
   addProduct: (product: Omit<Product, 'id'>) => void;
   updateProduct: (id: string, updates: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
+  bulkUpdateProducts: (ids: string[], updates: Partial<Product>) => void;
+  bulkDeleteProducts: (ids: string[]) => void;
   toggleProductFlashSale: (id: string) => void;
 
   // Categories
@@ -307,6 +315,8 @@ interface StoreContextType {
   customerAccounts: CustomerProfile[];
   adjustSpecificCustomerBalance: (identifier: string, delta: number, reason?: string) => boolean;
   resetCustomerWalletExpiry: (identifier: string, expireNow?: boolean) => boolean;
+  updateCustomerAccountByAdmin: (identifier: string, updates: Partial<CustomerProfile>) => boolean;
+  deleteCustomerAccountByAdmin: (identifier: string) => boolean;
   customerWalletBalance: number;
   addToWallet: (amount: number, reason?: string) => void;
   deductWallet: (amount: number) => boolean;
@@ -359,8 +369,11 @@ interface StoreContextType {
   // Price Alerts & Out-of-Stock Waitlist
   priceAlerts: PriceAlert[];
   addPriceAlert: (alertData: { productId: string; contact: string; targetPrice: number }) => void;
+  updatePriceAlert: (id: string, updates: Partial<PriceAlert>) => void;
+  deletePriceAlert: (id: string) => void;
   waitlistEntries: WaitlistEntry[];
   addWaitlistEntry: (payload: { product: Product; contact: string }) => WaitlistEntry;
+  updateWaitlistEntry: (id: string, updates: Partial<WaitlistEntry>) => void;
   markWaitlistNotified: (id: string) => void;
   deleteWaitlistEntry: (id: string) => void;
 
@@ -373,6 +386,7 @@ interface StoreContextType {
 
   // Meta WhatsApp Cloud API CRM & Direct Chat Console
   whatsappLogs: WhatsAppCloudLog[];
+  deleteWhatsappLog: (id: string) => void;
   whatsappMessages: WhatsAppChatMessage[];
   sendMetaWhatsAppMessage: (payload: {
     to: string;
@@ -621,6 +635,8 @@ interface StoreContextType {
   logoutReseller: () => void;
   updateResellerAccount: (id: string, updates: Partial<ResellerAccount>) => void;
   bulkUpdateResellers: (ids: string[], updates: Partial<ResellerAccount>) => void;
+  deleteResellerAccount: (id: string) => void;
+  bulkDeleteResellers: (ids: string[]) => void;
   adjustResellerWallet: (id: string, delta: number, note?: string) => void;
   updateActiveResellerProfile: (updates: Partial<Pick<ResellerAccount, 'name' | 'district' | 'address' | 'fbPageUrl' | 'bkashNumber' | 'nagadNumber' | 'bankDetails'>>) => void;
   requestResellerPayout: (payload: {
@@ -629,6 +645,8 @@ interface StoreContextType {
     amount: number;
   }) => boolean;
   processResellerPayout: (id: string, status: 'paid' | 'rejected', trxId?: string, note?: string) => void;
+  updateResellerPayout: (id: string, updates: Partial<ResellerPayoutRequest>) => void;
+  deleteResellerPayout: (id: string) => void;
 
   wholesalers: WholesaleAccount[];
   activeWholesaler: WholesaleAccount | null;
@@ -640,6 +658,9 @@ interface StoreContextType {
   loginWholesaler: (identifier: string, password?: string) => Promise<{ success: boolean; error?: string; wholesaler?: WholesaleAccount }>;
   logoutWholesaler: () => void;
   updateWholesalerAccount: (id: string, updates: Partial<WholesaleAccount>) => void;
+  deleteWholesalerAccount: (id: string) => void;
+  bulkUpdateWholesalers: (ids: string[], updates: Partial<WholesaleAccount>) => void;
+  bulkDeleteWholesalers: (ids: string[]) => void;
   submitWholesaleQuote: (payload: {
     productId?: string;
     productTitle: string;
@@ -648,6 +669,9 @@ interface StoreContextType {
     notes?: string;
   }) => WholesaleQuoteRequest | null;
   updateWholesaleQuote: (id: string, updates: Partial<WholesaleQuoteRequest>) => void;
+  deleteWholesaleQuote: (id: string) => void;
+  bulkUpdateWholesaleQuotes: (ids: string[], updates: Partial<WholesaleQuoteRequest>) => void;
+  bulkDeleteWholesaleQuotes: (ids: string[]) => void;
 
   isPartnerPortalOpen: boolean;
   partnerPortalTab: 'reseller' | 'wholesale';
@@ -670,6 +694,8 @@ interface StoreContextType {
     recipients: string[];
     message: string;
   }) => Promise<{ success: boolean; error?: string }>;
+  updateBulkSmsLog: (id: string, updates: Partial<BulkSmsCampaignLog>) => void;
+  deleteBulkSmsLog: (id: string) => void;
 
   // Cart
   cart: CartItem[];
@@ -1337,7 +1363,41 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     lastLocalMutationAtRef.current = Date.now();
     setProducts((prev) => prev.filter((p) => p.id !== id));
     deleteProductFromFirestore(id).catch(() => {});
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'product', ids: [id] })
+    }).catch(() => {});
     addToast('info', lang === 'bn' ? 'পণ্য মুছে ফেলা হয়েছে' : 'Product Deleted', '');
+  };
+
+  const bulkUpdateProducts = (ids: string[], updates: Partial<Product>) => {
+    if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const idSet = new Set(ids);
+    setProducts((prev) =>
+      prev.map((p) => {
+        if (!idSet.has(p.id)) return p;
+        const next = { ...p, ...updates };
+        saveProductToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
+    addToast('success', t(`${ids.length}টি পণ্য আপডেট হয়েছে`, `${ids.length} Products Updated`), '');
+  };
+
+  const bulkDeleteProducts = (ids: string[]) => {
+    if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const idSet = new Set(ids);
+    setProducts((prev) => prev.filter((p) => !idSet.has(p.id)));
+    ids.forEach((id) => deleteProductFromFirestore(id).catch(() => {}));
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'product', ids })
+    }).catch(() => {});
+    addToast('info', t(`${ids.length}টি পণ্য মুছে ফেলা হয়েছে`, `${ids.length} Products Deleted`), '');
   };
 
   const toggleProductFlashSale = (id: string) => {
@@ -2874,6 +2934,79 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return true;
   };
 
+  const updateCustomerAccountByAdmin = (identifier: string, updates: Partial<CustomerProfile>): boolean => {
+    const cleanId = identifier.trim().toLowerCase();
+    const cleanDigits = identifier.replace(/[^0-9]/g, '').slice(-11);
+    let found = false;
+    let targetName = identifier;
+    const nextAccounts = customerAccounts.map((acc) => {
+      const accDigits = acc.phone.replace(/[^0-9]/g, '').slice(-11);
+      const matches =
+        (acc.username && acc.username.toLowerCase() === cleanId) ||
+        (acc.email && acc.email.toLowerCase() === cleanId) ||
+        (cleanDigits && accDigits === cleanDigits) ||
+        acc.phone.toLowerCase() === cleanId ||
+        acc.name.toLowerCase() === cleanId;
+      if (!matches) return acc;
+      found = true;
+      targetName = updates.name || acc.name;
+      const updated = { ...acc, ...updates };
+      saveCustomerToFirestore(updated).catch(() => {});
+      return updated;
+    });
+    if (!found) return false;
+    lastLocalMutationAtRef.current = Date.now();
+    setCustomerAccounts(nextAccounts);
+    const activeDigits = (customerProfile.phone || '').replace(/[^0-9]/g, '').slice(-11);
+    if (
+      (cleanDigits && activeDigits === cleanDigits) ||
+      (customerProfile.email && customerProfile.email.toLowerCase() === cleanId)
+    ) {
+      setCustomerProfile((cp) => ({ ...cp, ...updates }));
+    }
+    addToast('success', t(`${targetName} তথ্য আপডেট হয়েছে`, `Updated Customer: ${targetName}`), '');
+    return true;
+  };
+
+  const deleteCustomerAccountByAdmin = (identifier: string): boolean => {
+    const cleanId = identifier.trim().toLowerCase();
+    const cleanDigits = identifier.replace(/[^0-9]/g, '').slice(-11);
+    let matchedCustomer: CustomerProfile | null = null;
+    const nextAccounts = customerAccounts.filter((acc) => {
+      const accDigits = acc.phone.replace(/[^0-9]/g, '').slice(-11);
+      const matches =
+        (acc.username && acc.username.toLowerCase() === cleanId) ||
+        (acc.email && acc.email.toLowerCase() === cleanId) ||
+        (cleanDigits && accDigits === cleanDigits) ||
+        acc.phone.toLowerCase() === cleanId ||
+        acc.name.toLowerCase() === cleanId;
+      if (matches && !matchedCustomer) {
+        matchedCustomer = acc;
+        return false;
+      }
+      return true;
+    });
+    if (!matchedCustomer) return false;
+    lastLocalMutationAtRef.current = Date.now();
+    setCustomerAccounts(nextAccounts);
+    deleteCustomerFromFirestore(matchedCustomer).catch(() => {});
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'customerAccount',
+        ids: [
+          (matchedCustomer as CustomerProfile).phone,
+          ((matchedCustomer as CustomerProfile).phone || '').replace(/[^0-9]/g, '').slice(-11),
+          (matchedCustomer as CustomerProfile).email || '',
+          (matchedCustomer as CustomerProfile).username || ''
+        ].filter(Boolean)
+      })
+    }).catch(() => {});
+    addToast('info', t('গ্রাহকের অ্যাকাউন্ট মুছে ফেলা হয়েছে', 'Customer Account Deleted'), (matchedCustomer as CustomerProfile).name);
+    return true;
+  };
+
   const addToWallet = (amount: number, reason?: string) => {
     const nowIso = new Date().toISOString();
     setCustomerWalletBalance((prev) => {
@@ -3561,6 +3694,37 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   };
 
+  const updatePriceAlert = (id: string, updates: Partial<PriceAlert>) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setPriceAlerts((prev) => {
+      const next = prev.map((a) => {
+        if (a.id !== id) return a;
+        const updated = { ...a, ...updates };
+        savePriceAlertToFirestore(updated).catch(() => {});
+        return updated;
+      });
+      localStorage.setItem('buyonebd_price_alerts_v3', JSON.stringify(next));
+      return next;
+    });
+    addToast('success', t('প্রাইস অ্যালার্ট আপডেট হয়েছে', 'Price Alert Updated'), '');
+  };
+
+  const deletePriceAlert = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setPriceAlerts((prev) => {
+      const next = prev.filter((a) => a.id !== id);
+      localStorage.setItem('buyonebd_price_alerts_v3', JSON.stringify(next));
+      return next;
+    });
+    deletePriceAlertFromFirestore(id).catch(() => {});
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'priceAlert', ids: [id] })
+    }).catch(() => {});
+    addToast('info', t('প্রাইস অ্যালার্ট মোছা হয়েছে', 'Price Alert Deleted'), '');
+  };
+
   // Out-of-Stock Waitlist ('Waitlist' collection in Firestore)
   const [waitlistEntries, setWaitlistEntries] = useState<WaitlistEntry[]>(() => {
     try {
@@ -3609,6 +3773,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       )
     );
     return newEntry;
+  };
+
+  const updateWaitlistEntry = (id: string, updates: Partial<WaitlistEntry>) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setWaitlistEntries((prev) =>
+      prev.map((w) => {
+        if (w.id !== id) return w;
+        const next: WaitlistEntry = { ...w, ...updates };
+        saveWaitlistEntryToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
+    addToast('success', t('ওয়েটলিস্ট আপডেট হয়েছে', 'Waitlist Entry Updated'), '');
   };
 
   const markWaitlistNotified = (id: string) => {
@@ -6240,6 +6417,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
 
+  const deleteWhatsappLog = (id: string) => {
+    setWhatsappLogs((prev) => {
+      const next = prev.filter((l) => l.id !== id);
+      localStorage.setItem('buyonebd_wa_logs_v3', JSON.stringify(next));
+      return next;
+    });
+    addToast('info', t('হোয়াটসঅ্যাপ লগ মুছে ফেলা হয়েছে', 'WhatsApp Log Removed'), '');
+  };
+
   const [whatsappMessages, setWhatsappMessages] = useState<WhatsAppChatMessage[]>(() => {
     try {
       const saved = localStorage.getItem('buyonebd_wa_messages_v1');
@@ -8240,6 +8426,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     addToast('success', t(`${ids.length} জন রিসেলার আপডেট হয়েছে`, `${ids.length} Resellers Updated`), '');
   };
 
+  const deleteResellerAccount = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setResellers((prev) => prev.filter((r) => r.id !== id));
+    if (activeReseller?.id === id) setActiveReseller(null);
+    deleteResellerFromFirestore(id).catch(() => {});
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'reseller', ids: [id] })
+    }).catch(() => {});
+    addToast('info', t('রিসেলার অ্যাকাউন্ট মোছা হয়েছে', 'Reseller Account Deleted'), '');
+  };
+
+  const bulkDeleteResellers = (ids: string[]) => {
+    if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const idSet = new Set(ids);
+    setResellers((prev) => prev.filter((r) => !idSet.has(r.id)));
+    if (activeReseller && idSet.has(activeReseller.id)) setActiveReseller(null);
+    ids.forEach((id) => deleteResellerFromFirestore(id).catch(() => {}));
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'reseller', ids })
+    }).catch(() => {});
+    addToast('info', t(`${ids.length} জন রিসেলার মুছে ফেলা হয়েছে`, `${ids.length} Resellers Deleted`), '');
+  };
+
   const adjustResellerWallet = (id: string, delta: number, note?: string) => {
     lastLocalMutationAtRef.current = Date.now();
     setResellers((prev) =>
@@ -8340,6 +8554,31 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       })
     );
     addToast('success', status === 'paid' ? t('পেআউট পরিশোধ হয়েছে', 'Payout Marked Paid') : t('পেআউট বাতিল হয়েছে', 'Payout Rejected'), '');
+  };
+
+  const updateResellerPayout = (id: string, updates: Partial<ResellerPayoutRequest>) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setResellerPayouts((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const next: ResellerPayoutRequest = { ...p, ...updates };
+        saveResellerPayoutToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
+    addToast('success', t('পে-আউট রিকোয়েস্ট আপডেট হয়েছে', 'Payout Request Updated'), '');
+  };
+
+  const deleteResellerPayout = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setResellerPayouts((prev) => prev.filter((p) => p.id !== id));
+    deleteResellerPayoutFromFirestore(id).catch(() => {});
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'resellerPayout', ids: [id] })
+    }).catch(() => {});
+    addToast('info', t('পে-আউট রিকোয়েস্ট মোছা হয়েছে', 'Payout Request Deleted'), '');
   };
 
   // Wholesale / B2B Trade Registration, Login & Quotes
@@ -8464,6 +8703,55 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     addToast('success', t('হোলসেল অ্যাকাউন্ট আপডেট হয়েছে', 'Wholesale Account Updated'), '');
   };
 
+  const deleteWholesalerAccount = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setWholesalers((prev) => prev.filter((w) => w.id !== id));
+    if (activeWholesaler?.id === id) setActiveWholesaler(null);
+    deleteWholesalerFromFirestore(id).catch(() => {});
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'wholesaler', ids: [id] })
+    }).catch(() => {});
+    addToast('info', t('হোলসেল অ্যাকাউন্ট মোছা হয়েছে', 'Wholesale Account Deleted'), '');
+  };
+
+  const bulkUpdateWholesalers = (ids: string[], updates: Partial<WholesaleAccount>) => {
+    if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const idSet = new Set(ids);
+    setWholesalers((prev) =>
+      prev.map((w) => {
+        if (!idSet.has(w.id)) return w;
+        const next = { ...w, ...updates };
+        saveWholesalerToFirestore(next).catch(() => {});
+        fetch('/api/partner/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'wholesale', id: w.id, updates })
+        }).catch(() => {});
+        if (activeWholesaler?.id === w.id) setActiveWholesaler(next);
+        return next;
+      })
+    );
+    addToast('success', t(`${ids.length}টি হোলসেল অ্যাকাউন্ট আপডেট হয়েছে`, `${ids.length} Wholesale Accounts Updated`), '');
+  };
+
+  const bulkDeleteWholesalers = (ids: string[]) => {
+    if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const idSet = new Set(ids);
+    setWholesalers((prev) => prev.filter((w) => !idSet.has(w.id)));
+    if (activeWholesaler && idSet.has(activeWholesaler.id)) setActiveWholesaler(null);
+    ids.forEach((id) => deleteWholesalerFromFirestore(id).catch(() => {}));
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'wholesaler', ids })
+    }).catch(() => {});
+    addToast('info', t(`${ids.length}টি হোলসেল অ্যাকাউন্ট মোছা হয়েছে`, `${ids.length} Wholesale Accounts Deleted`), '');
+  };
+
   const submitWholesaleQuote = (payload: {
     productId?: string;
     productTitle: string;
@@ -8504,6 +8792,47 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     addToast('success', t('কোটেশন আপডেট হয়েছে', 'Quote Updated'), '');
   };
 
+  const deleteWholesaleQuote = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setWholesaleQuotes((prev) => prev.filter((q) => q.id !== id));
+    deleteWholesaleQuoteFromFirestore(id).catch(() => {});
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'wholesaleQuote', ids: [id] })
+    }).catch(() => {});
+    addToast('info', t('কোটেশন মোছা হয়েছে', 'Quote Deleted'), '');
+  };
+
+  const bulkUpdateWholesaleQuotes = (ids: string[], updates: Partial<WholesaleQuoteRequest>) => {
+    if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const idSet = new Set(ids);
+    setWholesaleQuotes((prev) =>
+      prev.map((q) => {
+        if (!idSet.has(q.id)) return q;
+        const next = { ...q, ...updates };
+        saveWholesaleQuoteToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
+    addToast('success', t(`${ids.length}টি কোটেশন আপডেট হয়েছে`, `${ids.length} Quotes Updated`), '');
+  };
+
+  const bulkDeleteWholesaleQuotes = (ids: string[]) => {
+    if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const idSet = new Set(ids);
+    setWholesaleQuotes((prev) => prev.filter((q) => !idSet.has(q.id)));
+    ids.forEach((id) => deleteWholesaleQuoteFromFirestore(id).catch(() => {}));
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'wholesaleQuote', ids })
+    }).catch(() => {});
+    addToast('info', t(`${ids.length}টি কোটেশন মোছা হয়েছে`, `${ids.length} Quotes Deleted`), '');
+  };
+
   // Bangladesh Bulk SMS Campaign Dispatcher
   const dispatchBulkSmsCampaign = async (payload: {
     title: string;
@@ -8537,6 +8866,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (err: any) {
       return { success: false, error: err?.message || 'Network error' };
     }
+  };
+
+  const updateBulkSmsLog = (id: string, updates: Partial<BulkSmsCampaignLog>) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setBulkSmsLogs((prev) => prev.map((l) => (l.id === id ? { ...l, ...updates } : l)));
+    addToast('success', t('SMS ক্যাম্পেইন লগ আপডেট হয়েছে', 'SMS Campaign Updated'), '');
+  };
+
+  const deleteBulkSmsLog = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setBulkSmsLogs((prev) => prev.filter((l) => l.id !== id));
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'bulkSmsLog', ids: [id] })
+    }).catch(() => {});
+    addToast('info', t('SMS লগ মোছা হয়েছে', 'SMS Log Deleted'), '');
   };
 
   const cloudCollectionCounts = React.useMemo(
@@ -9428,6 +9774,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addProduct,
         updateProduct,
         deleteProduct,
+        bulkUpdateProducts,
+        bulkDeleteProducts,
         toggleProductFlashSale,
         isCustomerLoggedIn,
         isCustomerLoginOpen,
@@ -9441,6 +9789,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         customerAccounts,
         adjustSpecificCustomerBalance,
         resetCustomerWalletExpiry,
+        updateCustomerAccountByAdmin,
+        deleteCustomerAccountByAdmin,
         customerWalletBalance,
         addToWallet,
         deductWallet,
@@ -9463,8 +9813,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         syncStoreMediaLibrary,
         priceAlerts,
         addPriceAlert,
+        updatePriceAlert,
+        deletePriceAlert,
         waitlistEntries,
         addWaitlistEntry,
+        updateWaitlistEntry,
         markWaitlistNotified,
         deleteWaitlistEntry,
         categories,
@@ -9497,6 +9850,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         refreshOrderScore,
         checkCustomerFraudRisk,
         whatsappLogs,
+        deleteWhatsappLog,
         whatsappMessages,
         sendMetaWhatsAppMessage,
         generateWhatsAppAiDraft,
@@ -9623,10 +9977,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         logoutReseller,
         updateResellerAccount,
         bulkUpdateResellers,
+        deleteResellerAccount,
+        bulkDeleteResellers,
         adjustResellerWallet,
         updateActiveResellerProfile,
         requestResellerPayout,
         processResellerPayout,
+        updateResellerPayout,
+        deleteResellerPayout,
         wholesalers,
         activeWholesaler,
         isWholesaleLoggedIn,
@@ -9635,8 +9993,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         loginWholesaler,
         logoutWholesaler,
         updateWholesalerAccount,
+        deleteWholesalerAccount,
+        bulkUpdateWholesalers,
+        bulkDeleteWholesalers,
         submitWholesaleQuote,
         updateWholesaleQuote,
+        deleteWholesaleQuote,
+        bulkUpdateWholesaleQuotes,
+        bulkDeleteWholesaleQuotes,
         isPartnerPortalOpen,
         partnerPortalTab,
         openPartnerPortal,
@@ -9644,6 +10008,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         getPartnerPriceInfo,
         bulkSmsLogs,
         dispatchBulkSmsCampaign,
+        updateBulkSmsLog,
+        deleteBulkSmsLog,
         cart,
         addToCart,
         removeFromCart,
