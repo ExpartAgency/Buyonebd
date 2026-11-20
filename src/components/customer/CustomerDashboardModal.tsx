@@ -928,7 +928,11 @@ export const CustomerDashboardModal: React.FC = () => {
                           }}
                           className="cursor-pointer space-y-1.5"
                         >
-                          <img src={p.images[0]} alt={p.title} className="w-full h-24 object-cover rounded-xl" />
+                          {p.images?.[0]?.trim() ? (
+                            <img src={p.images[0]} alt={p.title} className="w-full h-24 object-cover rounded-xl" />
+                          ) : (
+                            <div className="w-full h-24 rounded-xl bg-slate-100 dark:bg-slate-800" />
+                          )}
                           <p className="text-xs font-bold text-slate-800 dark:text-slate-200 line-clamp-1">
                             {lang === 'bn' ? p.titleBn : p.title}
                           </p>
@@ -973,7 +977,11 @@ export const CustomerDashboardModal: React.FC = () => {
                           }}
                           className="cursor-pointer space-y-1.5"
                         >
-                          <img src={p.images[0]} alt={p.title} className="w-full h-24 object-cover rounded-xl" />
+                          {p.images?.[0]?.trim() ? (
+                            <img src={p.images[0]} alt={p.title} className="w-full h-24 object-cover rounded-xl" />
+                          ) : (
+                            <div className="w-full h-24 rounded-xl bg-slate-100 dark:bg-slate-800" />
+                          )}
                           <p className="text-xs font-bold text-slate-800 dark:text-slate-200 line-clamp-1">
                             {lang === 'bn' ? p.titleBn : p.title}
                           </p>

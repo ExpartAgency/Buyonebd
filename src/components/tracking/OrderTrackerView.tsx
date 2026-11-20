@@ -377,11 +377,15 @@ export const OrderTrackerView: React.FC = () => {
               <div className="space-y-2.5">
                 {selectedOrder.items.map((item, i) => (
                   <div key={i} className="flex items-center gap-3 min-w-0">
-                    <img
-                      src={item.image}
-                      alt={item.productTitle}
-                      className="w-12 h-12 object-cover rounded-xl border border-slate-200 dark:border-slate-700 shrink-0"
-                    />
+                    {item.image?.trim() ? (
+                      <img
+                        src={item.image}
+                        alt={item.productTitle}
+                        className="w-12 h-12 object-cover rounded-xl border border-slate-200 dark:border-slate-700 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0" />
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="font-bold text-xs text-slate-900 dark:text-white truncate">
                         {lang === 'bn' ? item.productTitleBn : item.productTitle}

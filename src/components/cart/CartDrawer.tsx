@@ -77,12 +77,16 @@ export const CartDrawer: React.FC = () => {
                   key={`${item.product.id}-${item.selectedColor}-${item.selectedSize}-${index}`}
                   className="flex gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40"
                 >
-                  <img
-                    src={item.product.images[0]}
-                    alt={item.product.title}
-                    referrerPolicy="no-referrer"
-                    className="w-16 h-16 object-cover rounded-xl border border-slate-200 dark:border-slate-700 shrink-0"
-                  />
+                  {item.product.images?.[0]?.trim() ? (
+                    <img
+                      src={item.product.images[0]}
+                      alt={item.product.title}
+                      referrerPolicy="no-referrer"
+                      className="w-16 h-16 object-cover rounded-xl border border-slate-200 dark:border-slate-700 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-xl bg-slate-200 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0" />
+                  )}
 
                   <div className="flex-1 min-w-0 flex flex-col justify-between">
                     <div>

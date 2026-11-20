@@ -134,11 +134,13 @@ export const ProductCompareModal: React.FC<ProductCompareModalProps> = ({
                           onClick={() => onSelectProduct?.(product)}
                           className="w-28 h-28 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 cursor-pointer mb-2 shrink-0 group-hover:scale-105 transition-transform"
                         >
-                          <img
-                            src={product.images[0]}
-                            alt={product.title}
-                            className="w-full h-full object-cover"
-                          />
+                          {product.images?.[0]?.trim() ? (
+                            <img
+                              src={product.images[0]}
+                              alt={product.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : null}
                         </div>
                         <h4
                           onClick={() => onSelectProduct?.(product)}

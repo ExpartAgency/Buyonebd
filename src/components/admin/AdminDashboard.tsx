@@ -4758,7 +4758,11 @@ export const AdminDashboard: React.FC = () => {
                             className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-all flex flex-col justify-between gap-3"
                           >
                             <div className="flex items-start gap-3">
-                              <img src={prod.images[0]} alt="" className="w-14 h-14 rounded-xl object-cover bg-slate-950 border border-slate-800 shrink-0" />
+                              {prod.images?.[0]?.trim() ? (
+                                <img src={prod.images[0]} alt="" className="w-14 h-14 rounded-xl object-cover bg-slate-950 border border-slate-800 shrink-0" />
+                              ) : (
+                                <div className="w-14 h-14 rounded-xl bg-slate-950 border border-slate-800 shrink-0" />
+                              )}
                               <div className="min-w-0 flex-1">
                                 <h4 className="text-xs font-bold text-white line-clamp-1">{at(prod.titleBn, prod.title)}</h4>
                                 <div className="flex items-center gap-2 mt-0.5 tabular-nums">
@@ -5463,7 +5467,7 @@ export const AdminDashboard: React.FC = () => {
                   <div key={prod.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col justify-between space-y-3">
                     <div className="flex items-start gap-3">
                       <div className="w-20 h-20 rounded-xl overflow-hidden bg-slate-950 shrink-0 border border-slate-800">
-                        <img src={prod.images[0]} alt="" className="w-full h-full object-cover" />
+                        {prod.images?.[0]?.trim() ? <img src={prod.images[0]} alt="" className="w-full h-full object-cover" /> : null}
                       </div>
                       <div className="overflow-hidden flex-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-1.5">
@@ -6677,7 +6681,11 @@ export const AdminDashboard: React.FC = () => {
                         readOnly
                         className="w-4 h-4 text-rose-600 rounded bg-slate-900 border-slate-700 pointer-events-none"
                       />
-                      <img src={prod.images[0]} alt="" className="w-12 h-12 rounded-lg object-cover bg-slate-900 shrink-0" />
+                      {prod.images?.[0]?.trim() ? (
+                        <img src={prod.images[0]} alt="" className="w-12 h-12 rounded-lg object-cover bg-slate-900 shrink-0" />
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-slate-900 shrink-0" />
+                      )}
                       <div className="overflow-hidden flex-1 min-w-0 text-xs">
                         <h5 className="font-bold truncate text-white">{at(prod.titleBn, prod.title)}</h5>
                         <div className="flex items-center gap-2 mt-0.5">
@@ -6715,7 +6723,13 @@ export const AdminDashboard: React.FC = () => {
                 {sliders.map((sl, index) => (
                   <div key={sl.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
                     <div className="aspect-[16/7] rounded-xl overflow-hidden bg-slate-950 relative border border-slate-800 group">
-                      <img src={sl.image} alt="" className="w-full h-full object-cover" />
+                      {sl.image?.trim() ? (
+                        <img src={sl.image} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-xs text-slate-500">
+                          {at('কোনো ব্যানার ছবি নেই', 'No Banner Image')}
+                        </div>
+                      )}
                       <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-black/75 text-white">
                         {at(`স্লাইড #${index + 1}`, `Slide #${index + 1}`)}
                       </span>
@@ -15267,7 +15281,7 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                           idx === 0 ? 'border-emerald-500 ring-2 ring-emerald-500/30' : 'border-slate-800'
                         }`}
                       >
-                        <img src={imgUrl} alt="" className="w-full h-full object-cover" />
+                        {imgUrl?.trim() ? <img src={imgUrl} alt="" className="w-full h-full object-cover" /> : null}
                         {idx === 0 && (
                           <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-bold">
                             MAIN
@@ -16165,7 +16179,7 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                 )}
 
                 {/* Live Banner Preview */}
-                {slideForm.image ? (
+                {slideForm.image?.trim() ? (
                   <div className="aspect-[16/7] rounded-xl overflow-hidden border border-slate-800 bg-slate-900">
                     <img src={slideForm.image} alt="Banner Preview" className="w-full h-full object-cover" />
                   </div>

@@ -426,15 +426,19 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 onMouseMove={handleMouseMove}
                 onClick={() => setIsZoomed(!isZoomed)}
               >
-                <img
-                  src={images[selectedImageIndex] || images[0]}
-                  alt={lang === 'bn' ? product.titleBn : product.title}
-                  referrerPolicy="no-referrer"
-                  className={`w-full h-full object-cover transition-transform duration-200 ${
-                    isZoomed ? 'scale-150' : 'scale-100'
-                  }`}
-                  style={isZoomed ? { transformOrigin: `${zoomPos.x}% ${zoomPos.y}%` } : undefined}
-                />
+                {(images[selectedImageIndex]?.trim() || images[0]?.trim()) ? (
+                  <img
+                    src={images[selectedImageIndex]?.trim() || images[0]?.trim()}
+                    alt={lang === 'bn' ? product.titleBn : product.title}
+                    referrerPolicy="no-referrer"
+                    className={`w-full h-full object-cover transition-transform duration-200 ${
+                      isZoomed ? 'scale-150' : 'scale-100'
+                    }`}
+                    style={isZoomed ? { transformOrigin: `${zoomPos.x}% ${zoomPos.y}%` } : undefined}
+                  />
+                ) : (
+                  <div className="w-full h-full bg-slate-200 dark:bg-slate-800" />
+                )}
 
                 {/* Top Left Status Badges */}
                 <div className="absolute top-4 left-4 flex flex-col gap-1.5 pointer-events-none">
@@ -493,7 +497,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
             {/* Thumbnail Strip */}
             {images.length > 1 && (
               <div className="flex items-center gap-2.5 overflow-x-auto pb-1 scrollbar-none">
-                {images.map((img, idx) => (
+                {images.filter((img) => img && img.trim()).map((img, idx) => (
                   <button
                     key={idx}
                     type="button"

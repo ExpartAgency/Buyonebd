@@ -64,16 +64,20 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
           onClick={() => onViewDetails(product)}
           className="relative aspect-[4/3] sm:aspect-square overflow-hidden bg-slate-100 dark:bg-slate-800 cursor-pointer"
         >
-          <img
-            src={product.images[0]}
-            alt={product.title}
-            loading="lazy"
-            decoding="async"
-            referrerPolicy="no-referrer"
-            className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
-              isOutOfStock ? 'opacity-70 grayscale-[35%]' : ''
-            }`}
-          />
+          {product.images?.[0]?.trim() ? (
+            <img
+              src={product.images[0]}
+              alt={product.title}
+              loading="lazy"
+              decoding="async"
+              referrerPolicy="no-referrer"
+              className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
+                isOutOfStock ? 'opacity-70 grayscale-[35%]' : ''
+              }`}
+            />
+          ) : (
+            <div className="w-full h-full bg-slate-200 dark:bg-slate-800" />
+          )}
 
           {isOutOfStock ? (
             <span className="absolute top-2.5 left-2.5 bg-slate-900/90 text-amber-300 border border-amber-400/40 text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow-xs uppercase">

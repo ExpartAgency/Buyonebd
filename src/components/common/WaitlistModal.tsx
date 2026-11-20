@@ -88,12 +88,16 @@ export const WaitlistModal: React.FC<WaitlistModalProps> = ({ product, onClose }
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
             <div className="flex items-start gap-3">
-              <img
-                src={product.images?.[0]}
-                alt={product.title}
-                referrerPolicy="no-referrer"
-                className="w-14 h-14 rounded-2xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
-              />
+              {product.images?.[0]?.trim() ? (
+                <img
+                  src={product.images[0]}
+                  alt={product.title}
+                  referrerPolicy="no-referrer"
+                  className="w-14 h-14 rounded-2xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0" />
+              )}
               <div className="min-w-0 pr-5">
                 <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
                   <BellRing className="w-3 h-3" />

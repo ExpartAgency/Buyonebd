@@ -1064,12 +1064,16 @@ export const PartnerPortalModal: React.FC = () => {
                                   className="p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 flex flex-col justify-between gap-3 text-xs tabular-nums"
                                 >
                                   <div className="flex items-start gap-3">
-                                    <img
-                                      src={p.images?.[0] || ''}
-                                      alt={p.title}
-                                      referrerPolicy="no-referrer"
-                                      className="w-16 h-16 rounded-xl object-cover border border-slate-200 dark:border-slate-800 shrink-0"
-                                    />
+                                    {p.images?.[0]?.trim() ? (
+                                      <img
+                                        src={p.images[0]}
+                                        alt={p.title}
+                                        referrerPolicy="no-referrer"
+                                        className="w-16 h-16 rounded-xl object-cover border border-slate-200 dark:border-slate-800 shrink-0"
+                                      />
+                                    ) : (
+                                      <div className="w-16 h-16 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 shrink-0" />
+                                    )}
                                     <div className="min-w-0 flex-1 space-y-1">
                                       <p className="font-bold text-slate-900 dark:text-white line-clamp-2">{lang === 'bn' ? p.titleBn : p.title}</p>
                                       <div className="flex flex-wrap items-center gap-2 text-[11px]">
@@ -2047,12 +2051,16 @@ export const PartnerPortalModal: React.FC = () => {
                                 className="p-3 flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-950/50 tabular-nums"
                               >
                                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                  <img
-                                    src={p.images?.[0] || ''}
-                                    alt={p.title}
-                                    referrerPolicy="no-referrer"
-                                    className="w-10 h-10 rounded-lg object-cover border border-slate-200 dark:border-slate-800 shrink-0"
-                                  />
+                                  {p.images?.[0]?.trim() ? (
+                                    <img
+                                      src={p.images[0]}
+                                      alt={p.title}
+                                      referrerPolicy="no-referrer"
+                                      className="w-10 h-10 rounded-lg object-cover border border-slate-200 dark:border-slate-800 shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 shrink-0" />
+                                  )}
                                   <div className="min-w-0">
                                     <p className="font-bold text-slate-900 dark:text-white truncate">{p.title}</p>
                                     <p className="text-[11px] text-slate-500">

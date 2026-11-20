@@ -212,9 +212,9 @@ export const MobileCategoryDrawer: React.FC<MobileCategoryDrawerProps> = ({
                       className="flex flex-col items-center text-center p-1.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 hover:border-emerald-400 transition-colors cursor-pointer"
                     >
                       <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-800 mb-1 flex items-center justify-center">
-                        {sub.image || focusedCategoryObj.iconImage ? (
+                        {(sub.image?.trim() || focusedCategoryObj.iconImage?.trim()) ? (
                           <img
-                            src={sub.image || focusedCategoryObj.iconImage}
+                            src={sub.image?.trim() || focusedCategoryObj.iconImage?.trim()}
                             alt={sub.nameEn}
                             referrerPolicy="no-referrer"
                             className="w-full h-full object-cover"
@@ -255,7 +255,11 @@ export const MobileCategoryDrawer: React.FC<MobileCategoryDrawerProps> = ({
                         }}
                         className="cursor-pointer space-y-1"
                       >
-                        <img src={p.images[0]} alt={p.title} referrerPolicy="no-referrer" className="w-full h-20 object-cover rounded-xl" />
+                        {p.images?.[0]?.trim() ? (
+                          <img src={p.images[0]} alt={p.title} referrerPolicy="no-referrer" className="w-full h-20 object-cover rounded-xl" />
+                        ) : (
+                          <div className="w-full h-20 rounded-xl bg-slate-200 dark:bg-slate-800" />
+                        )}
                         <p className="text-[11px] font-bold text-slate-900 dark:text-white line-clamp-1">
                           {lang === 'bn' ? p.titleBn : p.title}
                         </p>

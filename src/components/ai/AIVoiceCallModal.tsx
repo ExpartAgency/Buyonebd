@@ -578,7 +578,11 @@ export const AIVoiceCallModal: React.FC = () => {
                   <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
                     {displayOrder.items.map((item, idx) => (
                       <div key={idx} className="flex items-center gap-2.5 bg-slate-900/50 p-2 rounded-xl border border-slate-800">
-                        <img src={item.image} alt={item.productTitle} referrerPolicy="no-referrer" className="w-9 h-9 rounded-lg object-cover shrink-0 border border-slate-700" />
+                        {item.image?.trim() ? (
+                          <img src={item.image} alt={item.productTitle} referrerPolicy="no-referrer" className="w-9 h-9 rounded-lg object-cover shrink-0 border border-slate-700" />
+                        ) : (
+                          <div className="w-9 h-9 rounded-lg bg-slate-800 shrink-0 border border-slate-700" />
+                        )}
                         <div className="flex-1 min-w-0">
                           <p className="font-bold text-[11px] text-slate-100 truncate">
                             {lang === 'bn' ? item.productTitleBn || item.productTitle : item.productTitle}

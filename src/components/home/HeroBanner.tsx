@@ -235,12 +235,16 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
                           : 'bg-black/25 border-white/10 hover:bg-white/10 opacity-75 hover:opacity-100'
                       }`}
                     >
-                      <img
-                        src={sl.image}
-                        alt={sl.titleEn || sl.titleBn}
-                        referrerPolicy="no-referrer"
-                        className="w-9 h-9 rounded-lg object-cover shrink-0 border border-white/10"
-                      />
+                      {sl.image?.trim() ? (
+                        <img
+                          src={sl.image}
+                          alt={sl.titleEn || sl.titleBn}
+                          referrerPolicy="no-referrer"
+                          className="w-9 h-9 rounded-lg object-cover shrink-0 border border-white/10"
+                        />
+                      ) : (
+                        <div className="w-9 h-9 rounded-lg shrink-0 border border-white/10 bg-gradient-to-br from-emerald-800/60 to-slate-900" />
+                      )}
                       <div className="max-w-[110px] min-w-0">
                         <span className="block text-[10px] font-bold text-white truncate">
                           {t(sl.titleBn, sl.titleEn)}
@@ -275,7 +279,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onCategoryFilter }) => {
               title={t('এই ক্যাটাগরির সকল পণ্য দেখুন', 'Browse this category')}
               className="relative w-full h-full min-h-[210px] lg:min-h-[340px] rounded-2xl overflow-hidden border border-white/15 shadow-2xl cursor-pointer"
             >
-              {activeSlide?.image ? (
+              {activeSlide?.image?.trim() ? (
                 <img
                   key={`img-${activeSlide.id || currentSlideIndex}`}
                   src={activeSlide.image}

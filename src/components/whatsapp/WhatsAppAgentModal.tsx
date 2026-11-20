@@ -643,12 +643,16 @@ export const WhatsAppAgentModal: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-2.5">
-                    <img
-                      src={whatsappProductDraft.product.images[0]}
-                      alt={whatsappProductDraft.product.title}
-                      referrerPolicy="no-referrer"
-                      className="w-12 h-12 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
-                    />
+                    {whatsappProductDraft.product.images?.[0]?.trim() ? (
+                      <img
+                        src={whatsappProductDraft.product.images[0]}
+                        alt={whatsappProductDraft.product.title}
+                        referrerPolicy="no-referrer"
+                        className="w-12 h-12 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0" />
+                    )}
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
                         {lang === 'bn'
@@ -935,16 +939,20 @@ export const WhatsAppAgentModal: React.FC = () => {
                     const disc = Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100);
                     return (
                       <div key={p.id} className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center gap-3">
-                        <img
-                          src={p.images[0]}
-                          alt={p.title}
-                          referrerPolicy="no-referrer"
-                          onClick={() => {
-                            openProductPage(p);
-                            setIsWhatsAppOpen(false);
-                          }}
-                          className="w-14 h-14 rounded-lg object-cover shrink-0 cursor-pointer border border-slate-200 dark:border-slate-700"
-                        />
+                        {p.images?.[0]?.trim() ? (
+                          <img
+                            src={p.images[0]}
+                            alt={p.title}
+                            referrerPolicy="no-referrer"
+                            onClick={() => {
+                              openProductPage(p);
+                              setIsWhatsAppOpen(false);
+                            }}
+                            className="w-14 h-14 rounded-lg object-cover shrink-0 cursor-pointer border border-slate-200 dark:border-slate-700"
+                          />
+                        ) : (
+                          <div className="w-14 h-14 rounded-lg bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700" />
+                        )}
                         <div className="flex-1 min-w-0">
                           <p
                             onClick={() => {

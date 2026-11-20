@@ -470,11 +470,15 @@ export const OneClickCheckoutModal: React.FC = () => {
               {isSingleProduct && checkoutProduct ? (
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <img
-                      src={checkoutProduct.images[0]}
-                      alt={checkoutProduct.title}
-                      className="w-14 h-14 object-cover rounded-xl border border-slate-200 shrink-0"
-                    />
+                    {checkoutProduct.images?.[0]?.trim() ? (
+                      <img
+                        src={checkoutProduct.images[0]}
+                        alt={checkoutProduct.title}
+                        className="w-14 h-14 object-cover rounded-xl border border-slate-200 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-14 h-14 rounded-xl bg-slate-200 border border-slate-200 shrink-0" />
+                    )}
                     <div className="min-w-0">
                       <h5 className="font-bold text-xs text-slate-900 truncate">
                         {lang === 'bn' ? checkoutProduct.titleBn : checkoutProduct.title}
@@ -514,7 +518,11 @@ export const OneClickCheckoutModal: React.FC = () => {
                     return (
                       <div key={idx} className="flex items-center justify-between py-1 border-b border-slate-200/60 last:border-0">
                         <div className="flex items-center gap-2 min-w-0">
-                          <img src={item.product.images[0]} alt="" className="w-7 h-7 rounded-md object-cover shrink-0" />
+                          {item.product.images?.[0]?.trim() ? (
+                            <img src={item.product.images[0]} alt="" className="w-7 h-7 rounded-md object-cover shrink-0" />
+                          ) : (
+                            <div className="w-7 h-7 rounded-md bg-slate-200 shrink-0" />
+                          )}
                           <span className="font-medium text-slate-800 truncate max-w-[170px]">
                             {lang === 'bn' ? item.product.titleBn : item.product.title}
                           </span>

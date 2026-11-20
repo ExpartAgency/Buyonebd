@@ -271,20 +271,24 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
                 onClick={() => setIsZoomed(!isZoomed)}
                 className="relative aspect-square rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 cursor-crosshair group select-none"
               >
-                <img
-                  src={product.images[selectedImageIdx] || product.images[0]}
-                  alt={product.title}
-                  className={`w-full h-full object-cover transition-transform duration-200 ${
-                    isZoomed ? 'scale-150' : 'scale-100'
-                  }`}
-                  style={
-                    isZoomed
-                      ? {
-                          transformOrigin: `${zoomPosition.x}% ${zoomPosition.y}%`
-                        }
-                      : undefined
-                  }
-                />
+                {(product.images?.[selectedImageIdx]?.trim() || product.images?.[0]?.trim()) ? (
+                  <img
+                    src={product.images?.[selectedImageIdx]?.trim() || product.images?.[0]?.trim()}
+                    alt={product.title}
+                    className={`w-full h-full object-cover transition-transform duration-200 ${
+                      isZoomed ? 'scale-150' : 'scale-100'
+                    }`}
+                    style={
+                      isZoomed
+                        ? {
+                            transformOrigin: `${zoomPosition.x}% ${zoomPosition.y}%`
+                          }
+                        : undefined
+                    }
+                  />
+                ) : (
+                  <div className="w-full h-full bg-slate-200 dark:bg-slate-800" />
+                )}
 
                 {/* Zoom Hint Icon */}
                 <div className="absolute bottom-3 right-3 p-1.5 rounded-lg bg-black/60 backdrop-blur-md text-white text-[11px] font-medium flex items-center gap-1 pointer-events-none opacity-80 group-hover:opacity-100">
@@ -296,7 +300,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
               {/* Thumbnails */}
               {product.images.length > 1 && (
                 <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                  {product.images.map((img, i) => (
+                  {product.images.filter((img) => img && img.trim()).map((img, i) => (
                     <button
                       key={i}
                       onClick={() => {
