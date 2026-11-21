@@ -24,8 +24,6 @@ import {
   MessageSquarePlus,
   Tag,
   MessageCircle,
-  Copy,
-  ExternalLink,
   Eye
 } from 'lucide-react';
 import { Product } from '../../types';
@@ -57,14 +55,10 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
     goHome,
     getPartnerPriceInfo,
     getProductCanonicalUrl,
-    buildProductWhatsAppUrl,
-    openWhatsAppWidgetForProduct,
     lang,
     t,
     addToast
   } = useStore();
-
-  const [copiedProductLink, setCopiedProductLink] = useState(false);
 
   useEffect(() => {
     recordProductView(product.id);
@@ -825,7 +819,14 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     className="flex-1 py-3.5 sm:py-4 px-5 hover:opacity-95 text-white font-black text-sm rounded-2xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
                   >
                     <Zap className="w-5 h-5 text-amber-300 fill-amber-300 shrink-0" />
-                    <span>{t('১ ক্লিকে কিনুন (COD)', '1-Click Buy Now (COD)')}</span>
+                    <span>
+                      {t(
+                        settings.cmsTexts?.orderNowBtnBn || 'এখনই কিনুন',
+                        settings.cmsTexts?.orderNowBtnEn === 'Order Now' || !settings.cmsTexts?.orderNowBtnEn
+                          ? 'Buy Now'
+                          : settings.cmsTexts.orderNowBtnEn
+                      )}
+                    </span>
                   </button>
                 )}
 
@@ -862,7 +863,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 </div>
               </div>
 
-              {/* Direct Order Via WhatsApp & Chat With Product URL */}
+              {/* Direct Order Via WhatsApp */}
               {(() => {
                 const canonicalUrl = getProductCanonicalUrl(product);
                 const variantParts = [
@@ -871,10 +872,6 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   ...Object.entries(selectedAttributes || {}).map(([k, v]) => `${k}: ${v}`)
                 ].filter(Boolean);
                 const variantSummary = variantParts.join(', ');
-                const directWaHref = buildProductWhatsAppUrl(product, {
-                  variantText: variantSummary,
-                  quantity
-                });
                 const rawWaDigits = String(settings.whatsappNumber || '+8801917942662').replace(/[^0-9]/g, '');
                 const fmtWa = rawWaDigits.startsWith('88') ? rawWaDigits : `88${rawWaDigits}`;
                 const orderViaWaHref = `https://wa.me/${fmtWa}?text=${encodeURIComponent(
@@ -882,68 +879,15 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 )}`;
 
                 return (
-                  <div className="p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70 space-y-2.5">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <a
-                        href={orderViaWaHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="py-2.5 px-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer whitespace-nowrap"
-                      >
-                        <MessageCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span>{t('WhatsApp-এ অর্ডার করুন', 'Order Via WhatsApp')}</span>
-                      </a>
-
-                      <a
-                        href={directWaHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="py-2.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer whitespace-nowrap"
-                      >
-                        <MessageCircle className="w-4 h-4 shrink-0" />
-                        <span>
-                          {t('URL সহ চ্যাট', 'Chat (Product URL)')}
-                        </span>
-                        <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                      </a>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          openWhatsAppWidgetForProduct(product, {
-                            variantText: variantSummary,
-                            quantity
-                          })
-                        }
-                        className="py-2.5 px-3.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-slate-800 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
-                      >
-                        <Send className="w-3.5 h-3.5 shrink-0" />
-                        <span>{t('ইন-সাইট ডেস্ক', 'In-Site Desk')}</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-emerald-200/80 dark:border-slate-800 rounded-xl px-2.5 py-1.5">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 shrink-0">
-                        {t('প্রোডাক্ট URL:', 'Product URL:')}
-                      </span>
-                      <span className="text-[11px] font-mono text-slate-600 dark:text-slate-300 truncate flex-1">
-                        {canonicalUrl}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard?.writeText(canonicalUrl).catch(() => {});
-                          setCopiedProductLink(true);
-                          addToast('success', t('লিংক কপি হয়েছে!', 'Product Link Copied!'), canonicalUrl);
-                          setTimeout(() => setCopiedProductLink(false), 1800);
-                        }}
-                        className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-slate-700 dark:text-slate-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
-                      >
-                        {copiedProductLink ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                        <span>{copiedProductLink ? t('কপিড', 'Copied') : t('কপি', 'Copy')}</span>
-                      </button>
-                    </div>
-                  </div>
+                  <a
+                    href={orderViaWaHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-3.5 px-4 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm border border-emerald-500/30 transition-colors cursor-pointer"
+                  >
+                    <MessageCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{t('WhatsApp-এ অর্ডার করুন', 'Order Via WhatsApp')}</span>
+                  </a>
                 );
               })()}
 

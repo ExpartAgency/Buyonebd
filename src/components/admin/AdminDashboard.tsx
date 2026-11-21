@@ -6083,62 +6083,66 @@ export const AdminDashboard: React.FC = () => {
 
                 {/* Printable 80mm POS Receipt Modal (Strict 1-Copy #buyone-print-root) */}
                 {posReceiptOrder && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-                    <div className="w-full max-w-sm bg-white text-slate-900 rounded-2xl p-5 shadow-2xl space-y-3">
-                      <div className="no-print flex items-center justify-end">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-950/80 backdrop-blur-sm">
+                    <div className="w-full max-w-md sm:max-w-sm max-h-[92vh] overflow-y-auto bg-white text-slate-900 rounded-2xl p-3.5 sm:p-5 shadow-2xl space-y-3">
+                      <div className="no-print flex items-center justify-between gap-2 pb-1 border-b border-slate-100">
+                        <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+                          {at('POS রিসিট (80mm)', 'POS Receipt (80mm)')}
+                        </span>
                         <button
                           type="button"
                           onClick={() => setPosReceiptOrder(null)}
-                          className="p-1.5 rounded-lg bg-slate-100 text-slate-600 cursor-pointer"
+                          aria-label="Close POS Receipt"
+                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
                         >
                           <X className="w-4 h-4" />
                         </button>
                       </div>
 
-                      <div id="buyone-print-root" className="w-full max-w-[302px] mx-auto bg-white text-slate-900 space-y-3">
+                      <div id="buyone-print-root" className="w-full max-w-full sm:max-w-[302px] print:max-w-[80mm] mx-auto bg-white text-slate-900 space-y-3">
                         <div className="text-center border-b border-dashed border-slate-400 pb-2">
-                          <h4 className="font-black text-base uppercase">{settings.storeName || 'BuyOne BD'} — POS</h4>
-                          <p className="text-[11px] font-mono text-slate-600">Invoice #{posReceiptOrder.id}</p>
+                          <h4 className="font-black text-sm sm:text-base uppercase break-words">{settings.storeName || 'BuyOne BD'} — POS</h4>
+                          <p className="text-[11px] font-mono text-slate-600 break-all">Invoice #{posReceiptOrder.id}</p>
                         </div>
-                        <div className="text-xs space-y-1">
+                        <div className="text-xs space-y-1 break-words">
                           <p><strong>Customer:</strong> {posReceiptOrder.customer.name} ({posReceiptOrder.customer.phone})</p>
                           <p><strong>Date:</strong> {new Date(posReceiptOrder.createdAt).toLocaleString()}</p>
                           <p><strong>Method:</strong> {posReceiptOrder.payment.method.toUpperCase()} {posReceiptOrder.payment.trxId ? `(${posReceiptOrder.payment.trxId})` : ''}</p>
                         </div>
-                        <div className="border-y border-dashed border-slate-400 py-2 space-y-1 text-xs">
+                        <div className="border-y border-dashed border-slate-400 py-2 space-y-1.5 text-xs">
                           {posReceiptOrder.items.map((it, idx) => (
-                            <div key={idx} className="flex justify-between">
-                              <span className="truncate max-w-[190px]">
+                            <div key={idx} className="flex items-start justify-between gap-2">
+                              <span className="min-w-0 flex-1 break-words leading-snug">
                                 {it.productTitleBn}
                                 {it.selectedColor ? ` (${it.selectedColor})` : ''}
                                 {it.selectedSize ? ` [${it.selectedSize}]` : ''} ×{it.quantity}
                               </span>
-                              <span className="font-mono font-bold">৳{(it.price * it.quantity).toLocaleString()}</span>
+                              <span className="font-mono font-bold shrink-0 whitespace-nowrap">৳{(it.price * it.quantity).toLocaleString()}</span>
                             </div>
                           ))}
                         </div>
                         <div className="text-xs font-mono space-y-1 tabular-nums">
-                          <div className="flex justify-between"><span>Subtotal:</span><span>৳{posReceiptOrder.pricing.subtotal.toLocaleString()}</span></div>
-                          <div className="flex justify-between"><span>Discount:</span><span>-৳{posReceiptOrder.pricing.discount.toLocaleString()}</span></div>
+                          <div className="flex justify-between gap-2"><span>Subtotal:</span><span className="whitespace-nowrap">৳{posReceiptOrder.pricing.subtotal.toLocaleString()}</span></div>
+                          <div className="flex justify-between gap-2"><span>Discount:</span><span className="whitespace-nowrap">-৳{posReceiptOrder.pricing.discount.toLocaleString()}</span></div>
                           {(posReceiptOrder.pricing.loyaltyDiscount || 0) > 0 && (
-                            <div className="flex justify-between text-amber-700"><span>Loyalty Redeemed:</span><span>-৳{posReceiptOrder.pricing.loyaltyDiscount?.toLocaleString()}</span></div>
+                            <div className="flex justify-between gap-2 text-amber-700"><span>Loyalty Redeemed:</span><span className="whitespace-nowrap">-৳{posReceiptOrder.pricing.loyaltyDiscount?.toLocaleString()}</span></div>
                           )}
-                          <div className="flex justify-between font-black text-sm pt-1 border-t border-slate-300">
-                            <span>GRAND TOTAL:</span><span>৳{posReceiptOrder.pricing.total.toLocaleString()}</span>
+                          <div className="flex justify-between gap-2 font-black text-sm pt-1 border-t border-slate-300">
+                            <span>GRAND TOTAL:</span><span className="whitespace-nowrap">৳{posReceiptOrder.pricing.total.toLocaleString()}</span>
                           </div>
                           {(posReceiptOrder.pricing.advancePaid || 0) > 0 && (posReceiptOrder.payment.dueAmount || 0) > 0 && (
                             <>
-                              <div className="flex justify-between text-emerald-700"><span>Paid Now:</span><span>৳{posReceiptOrder.pricing.advancePaid?.toLocaleString()}</span></div>
-                              <div className="flex justify-between font-bold text-rose-700"><span>Balance Due:</span><span>৳{posReceiptOrder.payment.dueAmount?.toLocaleString()}</span></div>
+                              <div className="flex justify-between gap-2 text-emerald-700"><span>Paid Now:</span><span className="whitespace-nowrap">৳{posReceiptOrder.pricing.advancePaid?.toLocaleString()}</span></div>
+                              <div className="flex justify-between gap-2 font-bold text-rose-700"><span>Balance Due:</span><span className="whitespace-nowrap">৳{posReceiptOrder.payment.dueAmount?.toLocaleString()}</span></div>
                             </>
                           )}
                           {(posReceiptOrder.pricing.loyaltyPointsEarned || 0) > 0 && (
-                            <div className="flex justify-between text-emerald-700 font-bold text-[11px] pt-1">
-                              <span>Loyalty Points Earned:</span><span>+{posReceiptOrder.pricing.loyaltyPointsEarned} pts</span>
+                            <div className="flex justify-between gap-2 text-emerald-700 font-bold text-[11px] pt-1">
+                              <span>Loyalty Points Earned:</span><span className="whitespace-nowrap">+{posReceiptOrder.pricing.loyaltyPointsEarned} pts</span>
                             </div>
                           )}
                         </div>
-                        <p className="text-center text-[10px] text-slate-500 pt-2 border-t border-dashed border-slate-300">
+                        <p className="text-center text-[10px] text-slate-500 pt-2 border-t border-dashed border-slate-300 break-words">
                           Thank you for shopping at {settings.storeName || 'BuyOne BD'}!
                         </p>
                       </div>
@@ -6146,9 +6150,9 @@ export const AdminDashboard: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => window.print()}
-                        className="no-print w-full py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer"
+                        className="no-print w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
                       >
-                        <Printer className="w-4 h-4" />
+                        <Printer className="w-4 h-4 shrink-0" />
                         <span>{at('রিসিট প্রিন্ট করুন (১ কপি)', 'Print 80mm Receipt (1 Copy)')}</span>
                       </button>
                     </div>
@@ -6157,8 +6161,8 @@ export const AdminDashboard: React.FC = () => {
 
                 {/* Printable Product Barcode Label Modal (Strict 1-Copy #buyone-print-root) */}
                 {printableBarcodeProduct && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-                    <div className="w-full max-w-xs bg-white text-slate-900 rounded-2xl p-5 shadow-2xl text-center space-y-3">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-950/80 backdrop-blur-sm">
+                    <div className="w-full max-w-xs max-h-[92vh] overflow-y-auto bg-white text-slate-900 rounded-2xl p-3.5 sm:p-5 shadow-2xl text-center space-y-3">
                       <div className="no-print flex items-center justify-between">
                         <span className="text-[11px] font-bold text-slate-500 uppercase">Barcode Sticker Label</span>
                         <button
@@ -6173,7 +6177,7 @@ export const AdminDashboard: React.FC = () => {
                         <p className="text-[10px] font-bold uppercase text-slate-500">{settings.storeName || 'BuyOne BD'}</p>
                         <p className="text-xs font-black truncate">{printableBarcodeProduct.titleBn}</p>
                         <p className="text-sm font-black text-emerald-700 font-mono">৳{printableBarcodeProduct.price.toLocaleString()}</p>
-                        <svg viewBox="0 0 180 42" className="w-48 h-10 mx-auto">
+                        <svg viewBox="0 0 180 42" className="w-full max-w-[192px] h-10 mx-auto">
                           {Array.from({ length: 42 }).map((_, i) => (
                             <rect key={i} x={i * 4.2 + 2} y={2} width={i % 4 === 0 ? 3 : 1.5} height={38} fill="#0f172a" />
                           ))}
@@ -6194,8 +6198,8 @@ export const AdminDashboard: React.FC = () => {
 
                 {/* Printable Daily Z-Report Modal (Strict 1-Copy #buyone-print-root) */}
                 {posPrintZReportCopy && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-                    <div className="w-full max-w-sm bg-white text-slate-900 rounded-2xl p-5 shadow-2xl space-y-3">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-950/80 backdrop-blur-sm">
+                    <div className="w-full max-w-md sm:max-w-sm max-h-[92vh] overflow-y-auto bg-white text-slate-900 rounded-2xl p-3.5 sm:p-5 shadow-2xl space-y-3">
                       <div className="no-print flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-500 uppercase">Daily POS Z-Report</span>
                         <button
@@ -6206,21 +6210,21 @@ export const AdminDashboard: React.FC = () => {
                           <X className="w-4 h-4" />
                         </button>
                       </div>
-                      <div id="buyone-print-root" className="max-w-[302px] mx-auto bg-white text-slate-950 space-y-2 text-xs font-mono">
+                      <div id="buyone-print-root" className="w-full max-w-full sm:max-w-[302px] print:max-w-[80mm] mx-auto bg-white text-slate-950 space-y-2 text-xs font-mono">
                         <div className="text-center border-b-2 border-slate-900 pb-2">
-                          <h4 className="font-black text-sm uppercase">{settings.storeName || 'BuyOne BD'} — Z-REPORT</h4>
-                          <p className="text-[10px]">{new Date().toLocaleDateString()} · Shift: {posShiftStartedAt}</p>
+                          <h4 className="font-black text-sm uppercase break-words">{settings.storeName || 'BuyOne BD'} — Z-REPORT</h4>
+                          <p className="text-[10px] break-words">{new Date().toLocaleDateString()} · Shift: {posShiftStartedAt}</p>
                         </div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between"><span>POS Invoices:</span><strong>{todayPosOrders.length}</strong></div>
-                          <div className="flex justify-between"><span>Opening Drawer:</span><strong>৳{posShiftOpeningCash.toLocaleString()}</strong></div>
-                          <div className="flex justify-between"><span>Cash Sales:</span><strong>৳{todayPosCashTotal.toLocaleString()}</strong></div>
-                          <div className="flex justify-between"><span>Digital / Card:</span><strong>৳{todayPosDigitalTotal.toLocaleString()}</strong></div>
-                          <div className="flex justify-between border-t border-dashed border-slate-400 pt-1">
-                            <span>Expected Cash in Drawer:</span><strong>৳{(posShiftOpeningCash + todayPosCashTotal).toLocaleString()}</strong>
+                        <div className="space-y-1 tabular-nums">
+                          <div className="flex justify-between gap-2"><span>POS Invoices:</span><strong className="whitespace-nowrap">{todayPosOrders.length}</strong></div>
+                          <div className="flex justify-between gap-2"><span>Opening Drawer:</span><strong className="whitespace-nowrap">৳{posShiftOpeningCash.toLocaleString()}</strong></div>
+                          <div className="flex justify-between gap-2"><span>Cash Sales:</span><strong className="whitespace-nowrap">৳{todayPosCashTotal.toLocaleString()}</strong></div>
+                          <div className="flex justify-between gap-2"><span>Digital / Card:</span><strong className="whitespace-nowrap">৳{todayPosDigitalTotal.toLocaleString()}</strong></div>
+                          <div className="flex justify-between gap-2 border-t border-dashed border-slate-400 pt-1">
+                            <span>Expected Cash in Drawer:</span><strong className="whitespace-nowrap">৳{(posShiftOpeningCash + todayPosCashTotal).toLocaleString()}</strong>
                           </div>
-                          <div className="flex justify-between font-black text-sm border-t-2 border-slate-900 pt-1">
-                            <span>TOTAL REVENUE:</span><span>৳{todayPosRevenue.toLocaleString()}</span>
+                          <div className="flex justify-between gap-2 font-black text-sm border-t-2 border-slate-900 pt-1">
+                            <span>TOTAL REVENUE:</span><span className="whitespace-nowrap">৳{todayPosRevenue.toLocaleString()}</span>
                           </div>
                         </div>
                       </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Star, ShoppingBag, Heart, ArrowRight, BellRing, Tag, Award, Eye, MessageCircle } from 'lucide-react';
+import { Star, ShoppingBag, Heart, ArrowRight, BellRing, Tag, Award, MessageCircle } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
 import { WaitlistModal } from '../common/WaitlistModal';
@@ -17,7 +17,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
     toggleWishlist,
     isWishlisted,
     getPartnerPriceInfo,
-    getProductViewCount,
     buildProductWhatsAppUrl,
     getProductCanonicalUrl,
     settings,
@@ -42,8 +41,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
       ? 'Buy Now'
       : settings.cmsTexts.orderNowBtnEn
   );
-  const viewCount = getProductViewCount(product.id);
-  const showViewerCounter = settings.viewerCounter?.enabled !== false;
   const waDigits = String(settings.whatsappNumber || '+8801917942662').replace(/[^0-9]/g, '');
   const formattedWaPhone = waDigits.startsWith('88') ? waDigits : `88${waDigits}`;
   const orderViaWaHref = `https://wa.me/${formattedWaPhone}?text=${encodeURIComponent(
@@ -184,14 +181,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
                   )}
                 </span>
               </div>
-            )}
-            {showViewerCounter && (
-              <p className="mt-1 flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400 tabular-nums">
-                <Eye className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                <span className="truncate">
-                  {viewCount.toLocaleString()} {t(settings.viewerCounter?.labelBn || 'জন দেখেছেন', settings.viewerCounter?.labelEn || 'viewed this')}
-                </span>
-              </p>
             )}
           </div>
 

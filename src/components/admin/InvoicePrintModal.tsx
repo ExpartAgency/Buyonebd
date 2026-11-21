@@ -79,22 +79,22 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
 
   const sheetWidthClass =
     paperSize === 'A4'
-      ? 'max-w-[794px] w-full p-6 sm:p-8'
+      ? 'max-w-[794px] w-full p-3.5 sm:p-8 print:p-6'
       : paperSize === 'label_4x6'
-      ? 'max-w-[384px] w-full p-4'
+      ? 'max-w-[384px] w-full p-3 sm:p-4 print:p-4'
       : paperSize === 'label_4x3'
-      ? 'max-w-[384px] w-full p-3.5'
+      ? 'max-w-[384px] w-full p-3 sm:p-3.5 print:p-3.5'
       : paperSize === 'label_3x2'
       ? 'max-w-[300px] w-full p-2.5'
-      : 'max-w-[302px] w-full p-3';
+      : 'max-w-full sm:max-w-[340px] print:max-w-[302px] w-full p-3 sm:p-4 print:p-3';
 
   return (
     <div className="fixed inset-0 z-[9996] flex flex-col bg-slate-950/90 backdrop-blur-sm overflow-hidden">
       {/* Screen-Only Toolbar (Hidden automatically during window.print()) */}
-      <div className="no-print flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-sm font-black text-white flex items-center gap-2 mr-2">
-            <Printer className="w-4 h-4 text-emerald-400" />
+      <div className="no-print flex flex-wrap items-center justify-between gap-2.5 px-3 sm:px-6 py-2.5 sm:py-3 bg-slate-900 border-b border-slate-800 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-2 mr-1 sm:mr-2">
+            <Printer className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>
               {at(`ইনভয়েস ও লেবেল প্রিন্ট (${orders.length}টি)`, `Print Preview (${orders.length} Order${orders.length > 1 ? 's' : ''})`)}
             </span>
@@ -126,7 +126,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {onOpenInvoiceSetup && (
             <button
               type="button"
@@ -134,7 +134,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                 onClose();
                 onOpenInvoiceSetup();
               }}
-              className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
             >
               <Settings2 className="w-3.5 h-3.5 text-amber-400" />
               <span>{at('ইনভয়েস সেটআপ', 'Invoice Setup')}</span>
@@ -143,7 +143,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           <button
             type="button"
             onClick={() => window.print()}
-            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-600/25"
+            className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-600/25"
           >
             <Printer className="w-4 h-4" />
             <span>{at('এখনই প্রিন্ট / PDF', 'Print / Save PDF')}</span>
@@ -160,8 +160,8 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
       </div>
 
       {/* Scrollable Preview Canvas + Isolated Print Root */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-900/70">
-        <div id="buyone-print-root" className="flex flex-col items-center gap-6">
+      <div className="flex-1 overflow-y-auto p-2.5 sm:p-6 bg-slate-900/70">
+        <div id="buyone-print-root" className="flex flex-col items-center gap-6 w-full">
           {orders.map((ord, ordIdx) => {
             const invoiceNo = `${invCfg.invoicePrefix || 'INV-'}${ord.id}`;
             const dateStr = (() => {
@@ -300,8 +300,8 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                       {invCfg.binVatNumber && <p className="text-[10px]">BIN/VAT: {invCfg.binVatNumber}</p>}
                     </div>
 
-                    <div className="border-b border-dashed border-slate-400 pb-2 text-[10px] space-y-0.5">
-                      <div className="flex justify-between">
+                    <div className="border-b border-dashed border-slate-400 pb-2 text-[10px] space-y-0.5 break-words">
+                      <div className="flex justify-between gap-2 flex-wrap">
                         <span>INV: {invoiceNo}</span>
                         <span>{dateStr}</span>
                       </div>
@@ -310,18 +310,18 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                       <p>{ord.customer.address}, {ord.customer.district}</p>
                     </div>
 
-                    <div className="border-b border-dashed border-slate-400 pb-2 space-y-1">
-                      <div className="flex justify-between font-bold text-[10px] border-b border-slate-300 pb-0.5">
+                    <div className="border-b border-dashed border-slate-400 pb-2 space-y-1.5">
+                      <div className="flex justify-between gap-2 font-bold text-[10px] border-b border-slate-300 pb-0.5">
                         <span>ITEM</span>
                         <span>AMOUNT</span>
                       </div>
                       {ord.items.map((it, idx) => (
                         <div key={idx} className="space-y-0.5">
-                          <div className="flex justify-between">
-                            <span className="font-bold">{it.productTitle}</span>
-                            <span>৳{(it.price * it.quantity).toLocaleString()}</span>
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="font-bold min-w-0 flex-1 break-words">{it.productTitle}</span>
+                            <span className="shrink-0 whitespace-nowrap font-bold">৳{(it.price * it.quantity).toLocaleString()}</span>
                           </div>
-                          <div className="text-[9px] text-slate-600">
+                          <div className="text-[9px] text-slate-600 break-words">
                             {it.quantity} × ৳{it.price.toLocaleString()}
                             {invCfg.showSku && (it.selectedColor || it.selectedSize)
                               ? ` [${[it.selectedColor, it.selectedSize].filter(Boolean).join('/')}]`
@@ -402,7 +402,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                         </div>
                       </div>
 
-                      <div className="text-right space-y-1">
+                      <div className="sm:text-right space-y-1">
                         <span
                           style={{ backgroundColor: accent }}
                           className="inline-block px-3 py-1 text-white font-black text-xs uppercase tracking-widest rounded-xs"
@@ -415,7 +415,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                           Status: {ord.status.replace('_', ' ')}
                         </p>
                         {ord.courier?.trackingCode && (
-                          <p className="text-[11px] font-mono text-slate-800">
+                          <p className="text-[11px] font-mono text-slate-800 break-all">
                             {ord.courier.provider}: {ord.courier.trackingCode}
                           </p>
                         )}
@@ -457,50 +457,52 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                     </div>
 
                     {/* Items Table */}
-                    <table className="w-full border-collapse text-xs">
-                      <thead>
-                        <tr style={{ backgroundColor: accent }} className="text-white">
-                          <th className="py-2 px-3 text-left font-bold">#</th>
-                          <th className="py-2 px-3 text-left font-bold">Product Description</th>
-                          <th className="py-2 px-3 text-center font-bold">Qty</th>
-                          <th className="py-2 px-3 text-right font-bold">Unit Price</th>
-                          <th className="py-2 px-3 text-right font-bold">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200 border border-slate-200">
-                        {ord.items.map((it, idx) => (
-                          <tr key={idx}>
-                            <td className="py-2.5 px-3 font-mono text-slate-500">{idx + 1}</td>
-                            <td className="py-2.5 px-3">
-                              <div className="flex items-center gap-2.5">
-                                {invCfg.showProductImages && it.image && (
-                                  <img
-                                    src={it.image}
-                                    alt={it.productTitle}
-                                    referrerPolicy="no-referrer"
-                                    className="w-9 h-9 rounded object-cover border border-slate-200 shrink-0"
-                                  />
-                                )}
-                                <div>
-                                  <p className="font-bold text-slate-950">{it.productTitle}</p>
-                                  {it.productTitleBn && <p className="text-[10px] text-slate-500">{it.productTitleBn}</p>}
-                                  {invCfg.showSku && (it.selectedColor || it.selectedSize) && (
-                                    <p className="text-[10px] font-mono text-slate-600">
-                                      Variant: {[it.selectedColor, it.selectedSize].filter(Boolean).join(' · ')}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono font-bold">{it.quantity}</td>
-                            <td className="py-2.5 px-3 text-right font-mono">৳{it.price.toLocaleString()}</td>
-                            <td className="py-2.5 px-3 text-right font-mono font-bold">
-                              ৳{(it.price * it.quantity).toLocaleString()}
-                            </td>
+                    <div className="w-full overflow-x-auto print:overflow-visible">
+                      <table className="w-full min-w-[480px] sm:min-w-0 border-collapse text-[11px] sm:text-xs">
+                        <thead>
+                          <tr style={{ backgroundColor: accent }} className="text-white">
+                            <th className="py-2 px-2.5 sm:px-3 text-left font-bold">#</th>
+                            <th className="py-2 px-2.5 sm:px-3 text-left font-bold">Product Description</th>
+                            <th className="py-2 px-2.5 sm:px-3 text-center font-bold">Qty</th>
+                            <th className="py-2 px-2.5 sm:px-3 text-right font-bold">Unit Price</th>
+                            <th className="py-2 px-2.5 sm:px-3 text-right font-bold">Total</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 border border-slate-200">
+                          {ord.items.map((it, idx) => (
+                            <tr key={idx}>
+                              <td className="py-2.5 px-2.5 sm:px-3 font-mono text-slate-500">{idx + 1}</td>
+                              <td className="py-2.5 px-2.5 sm:px-3">
+                                <div className="flex items-center gap-2.5">
+                                  {invCfg.showProductImages && it.image && (
+                                    <img
+                                      src={it.image}
+                                      alt={it.productTitle}
+                                      referrerPolicy="no-referrer"
+                                      className="w-9 h-9 rounded object-cover border border-slate-200 shrink-0"
+                                    />
+                                  )}
+                                  <div className="min-w-0">
+                                    <p className="font-bold text-slate-950 break-words">{it.productTitle}</p>
+                                    {it.productTitleBn && <p className="text-[10px] text-slate-500 break-words">{it.productTitleBn}</p>}
+                                    {invCfg.showSku && (it.selectedColor || it.selectedSize) && (
+                                      <p className="text-[10px] font-mono text-slate-600">
+                                        Variant: {[it.selectedColor, it.selectedSize].filter(Boolean).join(' · ')}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-2.5 sm:px-3 text-center font-mono font-bold whitespace-nowrap">{it.quantity}</td>
+                              <td className="py-2.5 px-2.5 sm:px-3 text-right font-mono whitespace-nowrap">৳{it.price.toLocaleString()}</td>
+                              <td className="py-2.5 px-2.5 sm:px-3 text-right font-mono font-bold whitespace-nowrap">
+                                ৳{(it.price * it.quantity).toLocaleString()}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
 
                     {/* Custom Fields + Financial Summary */}
                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-start">
