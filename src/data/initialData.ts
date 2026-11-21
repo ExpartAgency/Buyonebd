@@ -7,7 +7,8 @@ import {
   HomeSlide,
   AbandonedCart,
   UserStaff,
-  ProductReview
+  ProductReview,
+  BlogPost
 } from '../types';
 
 // All 64 Districts in Bangladesh
@@ -838,8 +839,8 @@ export const INITIAL_SETTINGS: StoreSettings = {
   cmsTexts: {
     trendingTitleBn: 'হট ও ট্রেন্ডিং কালেকশন',
     trendingTitleEn: 'Hot & Trending Collection',
-    orderNowBtnBn: 'অর্ডার করুন',
-    orderNowBtnEn: 'Order Now',
+    orderNowBtnBn: 'কিনুন',
+    orderNowBtnEn: 'Buy Now',
     addToCartBtnBn: 'কার্টে যোগ করুন',
     addToCartBtnEn: 'Add to Cart',
     allCategoriesLabelBn: 'সকল পণ্য',
@@ -1363,6 +1364,22 @@ export const INITIAL_SETTINGS: StoreSettings = {
         showOnReceipt: true
       }
     ]
+  },
+  viewerCounter: {
+    enabled: true,
+    baseCount: 76439,
+    labelBn: 'জন এই পণ্যটি দেখেছেন',
+    labelEn: 'people viewed this',
+    autoIncrement: true
+  },
+  affiliateSettings: {
+    enabled: true,
+    autoApprove: false,
+    defaultCommissionPercent: 8,
+    minPayoutBdt: 300,
+    cookieDays: 30,
+    welcomeMsgBn: 'স্বাগতম! আপনার ইউনিক অ্যাফিলিয়েট লিংক শেয়ার করে প্রতিটি ডেলিভার্ড অর্ডারে ৮% পর্যন্ত সরাসরি কমিশন আয় করুন।',
+    welcomeMsgEn: 'Welcome! Share your unique referral link and earn up to 8% commission on every delivered order.'
   }
 };
 
@@ -1512,4 +1529,74 @@ export const BUSINESS_THEME_PRESETS: BusinessThemePreset[] = [
     ]
   }
 ];
+
+export const INITIAL_BLOGS: BlogPost[] = [
+  {
+    id: 'blog-01',
+    title: 'How to Choose the Best Smart Watch Under 2500 BDT in Bangladesh',
+    titleBn: 'বাংলাদেশে ২,৫০০ টাকার মধ্যে সেরা স্মার্ট ওয়াচ কেনার গাইড',
+    slug: 'best-smart-watch-under-2500-bd',
+    excerpt: 'Compare AMOLED displays, Bluetooth calling, battery backup, and open-box COD warranty before ordering.',
+    excerptBn: 'অ্যামোলেড ডিসপ্লে, ব্লুটুথ কলিং, ব্যাটারি ব্যাকআপ এবং আনবক্সিং ওয়ারেন্টি মিলিয়ে সঠিক স্মার্ট ওয়াচ বেছে নিন।',
+    content: 'Smartwatches have become essential everyday companions across Dhaka and nationwide Bangladesh. When buying in the 1,500–2,500 BDT range, focus on three practical specs:\n\n1. Display Visibility: Look for high-nit IPS or AMOLED screens readable in bright daylight.\n2. Calling & Notifications: Check Bengali font support for WhatsApp and Messenger alerts.\n3. Open-Box Cash on Delivery: Always buy from stores like BuyOne BD that let you inspect the seal and power on the watch before paying the Steadfast or Pathao rider.',
+    contentBn: 'বাংলাদেশে দৈনন্দিন ব্যবহারের জন্য স্মার্ট ওয়াচ এখন অত্যন্ত জনপ্রিয়। ১,৫০০ থেকে ২,৫০০ টাকা বাজেটে সেরা ঘড়ি কিনতে হলে তিনটি বিষয় যাচাই করুন:\n\n১. ডিসপ্লে উজ্জ্বলতা: রোদে স্পষ্ট দেখা যায় এমন HD বা AMOLED ডিসপ্লে বেছে নিন।\n২. বাংলা নোটিফিকেশন ও ব্লুটুথ কলিং: হোয়াটসঅ্যাপ ও মেসেঞ্জার কল স্পষ্ট শোনা যায় কি না দেখে নিন।\n৩. আনবক্সিং ও ক্যাশ অন ডেলিভারি: অর্ডার করার আগে ৭ দিনের রিপ্লেসমেন্ট গ্যারান্টি ও ডেলিভারি ম্যানের সামনে চেক করার সুবিধা নিশ্চিত করুন।',
+    category: 'Tech Guides',
+    categoryBn: 'টেক গাইড',
+    coverImage: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=900',
+    author: 'Md Hossain',
+    tags: ['smartwatch', 'gadgets', 'bangladesh', 'cod'],
+    seoTitle: 'Best Smart Watch Under 2500 BDT in Bangladesh | BuyOne BD',
+    seoDescription: 'Complete buyer checklist for budget smartwatches with Bluetooth calling and Cash on Delivery across all 64 districts.',
+    readTimeMinutes: 4,
+    viewsCount: 1420,
+    isPublished: true,
+    publishedAt: '2026-11-05T10:00:00Z',
+    createdAt: '2026-11-05T10:00:00Z'
+  },
+  {
+    id: 'blog-02',
+    title: '5 Simple Home Tests to Verify Pure Sundarban Raw Honey',
+    titleBn: 'খাঁটি সুন্দরবনের মধু চেনার ৫টি সহজ ঘরোয়া পরীক্ষা',
+    slug: 'verify-pure-sundarban-raw-honey-bd',
+    excerpt: 'Learn how to distinguish natural forest honey from sugar-syrup blends without laboratory tools.',
+    excerptBn: 'ল্যাব টেস্ট ছাড়াই বাসায় বসে প্রাকৃতিক সুন্দরবনের মধু ও ভেজাল মধুর পার্থক্য যাচাই করার উপায় জানুন।',
+    content: 'Demand for raw Sundarban honey spikes every winter across Bangladesh. Pure unfiltered honey behaves differently from commercial syrups:\n\n- Thumb Test: A drop of pure honey holds its shape on your thumbnail instead of spreading immediately.\n- Water Dissolution Test: Raw honey settles at the bottom of a glass of cool water as cohesive ribbons before dissolving slowly.\n- Aroma & Seasonal Texture: Authentic forest honey carries subtle floral notes and may crystallize slightly in cooler weather—a natural sign of raw enzymes.',
+    contentBn: 'শীতকাল ও রোগ প্রতিরোধ ক্ষমতা বাড়াতে বাংলাদেশে সুন্দরবনের খাঁটি মধুর চাহিদা সবচেয়ে বেশি। ঘরে বসেই খাঁটি মধু চিনতে এই পরীক্ষাগুলো করুন:\n\n১. বৃদ্ধাঙ্গুল পরীক্ষা: এক ফোঁটা মধু আঙুলে রাখলে তা দ্রুত ছড়িয়ে না গিয়ে জমাট থাকে।\n২. ঠান্ডা পানির পরীক্ষা: গ্লাসের পানিতে মধু ঢাললে সহজে মিশে না গিয়ে তলায় জমা হয়।\n৩. প্রাকৃতিক ঘ্রাণ: খাঁটি মধুতে কৃত্রিম চিনির গন্ধ নয়, বরং হালকা বনজ ফুলের সুবাস থাকে। BuyOne BD ল্যাব-পরীক্ষিত ও সিলপ্যাক খাঁটি মধু সরবরাহ করে।',
+    category: 'Organic Living',
+    categoryBn: 'অর্গানিক লাইফ',
+    coverImage: 'https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=900',
+    author: 'BuyOne Editorial',
+    tags: ['honey', 'organic', 'sundarban', 'health'],
+    seoTitle: 'How to Test Pure Sundarban Honey at Home | BuyOne BD',
+    seoDescription: 'Practical home purity tests for Sundarban raw honey in Bangladesh with Cash on Delivery.',
+    readTimeMinutes: 3,
+    viewsCount: 980,
+    isPublished: true,
+    publishedAt: '2026-11-08T14:30:00Z',
+    createdAt: '2026-11-08T14:30:00Z'
+  },
+  {
+    id: 'blog-03',
+    title: 'Nationwide Cash on Delivery: How 64-District Express Shipping Works',
+    titleBn: 'সারা বাংলাদেশের ৬৪ জেলায় ক্যাশ অন ডেলিভারি কীভাবে কাজ করে',
+    slug: '64-district-cash-on-delivery-bangladesh',
+    excerpt: 'Track your parcel live from Banani warehouse via Steadfast, Pathao, and RedX with zero advance hassle.',
+    excerptBn: 'ঢাকার ভেতরে ২৪ ঘন্টা ও সারাদেশে ৪৮-৭২ ঘন্টায় স্টিডফাস্ট ও পাঠাও কুরিয়ারে লাইভ ট্র্যাকিং সুবিধা জানুন।',
+    content: 'Shopping online from outside Dhaka used to take weeks. Today, automated verification and integrated courier hubs deliver across all 64 districts in 48–72 hours.\n\n1. Instant Order Verification: Confirm your address with our automated voice system or support desk within minutes.\n2. Live Consignment Tracking: Receive your Steadfast/Pathao tracking ID via SMS and WhatsApp.\n3. Pay After Inspection: Check packaging condition upon arrival and pay conveniently in cash or via mobile wallet.',
+    contentBn: 'একসময় ঢাকার বাইরে অনলাইন ডেলিভারি পেতে অনেক দিন অপেক্ষা করতে হতো। এখন আধুনিক কুরিয়ার নেটওয়ার্কে ৬৪ জেলাতেই ৪৮-৭২ ঘন্টায় পার্সেল পৌঁছে যাচ্ছে।\n\n১. দ্রুত ভেরিফিকেশন: অর্ডারের পরপরই আমাদের ভয়েস ও হোয়াটসঅ্যাপ টিম ঠিকানা নিশ্চিত করে।\n২. লাইভ ট্র্যাকিং কোড: কুরিয়ার বুকিংয়ের সাথে সাথে ট্র্যাকিং নম্বর ও আপডেট পান।\n৩. দেখে পেমেন্টের সুযোগ: ডেলিভারি রাইডারের সামনে পার্সেল যাচাই করে ক্যাশ অন ডেলিভারিতে মূল্য পরিশোধ করুন।',
+    category: 'Shopping Guide',
+    categoryBn: 'শপিং গাইড',
+    coverImage: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=900',
+    author: 'Operations Team',
+    tags: ['delivery', 'steadfast', 'pathao', 'cod'],
+    seoTitle: '64-District Cash on Delivery Courier Guide Bangladesh | BuyOne BD',
+    seoDescription: 'Fast 24-72h home delivery via Steadfast & Pathao across all 64 districts in Bangladesh.',
+    readTimeMinutes: 3,
+    viewsCount: 745,
+    isPublished: true,
+    publishedAt: '2026-11-12T09:15:00Z',
+    createdAt: '2026-11-12T09:15:00Z'
+  }
+];
+
 

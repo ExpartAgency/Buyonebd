@@ -40,6 +40,9 @@ export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhat
     bulkDeleteResellers,
     adjustResellerWallet,
     resellerPayouts,
+    resellerTopUps,
+    processResellerTopUp,
+    deleteResellerTopUp,
     processResellerPayout,
     updateResellerPayout,
     deleteResellerPayout,
@@ -764,6 +767,67 @@ export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhat
                 </div>
               )
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Reseller Balance Top-Up Requests Queue */}
+      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+          <Plus className="w-4 h-4 text-sky-400" />
+          <span>{at('রিসেলার ব্যালেন্স টপ-আপ রিকোয়েস্ট', 'Reseller Wallet Balance Top-Up Requests')}</span>
+        </h4>
+        {resellerTopUps.length === 0 ? (
+          <p className="text-xs text-slate-400 py-3">{at('কোনো ব্যালেন্স টপ-আপ আবেদন নেই।', 'No balance top-up requests yet.')}</p>
+        ) : (
+          <div className="space-y-2.5">
+            {resellerTopUps.map((tp) => (
+              <div
+                key={tp.id}
+                className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs tabular-nums"
+              >
+                <div>
+                  <p className="font-bold text-white">
+                    {tp.resellerName} ({tp.resellerPhone}) · <span className="text-sky-400 font-mono">+৳{tp.amount.toLocaleString()}</span>
+                  </p>
+                  <p className="text-[11px] text-slate-400 uppercase mt-0.5">
+                    {tp.method} · From {tp.senderNumber} · TrxID: <span className="text-white font-mono">{tp.trxId}</span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {tp.status === 'pending' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => processResellerTopUp(tp.id, 'approved', 'Verified MFS deposit')}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{at('অনুমোদন ও যোগ', 'Approve & Credit')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => processResellerTopUp(tp.id, 'rejected', 'TrxID not matched')}
+                        className="px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white font-bold text-[11px] cursor-pointer"
+                      >
+                        {at('বাতিল', 'Reject')}
+                      </button>
+                    </>
+                  ) : (
+                    <span className={`font-bold uppercase text-[11px] ${tp.status === 'approved' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {tp.status}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => deleteResellerTopUp(tp.id)}
+                    className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-600 text-rose-300 hover:text-white cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

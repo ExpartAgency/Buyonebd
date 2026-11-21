@@ -129,6 +129,8 @@ import { WhatsAppSupportConsole } from './WhatsAppSupportConsole';
 import { InvoicePrintModal } from './InvoicePrintModal';
 import { InvoiceSetupPanel } from './InvoiceSetupPanel';
 import { BulkSectionShell, BulkCommandBar } from './BulkSectionShell';
+import { BlogAdminView } from './BlogAdminView';
+import { AffiliateAdminView } from './AffiliateAdminView';
 
 const parseJsonSafe = async (res: Response): Promise<any> => {
   const txt = await res.text();
@@ -213,6 +215,9 @@ export const AdminDashboard: React.FC = () => {
     wholesalers,
     resellerPayouts,
     wholesaleQuotes,
+    blogs,
+    affiliates,
+    affiliatePayouts,
     resetAllToDefault,
     setActiveView,
     goHome,
@@ -270,6 +275,7 @@ export const AdminDashboard: React.FC = () => {
     syncStoreMediaLibrary,
     customerAccounts,
     updateCustomerAccountByAdmin,
+    createCustomerAccountByAdmin,
     deleteCustomerAccountByAdmin,
     adjustSpecificCustomerBalance,
     resetCustomerWalletExpiry,
@@ -355,11 +361,14 @@ export const AdminDashboard: React.FC = () => {
     | 'categories'
     | 'abandoned_carts'
     | 'courier_hub'
+    | 'delivery_fleet'
     | 'flash_sale'
     | 'sliders'
+    | 'blogs'
     | 'wallet_control'
     | 'resellers'
     | 'wholesale'
+    | 'affiliates'
     | 'global_marketing'
     | 'marketing'
     | 'seo_metadata'
@@ -413,6 +422,22 @@ export const AdminDashboard: React.FC = () => {
   const [posSplitMode, setPosSplitMode] = useState<boolean>(false);
   const [posSplitCashAmount, setPosSplitCashAmount] = useState<number>(0);
   const [posShowZReport, setPosShowZReport] = useState<boolean>(false);
+  const [posPrintZReportCopy, setPosPrintZReportCopy] = useState<boolean>(false);
+  const [posVariantPickerProd, setPosVariantPickerProd] = useState<Product | null>(null);
+  const [posVariantColor, setPosVariantColor] = useState<string>('');
+  const [posVariantSize, setPosVariantSize] = useState<string>('');
+  const [posCouponInput, setPosCouponInput] = useState<string>('');
+  const [posAppliedCoupon, setPosAppliedCoupon] = useState<{ code: string; discount: number; label: string } | null>(null);
+  const [posQuickCustomerOpen, setPosQuickCustomerOpen] = useState<boolean>(false);
+  const [posQuickCustName, setPosQuickCustName] = useState<string>('');
+  const [posQuickCustPhone, setPosQuickCustPhone] = useState<string>('');
+  const [posDueMode, setPosDueMode] = useState<boolean>(false);
+  const [posHistoryOpen, setPosHistoryOpen] = useState<boolean>(false);
+  const [posReturnOrder, setPosReturnOrder] = useState<Order | null>(null);
+  const [posRefundReason, setPosRefundReason] = useState<string>('Customer exchange / return at POS counter');
+  const [posShiftOpen, setPosShiftOpen] = useState<boolean>(true);
+  const [posShiftOpeningCash, setPosShiftOpeningCash] = useState<number>(2000);
+  const [posShiftStartedAt, setPosShiftStartedAt] = useState<string>(() => new Date().toLocaleTimeString());
   const posBarcodeRef = useRef<HTMLInputElement | null>(null);
   const [posHeldOrders, setPosHeldOrders] = useState<
     {
@@ -548,12 +573,17 @@ export const AdminDashboard: React.FC = () => {
   const [adminAdjustNote, setAdminAdjustNote] = useState<string>('');
   const [rowCourierChoice, setRowCourierChoice] = useState<Record<string, CourierProvider>>({});
 
-  // Delivery Boy Roster State
+  // Delivery Boy Roster & Fleet Bulk State
   const [newDeliveryBoyName, setNewDeliveryBoyName] = useState('');
   const [newDeliveryBoyPhone, setNewDeliveryBoyPhone] = useState('');
   const [newDeliveryBoyZone, setNewDeliveryBoyZone] = useState('Dhaka City');
   const [newDeliveryBoyVehicle, setNewDeliveryBoyVehicle] = useState<'Bike' | 'Cycle' | 'Van'>('Bike');
   const [editingDeliveryBoy, setEditingDeliveryBoy] = useState<DeliveryBoy | null>(null);
+  const [selectedRiderIds, setSelectedRiderIds] = useState<string[]>([]);
+  const [riderSearch, setRiderSearch] = useState('');
+  const [riderZoneFilter, setRiderZoneFilter] = useState('all');
+  const [bulkRiderZone, setBulkRiderZone] = useState('Dhaka North');
+  const [printableRiderManifest, setPrintableRiderManifest] = useState(false);
 
   // Server-Side Pixel Test & AI Quick Order Dialer State
   const [isTestingPixelCapi, setIsTestingPixelCapi] = useState(false);
@@ -1552,7 +1582,14 @@ export const AdminDashboard: React.FC = () => {
         { id: 'products', labelBn: 'পণ্য তালিকা ও প্রোডাক্ট যোগ', labelEn: 'Products', icon: Package, badge: products.length },
         { id: 'categories', labelBn: 'ক্যাটাগরি ম্যানেজমেন্ট', labelEn: 'Categories', icon: Grid, badge: categories.length },
         { id: 'media_gallery', labelBn: 'মিডিয়া ও গ্যালারি', labelEn: 'Media / Gallery', icon: ImagePlus, badge: mediaLibrary.length },
-        { id: 'courier_hub', labelBn: 'কুরিয়ার ইন্টিগ্রেশন হাব', labelEn: 'Steadfast Hub', icon: Truck }
+        { id: 'courier_hub', labelBn: 'কুরিয়ার ইন্টিগ্রেশন হাব', labelEn: 'Steadfast Hub', icon: Truck },
+        {
+          id: 'delivery_fleet',
+          labelBn: 'ডেলিভারি বয় ও রাইডার ফ্লিট',
+          labelEn: 'Delivery Boy Fleet',
+          icon: Users,
+          badge: (settings.deliveryBoys || []).filter((d) => d.active).length || undefined
+        }
       ]
     },
     {
@@ -1563,7 +1600,16 @@ export const AdminDashboard: React.FC = () => {
         { id: 'users', labelBn: 'কাস্টমার ব্যালেন্স ও স্টাফ টিম', labelEn: 'Customers & Staff', icon: Users, badge: customerAccounts.length + users.length },
         { id: 'wallet_control', labelBn: 'ওয়ালেট ও MFS রিচার্জ', labelEn: 'Wallet & MFS Top-Up', icon: Wallet, badge: pendingWalletCount || undefined },
         { id: 'resellers', labelBn: 'রিসেলার প্রোগ্রাম ও পেআউট', labelEn: 'Resellers & Payouts', icon: Users, badge: pendingResellerCount || undefined },
-        { id: 'wholesale', labelBn: 'হোলসেল (B2B) ও কোটেশন', labelEn: 'Wholesale & RFQ', icon: Building2, badge: pendingWholesaleCount || undefined }
+        { id: 'wholesale', labelBn: 'হোলসেল (B2B) ও কোটেশন', labelEn: 'Wholesale & RFQ', icon: Building2, badge: pendingWholesaleCount || undefined },
+        {
+          id: 'affiliates',
+          labelBn: 'অ্যাফিলিয়েট পার্টনার ও পেআউট',
+          labelEn: 'Affiliates & Payouts',
+          icon: Share2,
+          badge:
+            affiliates.filter((a) => a.status === 'pending').length +
+              affiliatePayouts.filter((p) => p.status === 'pending').length || undefined
+        }
       ]
     },
     {
@@ -1603,6 +1649,7 @@ export const AdminDashboard: React.FC = () => {
       titleEn: '6. Storefront & CMS',
       items: [
         { id: 'sliders', labelBn: 'স্টোর স্লাইডার', labelEn: 'Store Sliders', icon: ImageIcon, badge: sliders.length },
+        { id: 'blogs', labelBn: 'ব্লগ ও আর্টিকেল CMS', labelEn: 'Blogs & Articles', icon: FileText, badge: blogs.length || undefined },
         { id: 'design_footer', labelBn: 'স্টোর ডিজাইন ও ফুটার', labelEn: 'Store & Footer', icon: Sliders }
       ]
     },
@@ -1685,7 +1732,7 @@ export const AdminDashboard: React.FC = () => {
               title={at('রিয়েল-টাইম Firebase ক্লাউড হাব খুলুন', 'Open unified Firebase Cloud Hub')}
               className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-950/70 hover:bg-emerald-900/80 border border-emerald-700/60 text-emerald-300 text-[11px] font-bold cursor-pointer transition-colors"
             >
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
               <span className="truncate max-w-[140px]">Firebase: {firebaseAdminUserEmail || 'Live'}</span>
             </button>
           ) : (
@@ -2204,7 +2251,7 @@ export const AdminDashboard: React.FC = () => {
                                   <div
                                     className={`w-9 h-9 rounded-full shrink-0 flex items-center justify-center font-black text-xs border ${
                                       isRinging || isRingingCustomer
-                                        ? 'bg-amber-500/20 text-amber-300 border-amber-500 animate-pulse'
+                                        ? 'bg-amber-500/20 text-amber-300 border-amber-500 ring-2 ring-amber-500/40'
                                         : isLive
                                         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500'
                                         : 'bg-slate-800 text-slate-200 border-slate-700'
@@ -2221,7 +2268,7 @@ export const AdminDashboard: React.FC = () => {
                                 <span
                                   className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
                                     isRinging || isRingingCustomer
-                                      ? 'bg-amber-500 text-slate-950 animate-pulse'
+                                      ? 'bg-amber-500 text-slate-950'
                                       : isLive
                                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                                       : cust.latestCall
@@ -2442,50 +2489,81 @@ export const AdminDashboard: React.FC = () => {
                               )}
                             </div>
 
-                            <form
-                              onSubmit={(e) => {
-                                e.preventDefault();
-                                const targetChatId =
-                                  customerChatSession?.id ||
-                                  openOrCreateCustomerChatSession(selectedCallCustomer.name, selectedCallCustomer.phone);
-                                if (!customerChatDraft.trim()) return;
-                                sendAgentChatReply(targetChatId, customerChatDraft.trim());
-                                setCustomerChatDraft('');
-                              }}
-                              className="pt-2.5 border-t border-slate-800 flex flex-wrap gap-2"
-                            >
-                              <input
-                                type="text"
-                                value={customerChatDraft}
-                                onChange={(e) => setCustomerChatDraft(e.target.value)}
-                                placeholder={at(`${selectedCallCustomer.name} কে মেসেজ লিখুন...`, `Message ${selectedCallCustomer.name} or generate AI reply...`)}
-                                className="flex-1 min-w-[180px] px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white"
-                              />
-                              <button
-                                type="button"
-                                disabled={isGeneratingCustomerChatAi}
-                                onClick={async () => {
+                            <div className="pt-2 border-t border-slate-800 space-y-2">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {[
+                                  {
+                                    label: at('অর্ডার কনফার্মড', 'Confirm Order'),
+                                    text: `আসসালামু আলাইকুম ${selectedCallCustomer.name}, আপনার অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে। খুব শীঘ্রই কুরিয়ারে হ্যান্ডওভার করা হবে।`
+                                  },
+                                  {
+                                    label: at('ডেলিভারি সময় ও চার্জ', 'Delivery ETA'),
+                                    text: `ঢাকার ভিতরে ডেলিভারি চার্জ ৬০ টাকা (২৪ ঘণ্টা) এবং সারাদেশে ১২০ টাকা (৪৮-৭২ ঘণ্টা)। সম্পূর্ণ ক্যাশ অন ডেলিভারি সুবিধা রয়েছে।`
+                                  },
+                                  {
+                                    label: at('bKash / Nagad পেমেন্ট', 'Payment Info'),
+                                    text: `আমাদের অফিসিয়াল bKash / Nagad নম্বর: ${settings.whatsappNumber}। পেমেন্ট করে TrxID টি দিলে সাথে সাথে আপডেট করে দিচ্ছি।`
+                                  },
+                                  {
+                                    label: at('রিটার্ন ও গ্যারান্টি', 'Return Policy'),
+                                    text: `ডেলিভারি ম্যানের সামনে প্রোডাক্ট চেক করে রিসিভ করতে পারবেন। কোনো সমস্যা থাকলে ৭ দিনের মধ্যে সহজ এক্সচেঞ্জ সুবিধা রয়েছে।`
+                                  }
+                                ].map((tpl, idx) => (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => setCustomerChatDraft(tpl.text)}
+                                    className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[10px] font-bold text-slate-300 cursor-pointer"
+                                  >
+                                    {tpl.label}
+                                  </button>
+                                ))}
+                              </div>
+                              <form
+                                onSubmit={(e) => {
+                                  e.preventDefault();
                                   const targetChatId =
                                     customerChatSession?.id ||
                                     openOrCreateCustomerChatSession(selectedCallCustomer.name, selectedCallCustomer.phone);
-                                  setIsGeneratingCustomerChatAi(true);
-                                  const draft = await generateAgentAIReply(targetChatId);
-                                  if (draft) setCustomerChatDraft(draft);
-                                  setIsGeneratingCustomerChatAi(false);
+                                  if (!customerChatDraft.trim()) return;
+                                  sendAgentChatReply(targetChatId, customerChatDraft.trim());
+                                  setCustomerChatDraft('');
                                 }}
-                                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer"
+                                className="flex flex-wrap gap-2"
                               >
-                                <Sparkles className="w-3.5 h-3.5" />
-                                <span>{isGeneratingCustomerChatAi ? '...' : 'Generate AI'}</span>
-                              </button>
-                              <button
-                                type="submit"
-                                className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer"
-                              >
-                                <Send className="w-3.5 h-3.5" />
-                                <span>{at('পাঠান', 'Send')}</span>
-                              </button>
-                            </form>
+                                <input
+                                  type="text"
+                                  value={customerChatDraft}
+                                  onChange={(e) => setCustomerChatDraft(e.target.value)}
+                                  placeholder={at(`${selectedCallCustomer.name} কে মেসেজ লিখুন...`, `Message ${selectedCallCustomer.name} or generate AI reply...`)}
+                                  className="flex-1 min-w-[180px] px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={isGeneratingCustomerChatAi}
+                                  onClick={async () => {
+                                    const targetChatId =
+                                      customerChatSession?.id ||
+                                      openOrCreateCustomerChatSession(selectedCallCustomer.name, selectedCallCustomer.phone);
+                                    setIsGeneratingCustomerChatAi(true);
+                                    const draft = await generateAgentAIReply(targetChatId);
+                                    if (draft) setCustomerChatDraft(draft);
+                                    setIsGeneratingCustomerChatAi(false);
+                                  }}
+                                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                  <span>{isGeneratingCustomerChatAi ? '...' : 'Generate AI'}</span>
+                                </button>
+                                <button
+                                  type="submit"
+                                  className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Send className="w-3.5 h-3.5" />
+                                  <span>{at('পাঠান', 'Send')}</span>
+                                </button>
+                              </form>
+                            </div>
                           </div>
                         ) : customerConsoleTab === 'orders' ? (
                           <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 min-h-[360px]">
@@ -2542,7 +2620,7 @@ export const AdminDashboard: React.FC = () => {
                               <div
                                 className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${
                                   activeCallObj?.status === 'ringing_backend'
-                                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 animate-pulse'
+                                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 ring-2 ring-amber-500/40'
                                     : activeCallObj?.status === 'connected'
                                     ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
                                     : 'bg-slate-800 border-slate-700 text-slate-300'
@@ -2560,7 +2638,7 @@ export const AdminDashboard: React.FC = () => {
                                 <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
                                   {activeCallObj?.status === 'connected' ? (
                                     <>
-                                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
                                       <span className="font-bold text-emerald-400">
                                         {at('লাইভ ভয়েস সংযুক্ত', 'Live Voice Connected')}
                                       </span>
@@ -2573,7 +2651,7 @@ export const AdminDashboard: React.FC = () => {
                                       {at('ব্রাউজার থেকে কল আসছে — রিসিভ করতে বাটনে ক্লিক করুন', 'Incoming browser call ringing...')}
                                     </span>
                                   ) : activeCallObj?.status === 'ringing_customer' ? (
-                                    <span className="font-bold text-amber-300 animate-pulse">
+                                    <span className="font-bold text-amber-300">
                                       {at('কাস্টমারের স্টোরফ্রন্ট ব্রাউজারে রিং হচ্ছে — রিসিভের জন্য অপেক্ষমান...', 'Ringing Customer Storefront Browser Live...')}
                                     </span>
                                   ) : (
@@ -2605,7 +2683,7 @@ export const AdminDashboard: React.FC = () => {
                                     onClick={toggleMicVoiceInput}
                                     className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 border cursor-pointer ${
                                       isMicListening
-                                        ? 'bg-rose-600 text-white border-rose-400 animate-pulse'
+                                        ? 'bg-rose-600 text-white border-rose-400'
                                         : 'bg-slate-800 hover:bg-slate-700 text-emerald-300 border-slate-700'
                                     }`}
                                   >
@@ -2657,7 +2735,7 @@ export const AdminDashboard: React.FC = () => {
                           {activeCallObj?.status === 'connected' && (
                             <div className="px-3 py-2 rounded-xl bg-emerald-950/30 border border-emerald-800/40 flex items-center justify-between gap-3">
                               <div className="flex items-center gap-2 text-[11px] text-emerald-300 font-bold">
-                                <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                                <Radio className="w-3.5 h-3.5 text-emerald-400" />
                                 <span>{at('ভয়েস চ্যানেল সক্রিয় — স্পিকার ও মাইক রেডি', 'Live Voice Audio Channel Ready')}</span>
                               </div>
                               <div className="flex items-end gap-1 h-4">
@@ -2665,7 +2743,7 @@ export const AdminDashboard: React.FC = () => {
                                   <span
                                     key={idx}
                                     style={{ height: `${h}%` }}
-                                    className="w-1 rounded-full bg-emerald-400/80 animate-pulse"
+                                    className="w-1 rounded-full bg-emerald-400/80"
                                   />
                                 ))}
                               </div>
@@ -2694,9 +2772,21 @@ export const AdminDashboard: React.FC = () => {
                                     <p className="text-slate-200 truncate">
                                       {ord.items.map((i) => `${i.productTitleBn} x${i.quantity}`).join(', ')}
                                     </p>
-                                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                                    <div className="flex items-center justify-between gap-2 text-[10px] text-slate-400">
                                       <span className="truncate">{ord.customer.address}, {ord.customer.district}</span>
-                                      <span className="uppercase font-mono text-slate-300 shrink-0 ml-1">{ord.status}</span>
+                                      <select
+                                        value={ord.status}
+                                        onChange={(e) => updateOrderStatus(ord.id, e.target.value as OrderStatus)}
+                                        className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-amber-300 font-bold uppercase text-[10px] shrink-0"
+                                      >
+                                        <option value="pending">pending</option>
+                                        <option value="ai_confirmed">confirmed</option>
+                                        <option value="processing">processing</option>
+                                        <option value="shipped">shipped</option>
+                                        <option value="delivered">delivered</option>
+                                        <option value="partial">partial</option>
+                                        <option value="cancelled">cancelled</option>
+                                      </select>
                                     </div>
                                   </div>
                                 ))}
@@ -3079,6 +3169,31 @@ export const AdminDashboard: React.FC = () => {
                           }}
                           className="pt-3 border-t border-slate-800 space-y-2"
                         >
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {[
+                              {
+                                label: at('অর্ডার কনফার্মড', 'Confirm Order'),
+                                text: `আসসালামু আলাইকুম ${activeChatObj.customerName}, আপনার অর্ডারটি কনফার্ম করা হয়েছে। খুব শীঘ্রই ডেলিভারির জন্য পাঠানো হবে।`
+                              },
+                              {
+                                label: at('ডেলিভারি সময় ও চার্জ', 'Delivery Info'),
+                                text: `ঢাকার ভিতরে ডেলিভারি চার্জ ৬০ টাকা (২৪ ঘণ্টায় ডেলিভারি) এবং ঢাকার বাইরে ১২০ টাকা (৪৮-৭২ ঘণ্টায় ডেলিভারি)।`
+                              },
+                              {
+                                label: at('ট্র্যাকিং ও হেল্প', 'Tracking Link'),
+                                text: `আপনি আমাদের ওয়েবসাইটের Order Tracker পেজে অর্ডার আইডি বা মোবাইল নম্বর দিয়ে পার্সেলের লাইভ অবস্থান দেখতে পারবেন।`
+                              }
+                            ].map((canned, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => setChatReplyDraft(canned.text)}
+                                className="px-2 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-700 text-[10px] font-bold text-slate-300 cursor-pointer"
+                              >
+                                {canned.label}
+                              </button>
+                            ))}
+                          </div>
                           <div className="flex flex-wrap gap-2">
                             <input
                               type="text"
@@ -3156,7 +3271,7 @@ export const AdminDashboard: React.FC = () => {
                     ✨ {at('AI এজেন্ট খুলুন', 'Open AI Agent')}
                   </button>
                   <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
                     {t('লাইভ সিস্টেম সক্রিয়', 'Live & Active')}
                   </span>
                 </div>
@@ -3401,6 +3516,113 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 );
               })()}
+
+              {/* Overview Visitor IP & Live Traffic Intelligence Table */}
+              <div className="p-5 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-emerald-400" />
+                      <span>{at('ভিজিটর IP ও লাইভ ট্রাফিক ইন্টেলিজেন্স', 'Visitor IP & Live Traffic Intelligence')}</span>
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-mono text-emerald-300 tabular-nums">
+                        {visitorTelemetry.length}
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      {at('সার্ভার লগকৃত প্রতিটি ভিজিটরের রিয়েল IP, দেশ, ডিভাইস, ব্রাউজার ও ভিজিটেড পেজ', 'Server-captured real Visitor IP, Country, Device, OS, Browser & Page Path')}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      value={visitorSearch}
+                      onChange={(e) => setVisitorSearch(e.target.value)}
+                      placeholder={at('IP, দেশ বা পেজ ফিল্টার...', 'Search IP, country, path...')}
+                      className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white w-44"
+                    />
+                    <button
+                      type="button"
+                      onClick={loadVisitorTelemetry}
+                      disabled={isLoadingVisitors}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingVisitors ? 'animate-spin' : ''}`} />
+                      <span>{at('রিফ্রেশ', 'Refresh')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const rows = [
+                          ['IP', 'Country', 'Device', 'OS', 'Browser', 'Path', 'Timestamp'].join(','),
+                          ...visitorTelemetry.map((v) =>
+                            [v.ip, v.country, v.device, v.os, v.browser, v.path, v.timestamp]
+                              .map((col) => `"${String(col || '').replace(/"/g, '""')}"`)
+                              .join(',')
+                          )
+                        ];
+                        const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `buyonebd-visitors-${new Date().toISOString().slice(0, 10)}.csv`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>CSV</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-800">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
+                      <tr>
+                        <th className="py-2 px-3">Visitor IP</th>
+                        <th className="py-2 px-3">Country</th>
+                        <th className="py-2 px-3">Device / OS</th>
+                        <th className="py-2 px-3">Browser</th>
+                        <th className="py-2 px-3">Page Path</th>
+                        <th className="py-2 px-3">Time</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {visitorTelemetry
+                        .filter(
+                          (v) =>
+                            !visitorSearch.trim() ||
+                            v.ip.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+                            v.country.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+                            v.browser.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+                            v.device.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+                            v.path.toLowerCase().includes(visitorSearch.toLowerCase())
+                        )
+                        .slice(0, 12)
+                        .map((v) => (
+                          <tr key={`ov-${v.id}`} className="hover:bg-slate-800/40">
+                            <td className="py-2 px-3 font-mono font-bold text-emerald-400">{v.ip}</td>
+                            <td className="py-2 px-3 font-bold text-white">{v.country}</td>
+                            <td className="py-2 px-3 text-slate-300">{v.device} · <span className="text-slate-400">{v.os}</span></td>
+                            <td className="py-2 px-3 font-mono text-sky-300">{v.browser}</td>
+                            <td className="py-2 px-3 font-mono text-amber-300 truncate max-w-[180px]">{v.path}</td>
+                            <td className="py-2 px-3 font-mono text-[11px] text-slate-400">
+                              {new Date(v.timestamp).toLocaleTimeString()}
+                            </td>
+                          </tr>
+                        ))}
+                      {visitorTelemetry.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="py-5 text-center text-slate-500">
+                            {at('ভিজিটর IP লগ অপেক্ষমাণ...', 'Waiting for live visitor IP telemetry...')}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
 
               {/* Low-Stock Alert & 1-Click Restock Widget */}
               {products.some((p) => p.stock <= 15) && (
@@ -3649,7 +3871,7 @@ export const AdminDashboard: React.FC = () => {
                     </button>
                   ) : (
                     <span className="px-2.5 py-1 rounded-xl bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 text-[11px] font-bold flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
                       <span>
                         {at('লাইভ ক্লাউড সিঙ্ক চালু', 'Live Cloud Active')}
                         {lastCloudSyncAt ? ` • ${lastCloudSyncAt}` : ''}
@@ -4389,12 +4611,23 @@ export const AdminDashboard: React.FC = () => {
             );
             const todayPosRevenue = todayPosOrders.reduce((s, o) => s + o.pricing.total, 0);
 
-            const addProductToPos = (prod: Product) => {
+            const addProductToPos = (prod: Product, chosenColor?: string, chosenSize?: string) => {
+              const colorVal = chosenColor !== undefined ? chosenColor : prod.colors?.[0];
+              const sizeVal = chosenSize !== undefined ? chosenSize : prod.sizes?.[0];
               setPosCart((prev) => {
-                const existing = prev.find((item) => item.product.id === prod.id);
+                const existing = prev.find(
+                  (item) =>
+                    item.product.id === prod.id &&
+                    (item.selectedColor || '') === (colorVal || '') &&
+                    (item.selectedSize || '') === (sizeVal || '')
+                );
                 if (existing) {
                   return prev.map((item) =>
-                    item.product.id === prod.id ? { ...item, quantity: item.quantity + 1 } : item
+                    item.product.id === prod.id &&
+                    (item.selectedColor || '') === (colorVal || '') &&
+                    (item.selectedSize || '') === (sizeVal || '')
+                      ? { ...item, quantity: item.quantity + 1 }
+                      : item
                   );
                 }
                 return [
@@ -4403,11 +4636,21 @@ export const AdminDashboard: React.FC = () => {
                     product: prod,
                     quantity: 1,
                     unitPrice: prod.price,
-                    selectedColor: prod.colors?.[0],
-                    selectedSize: prod.sizes?.[0]
+                    selectedColor: colorVal,
+                    selectedSize: sizeVal
                   }
                 ];
               });
+            };
+
+            const handlePosProductClick = (prod: Product) => {
+              if ((prod.colors && prod.colors.length > 1) || (prod.sizes && prod.sizes.length > 1)) {
+                setPosVariantPickerProd(prod);
+                setPosVariantColor(prod.colors?.[0] || '');
+                setPosVariantSize(prod.sizes?.[0] || '');
+              } else {
+                addProductToPos(prod);
+              }
             };
 
             const handleAddCustomPosItem = (e: React.FormEvent) => {
@@ -4549,10 +4792,12 @@ export const AdminDashboard: React.FC = () => {
               (sum, item) => sum + (item.unitPrice ?? item.product.price) * item.quantity,
               0
             );
-            const posDiscountAmount =
+            const posManualDiscountAmount =
               posDiscountType === 'percent'
                 ? Math.round(posSubtotal * (Math.min(100, Math.max(0, posDiscount || 0)) / 100))
                 : Math.max(0, posDiscount || 0);
+            const posCouponDiscount = posAppliedCoupon ? Math.min(posSubtotal, posAppliedCoupon.discount) : 0;
+            const posDiscountAmount = posManualDiscountAmount + posCouponDiscount;
 
             const loyaltyCfg = settings.loyaltySettings;
             const bdtPerPt = loyaltyCfg?.bdtPerPoint ?? 1;
@@ -4571,11 +4816,43 @@ export const AdminDashboard: React.FC = () => {
 
             const posTotal = Math.max(0, afterLoyalty - posWalletDeduction);
             const splitDigitalAmt = posSplitMode ? Math.max(0, posTotal - (posSplitCashAmount || 0)) : 0;
-            const paidNum = posSplitMode ? posTotal : posPaidAmount === '' ? posTotal : Math.max(0, Number(posPaidAmount) || 0);
+            const paidNum = posSplitMode
+              ? posTotal
+              : posPaidAmount === ''
+              ? posDueMode
+                ? 0
+                : posTotal
+              : Math.max(0, Number(posPaidAmount) || 0);
             const changeReturn = Math.max(0, paidNum - posTotal);
             const dueRemaining = Math.max(0, posTotal - paidNum);
 
+            const handleApplyPosCoupon = () => {
+              const code = posCouponInput.trim().toUpperCase();
+              if (!code) return;
+              const found = (settings.promoCoupons || []).find((c) => c.code.toUpperCase() === code && c.active);
+              if (!found) {
+                addToast('error', at('কুপন পাওয়া যায়নি', 'Invalid Promo Code'), code);
+                return;
+              }
+              if (found.minOrder && posSubtotal < found.minOrder) {
+                addToast('warning', at('ন্যূনতম অর্ডার পূর্ণ হয়নি', 'Minimum Spend Not Met'), `Min ৳${found.minOrder}`);
+                return;
+              }
+              const calcDisc =
+                found.discountType === 'percent'
+                  ? Math.round((posSubtotal * found.value) / 100)
+                  : found.discountType === 'free_shipping'
+                  ? posDeliveryFee
+                  : found.value;
+              setPosAppliedCoupon({ code: found.code, discount: calcDisc, label: found.title || found.code });
+              addToast('success', at('কুপন প্রয়োগ হয়েছে', 'Coupon Applied'), `${found.code} (-৳${calcDisc})`);
+            };
+
             const handleCompletePosSale = () => {
+              if (!posShiftOpen) {
+                addToast('warning', at('ক্যাশ ড্রয়ার বন্ধ', 'Shift Closed'), at('প্রথমে POS শিফট ওপেন করুন।', 'Open Cash Drawer Shift before billing.'));
+                return;
+              }
               if (posCart.length === 0) {
                 addToast('warning', at('পস কার্ট খালি', 'POS Cart Empty'), at('প্রথমে বারকোড স্ক্যান করে বা ক্লিক করে পণ্য যোগ করুন।', 'Scan or click a product barcode first.'));
                 return;
@@ -4592,7 +4869,7 @@ export const AdminDashboard: React.FC = () => {
                   address: 'POS Counter / In-Store Pickup',
                   district: 'Dhaka - Inside City',
                   thana: 'POS Counter',
-                  note: `POS Sale (${posSplitMode ? `SPLIT Cash ৳${posSplitCashAmount} + Digital ৳${splitDigitalAmt}` : posPaymentMethod.toUpperCase()})${posVatPercent > 0 ? ` · VAT ${posVatPercent}% (৳${posVatAmount})` : ''}${posTrxId.trim() ? ` · TrxID: ${posTrxId.trim()}` : ''}`
+                  note: `POS Sale (${posSplitMode ? `SPLIT Cash ৳${posSplitCashAmount} + Digital ৳${splitDigitalAmt}` : posPaymentMethod.toUpperCase()})${posAppliedCoupon ? ` · Coupon: ${posAppliedCoupon.code}` : ''}${posVatPercent > 0 ? ` · VAT ${posVatPercent}% (৳${posVatAmount})` : ''}${posTrxId.trim() ? ` · TrxID: ${posTrxId.trim()}` : ''}${dueRemaining > 0 ? ` · DUE: ৳${dueRemaining}` : ''}`
                 },
                 items: posCart.map((c) => ({
                   product:
@@ -4612,23 +4889,37 @@ export const AdminDashboard: React.FC = () => {
                 walletUsedAmount: posWalletDeduction > 0 ? posWalletDeduction : undefined,
                 loyaltyPointsUsed: posLoyaltyPointsUsed > 0 ? posLoyaltyPointsUsed : undefined,
                 loyaltyDiscountAmount: posLoyaltyDiscount > 0 ? posLoyaltyDiscount : undefined,
-                advancePaid: paidNum < posTotal ? paidNum : undefined,
+                advancePaid: dueRemaining > 0 ? paidNum : undefined,
                 source: 'pos',
                 initialStatus: dueRemaining > 0 ? 'partial' : 'delivered',
                 skipAICall: true
               });
+              setPrintableBarcodeProduct(null);
+              setPosPrintZReportCopy(false);
+              setPrintableRiderManifest(false);
               setPosReceiptOrder(newOrder);
               setPosCart([]);
               setPosDiscount(0);
+              setPosAppliedCoupon(null);
+              setPosCouponInput('');
               setPosDeliveryFee(0);
               setPosVatPercent(0);
               setPosSplitMode(false);
               setPosSplitCashAmount(0);
+              setPosDueMode(false);
               setPosPaidAmount('');
               setPosTrxId('');
               setPosUseLoyalty(false);
               setPosUseWallet(false);
             };
+
+            const todayPosCashTotal = todayPosOrders
+              .filter((o) => o.payment.method === 'cod' || o.customer.note?.includes('CASH'))
+              .reduce((s, o) => s + o.pricing.total, 0);
+            const todayPosDigitalTotal = todayPosOrders
+              .filter((o) => o.payment.method !== 'cod' && !o.customer.note?.includes('CASH'))
+              .reduce((s, o) => s + o.pricing.total, 0);
+            const allPosOrders = orders.filter((o) => o.source === 'pos');
 
             return (
               <div className="space-y-5 animate-fade-in">
@@ -4639,7 +4930,7 @@ export const AdminDashboard: React.FC = () => {
                       <span>{at('পস সিস্টেম ও ১-ক্লিক বারকোড বিলিং', 'Full POS & 1-Click Barcode Billing')}</span>
                     </h3>
                     <p className="text-xs text-slate-400">
-                      {at('বারকোড স্ক্যান, মোবাইল সার্চ কাস্টমার, লয়্যালটি/ওয়ালেট রিডিম, কাস্টম আইটেম ও ৮০মিমি রিসিট', 'Barcode scan, live mobile number customer search, loyalty/wallet redemption, custom items & 80mm thermal receipts')}
+                      {at('ভ্যারিয়েন্ট পিকার, প্রোমো কুপন, শিফট ক্যাশ ড্রয়ার, বাকি সেল, রিটার্ন ও ৮০মিমি রিসিট', 'Variant picker, promo coupons, cash drawer shift, due/credit sales, returns/refunds & 80mm thermal receipts')}
                     </p>
                   </div>
 
@@ -4651,6 +4942,32 @@ export const AdminDashboard: React.FC = () => {
                     <span className="px-3 py-1.5 rounded-xl bg-emerald-950/50 border border-emerald-800/60 text-emerald-300 font-mono font-bold">
                       ৳{todayPosRevenue.toLocaleString()}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!posShiftOpen) {
+                          setPosShiftStartedAt(new Date().toLocaleTimeString());
+                        }
+                        setPosShiftOpen((v) => !v);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl border font-bold cursor-pointer ${
+                        posShiftOpen
+                          ? 'bg-emerald-950/60 border-emerald-700/60 text-emerald-300'
+                          : 'bg-rose-950/60 border-rose-700/60 text-rose-300'
+                      }`}
+                    >
+                      {posShiftOpen ? at(`শিফট চালু (${posShiftStartedAt})`, `Shift Open (${posShiftStartedAt})`) : at('শিফট শুরু করুন', 'Open Shift')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPosHistoryOpen((v) => !v)}
+                      className={`px-3 py-1.5 rounded-xl border font-bold flex items-center gap-1 cursor-pointer ${
+                        posHistoryOpen ? 'bg-sky-600 border-sky-500 text-white' : 'bg-slate-900 border-slate-700 text-sky-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <History className="w-3.5 h-3.5" />
+                      <span>{at(`POS ইতিহাস ও রিটার্ন (${allPosOrders.length})`, `History & Returns (${allPosOrders.length})`)}</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => setPosShowZReport((v) => !v)}
@@ -4665,32 +4982,152 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Daily Z-Report Shift Summary */}
+                {/* Daily Z-Report Shift Summary + Cash Drawer Reconciliation */}
                 {posShowZReport && (
-                  <div className="p-4 rounded-2xl bg-slate-900 border border-amber-500/40 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase block">{at('আজকের ক্যাশ সেল', 'Cash Sales')}</span>
-                      <span className="text-base font-black text-emerald-400 font-mono">
-                        ৳{todayPosOrders.filter((o) => o.payment.method === 'cod' || o.customer.note?.includes('CASH')).reduce((s, o) => s + o.pricing.total, 0).toLocaleString()}
-                      </span>
+                  <div className="p-4 rounded-2xl bg-slate-900 border border-amber-500/40 space-y-3 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-amber-300 uppercase tracking-wider">POS Shift Z-Report & Drawer Float</span>
+                        <span className="text-[11px] text-slate-400 font-mono">Opened: {posShiftStartedAt}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] text-slate-400">Opening Cash (৳):</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={posShiftOpeningCash}
+                          onChange={(e) => setPosShiftOpeningCash(Math.max(0, Number(e.target.value)))}
+                          className="w-24 px-2 py-1 rounded-lg bg-slate-950 border border-slate-700 text-white font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPosReceiptOrder(null);
+                            setPrintableBarcodeProduct(null);
+                            setPrintableRiderManifest(false);
+                            setPosPrintZReportCopy(true);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>{at('১ কপি Z-রিপোর্ট প্রিন্ট', 'Print Z-Report (1 Copy)')}</span>
+                        </button>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase block">{at('ডিজিটাল / কার্ড সেল', 'Digital / MFS / Card')}</span>
-                      <span className="text-base font-black text-sky-400 font-mono">
-                        ৳{todayPosOrders.filter((o) => o.payment.method !== 'cod' && !o.customer.note?.includes('CASH')).reduce((s, o) => s + o.pricing.total, 0).toLocaleString()}
-                      </span>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase block">{at('আজকের ক্যাশ সেল', 'Cash Sales')}</span>
+                        <span className="text-base font-black text-emerald-400 font-mono">৳{todayPosCashTotal.toLocaleString()}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase block">{at('ড্রয়ার মোট ক্যাশ', 'Expected Drawer')}</span>
+                        <span className="text-base font-black text-white font-mono">৳{(posShiftOpeningCash + todayPosCashTotal).toLocaleString()}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase block">{at('ডিজিটাল / কার্ড সেল', 'Digital / MFS / Card')}</span>
+                        <span className="text-base font-black text-sky-400 font-mono">৳{todayPosDigitalTotal.toLocaleString()}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase block">{at('মোট POS ডিসকাউন্ট', 'Discounts Given')}</span>
+                        <span className="text-base font-black text-rose-400 font-mono">
+                          ৳{todayPosOrders.reduce((s, o) => s + (o.pricing.discount || 0), 0).toLocaleString()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase block">{at('গড় বিল (Avg Ticket)', 'Avg Basket')}</span>
+                        <span className="text-base font-black text-amber-300 font-mono">
+                          ৳{todayPosOrders.length > 0 ? Math.round(todayPosRevenue / todayPosOrders.length).toLocaleString() : 0}
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase block">{at('মোট POS ডিসকাউন্ট', 'Discounts Given')}</span>
-                      <span className="text-base font-black text-rose-400 font-mono">
-                        ৳{todayPosOrders.reduce((s, o) => s + (o.pricing.discount || 0), 0).toLocaleString()}
-                      </span>
+                  </div>
+                )}
+
+                {/* POS Order History + Return / Exchange / Refund Panel */}
+                {posHistoryOpen && (
+                  <div className="p-4 rounded-2xl bg-slate-900 border border-sky-500/40 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                        <History className="w-4 h-4 text-sky-400" />
+                        <span>{at('POS অর্ডার ইতিহাস, রিটার্ন ও রিফান্ড', 'POS Orders, Returns & Exchanges')}</span>
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => setPosHistoryOpen(false)}
+                        className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase block">{at('গড় বিল (Avg Ticket)', 'Avg Basket')}</span>
-                      <span className="text-base font-black text-amber-300 font-mono">
-                        ৳{todayPosOrders.length > 0 ? Math.round(todayPosRevenue / todayPosOrders.length).toLocaleString() : 0}
-                      </span>
+                    <div className="overflow-x-auto max-h-64 rounded-xl border border-slate-800">
+                      <table className="w-full text-left text-xs text-slate-300">
+                        <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
+                          <tr>
+                            <th className="py-2 px-3">Invoice</th>
+                            <th className="py-2 px-3">Customer</th>
+                            <th className="py-2 px-3">Items</th>
+                            <th className="py-2 px-3">Total / Due</th>
+                            <th className="py-2 px-3">Status</th>
+                            <th className="py-2 px-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800">
+                          {allPosOrders.slice(0, 25).map((po) => (
+                            <tr key={po.id} className="hover:bg-slate-800/40">
+                              <td className="py-2 px-3 font-mono font-bold text-emerald-400">#{po.id}</td>
+                              <td className="py-2 px-3">
+                                <div className="font-bold text-white">{po.customer.name}</div>
+                                <div className="text-[10px] font-mono text-slate-400">{po.customer.phone}</div>
+                              </td>
+                              <td className="py-2 px-3 truncate max-w-[180px]">
+                                {po.items.map((it) => `${it.productTitleBn} ×${it.quantity}`).join(', ')}
+                              </td>
+                              <td className="py-2 px-3 font-mono font-bold">
+                                <span className="text-white">৳{po.pricing.total.toLocaleString()}</span>
+                                {(po.payment.dueAmount || 0) > 0 && (
+                                  <span className="block text-[10px] text-amber-400">Due: ৳{po.payment.dueAmount?.toLocaleString()}</span>
+                                )}
+                              </td>
+                              <td className="py-2 px-3">
+                                <span className="px-2 py-0.5 rounded bg-slate-800 text-[10px] uppercase font-bold text-sky-300">
+                                  {po.status}
+                                </span>
+                              </td>
+                              <td className="py-2 px-3 text-right">
+                                <div className="inline-flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPrintableBarcodeProduct(null);
+                                      setPosPrintZReportCopy(false);
+                                      setPosReceiptOrder(po);
+                                    }}
+                                    className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 text-[10px] font-bold cursor-pointer"
+                                  >
+                                    Receipt
+                                  </button>
+                                  {po.status !== 'cancelled' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setPosReturnOrder(po)}
+                                      className="px-2 py-1 rounded bg-rose-950/70 hover:bg-rose-900 border border-rose-700/60 text-rose-300 text-[10px] font-bold cursor-pointer"
+                                    >
+                                      Return/Refund
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                          {allPosOrders.length === 0 && (
+                            <tr>
+                              <td colSpan={6} className="py-5 text-center text-slate-500">
+                                {at('এখনও কোনো POS বিল তৈরি হয়নি।', 'No POS receipts generated yet.')}
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 )}
@@ -4876,7 +5313,12 @@ export const AdminDashboard: React.FC = () => {
                               <div className="flex items-center gap-1 shrink-0">
                                 <button
                                   type="button"
-                                  onClick={() => setPrintableBarcodeProduct(prod)}
+                                  onClick={() => {
+                                    setPosReceiptOrder(null);
+                                    setPosPrintZReportCopy(false);
+                                    setPrintableRiderManifest(false);
+                                    setPrintableBarcodeProduct(prod);
+                                  }}
                                   title={at('বারকোড লেবেল প্রিন্ট', 'Print Barcode Label')}
                                   className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
                                 >
@@ -4884,11 +5326,15 @@ export const AdminDashboard: React.FC = () => {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => addProductToPos(prod)}
+                                  onClick={() => handlePosProductClick(prod)}
                                   className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] flex items-center gap-1 cursor-pointer"
                                 >
                                   <Plus className="w-3 h-3" />
-                                  <span>{at('স্ক্যান', 'Add')}</span>
+                                  <span>
+                                    {(prod.colors && prod.colors.length > 1) || (prod.sizes && prod.sizes.length > 1)
+                                      ? at('ভ্যারিয়েন্ট', 'Variants')
+                                      : at('স্ক্যান', 'Add')}
+                                  </span>
                                 </button>
                               </div>
                             </div>
@@ -4931,21 +5377,83 @@ export const AdminDashboard: React.FC = () => {
                         <label className="block text-slate-300 font-bold">
                           {at('মোবাইল নম্বর / নাম দিয়ে কাস্টমার খুঁজুন', 'Search Customer by Mobile / Name')}
                         </label>
-                        {posSelectedCustomerId !== 'walk-in' && (
+                        <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => {
-                              setPosSelectedCustomerId('walk-in');
-                              setPosCustomerSearch('');
-                              setPosUseLoyalty(false);
-                              setPosUseWallet(false);
-                            }}
-                            className="text-[10px] font-bold text-amber-400 hover:underline cursor-pointer"
+                            onClick={() => setPosQuickCustomerOpen((v) => !v)}
+                            className="text-[10px] font-bold text-emerald-400 hover:underline cursor-pointer"
                           >
-                            {at('ওয়াক-ইন করুন', 'Switch to Walk-in')}
+                            + {at('নতুন কাস্টমার', 'Quick Add')}
                           </button>
-                        )}
+                          {posSelectedCustomerId !== 'walk-in' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPosSelectedCustomerId('walk-in');
+                                setPosCustomerSearch('');
+                                setPosUseLoyalty(false);
+                                setPosUseWallet(false);
+                              }}
+                              className="text-[10px] font-bold text-amber-400 hover:underline cursor-pointer"
+                            >
+                              {at('ওয়াক-ইন করুন', 'Switch to Walk-in')}
+                            </button>
+                          )}
+                        </div>
                       </div>
+
+                      {posQuickCustomerOpen && (
+                        <div className="p-2.5 rounded-xl bg-slate-950 border border-emerald-500/40 space-y-2">
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <input
+                              type="text"
+                              value={posQuickCustName}
+                              onChange={(e) => setPosQuickCustName(e.target.value)}
+                              placeholder={at('কাস্টমারের নাম *', 'Customer Name *')}
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs"
+                            />
+                            <input
+                              type="text"
+                              value={posQuickCustPhone}
+                              onChange={(e) => setPosQuickCustPhone(e.target.value)}
+                              placeholder="017XXXXXXXX *"
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono text-xs"
+                            />
+                          </div>
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setPosQuickCustomerOpen(false)}
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 text-[11px] font-bold cursor-pointer"
+                            >
+                              {at('বাতিল', 'Cancel')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!posQuickCustName.trim() || !posQuickCustPhone.trim()) {
+                                  addToast('warning', at('নাম ও ফোন দিন', 'Missing Fields'), '');
+                                  return;
+                                }
+                                const created = createCustomerAccountByAdmin({
+                                  name: posQuickCustName,
+                                  phone: posQuickCustPhone
+                                });
+                                const phKey = created.phone.replace(/[^0-9]/g, '').slice(-11) || created.phone;
+                                setPosSelectedCustomerId(phKey);
+                                setPosWalkInName(created.name);
+                                setPosWalkInPhone(created.phone);
+                                setPosQuickCustName('');
+                                setPosQuickCustPhone('');
+                                setPosQuickCustomerOpen(false);
+                              }}
+                              className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer"
+                            >
+                              {at('সংরক্ষণ ও সিলেক্ট', 'Save & Select')}
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       <div className="relative">
                         <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
@@ -5327,6 +5835,55 @@ export const AdminDashboard: React.FC = () => {
                       )}
                     </div>
 
+                    {/* Promo Coupon Input + Due Sale Toggle */}
+                    <div className="space-y-2 pt-2 border-t border-slate-800 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={posCouponInput}
+                          onChange={(e) => setPosCouponInput(e.target.value.toUpperCase())}
+                          placeholder={at('প্রোমো কুপন কোড (যেমন BUYONE50)', 'Promo Coupon Code...')}
+                          className="flex-1 px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono uppercase text-[11px]"
+                        />
+                        {posAppliedCoupon ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPosAppliedCoupon(null);
+                              setPosCouponInput('');
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-rose-950/70 border border-rose-700/60 text-rose-300 font-bold text-[11px] cursor-pointer"
+                          >
+                            Remove ({posAppliedCoupon.code})
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleApplyPosCoupon}
+                            className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-[11px] cursor-pointer"
+                          >
+                            {at('অ্যাপ্লাই', 'Apply')}
+                          </button>
+                        )}
+                      </div>
+                      <label className="flex items-center justify-between p-2 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
+                        <span className="text-[11px] font-bold text-amber-300">
+                          {at('বাকি / ক্রেডিট সেল মোড (Due Balance Sale)', 'Credit / Partial Due Sale Mode')}
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={posDueMode}
+                          onChange={(e) => {
+                            setPosDueMode(e.target.checked);
+                            if (e.target.checked && posPaidAmount === '') {
+                              setPosPaidAmount('0');
+                            }
+                          }}
+                          className="accent-amber-500 w-4 h-4 rounded"
+                        />
+                      </label>
+                    </div>
+
                     {/* Totals & Change / Due Calculator */}
                     <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1 text-xs font-mono tabular-nums">
                       <div className="flex justify-between text-slate-400">
@@ -5344,7 +5901,7 @@ export const AdminDashboard: React.FC = () => {
                         <span>+৳{(posDeliveryFee || 0).toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between text-rose-400">
-                        <span>Discount {posDiscountType === 'percent' ? `(${posDiscount}%)` : ''}:</span>
+                        <span>Discount {posAppliedCoupon ? `(+${posAppliedCoupon.code})` : posDiscountType === 'percent' ? `(${posDiscount}%)` : ''}:</span>
                         <span>-৳{posDiscountAmount.toLocaleString()}</span>
                       </div>
                       {posLoyaltyDiscount > 0 && (
@@ -5363,7 +5920,7 @@ export const AdminDashboard: React.FC = () => {
                         <span>TOTAL PAYABLE:</span>
                         <span>৳{posTotal.toLocaleString()}</span>
                       </div>
-                      {posPaidAmount !== '' && (
+                      {(posPaidAmount !== '' || posDueMode) && (
                         <div className="flex justify-between text-[11px] pt-1 border-t border-slate-800/60">
                           <span className={changeReturn > 0 ? 'text-sky-400 font-bold' : 'text-amber-400 font-bold'}>
                             {changeReturn > 0 ? at('ফেরত (Change):', 'Change Return:') : at('বাকি (Due):', 'Balance Due:')}
@@ -5386,15 +5943,149 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Printable 80mm POS Receipt Modal */}
+                {/* Variant Picker Modal */}
+                {posVariantPickerProd && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+                    <div className="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl p-5 shadow-2xl space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                        <div>
+                          <h4 className="font-black text-white text-sm">{at(posVariantPickerProd.titleBn, posVariantPickerProd.title)}</h4>
+                          <p className="text-xs font-mono text-emerald-400">৳{posVariantPickerProd.price.toLocaleString()}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPosVariantPickerProd(null)}
+                          className="p-1.5 rounded-lg bg-slate-800 text-slate-300 cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      {posVariantPickerProd.colors && posVariantPickerProd.colors.length > 0 && (
+                        <div>
+                          <label className="block text-xs font-bold text-slate-300 mb-1.5">{at('রং বাছাই করুন', 'Select Color')}</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {posVariantPickerProd.colors.map((c) => (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={() => setPosVariantColor(c)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer ${
+                                  posVariantColor === c ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-300'
+                                }`}
+                              >
+                                {c}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {posVariantPickerProd.sizes && posVariantPickerProd.sizes.length > 0 && (
+                        <div>
+                          <label className="block text-xs font-bold text-slate-300 mb-1.5">{at('সাইজ বাছাই করুন', 'Select Size')}</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {posVariantPickerProd.sizes.map((s) => (
+                              <button
+                                key={s}
+                                type="button"
+                                onClick={() => setPosVariantSize(s)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer ${
+                                  posVariantSize === s ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-300'
+                                }`}
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          addProductToPos(posVariantPickerProd, posVariantColor, posVariantSize);
+                          setPosVariantPickerProd(null);
+                        }}
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl cursor-pointer"
+                      >
+                        {at('POS কার্টে যোগ করুন', 'Add Variant to Cart')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* POS Return / Refund Modal */}
+                {posReturnOrder && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+                    <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-5 shadow-2xl space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                        <h4 className="font-black text-white text-sm">
+                          {at(`রিটার্ন ও রিফান্ড (#${posReturnOrder.id})`, `POS Return / Refund (#${posReturnOrder.id})`)}
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => setPosReturnOrder(null)}
+                          className="p-1.5 rounded-lg bg-slate-800 text-slate-300 cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <p className="text-xs text-slate-300">
+                        {posReturnOrder.customer.name} ({posReturnOrder.customer.phone}) · <strong className="text-emerald-400">৳{posReturnOrder.pricing.total.toLocaleString()}</strong>
+                      </p>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-300 mb-1">{at('রিটার্নের কারণ', 'Return / Exchange Reason')}</label>
+                        <input
+                          type="text"
+                          value={posRefundReason}
+                          onChange={(e) => setPosRefundReason(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateOrderStatus(posReturnOrder.id, 'cancelled');
+                            updateOrderDetails(posReturnOrder.id, {
+                              customer: { ...posReturnOrder.customer, note: `${posReturnOrder.customer.note || ''} | POS REFUND: ${posRefundReason}` }
+                            });
+                            if (posReturnOrder.customer.phone) {
+                              adjustSpecificCustomerBalance(
+                                posReturnOrder.customer.phone,
+                                posReturnOrder.pricing.total,
+                                `POS Return Credit #${posReturnOrder.id}`
+                              );
+                            }
+                            addToast('success', at('রিটার্ন ও ওয়ালেট রিফান্ড সম্পন্ন', 'Returned & Refunded to Wallet'), `#${posReturnOrder.id}`);
+                            setPosReturnOrder(null);
+                          }}
+                          className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl cursor-pointer"
+                        >
+                          {at('বাতিল + ওয়ালেটে রিফান্ড', 'Refund to Wallet')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateOrderStatus(posReturnOrder.id, 'cancelled');
+                            updateOrderDetails(posReturnOrder.id, {
+                              customer: { ...posReturnOrder.customer, note: `${posReturnOrder.customer.note || ''} | POS CASH REFUND: ${posRefundReason}` }
+                            });
+                            addToast('info', at('ক্যাশ রিফান্ড ও রিটার্ন সম্পন্ন', 'Cash Return Recorded'), `#${posReturnOrder.id}`);
+                            setPosReturnOrder(null);
+                          }}
+                          className="flex-1 py-2.5 bg-rose-700 hover:bg-rose-600 text-white font-bold text-xs rounded-xl cursor-pointer"
+                        >
+                          {at('ক্যাশ রিফান্ড (বাতিল)', 'Cash Refund & Void')}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Printable 80mm POS Receipt Modal (Strict 1-Copy #buyone-print-root) */}
                 {posReceiptOrder && (
                   <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-                    <div className="w-full max-w-sm bg-white text-slate-900 rounded-2xl p-6 shadow-2xl space-y-4">
-                      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                        <div>
-                          <h4 className="font-black text-base">{settings.storeName} — POS RECEIPT</h4>
-                          <p className="text-[11px] font-mono text-slate-500">Invoice #{posReceiptOrder.id}</p>
-                        </div>
+                    <div className="w-full max-w-sm bg-white text-slate-900 rounded-2xl p-5 shadow-2xl space-y-3">
+                      <div className="no-print flex items-center justify-end">
                         <button
                           type="button"
                           onClick={() => setPosReceiptOrder(null)}
@@ -5403,54 +6094,72 @@ export const AdminDashboard: React.FC = () => {
                           <X className="w-4 h-4" />
                         </button>
                       </div>
-                      <div className="text-xs space-y-1">
-                        <p><strong>Customer:</strong> {posReceiptOrder.customer.name} ({posReceiptOrder.customer.phone})</p>
-                        <p><strong>Date:</strong> {new Date(posReceiptOrder.createdAt).toLocaleString()}</p>
-                        <p><strong>Method:</strong> {posReceiptOrder.payment.method.toUpperCase()} {posReceiptOrder.payment.trxId ? `(${posReceiptOrder.payment.trxId})` : ''}</p>
-                      </div>
-                      <div className="border-y border-dashed border-slate-300 py-2 space-y-1 text-xs">
-                        {posReceiptOrder.items.map((it, idx) => (
-                          <div key={idx} className="flex justify-between">
-                            <span className="truncate max-w-[190px]">
-                              {it.productTitleBn}
-                              {it.selectedColor ? ` (${it.selectedColor})` : ''} ×{it.quantity}
-                            </span>
-                            <span className="font-mono font-bold">৳{(it.price * it.quantity).toLocaleString()}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="text-xs font-mono space-y-1 tabular-nums">
-                        <div className="flex justify-between"><span>Subtotal:</span><span>৳{posReceiptOrder.pricing.subtotal.toLocaleString()}</span></div>
-                        <div className="flex justify-between"><span>Discount:</span><span>-৳{posReceiptOrder.pricing.discount.toLocaleString()}</span></div>
-                        {(posReceiptOrder.pricing.loyaltyDiscount || 0) > 0 && (
-                          <div className="flex justify-between text-amber-700"><span>Loyalty Redeemed:</span><span>-৳{posReceiptOrder.pricing.loyaltyDiscount?.toLocaleString()}</span></div>
-                        )}
-                        <div className="flex justify-between font-black text-sm pt-1 border-t border-slate-200">
-                          <span>PAID TOTAL:</span><span>৳{posReceiptOrder.pricing.total.toLocaleString()}</span>
+
+                      <div id="buyone-print-root" className="w-full max-w-[302px] mx-auto bg-white text-slate-900 space-y-3">
+                        <div className="text-center border-b border-dashed border-slate-400 pb-2">
+                          <h4 className="font-black text-base uppercase">{settings.storeName || 'BuyOne BD'} — POS</h4>
+                          <p className="text-[11px] font-mono text-slate-600">Invoice #{posReceiptOrder.id}</p>
                         </div>
-                        {(posReceiptOrder.pricing.loyaltyPointsEarned || 0) > 0 && (
-                          <div className="flex justify-between text-emerald-700 font-bold text-[11px] pt-1">
-                            <span>Loyalty Points Earned:</span><span>+{posReceiptOrder.pricing.loyaltyPointsEarned} pts</span>
+                        <div className="text-xs space-y-1">
+                          <p><strong>Customer:</strong> {posReceiptOrder.customer.name} ({posReceiptOrder.customer.phone})</p>
+                          <p><strong>Date:</strong> {new Date(posReceiptOrder.createdAt).toLocaleString()}</p>
+                          <p><strong>Method:</strong> {posReceiptOrder.payment.method.toUpperCase()} {posReceiptOrder.payment.trxId ? `(${posReceiptOrder.payment.trxId})` : ''}</p>
+                        </div>
+                        <div className="border-y border-dashed border-slate-400 py-2 space-y-1 text-xs">
+                          {posReceiptOrder.items.map((it, idx) => (
+                            <div key={idx} className="flex justify-between">
+                              <span className="truncate max-w-[190px]">
+                                {it.productTitleBn}
+                                {it.selectedColor ? ` (${it.selectedColor})` : ''}
+                                {it.selectedSize ? ` [${it.selectedSize}]` : ''} ×{it.quantity}
+                              </span>
+                              <span className="font-mono font-bold">৳{(it.price * it.quantity).toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="text-xs font-mono space-y-1 tabular-nums">
+                          <div className="flex justify-between"><span>Subtotal:</span><span>৳{posReceiptOrder.pricing.subtotal.toLocaleString()}</span></div>
+                          <div className="flex justify-between"><span>Discount:</span><span>-৳{posReceiptOrder.pricing.discount.toLocaleString()}</span></div>
+                          {(posReceiptOrder.pricing.loyaltyDiscount || 0) > 0 && (
+                            <div className="flex justify-between text-amber-700"><span>Loyalty Redeemed:</span><span>-৳{posReceiptOrder.pricing.loyaltyDiscount?.toLocaleString()}</span></div>
+                          )}
+                          <div className="flex justify-between font-black text-sm pt-1 border-t border-slate-300">
+                            <span>GRAND TOTAL:</span><span>৳{posReceiptOrder.pricing.total.toLocaleString()}</span>
                           </div>
-                        )}
+                          {(posReceiptOrder.pricing.advancePaid || 0) > 0 && (posReceiptOrder.payment.dueAmount || 0) > 0 && (
+                            <>
+                              <div className="flex justify-between text-emerald-700"><span>Paid Now:</span><span>৳{posReceiptOrder.pricing.advancePaid?.toLocaleString()}</span></div>
+                              <div className="flex justify-between font-bold text-rose-700"><span>Balance Due:</span><span>৳{posReceiptOrder.payment.dueAmount?.toLocaleString()}</span></div>
+                            </>
+                          )}
+                          {(posReceiptOrder.pricing.loyaltyPointsEarned || 0) > 0 && (
+                            <div className="flex justify-between text-emerald-700 font-bold text-[11px] pt-1">
+                              <span>Loyalty Points Earned:</span><span>+{posReceiptOrder.pricing.loyaltyPointsEarned} pts</span>
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-center text-[10px] text-slate-500 pt-2 border-t border-dashed border-slate-300">
+                          Thank you for shopping at {settings.storeName || 'BuyOne BD'}!
+                        </p>
                       </div>
+
                       <button
                         type="button"
                         onClick={() => window.print()}
-                        className="w-full py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer"
+                        className="no-print w-full py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <Printer className="w-4 h-4" />
-                        <span>{at('রিসিট প্রিন্ট করুন', 'Print 80mm Receipt')}</span>
+                        <span>{at('রিসিট প্রিন্ট করুন (১ কপি)', 'Print 80mm Receipt (1 Copy)')}</span>
                       </button>
                     </div>
                   </div>
                 )}
 
-                {/* Printable Product Barcode Label Modal */}
+                {/* Printable Product Barcode Label Modal (Strict 1-Copy #buyone-print-root) */}
                 {printableBarcodeProduct && (
                   <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
                     <div className="w-full max-w-xs bg-white text-slate-900 rounded-2xl p-5 shadow-2xl text-center space-y-3">
-                      <div className="flex items-center justify-between">
+                      <div className="no-print flex items-center justify-between">
                         <span className="text-[11px] font-bold text-slate-500 uppercase">Barcode Sticker Label</span>
                         <button
                           type="button"
@@ -5460,7 +6169,8 @@ export const AdminDashboard: React.FC = () => {
                           <X className="w-4 h-4" />
                         </button>
                       </div>
-                      <div className="p-4 border-2 border-dashed border-slate-300 rounded-xl space-y-1">
+                      <div id="buyone-print-root" className="p-4 border-2 border-dashed border-slate-400 rounded-xl space-y-1 bg-white text-slate-950">
+                        <p className="text-[10px] font-bold uppercase text-slate-500">{settings.storeName || 'BuyOne BD'}</p>
                         <p className="text-xs font-black truncate">{printableBarcodeProduct.titleBn}</p>
                         <p className="text-sm font-black text-emerald-700 font-mono">৳{printableBarcodeProduct.price.toLocaleString()}</p>
                         <svg viewBox="0 0 180 42" className="w-48 h-10 mx-auto">
@@ -5473,10 +6183,54 @@ export const AdminDashboard: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => window.print()}
-                        className="w-full py-2 bg-emerald-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="no-print w-full py-2 bg-emerald-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <Printer className="w-4 h-4" />
-                        <span>{at('বারকোড লেবেল প্রিন্ট', 'Print Sticker')}</span>
+                        <span>{at('বারকোড লেবেল প্রিন্ট (১ কপি)', 'Print Sticker (1 Copy)')}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Printable Daily Z-Report Modal (Strict 1-Copy #buyone-print-root) */}
+                {posPrintZReportCopy && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+                    <div className="w-full max-w-sm bg-white text-slate-900 rounded-2xl p-5 shadow-2xl space-y-3">
+                      <div className="no-print flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-500 uppercase">Daily POS Z-Report</span>
+                        <button
+                          type="button"
+                          onClick={() => setPosPrintZReportCopy(false)}
+                          className="p-1 rounded bg-slate-100 text-slate-600 cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div id="buyone-print-root" className="max-w-[302px] mx-auto bg-white text-slate-950 space-y-2 text-xs font-mono">
+                        <div className="text-center border-b-2 border-slate-900 pb-2">
+                          <h4 className="font-black text-sm uppercase">{settings.storeName || 'BuyOne BD'} — Z-REPORT</h4>
+                          <p className="text-[10px]">{new Date().toLocaleDateString()} · Shift: {posShiftStartedAt}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex justify-between"><span>POS Invoices:</span><strong>{todayPosOrders.length}</strong></div>
+                          <div className="flex justify-between"><span>Opening Drawer:</span><strong>৳{posShiftOpeningCash.toLocaleString()}</strong></div>
+                          <div className="flex justify-between"><span>Cash Sales:</span><strong>৳{todayPosCashTotal.toLocaleString()}</strong></div>
+                          <div className="flex justify-between"><span>Digital / Card:</span><strong>৳{todayPosDigitalTotal.toLocaleString()}</strong></div>
+                          <div className="flex justify-between border-t border-dashed border-slate-400 pt-1">
+                            <span>Expected Cash in Drawer:</span><strong>৳{(posShiftOpeningCash + todayPosCashTotal).toLocaleString()}</strong>
+                          </div>
+                          <div className="flex justify-between font-black text-sm border-t-2 border-slate-900 pt-1">
+                            <span>TOTAL REVENUE:</span><span>৳{todayPosRevenue.toLocaleString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => window.print()}
+                        className="no-print w-full py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Printer className="w-4 h-4" />
+                        <span>{at('Z-রিপোর্ট প্রিন্ট (১ কপি)', 'Print Z-Report (1 Copy)')}</span>
                       </button>
                     </div>
                   </div>
@@ -6485,24 +7239,85 @@ export const AdminDashboard: React.FC = () => {
                   />
                 </div>
               </div>
-              {/* Delivery Boy & Local Rider Management */}
-              <div className="p-6 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+              {/* Delivery Boy Fleet Quick Link Card */}
+              <div className="p-5 rounded-2xl bg-slate-900 border border-emerald-500/30 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                    <Users className="w-4 h-4 text-emerald-400" />
+                    <span>{at('লোকাল ডেলিভারি বয় ও রাইডার ফ্লিট', 'Delivery Boy & Local Rider Fleet')}</span>
+                    <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded tabular-nums">
+                      {(settings.deliveryBoys || []).filter((d) => d.active).length} Active
+                    </span>
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {at('রাইডার যোগ, এডিট, ডিলিট, বাল্ক সিলেকশন এবং ১-কপি রাইডার ম্যানিফেস্ট প্রিন্ট dedicated Delivery Boy Fleet ট্যাবে রয়েছে।', 'Manage riders, zones, bulk selection, parcel COD loads & 1-copy dispatch manifests inside the Delivery Boy Fleet workspace.')}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('delivery_fleet')}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer"
+                >
+                  {at('ফ্লিট ম্যানেজার খুলুন →', 'Open Delivery Boy Fleet →')}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6B: DEDICATED DELIVERY BOY & LOCAL RIDER FLEET */}
+          {activeTab === 'delivery_fleet' && (() => {
+            const allRiders = settings.deliveryBoys || [];
+            const distinctZones = Array.from(new Set(allRiders.map((r) => r.zone).filter(Boolean)));
+            const filteredRiders = allRiders.filter((r) => {
+              if (riderZoneFilter !== 'all' && r.zone !== riderZoneFilter) return false;
+              const q = riderSearch.trim().toLowerCase();
+              if (!q) return true;
+              return (
+                r.name.toLowerCase().includes(q) ||
+                r.phone.toLowerCase().includes(q) ||
+                r.zone.toLowerCase().includes(q)
+              );
+            });
+            const allVisibleSelected =
+              filteredRiders.length > 0 && filteredRiders.every((r) => selectedRiderIds.includes(r.id));
+
+            const getRiderStats = (riderId: string) => {
+              const assigned = orders.filter((o) => o.courier?.deliveryBoyId === riderId);
+              const delivered = assigned.filter((o) => o.status === 'delivered');
+              const activeParcels = assigned.filter((o) => o.status !== 'delivered' && o.status !== 'cancelled');
+              const codPending = activeParcels.reduce((s, o) => s + (o.payment.dueAmount ?? o.pricing.total), 0);
+              return { total: assigned.length, delivered: delivered.length, activeCount: activeParcels.length, codPending };
+            };
+
+            return (
+              <div className="space-y-6 animate-fade-in">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                      <Users className="w-4 h-4 text-emerald-400" />
-                      <span>{at('লোকাল ডেলিভারি বয় ও রাইডার ম্যানেজমেন্ট', 'Delivery Boy & Local Rider Fleet')}</span>
-                    </h4>
+                    <h3 className="text-xl font-black text-white flex items-center gap-2">
+                      <Truck className="w-6 h-6 text-emerald-400" />
+                      <span>{at('ডেলিভারি বয় ও লোকাল রাইডার ফ্লিট', 'Delivery Boy & Local Rider Fleet')}</span>
+                    </h3>
                     <p className="text-xs text-slate-400">
-                      {at('নিজস্ব ডেলিভারি বয় যোগ করুন এবং অর্ডার টেবিল থেকে সরাসরি অ্যাসাইন করুন', 'Add in-house riders & assign them directly to orders from the Orders tab')}
+                      {at('নিজস্ব রাইডার যোগ, এডিট, ডিলিট, বাল্ক জোন অ্যাসাইন, পার্সেল ও COD হিসাব এবং ১-কপি ম্যানিফেস্ট প্রিন্ট', 'Full rider fleet control: add, edit, delete, bulk zone assignment, live COD load & 1-copy Rider Dispatch Manifest')}
                     </p>
                   </div>
-                  <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded tabular-nums">
-                    {(settings.deliveryBoys || []).filter((d) => d.active).length} {at('জন সক্রিয়', 'Active Riders')}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPosReceiptOrder(null);
+                      setPrintableBarcodeProduct(null);
+                      setPosPrintZReportCopy(false);
+                      setPrintableRiderManifest(true);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-emerald-300 font-bold text-xs flex items-center gap-2 cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>{at('১-কপি ডিসপ্যাচ ম্যানিফেস্ট প্রিন্ট', 'Print Rider Manifest (1 Copy)')}</span>
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 text-xs">
+                {/* Add New Rider Form */}
+                <div className="p-4 rounded-2xl bg-slate-900 border border-emerald-500/30 grid grid-cols-1 sm:grid-cols-5 gap-2 text-xs">
                   <input
                     type="text"
                     value={newDeliveryBoyName}
@@ -6525,8 +7340,8 @@ export const AdminDashboard: React.FC = () => {
                     className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
                   />
                   <select
-                    value={newDeliveryBoyVehicle === 'Cycle' ? 'Bicycle' : newDeliveryBoyVehicle}
-                    onChange={(e) => setNewDeliveryBoyVehicle(e.target.value as any)}
+                    value={newDeliveryBoyVehicle}
+                    onChange={(e) => setNewDeliveryBoyVehicle(e.target.value as 'Bike' | 'Cycle' | 'Van')}
                     className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
                   >
                     <option value="Bike">Motorbike</option>
@@ -6550,7 +7365,7 @@ export const AdminDashboard: React.FC = () => {
                         vehicleType: mappedVehicle,
                         active: true
                       };
-                      updateSettings({ deliveryBoys: [...(settings.deliveryBoys || []), entry] });
+                      updateSettings({ deliveryBoys: [...allRiders, entry] });
                       setNewDeliveryBoyName('');
                       setNewDeliveryBoyPhone('');
                       addToast('success', at('ডেলিভারি বয় যোগ হয়েছে!', 'Delivery Boy Added!'), entry.name);
@@ -6558,126 +7373,343 @@ export const AdminDashboard: React.FC = () => {
                     className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl cursor-pointer flex items-center justify-center gap-1"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>{at('যোগ করুন', 'Add Rider')}</span>
+                    <span>{at('রাইডার যোগ', 'Add Rider')}</span>
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                  {(settings.deliveryBoys || []).map((rider) => (
-                    <div key={rider.id} className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-                      {editingDeliveryBoy?.id === rider.id ? (
-                        <div className="space-y-2">
-                          <input
-                            type="text"
-                            value={editingDeliveryBoy.name}
-                            onChange={(e) => setEditingDeliveryBoy({ ...editingDeliveryBoy, name: e.target.value })}
-                            placeholder="Rider Name"
-                            className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-bold"
-                          />
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <input
-                              type="text"
-                              value={editingDeliveryBoy.phone}
-                              onChange={(e) => setEditingDeliveryBoy({ ...editingDeliveryBoy, phone: e.target.value })}
-                              placeholder="Phone"
-                              className="px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-emerald-400 font-mono"
-                            />
-                            <input
-                              type="text"
-                              value={editingDeliveryBoy.zone}
-                              onChange={(e) => setEditingDeliveryBoy({ ...editingDeliveryBoy, zone: e.target.value })}
-                              placeholder="Zone"
-                              className="px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
-                            />
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <select
-                              value={editingDeliveryBoy.vehicleType || 'Bike'}
-                              onChange={(e) => setEditingDeliveryBoy({ ...editingDeliveryBoy, vehicleType: e.target.value as any })}
-                              className="flex-1 px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
-                            >
-                              <option value="Bike">Motorbike</option>
-                              <option value="Bicycle">Bicycle</option>
-                              <option value="Van">Delivery Van</option>
-                              <option value="Walk">Walk</option>
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!editingDeliveryBoy.name.trim() || !editingDeliveryBoy.phone.trim()) return;
-                                updateSettings({
-                                  deliveryBoys: (settings.deliveryBoys || []).map((x) =>
-                                    x.id === rider.id ? editingDeliveryBoy : x
-                                  )
-                                });
-                                setEditingDeliveryBoy(null);
-                                addToast('success', at('রাইডার আপডেট হয়েছে', 'Rider Updated'), editingDeliveryBoy.name);
-                              }}
-                              className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
-                            >
-                              {at('সেভ', 'Save')}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingDeliveryBoy(null)}
-                              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold cursor-pointer"
-                            >
-                              {at('বাতিল', 'Cancel')}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="font-bold text-white truncate">{rider.name}</p>
-                            <p className="text-[11px] font-mono text-emerald-400">{rider.phone}</p>
-                            <p className="text-[10px] text-slate-400">{rider.zone} • {rider.vehicleType || 'Bike'}</p>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateSettings({
-                                  deliveryBoys: (settings.deliveryBoys || []).map((x) =>
-                                    x.id === rider.id ? { ...x, active: !x.active } : x
-                                  )
-                                })
-                              }
-                              className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer ${
-                                rider.active ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-500'
-                              }`}
-                            >
-                              {rider.active ? 'Active' : 'Off'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingDeliveryBoy({ ...rider })}
-                              title={at('রাইডার এডিট করুন', 'Edit Rider')}
-                              className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 cursor-pointer"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateSettings({
-                                  deliveryBoys: (settings.deliveryBoys || []).filter((x) => x.id !== rider.id)
-                                })
-                              }
-                              title={at('রাইডার মুছুন', 'Delete Rider')}
-                              className="p-1.5 rounded bg-rose-950/60 hover:bg-rose-900 text-rose-300 cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                <BulkSectionShell
+                  indexCode="BULK // DELIVERY FLEET"
+                  title={at('রাইডার রোস্টার ও বাল্ক ম্যানেজমেন্ট', 'Rider Roster & Bulk Operations')}
+                  subtitle={at('রাইডারদের এলাকা, পার্সেল লোড ও সক্রিয়তা নিয়ন্ত্রণ করুন', 'Filter by zone, bulk activate/deactivate, reassign zones or remove riders')}
+                  totalCount={filteredRiders.length}
+                  selectedCount={selectedRiderIds.length}
+                  accent="emerald"
+                  headerActions={
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <input
+                        type="text"
+                        value={riderSearch}
+                        onChange={(e) => setRiderSearch(e.target.value)}
+                        placeholder={at('নাম বা ফোন...', 'Search rider...')}
+                        className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-white w-36"
+                      />
+                      <select
+                        value={riderZoneFilter}
+                        onChange={(e) => setRiderZoneFilter(e.target.value)}
+                        className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-200"
+                      >
+                        <option value="all">{at('সকল এলাকা', 'All Zones')}</option>
+                        {distinctZones.map((z) => (
+                          <option key={z} value={z}>{z}</option>
+                        ))}
+                      </select>
                     </div>
-                  ))}
-                </div>
+                  }
+                >
+                  <BulkCommandBar
+                    selectedCount={selectedRiderIds.length}
+                    totalCount={filteredRiders.length}
+                    allSelected={allVisibleSelected}
+                    onToggleSelectAll={() =>
+                      setSelectedRiderIds(allVisibleSelected ? [] : filteredRiders.map((r) => r.id))
+                    }
+                    onClearSelection={() => setSelectedRiderIds([])}
+                    itemLabel={at('রাইডার', 'riders')}
+                  >
+                    {selectedRiderIds.length > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateSettings({
+                              deliveryBoys: allRiders.map((r) =>
+                                selectedRiderIds.includes(r.id) ? { ...r, active: true } : r
+                              )
+                            });
+                            setSelectedRiderIds([]);
+                            addToast('success', at('বাল্ক অ্যাক্টিভ সম্পন্ন', 'Bulk Activated'), '');
+                          }}
+                          className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer"
+                        >
+                          {at('সক্রিয় করুন', 'Activate')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateSettings({
+                              deliveryBoys: allRiders.map((r) =>
+                                selectedRiderIds.includes(r.id) ? { ...r, active: false } : r
+                              )
+                            });
+                            setSelectedRiderIds([]);
+                            addToast('info', at('বাল্ক অফলাইন করা হয়েছে', 'Set Offline'), '');
+                          }}
+                          className="px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer"
+                        >
+                          {at('অফলাইন', 'Deactivate')}
+                        </button>
+                        <div className="w-px h-5 bg-slate-700 mx-1" />
+                        <input
+                          type="text"
+                          value={bulkRiderZone}
+                          onChange={(e) => setBulkRiderZone(e.target.value)}
+                          placeholder="Zone..."
+                          className="px-2 py-1 rounded bg-slate-950 border border-slate-700 text-white text-[11px] w-28"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!bulkRiderZone.trim()) return;
+                            updateSettings({
+                              deliveryBoys: allRiders.map((r) =>
+                                selectedRiderIds.includes(r.id) ? { ...r, zone: bulkRiderZone.trim() } : r
+                              )
+                            });
+                            setSelectedRiderIds([]);
+                            addToast('success', at('জোন আপডেট হয়েছে', 'Bulk Zone Assigned'), bulkRiderZone);
+                          }}
+                          className="px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer"
+                        >
+                          {at('জোন সেট', 'Set Zone')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateSettings({
+                              deliveryBoys: allRiders.filter((r) => !selectedRiderIds.includes(r.id))
+                            });
+                            setSelectedRiderIds([]);
+                            addToast('info', at('নির্বাচিত রাইডার মুছে ফেলা হয়েছে', 'Riders Deleted'), '');
+                          }}
+                          className="px-2.5 py-1 rounded bg-rose-700 hover:bg-rose-600 text-white text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer"
+                        >
+                          {at('বাল্ক ডিলিট', 'Delete Selected')}
+                        </button>
+                      </>
+                    )}
+                  </BulkCommandBar>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                    {filteredRiders.map((rider) => {
+                      const stats = getRiderStats(rider.id);
+                      const isSel = selectedRiderIds.includes(rider.id);
+                      return (
+                        <div
+                          key={rider.id}
+                          className={`p-4 rounded-xl border space-y-3 transition-colors ${
+                            isSel ? 'bg-emerald-950/30 border-emerald-500/60' : 'bg-slate-900 border-slate-800'
+                          }`}
+                        >
+                          {editingDeliveryBoy?.id === rider.id ? (
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                value={editingDeliveryBoy.name}
+                                onChange={(e) => setEditingDeliveryBoy({ ...editingDeliveryBoy, name: e.target.value })}
+                                placeholder="Rider Name"
+                                className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-white font-bold"
+                              />
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <input
+                                  type="text"
+                                  value={editingDeliveryBoy.phone}
+                                  onChange={(e) => setEditingDeliveryBoy({ ...editingDeliveryBoy, phone: e.target.value })}
+                                  placeholder="Phone"
+                                  className="px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-emerald-400 font-mono"
+                                />
+                                <input
+                                  type="text"
+                                  value={editingDeliveryBoy.zone}
+                                  onChange={(e) => setEditingDeliveryBoy({ ...editingDeliveryBoy, zone: e.target.value })}
+                                  placeholder="Zone"
+                                  className="px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-white"
+                                />
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <select
+                                  value={editingDeliveryBoy.vehicleType || 'Bike'}
+                                  onChange={(e) => setEditingDeliveryBoy({ ...editingDeliveryBoy, vehicleType: e.target.value as any })}
+                                  className="flex-1 px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-white"
+                                >
+                                  <option value="Bike">Motorbike</option>
+                                  <option value="Bicycle">Bicycle</option>
+                                  <option value="Van">Delivery Van</option>
+                                  <option value="Walk">Walk</option>
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!editingDeliveryBoy.name.trim() || !editingDeliveryBoy.phone.trim()) return;
+                                    updateSettings({
+                                      deliveryBoys: allRiders.map((x) => (x.id === rider.id ? editingDeliveryBoy : x))
+                                    });
+                                    setEditingDeliveryBoy(null);
+                                    addToast('success', at('রাইডার আপডেট হয়েছে', 'Rider Updated'), editingDeliveryBoy.name);
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                                >
+                                  {at('সেভ', 'Save')}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingDeliveryBoy(null)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-300 font-bold cursor-pointer"
+                                >
+                                  {at('বাতিল', 'Cancel')}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex items-start justify-between gap-2">
+                                <label className="flex items-start gap-2.5 cursor-pointer min-w-0">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSel}
+                                    onChange={(e) =>
+                                      setSelectedRiderIds((prev) =>
+                                        e.target.checked ? [...prev, rider.id] : prev.filter((id) => id !== rider.id)
+                                      )
+                                    }
+                                    className="mt-1 w-4 h-4 accent-emerald-500 rounded cursor-pointer"
+                                  />
+                                  <div className="min-w-0">
+                                    <p className="font-bold text-white truncate">{rider.name}</p>
+                                    <p className="text-[11px] font-mono text-emerald-400">{rider.phone}</p>
+                                    <p className="text-[10px] text-slate-400">{rider.zone} • {rider.vehicleType || 'Bike'}</p>
+                                  </div>
+                                </label>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateSettings({
+                                        deliveryBoys: allRiders.map((x) =>
+                                          x.id === rider.id ? { ...x, active: !x.active } : x
+                                        )
+                                      })
+                                    }
+                                    className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer ${
+                                      rider.active ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-500'
+                                    }`}
+                                  >
+                                    {rider.active ? 'Active' : 'Off'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingDeliveryBoy({ ...rider })}
+                                    className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 cursor-pointer"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateSettings({
+                                        deliveryBoys: allRiders.filter((x) => x.id !== rider.id)
+                                      })
+                                    }
+                                    className="p-1.5 rounded bg-rose-950/60 hover:bg-rose-900 text-rose-300 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800 text-center text-[10px] font-mono tabular-nums">
+                                <div className="p-1.5 rounded bg-slate-950">
+                                  <span className="text-slate-400 block">Active</span>
+                                  <strong className="text-amber-300 text-xs">{stats.activeCount}</strong>
+                                </div>
+                                <div className="p-1.5 rounded bg-slate-950">
+                                  <span className="text-slate-400 block">Delivered</span>
+                                  <strong className="text-emerald-400 text-xs">{stats.delivered}</strong>
+                                </div>
+                                <div className="p-1.5 rounded bg-slate-950">
+                                  <span className="text-slate-400 block">COD Due</span>
+                                  <strong className="text-sky-300 text-xs">৳{stats.codPending.toLocaleString()}</strong>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {filteredRiders.length === 0 && (
+                      <div className="col-span-full py-10 text-center text-xs text-slate-500">
+                        {at('কোনো ডেলিভারি বয় পাওয়া যায়নি।', 'No delivery riders matched your filter.')}
+                      </div>
+                    )}
+                  </div>
+                </BulkSectionShell>
+
+                {/* Printable 1-Copy Rider Dispatch Manifest (#buyone-print-root) */}
+                {printableRiderManifest && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm">
+                    <div className="w-full max-w-2xl bg-white text-slate-950 rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+                      <div className="no-print flex items-center justify-between border-b border-slate-200 pb-3">
+                        <span className="font-black text-sm">Rider Dispatch & COD Manifest Preview</span>
+                        <button
+                          type="button"
+                          onClick={() => setPrintableRiderManifest(false)}
+                          className="p-1.5 rounded-lg bg-slate-100 text-slate-600 cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div id="buyone-print-root" className="bg-white text-slate-950 space-y-4 text-xs">
+                        <div className="flex items-center justify-between border-b-2 border-slate-900 pb-2">
+                          <div>
+                            <h4 className="font-black text-lg uppercase">{settings.storeName || 'BuyOne BD'} — RIDER DISPATCH MANIFEST</h4>
+                            <p className="text-[11px] text-slate-600">Date: {new Date().toLocaleString()}</p>
+                          </div>
+                          <span className="font-mono font-bold text-xs">{allRiders.filter((r) => r.active).length} Active Riders</span>
+                        </div>
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="border-y border-slate-900">
+                              <th className="py-2">Rider Name & Phone</th>
+                              <th className="py-2">Zone / Vehicle</th>
+                              <th className="py-2 text-center">Active Parcels</th>
+                              <th className="py-2 text-right">Pending COD</th>
+                              <th className="py-2 text-right">Signature</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200">
+                            {allRiders.filter((r) => r.active).map((rider) => {
+                              const st = getRiderStats(rider.id);
+                              return (
+                                <tr key={`m-${rider.id}`}>
+                                  <td className="py-2">
+                                    <strong>{rider.name}</strong>
+                                    <span className="block font-mono text-[11px] text-slate-600">{rider.phone}</span>
+                                  </td>
+                                  <td className="py-2">{rider.zone} ({rider.vehicleType || 'Bike'})</td>
+                                  <td className="py-2 text-center font-mono font-bold">{st.activeCount}</td>
+                                  <td className="py-2 text-right font-mono font-bold">৳{st.codPending.toLocaleString()}</td>
+                                  <td className="py-2 text-right text-slate-400">_____________</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => window.print()}
+                        className="no-print w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Printer className="w-4 h-4" />
+                        <span>{at('ম্যানিফেস্ট প্রিন্ট (১ কপি)', 'Print Rider Manifest (1 Copy)')}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* TAB 7: FLASH SALE MANAGER */}
           {activeTab === 'flash_sale' && (() => {
@@ -9416,7 +10448,7 @@ export const AdminDashboard: React.FC = () => {
                     disabled={isPlayingVoiceSample}
                     className="w-full py-3 px-4 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-teal-600/20 cursor-pointer"
                   >
-                    <PhoneCall className="w-4 h-4 text-amber-300 animate-pulse" />
+                    <PhoneCall className="w-4 h-4 text-amber-300" />
                     <span>{isPlayingVoiceSample ? t('ভয়েস অডিও প্লে হচ্ছে...', 'Streaming Bengali Voice...') : t('🎧 বাংলাদেশী নারী কণ্ঠে লাইভ অডিও শুনুন', 'Listen Live Bengali Voice Sample')}</span>
                   </button>
 
@@ -12047,6 +13079,126 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Live Storefront Product Viewer Counter (76439 people viewed this) */}
+                <div className="p-5 rounded-2xl bg-slate-950 border border-emerald-500/35 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                        <Eye className="w-4 h-4 text-emerald-400" />
+                        <span>{at('লাইভ প্রোডাক্ট ভিউয়ার কাউন্টার ("76,439 people viewed this")', 'Live Product Viewer Counter ("76,439 people viewed this")')}</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        {at('প্রোডাক্ট কার্ড, কুইক-ভিউ ও সিঙ্গেল প্রোডাক্ট পেজের লাইভ ভিজিটর কাউন্ট এখান থেকে নিয়ন্ত্রণ করুন।', 'Control the social-proof view counter shown across storefront product cards, modals, and single product pages.')}
+                      </p>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs font-bold text-emerald-400 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.viewerCounter?.enabled !== false}
+                        onChange={(e) =>
+                          updateSettings({
+                            viewerCounter: {
+                              enabled: e.target.checked,
+                              baseCount: settings.viewerCounter?.baseCount ?? 76439,
+                              autoIncrement: settings.viewerCounter?.autoIncrement !== false,
+                              labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
+                              labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
+                            }
+                          })
+                        }
+                        className="w-4 h-4 accent-emerald-500 rounded"
+                      />
+                      <span>{at('কাউন্টার চালু', 'Enable Counter')}</span>
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">{at('বেস ভিউ সংখ্যা (Base Count)', 'Base Viewer Count')}</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={settings.viewerCounter?.baseCount ?? 76439}
+                        onChange={(e) =>
+                          updateSettings({
+                            viewerCounter: {
+                              enabled: settings.viewerCounter?.enabled !== false,
+                              baseCount: Math.max(0, Number(e.target.value) || 0),
+                              autoIncrement: settings.viewerCounter?.autoIncrement !== false,
+                              labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
+                              labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
+                            }
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-emerald-400 font-mono font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">{at('বাংলা লেবেল', 'Bangla Label')}</label>
+                      <input
+                        type="text"
+                        value={settings.viewerCounter?.labelBn ?? 'জন এই পণ্যটি দেখেছেন'}
+                        onChange={(e) =>
+                          updateSettings({
+                            viewerCounter: {
+                              enabled: settings.viewerCounter?.enabled !== false,
+                              baseCount: settings.viewerCounter?.baseCount ?? 76439,
+                              autoIncrement: settings.viewerCounter?.autoIncrement !== false,
+                              labelBn: e.target.value,
+                              labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
+                            }
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">{at('ইংরেজি লেবেল', 'English Label')}</label>
+                      <input
+                        type="text"
+                        value={settings.viewerCounter?.labelEn ?? 'people viewed this'}
+                        onChange={(e) =>
+                          updateSettings({
+                            viewerCounter: {
+                              enabled: settings.viewerCounter?.enabled !== false,
+                              baseCount: settings.viewerCounter?.baseCount ?? 76439,
+                              autoIncrement: settings.viewerCounter?.autoIncrement !== false,
+                              labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
+                              labelEn: e.target.value
+                            }
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.viewerCounter?.autoIncrement !== false}
+                        onChange={(e) =>
+                          updateSettings({
+                            viewerCounter: {
+                              enabled: settings.viewerCounter?.enabled !== false,
+                              baseCount: settings.viewerCounter?.baseCount ?? 76439,
+                              autoIncrement: e.target.checked,
+                              labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
+                              labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
+                            }
+                          })
+                        }
+                        className="w-4 h-4 accent-emerald-500 rounded"
+                      />
+                      <span>{at('রিয়েল ভিজিটে অটো সংখ্যা বাড়বে (+1 প্রতি সেশন)', 'Auto-Increment Live Views (+1 per unique product view)')}</span>
+                    </label>
+                    <div className="px-3 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-200 font-mono">
+                      👁 {(settings.viewerCounter?.baseCount ?? 76439).toLocaleString()} {at(settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন', settings.viewerCounter?.labelEn || 'people viewed this')}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Editable Home Storefront USP Feature Strip */}
                 <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -12843,7 +13995,7 @@ export const AdminDashboard: React.FC = () => {
                       <>
                         <div className="px-3.5 py-2 rounded-xl bg-emerald-950/60 border border-emerald-600/40 text-xs">
                           <div className="flex items-center gap-2 text-emerald-300 font-bold">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
                             <span>{at('সংযুক্ত:', 'Connected:')} {firebaseAdminUserEmail || 'Admin'}</span>
                           </div>
                           {lastCloudSyncAt && (
@@ -15508,6 +16660,8 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
             <WhatsAppSupportConsole initialPhone={waConsolePhone} />
           )}
           {activeTab === 'wholesale' && <WholesaleAdminView />}
+          {activeTab === 'affiliates' && <AffiliateAdminView />}
+          {activeTab === 'blogs' && <BlogAdminView onImageUpload={handleImageFileUpload} />}
           {activeTab === 'global_marketing' && <GlobalMarketingHub />}
         </main>
       </div>
@@ -17495,7 +18649,7 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                 type="submit"
                 className="w-full py-2.5 mt-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl cursor-pointer"
               >
-                {at('অর্ডার নিশ্চিত করুন', 'Create Order Now')}
+                {at('অর্ডার নিশ্চিত করুন', 'Create Order')}
               </button>
             </form>
           </div>

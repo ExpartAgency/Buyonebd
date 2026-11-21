@@ -43,7 +43,8 @@ export const CustomerDashboardModal: React.FC = () => {
     customerProfile,
     updateCustomerProfile,
     customerWalletBalance,
-    walletDaysRemaining,
+    spinBonusBalance,
+    spinBonusExpiresAt,
     walletTopUps,
     requestWalletTopUp,
     settings,
@@ -93,6 +94,25 @@ export const CustomerDashboardModal: React.FC = () => {
       district: customerProfile.district
     });
   }, [customerProfile]);
+
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    if (!isCustomerDashboardOpen) return;
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isCustomerDashboardOpen]);
+
+  const activeSpinBonus =
+    spinBonusBalance > 0 && (!spinBonusExpiresAt || nowTick < new Date(spinBonusExpiresAt).getTime())
+      ? spinBonusBalance
+      : 0;
+  const spinMsRemaining =
+    activeSpinBonus > 0 && spinBonusExpiresAt
+      ? Math.max(0, new Date(spinBonusExpiresAt).getTime() - nowTick)
+      : 0;
+  const spinHoursLeft = Math.floor(spinMsRemaining / 3600000);
+  const spinMinsLeft = Math.floor((spinMsRemaining % 3600000) / 60000);
+  const spinSecsLeft = Math.floor((spinMsRemaining % 60000) / 1000);
 
   if (!isCustomerDashboardOpen) return null;
 
@@ -196,14 +216,22 @@ export const CustomerDashboardModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Balance Pills */}
-            <div className="flex items-center gap-2 shrink-0">
+            {/* Balance Cards: Lifetime Wallet + 48h Spin Bonus + Points */}
+            <div className="flex flex-wrap items-center gap-2 shrink-0 tabular-nums">
               <div className="bg-white/10 backdrop-blur-md px-3 py-2 rounded-2xl border border-emerald-400/30 text-left">
                 <span className="text-[10px] uppercase font-bold text-emerald-300 block">
-                  {t('স্পিন গিফট ওয়ালেট', 'Spin Gift Wallet')}
+                  {t('আজীবন ওয়ালেট', 'Lifetime Wallet')}
                 </span>
                 <span className="text-base sm:text-lg font-black text-white font-mono">
                   ৳{customerWalletBalance.toLocaleString()}
+                </span>
+              </div>
+              <div className="bg-white/10 backdrop-blur-md px-3 py-2 rounded-2xl border border-sky-400/30 text-left">
+                <span className="text-[10px] uppercase font-bold text-sky-300 block">
+                  {t('৪৮ঘণ্টা স্পিন বোনাস', '48h Spin Bonus')}
+                </span>
+                <span className="text-base sm:text-lg font-black text-white font-mono">
+                  ৳{activeSpinBonus.toLocaleString()}
                 </span>
               </div>
               <div className="bg-white/10 backdrop-blur-md px-3 py-2 rounded-2xl border border-amber-400/30 text-left">
@@ -314,21 +342,36 @@ export const CustomerDashboardModal: React.FC = () => {
           {/* TAB 1: Spin-Only Gift Wallet, Saved Coupons & Loyalty Points */}
           {activeTab === 'wallet' && (
             <div className="space-y-5">
-              {/* Spin & MFS Wallet Banner with 30-Day Activity Expiry Tracker */}
+              {/* Lifetime Deposited Wallet + 48-Hour Expiring Spin Bonus */}
               <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 rounded-3xl p-5 text-white shadow-lg space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider bg-black/20 px-2.5 py-0.5 rounded-full text-amber-300">
-                      <Sparkles className="w-3 h-3" />
-                      {t('ওয়ালেট ও গিফট ব্যালেন্স', 'Customer Cash & Gift Wallet')}
+                  <div className="space-y-2">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider bg-black/20 px-2.5 py-0.5 rounded-full text-emerald-200">
+                      <ShieldCheck className="w-3 h-3" />
+                      {t('আজীবন মেয়াদী ডিপোজিট ওয়ালেট', 'Lifetime Deposited Balance (Never Expires)')}
                     </span>
-                    <h3 className="text-2xl sm:text-3xl font-black font-mono tabular-nums">
-                      ৳{customerWalletBalance.toLocaleString()}
-                    </h3>
+                    <div className="flex flex-wrap items-baseline gap-4 tabular-nums">
+                      <div>
+                        <h3 className="text-2xl sm:text-3xl font-black font-mono">
+                          ৳{customerWalletBalance.toLocaleString()}
+                        </h3>
+                        <p className="text-[11px] text-emerald-100">
+                          {t('অ্যাড করা ব্যালেন্স — আজীবন মেয়াদী', 'Deposited Cash · Lifetime Validity')}
+                        </p>
+                      </div>
+                      <div className="px-3 py-1.5 rounded-2xl bg-slate-950/35 border border-white/15">
+                        <span className="text-[10px] text-amber-300 font-bold uppercase block">
+                          {t('৪৮-ঘণ্টা স্পিন বোনাস', '48h Spin Bonus')}
+                        </span>
+                        <span className="text-lg font-black font-mono text-white">
+                          ৳{activeSpinBonus.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
                     <p className="text-xs text-emerald-100 leading-relaxed max-w-md">
                       {t(
-                        'বিকাশ/নগদ দিয়ে ব্যালেন্স অ্যাড করুন অথবা লাকি স্পিন ও পয়েন্ট রিডিম করে যেকোনো পণ্যে ব্যবহার করুন।',
-                        'Add balance via bKash/Nagad or win Spin cash & redeem points to spend on any product.'
+                        'বিকাশ/নগদে অ্যাড করা টাকা সারাজীবন অক্ষুণ্ণ থাকবে। শুধুমাত্র স্পিন বোনাস ব্যালেন্স ৪৮ ঘণ্টা পর স্বয়ংক্রিয়ভাবে কেটে নেওয়া হয়।',
+                        'Balance added via bKash/Nagad stays valid for a lifetime. Spin wheel bonus funds remain active for 48 hours before automatic deduction.'
                       )}
                     </p>
                   </div>
@@ -341,7 +384,7 @@ export const CustomerDashboardModal: React.FC = () => {
                         className="px-4 py-2.5 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-800 font-black text-xs shadow-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all"
                       >
                         <PlusCircle className="w-4 h-4 text-emerald-600" />
-                        <span>{t('+ ব্যালেন্স অ্যাড (bKash/Nagad)', '+ Add Balance')}</span>
+                        <span>{t('+ ব্যালেন্স অ্যাড (আজীবন)', '+ Add Lifetime Balance')}</span>
                       </button>
                     )}
                     <button
@@ -349,20 +392,25 @@ export const CustomerDashboardModal: React.FC = () => {
                       className="px-4 py-2.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95"
                     >
                       <Gift className="w-4 h-4" />
-                      <span>{t('স্পিন করে জিতুন', 'Spin & Win')}</span>
+                      <span>{t('স্পিন করে বোনাস জিতুন', 'Spin & Win 48h Bonus')}</span>
                     </button>
                   </div>
                 </div>
 
-                {/* 30-Day Inactivity Balance Expiry Policy Bar */}
-                <div className="p-3 rounded-2xl bg-slate-950/35 border border-white/15 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px]">
+                {/* Live 48h Spin Bonus Countdown + Policy Note */}
+                <div className="p-3 rounded-2xl bg-slate-950/35 border border-white/15 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] tabular-nums">
                   <div className="flex items-start sm:items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5 sm:mt-0" />
+                    <Clock className="w-4 h-4 text-amber-300 shrink-0 mt-0.5 sm:mt-0" />
                     <span className="text-emerald-50 font-semibold">
-                      {t(
-                        `নোট: ${settings.walletSettings?.expiryDays ?? 30} দিনের মধ্যে কোনো পণ্য না কিনলে অব্যবহৃত ব্যালেন্স শূন্য (৳০) হয়ে যাবে। বাকি আছে: ${walletDaysRemaining} দিন।`,
-                        `Policy: Wallet resets to ৳0 if no product is purchased within ${settings.walletSettings?.expiryDays ?? 30} days. Remaining validity: ${walletDaysRemaining} day(s).`
-                      )}
+                      {activeSpinBonus > 0 && spinBonusExpiresAt
+                        ? t(
+                            `স্পিন বোনাস ৳${activeSpinBonus.toLocaleString()} মেয়াদ শেষ হতে বাকি: ${String(spinHoursLeft).padStart(2, '0')}ঘ ${String(spinMinsLeft).padStart(2, '0')}মি ${String(spinSecsLeft).padStart(2, '0')}সে (এরপর অটো বাদ হবে · ডিপোজিট ব্যালেন্স আজীবন থাকবে)।`,
+                            `Spin Bonus ৳${activeSpinBonus.toLocaleString()} auto-expires in ${String(spinHoursLeft).padStart(2, '0')}h ${String(spinMinsLeft).padStart(2, '0')}m ${String(spinSecsLeft).padStart(2, '0')}s (Deposited balance stays forever).`
+                          )
+                        : t(
+                            'আপনার অ্যাড করা ওয়ালেট ব্যালেন্স আজীবন মেয়াদী। স্পিন করে ৪৮ ঘণ্টার অতিরিক্ত বোনাস জিততে পারেন।',
+                            'Your deposited wallet balance is lifetime valid and never expires. Spin rewards stay active for 48 hours.'
+                          )}
                     </span>
                   </div>
                   <button
@@ -945,7 +993,7 @@ export const CustomerDashboardModal: React.FC = () => {
                           }}
                           className="w-full py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer"
                         >
-                          {t('অর্ডার করুন', 'Order Now')}
+                          {t('এখনই কিনুন', 'Buy Now')}
                         </button>
                       </div>
                     ))}

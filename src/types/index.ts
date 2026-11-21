@@ -225,6 +225,9 @@ export interface Order {
   customerQuotedPrice?: number;
   wholesaleBuyerId?: string;
   wholesaleCompany?: string;
+  affiliateId?: string;
+  affiliateCode?: string;
+  affiliateCommission?: number;
   createdAt: string;
   updatedAt?: string;
 }
@@ -593,6 +596,16 @@ export interface StoreSettings {
   globalMarketingSettings?: GlobalMarketingSettings;
   aiAutopilotSettings?: AIAutopilotSettings;
   invoiceSettings?: InvoiceSettings;
+  viewerCounter?: ViewerCounterSettings;
+  affiliateSettings?: AffiliateSettings;
+}
+
+export interface ViewerCounterSettings {
+  enabled: boolean;
+  baseCount: number;
+  labelBn: string;
+  labelEn: string;
+  autoIncrement?: boolean;
 }
 
 export interface InvoiceCustomField {
@@ -871,6 +884,8 @@ export interface CustomerProfile {
   password?: string;
   loyaltyPoints: number;
   walletBalance: number;
+  spinBonusBalance?: number;
+  spinBonusExpiresAt?: string;
   lastPurchaseAt?: string;
   lastWalletCreditAt?: string;
   browsingHistory?: string[];
@@ -1046,6 +1061,8 @@ export interface WholesaleAccount {
   tier: 'Silver' | 'Gold' | 'Platinum';
   extraDiscountPercent: number;
   creditLimitBdt?: number;
+  creditUsedBdt?: number;
+  paymentTerms?: 'Cash / Advance' | 'Net-7' | 'Net-15' | 'Net-30';
   status: 'pending' | 'approved' | 'suspended';
   createdAt: string;
   updatedAt?: string;
@@ -1191,4 +1208,119 @@ export interface AIAutopilotSettings {
   preferredCourier: CourierProvider;
   lastScanAt?: string;
 }
+
+export interface BlogPost {
+  id: string;
+  title: string;
+  titleBn: string;
+  slug: string;
+  excerpt: string;
+  excerptBn: string;
+  content: string;
+  contentBn: string;
+  category: string;
+  categoryBn: string;
+  coverImage: string;
+  author: string;
+  tags: string[];
+  seoTitle?: string;
+  seoDescription?: string;
+  readTimeMinutes: number;
+  viewsCount?: number;
+  isPublished: boolean;
+  publishedAt: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ResellerTopUpRequest {
+  id: string;
+  resellerId: string;
+  resellerName: string;
+  resellerPhone: string;
+  method: 'bkash' | 'nagad' | 'rocket' | 'bank';
+  amount: number;
+  senderNumber: string;
+  trxId: string;
+  status: 'pending' | 'approved' | 'rejected';
+  note?: string;
+  createdAt: string;
+  processedAt?: string;
+}
+
+export interface AffiliateSettings {
+  enabled: boolean;
+  autoApprove: boolean;
+  defaultCommissionPercent: number;
+  minPayoutBdt: number;
+  cookieDays: number;
+  welcomeMsgBn: string;
+  welcomeMsgEn: string;
+}
+
+export interface AffiliateAccount {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  password?: string;
+  district?: string;
+  channelUrl?: string;
+  bkashNumber?: string;
+  nagadNumber?: string;
+  bankDetails?: string;
+  affiliateCode: string;
+  commissionPercent: number;
+  clicksCount: number;
+  totalOrders: number;
+  walletBalance: number;
+  totalEarnings: number;
+  status: 'pending' | 'approved' | 'suspended';
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface AffiliateConversion {
+  id: string;
+  affiliateId: string;
+  affiliateCode: string;
+  orderId: string;
+  customerName: string;
+  orderTotal: number;
+  commissionPercent: number;
+  commissionAmount: number;
+  status: 'pending' | 'credited' | 'cancelled';
+  createdAt: string;
+}
+
+export interface AffiliatePayoutRequest {
+  id: string;
+  affiliateId: string;
+  affiliateName: string;
+  affiliatePhone: string;
+  method: 'bkash' | 'nagad' | 'rocket' | 'bank';
+  accountNumber: string;
+  amount: number;
+  status: 'pending' | 'paid' | 'rejected';
+  trxId?: string;
+  note?: string;
+  createdAt: string;
+  processedAt?: string;
+}
+
+export interface VisitorLogEntry {
+  id: string;
+  ip: string;
+  device: string;
+  browser: string;
+  os: string;
+  country: string;
+  path: string;
+  urlPath?: string;
+  pageTitle: string;
+  customerName?: string;
+  customerPhone?: string;
+  timestamp: string;
+}
+
 

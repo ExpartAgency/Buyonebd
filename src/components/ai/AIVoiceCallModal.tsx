@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { audioEngine } from '../../utils/soundEffects';
-import { speakClearText, stopAllVoicePlayback } from '../../utils/voiceAudio';
+import { speakClearText, stopAllVoicePlayback, unlockVoiceAudio } from '../../utils/voiceAudio';
 import confetti from 'canvas-confetti';
 
 export const AIVoiceCallModal: React.FC = () => {
@@ -231,12 +231,10 @@ export const AIVoiceCallModal: React.FC = () => {
         }
       ]);
 
-      const speakTimer = setTimeout(() => {
-        speakText(lang === 'bn' ? scripts.bn : scripts.en);
-      }, 150);
+      // Start AI voice immediately upon call connection
+      speakText(lang === 'bn' ? scripts.bn : scripts.en);
 
       return () => {
-        clearTimeout(speakTimer);
         if (timerRef.current) clearInterval(timerRef.current);
         stopAllAudio();
       };
@@ -256,10 +254,11 @@ export const AIVoiceCallModal: React.FC = () => {
       window.speechSynthesis.cancel();
     }
 
-      if (preloadedAudioRef.current) {
+    if (preloadedAudioRef.current) {
       const pAudio = preloadedAudioRef.current;
       preloadedAudioRef.current = null;
       audioRef.current = pAudio;
+      pAudio.currentTime = 0;
       pAudio.onplay = () => setAiSpeaking(true);
       pAudio.onended = () => setAiSpeaking(false);
       pAudio.onerror = () => fallbackSpeechSynthesis(text);
@@ -267,7 +266,7 @@ export const AIVoiceCallModal: React.FC = () => {
         await pAudio.play();
         return;
       } catch {
-        // Fallback below
+        // Fallback below immediately
       }
     }
 
@@ -280,6 +279,7 @@ export const AIVoiceCallModal: React.FC = () => {
         speed: settings.aiCallSettings.voiceSpeed || 1,
         lang: lang === 'en' ? 'en' : 'bn',
         preferStudioTts: true,
+        fastStartMs: 750,
         onStart: () => setAiSpeaking(true),
         onEnd: () => setAiSpeaking(false)
       });
@@ -519,16 +519,7 @@ export const AIVoiceCallModal: React.FC = () => {
               </span>
             </p>
             {isBackendBrowserCall && activeBrowserCall.status === 'connected' && (
-              <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 border border-slate-700 text-emerald-300">
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    webrtcAudioStatus === 'live_audio'
-                      ? 'bg-emerald-400 animate-ping'
-                      : webrtcAudioStatus === 'connecting'
-                      ? 'bg-amber-400 animate-pulse'
-                      : 'bg-sky-400'
-                  }`}
-                />
+              <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-slate-800 border border-slate-700 text-emerald-300">
                 <span>
                   {webrtcAudioStatus === 'live_audio'
                     ? t('WebRTC লাইভ মাইক ও অডিও চালু', 'WebRTC Live Two-Way Voice Connected')
@@ -693,6 +684,7 @@ export const AIVoiceCallModal: React.FC = () => {
                 type="button"
                 onClick={() => {
                   stopAllAudio();
+                  unlockVoiceAudio();
                   answerIncomingCustomerCall(activeBrowserCall.id);
                 }}
                 className="flex flex-col items-center gap-2 group cursor-pointer"
@@ -725,7 +717,10 @@ export const AIVoiceCallModal: React.FC = () => {
                   <span>{t('কল কাটুন', 'Cancel Call')}</span>
                 </button>
                 <button
-                  onClick={() => answerBrowserCallFromBackend(activeBrowserCall.id)}
+                  onClick={() => {
+                    unlockVoiceAudio();
+                    answerBrowserCallFromBackend(activeBrowserCall.id);
+                  }}
                   className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/40 font-bold text-xs flex items-center gap-2 cursor-pointer"
                 >
                   <Phone className="w-4 h-4" />
@@ -814,7 +809,14 @@ export const AIVoiceCallModal: React.FC = () => {
                 <span className="text-xs text-rose-300 font-medium">{t('বাতিল', 'Decline')}</span>
               </button>
 
-              <button onClick={answerAICall} className="flex flex-col items-center gap-2 group cursor-pointer">
+              <button
+                onClick={() => {
+                  audioEngine.stopPhoneRingtone();
+                  unlockVoiceAudio();
+                  answerAICall();
+                }}
+                className="flex flex-col items-center gap-2 group cursor-pointer"
+              >
                 <div className="w-15 h-15 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center shadow-lg transition-all group-hover:scale-105 active:scale-95">
                   <Phone className="w-6 h-6" />
                 </div>

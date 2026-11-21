@@ -48,6 +48,32 @@ export function pickBestBrowserVoice(isBangla: boolean): SpeechSynthesisVoice | 
   );
 }
 
+let audioUnlocked = false;
+let sharedAudioCtx: AudioContext | null = null;
+
+export function unlockVoiceAudio() {
+  try {
+    if (typeof window !== 'undefined') {
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (Ctx) {
+        if (!sharedAudioCtx) sharedAudioCtx = new Ctx();
+        if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
+          sharedAudioCtx.resume().catch(() => {});
+        }
+      }
+      if ('speechSynthesis' in window && !audioUnlocked) {
+        window.speechSynthesis.getVoices();
+        const silentUtter = new SpeechSynthesisUtterance(' ');
+        silentUtter.volume = 0;
+        window.speechSynthesis.speak(silentUtter);
+      }
+      audioUnlocked = true;
+    }
+  } catch {
+    // ignore unlock errors
+  }
+}
+
 export async function speakClearText(
   text: string,
   options?: {
@@ -56,6 +82,7 @@ export async function speakClearText(
     speed?: number;
     lang?: 'bn' | 'en';
     preferStudioTts?: boolean;
+    fastStartMs?: number;
     onStart?: () => void;
     onEnd?: () => void;
   }
@@ -72,6 +99,9 @@ export async function speakClearText(
 
   if (options?.preferStudioTts !== false) {
     try {
+      const controller = new AbortController();
+      const timeoutMs = options?.fastStartMs ?? 1200;
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
       const resp = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -79,8 +109,10 @@ export async function speakClearText(
           text: clean.slice(0, 600),
           voice: options?.voice || 'Kore',
           style: options?.style
-        })
+        }),
+        signal: controller.signal
       });
+      clearTimeout(timer);
       if (resp.ok) {
         const data = await resp.json();
         if (data?.audioUrl) {
@@ -104,13 +136,14 @@ export async function speakClearText(
         }
       }
     } catch {
-      // fall back smoothly to Web Speech API
+      // fall back immediately (<1.2s) to Web Speech API
     }
   }
 
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     return new Promise<'speech'>((resolve) => {
       try {
+        window.speechSynthesis.cancel();
         const utter = new SpeechSynthesisUtterance(clean);
         utter.lang = isBangla ? 'bn-BD' : 'en-US';
         utter.rate = Math.min(1.25, Math.max(0.8, options?.speed || 0.96));
@@ -137,3 +170,4 @@ export async function speakClearText(
   options?.onEnd?.();
   return 'none';
 }
+

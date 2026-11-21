@@ -9,6 +9,7 @@ export const Footer: React.FC = () => {
     goHome,
     openAllProductsPage,
     openAboutPage,
+    openBlogsPage,
     selectCategoryFilter,
     setActiveView,
     navigateToPath,
@@ -189,6 +190,15 @@ export const Footer: React.FC = () => {
               <li>
                 <button
                   type="button"
+                  onClick={openBlogsPage}
+                  className="hover:text-emerald-400 cursor-pointer transition-colors text-left"
+                >
+                  {t('শপিং ব্লগ ও গাইড (Blogs)', 'Shopping Guides & Blogs')}
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
                   onClick={() => openPartnerPortal('reseller')}
                   className="hover:text-emerald-400 cursor-pointer transition-colors text-left"
                 >
@@ -202,6 +212,15 @@ export const Footer: React.FC = () => {
                   className="hover:text-emerald-400 cursor-pointer transition-colors text-left"
                 >
                   {t('হোলসেল / B2B ট্রেড', 'Wholesale B2B')}
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => openPartnerPortal('affiliate')}
+                  className="hover:text-emerald-400 cursor-pointer transition-colors text-left"
+                >
+                  {t('অ্যাফিলিয়েট প্রোগ্রাম (Affiliate)', 'Affiliate Program')}
                 </button>
               </li>
             </ul>

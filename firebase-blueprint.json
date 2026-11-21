@@ -42,6 +42,8 @@
         "globalMarketingSettings": { "type": "object" },
         "aiAutopilotSettings": { "type": "object" },
         "invoiceSettings": { "type": "object" },
+        "viewerCounter": { "type": "object" },
+        "affiliateSettings": { "type": "object" },
         "categories": { "type": "array" },
         "sliders": { "type": "array" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -118,6 +120,9 @@
         "customerQuotedPrice": { "type": "number" },
         "wholesaleBuyerId": { "type": "string", "maxLength": 80 },
         "wholesaleCompany": { "type": "string", "maxLength": 160 },
+        "affiliateId": { "type": "string", "maxLength": 80 },
+        "affiliateCode": { "type": "string", "maxLength": 40 },
+        "affiliateCommission": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" },
         "serverCreatedAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -174,6 +179,8 @@
         "district": { "type": "string", "maxLength": 120 },
         "loyaltyPoints": { "type": "number" },
         "walletBalance": { "type": "number" },
+        "spinBonusBalance": { "type": "number" },
+        "spinBonusExpiresAt": { "type": "string", "maxLength": 64 },
         "lastPurchaseAt": { "type": "string", "maxLength": 64 },
         "lastWalletCreditAt": { "type": "string", "maxLength": 64 },
         "browsingHistory": { "type": "array" },
@@ -346,6 +353,8 @@
         "tier": { "type": "string", "enum": ["Silver", "Gold", "Platinum"] },
         "extraDiscountPercent": { "type": "number" },
         "creditLimitBdt": { "type": "number" },
+        "creditUsedBdt": { "type": "number" },
+        "paymentTerms": { "type": "string", "maxLength": 40 },
         "status": { "type": "string", "enum": ["pending", "approved", "suspended"] },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -398,6 +407,125 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "actionType", "title", "targetType", "targetId", "status", "createdAt"]
+    },
+    "BlogPostRecord": {
+      "title": "BlogPostRecord",
+      "description": "Published or draft editorial blog post for SEO and content marketing.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "title": { "type": "string", "maxLength": 240 },
+        "titleBn": { "type": "string", "maxLength": 240 },
+        "slug": { "type": "string", "maxLength": 160 },
+        "excerpt": { "type": "string", "maxLength": 600 },
+        "excerptBn": { "type": "string", "maxLength": 600 },
+        "content": { "type": "string", "maxLength": 30000 },
+        "contentBn": { "type": "string", "maxLength": 30000 },
+        "category": { "type": "string", "maxLength": 80 },
+        "categoryBn": { "type": "string", "maxLength": 80 },
+        "coverImage": { "type": "string", "maxLength": 250000 },
+        "author": { "type": "string", "maxLength": 120 },
+        "tags": { "type": "array" },
+        "seoTitle": { "type": "string", "maxLength": 240 },
+        "seoDescription": { "type": "string", "maxLength": 500 },
+        "readTimeMinutes": { "type": "number" },
+        "viewsCount": { "type": "number" },
+        "isPublished": { "type": "boolean" },
+        "publishedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "slug", "isPublished", "updatedAt"]
+    },
+    "ResellerTopUpRecord": {
+      "title": "ResellerTopUpRecord",
+      "description": "Reseller MFS balance top-up / deposit request approved by Admin.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "resellerId": { "type": "string", "maxLength": 80 },
+        "resellerName": { "type": "string", "maxLength": 120 },
+        "resellerPhone": { "type": "string", "maxLength": 32 },
+        "method": { "type": "string", "enum": ["bkash", "nagad", "rocket", "bank"] },
+        "amount": { "type": "number" },
+        "senderNumber": { "type": "string", "maxLength": 32 },
+        "trxId": { "type": "string", "maxLength": 80 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "note": { "type": "string", "maxLength": 300 },
+        "submittedAt": { "type": "string", "maxLength": 64 },
+        "processedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "resellerId", "resellerName", "method", "amount", "trxId", "status", "createdAt"]
+    },
+    "AffiliateAccountRecord": {
+      "title": "AffiliateAccountRecord",
+      "description": "Affiliate creator/publisher partner account.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "name": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "email": { "type": "string", "maxLength": 160 },
+        "district": { "type": "string", "maxLength": 120 },
+        "channelUrl": { "type": "string", "maxLength": 240 },
+        "bkashNumber": { "type": "string", "maxLength": 32 },
+        "nagadNumber": { "type": "string", "maxLength": 32 },
+        "bankDetails": { "type": "string", "maxLength": 300 },
+        "affiliateCode": { "type": "string", "maxLength": 40 },
+        "commissionPercent": { "type": "number" },
+        "clicksCount": { "type": "number" },
+        "totalOrders": { "type": "number" },
+        "walletBalance": { "type": "number" },
+        "totalEarnings": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved", "suspended"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "phone", "affiliateCode", "status", "createdAt"]
+    },
+    "AffiliateConversionRecord": {
+      "title": "AffiliateConversionRecord",
+      "description": "Referral order conversion attributed to an affiliate link.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "affiliateId": { "type": "string", "maxLength": 80 },
+        "affiliateCode": { "type": "string", "maxLength": 40 },
+        "orderId": { "type": "string", "maxLength": 80 },
+        "customerName": { "type": "string", "maxLength": 120 },
+        "orderTotal": { "type": "number" },
+        "commissionPercent": { "type": "number" },
+        "commissionAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "credited", "cancelled"] },
+        "submittedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "affiliateId", "affiliateCode", "orderId", "orderTotal", "commissionAmount", "status", "createdAt"]
+    },
+    "AffiliatePayoutRecord": {
+      "title": "AffiliatePayoutRecord",
+      "description": "Affiliate commission payout withdrawal request.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 80 },
+        "affiliateId": { "type": "string", "maxLength": 80 },
+        "affiliateName": { "type": "string", "maxLength": 120 },
+        "affiliatePhone": { "type": "string", "maxLength": 32 },
+        "method": { "type": "string", "enum": ["bkash", "nagad", "rocket", "bank"] },
+        "accountNumber": { "type": "string", "maxLength": 160 },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "paid", "rejected"] },
+        "trxId": { "type": "string", "maxLength": 80 },
+        "note": { "type": "string", "maxLength": 300 },
+        "submittedAt": { "type": "string", "maxLength": 64 },
+        "processedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "affiliateId", "affiliateName", "method", "accountNumber", "amount", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -461,6 +589,10 @@
       "schema": { "$ref": "#/backend/entities/ResellerPayoutRecord" },
       "description": "Reseller payout requests."
     },
+    "/reseller_topups/{topupId}": {
+      "schema": { "$ref": "#/backend/entities/ResellerTopUpRecord" },
+      "description": "Reseller MFS balance top-up requests."
+    },
     "/wholesalers/{wholesalerId}": {
       "schema": { "$ref": "#/backend/entities/WholesaleAccountRecord" },
       "description": "Wholesale B2B buyer accounts."
@@ -472,6 +604,22 @@
     "/ai_review_queue/{taskId}": {
       "schema": { "$ref": "#/backend/entities/AIReviewTaskRecord" },
       "description": "Human-in-the-loop AI Website Controller review queue."
+    },
+    "/blog_posts/{blogId}": {
+      "schema": { "$ref": "#/backend/entities/BlogPostRecord" },
+      "description": "Storefront editorial blog posts published from Admin Dashboard."
+    },
+    "/affiliates/{affiliateId}": {
+      "schema": { "$ref": "#/backend/entities/AffiliateAccountRecord" },
+      "description": "Affiliate creator and referral partner accounts."
+    },
+    "/affiliate_conversions/{conversionId}": {
+      "schema": { "$ref": "#/backend/entities/AffiliateConversionRecord" },
+      "description": "Order conversions attributed to affiliate links."
+    },
+    "/affiliate_payouts/{payoutId}": {
+      "schema": { "$ref": "#/backend/entities/AffiliatePayoutRecord" },
+      "description": "Affiliate commission withdrawal requests."
     }
   }
 }

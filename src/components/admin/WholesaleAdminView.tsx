@@ -29,6 +29,8 @@ export const WholesaleAdminView: React.FC = () => {
     deleteWholesaleQuote,
     bulkUpdateWholesaleQuotes,
     bulkDeleteWholesaleQuotes,
+    submitWholesaleDebtPayment,
+    convertWholesaleQuoteToOrder,
     orders,
     adminLang
   } = useStore();
@@ -362,7 +364,10 @@ export const WholesaleAdminView: React.FC = () => {
                     </td>
                     <td className="py-3 px-3">
                       <p className="font-mono text-slate-200">{w.tradeLicenseNo || w.nidNumber || 'Not provided'}</p>
-                      <p className="text-[11px] text-slate-400">{w.businessType} · {w.monthlyVolumeEstimate || 'N/A'}</p>
+                      <p className="text-[11px] text-slate-400">
+                        {w.businessType} · Limit ৳{(w.creditLimitBdt || 100000).toLocaleString()} · Due{' '}
+                        <span className="text-amber-400 font-mono">৳{(w.creditUsedBdt || 0).toLocaleString()}</span>
+                      </p>
                     </td>
                     <td className="py-3 px-3">
                       <select
@@ -691,6 +696,13 @@ export const WholesaleAdminView: React.FC = () => {
                       </button>
                       <button
                         type="button"
+                        onClick={() => convertWholesaleQuoteToOrder(qt.id)}
+                        className="px-2.5 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold text-[11px] cursor-pointer whitespace-nowrap"
+                      >
+                        {at('অর্ডারে কনভার্ট', 'Convert to Order')}
+                      </button>
+                      <button
+                        type="button"
                         onClick={() =>
                           updateWholesaleQuote(qt.id, {
                             status: 'rejected',
@@ -815,7 +827,45 @@ export const WholesaleAdminView: React.FC = () => {
                   <option value="suspended">Suspended</option>
                 </select>
               </div>
+              <div>
+                <label className="block text-slate-400 font-bold mb-1">{at('ক্রেডিট লিমিট (৳)', 'Credit Limit (৳)')}</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={editingBuyer.creditLimitBdt ?? 100000}
+                  onChange={(e) => setEditingBuyer({ ...editingBuyer, creditLimitBdt: Math.max(0, Number(e.target.value) || 0) })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 font-bold mb-1">{at('পেমেন্ট টার্মস', 'Payment Terms')}</label>
+                <select
+                  value={editingBuyer.paymentTerms || 'Net-15'}
+                  onChange={(e) => setEditingBuyer({ ...editingBuyer, paymentTerms: e.target.value as WholesaleAccount['paymentTerms'] })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
+                >
+                  <option value="COD">COD</option>
+                  <option value="Net-7">Net-7</option>
+                  <option value="Net-15">Net-15</option>
+                  <option value="Net-30">Net-30</option>
+                </select>
+              </div>
             </div>
+            {(editingBuyer.creditUsedBdt || 0) > 0 && (
+              <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/40 flex items-center justify-between gap-2 text-xs">
+                <span className="text-amber-300 font-bold">Due Balance: ৳{(editingBuyer.creditUsedBdt || 0).toLocaleString()}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    submitWholesaleDebtPayment(editingBuyer.id, editingBuyer.creditUsedBdt || 0, 'Full B2B settlement by Admin');
+                    setEditingBuyer(null);
+                  }}
+                  className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                >
+                  Settle Full Due
+                </button>
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"

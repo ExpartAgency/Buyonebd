@@ -38,7 +38,8 @@ service cloud.firestore {
           'aiSettings', 'seoSettings', 'flashSale', 'footerSettings', 'singleProductCms',
           'organicMarketing', 'walletSettings', 'promoCoupons', 'deliveryBoys', 'brandAttributes',
           'loyaltySettings', 'resellerSettings', 'wholesaleSettings', 'globalMarketingSettings',
-          'aiAutopilotSettings', 'invoiceSettings', 'categories', 'sliders', 'updatedAt'
+          'aiAutopilotSettings', 'invoiceSettings', 'viewerCounter', 'affiliateSettings',
+          'categories', 'sliders', 'updatedAt'
         ])
         && data.storeName is string && data.storeName.size() >= 1 && data.storeName.size() <= 120
         && data.theme is string && data.theme.size() >= 1 && data.theme.size() <= 40
@@ -97,7 +98,7 @@ service cloud.firestore {
           'id', 'customer', 'items', 'pricing', 'payment', 'deliveryZone', 'status',
           'aiCallStatus', 'courier', 'fraudCheck', 'source',
           'partnerType', 'resellerId', 'resellerName', 'resellerCode', 'resellerProfit', 'customerQuotedPrice',
-          'wholesaleBuyerId', 'wholesaleCompany',
+          'wholesaleBuyerId', 'wholesaleCompany', 'affiliateId', 'affiliateCode', 'affiliateCommission',
           'createdAt', 'serverCreatedAt', 'updatedAt'
         ])
         && isValidId(data.id)
@@ -145,7 +146,8 @@ service cloud.firestore {
       return data.keys().hasAll(['id', 'name', 'phone', 'walletBalance', 'loyaltyPoints', 'updatedAt'])
         && data.keys().hasOnly([
           'id', 'name', 'username', 'phone', 'email', 'address', 'district',
-          'loyaltyPoints', 'walletBalance', 'lastPurchaseAt', 'lastWalletCreditAt',
+          'loyaltyPoints', 'walletBalance', 'spinBonusBalance', 'spinBonusExpiresAt',
+          'lastPurchaseAt', 'lastWalletCreditAt',
           'browsingHistory', 'savedCoupons', 'loyaltyHistory', 'updatedAt'
         ])
         && isValidId(data.id)
@@ -271,7 +273,8 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'id', 'contactName', 'companyName', 'phone', 'email', 'tradeLicenseNo', 'nidNumber',
           'district', 'address', 'businessType', 'monthlyVolumeEstimate', 'tier',
-          'extraDiscountPercent', 'creditLimitBdt', 'status', 'createdAt', 'updatedAt'
+          'extraDiscountPercent', 'creditLimitBdt', 'creditUsedBdt', 'paymentTerms',
+          'status', 'createdAt', 'updatedAt'
         ])
         && isValidId(data.id)
         && data.contactName is string && data.contactName.size() >= 1 && data.contactName.size() <= 120
@@ -588,6 +591,169 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(taskId);
+    }
+
+    function isValidBlogPost(data) {
+      return data.keys().hasAll(['id', 'title', 'slug', 'isPublished', 'updatedAt'])
+        && data.keys().hasOnly([
+          'id', 'title', 'titleBn', 'slug', 'excerpt', 'excerptBn', 'content', 'contentBn',
+          'category', 'categoryBn', 'coverImage', 'author', 'tags',
+          'seoTitle', 'seoDescription', 'readTimeMinutes', 'viewsCount',
+          'isPublished', 'publishedAt', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 240
+        && data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 160
+        && data.isPublished is bool
+        && (!data.keys().hasAny(['tags']) || (data.tags is list && data.tags.size() <= 25))
+        && (!data.keys().hasAny(['coverImage']) || (data.coverImage is string && data.coverImage.size() <= 250000))
+        && data.updatedAt is timestamp;
+    }
+
+    match /blog_posts/{blogId} {
+      allow get: if isValidId(blogId);
+      allow list: if resource.data.isPublished == true || isAdmin();
+      allow create: if isAdmin()
+        && isValidId(blogId)
+        && isValidBlogPost(incoming())
+        && incoming().id == blogId
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(blogId)
+        && isValidBlogPost(incoming())
+        && incoming().id == existing().id
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(blogId);
+    }
+
+    function isValidResellerTopUp(data) {
+      return data.keys().hasAll(['id', 'resellerId', 'resellerName', 'method', 'amount', 'trxId', 'status', 'createdAt'])
+        && data.keys().hasOnly([
+          'id', 'resellerId', 'resellerName', 'resellerPhone', 'method', 'amount',
+          'senderNumber', 'trxId', 'status', 'note', 'submittedAt', 'processedAt', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.resellerId is string && data.resellerId.size() >= 1 && data.resellerId.size() <= 80
+        && data.resellerName is string && data.resellerName.size() >= 1 && data.resellerName.size() <= 120
+        && data.method in ['bkash', 'nagad', 'rocket', 'bank']
+        && data.amount is number && data.amount > 0 && data.amount <= 500000
+        && data.trxId is string && data.trxId.size() >= 2 && data.trxId.size() <= 80
+        && data.status in ['pending', 'approved', 'rejected']
+        && data.createdAt is timestamp;
+    }
+
+    match /reseller_topups/{topupId} {
+      allow get: if isAdmin() && isValidId(topupId);
+      allow list: if isAdmin();
+      allow create: if isValidId(topupId)
+        && isValidResellerTopUp(incoming())
+        && incoming().id == topupId
+        && (incoming().status == 'pending' || isAdmin())
+        && incoming().createdAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(topupId)
+        && isValidResellerTopUp(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(topupId);
+    }
+
+    function isValidAffiliateAccount(data) {
+      return data.keys().hasAll(['id', 'name', 'phone', 'affiliateCode', 'status', 'createdAt'])
+        && data.keys().hasOnly([
+          'id', 'name', 'phone', 'email', 'district', 'channelUrl',
+          'bkashNumber', 'nagadNumber', 'bankDetails', 'affiliateCode',
+          'commissionPercent', 'clicksCount', 'totalOrders', 'walletBalance', 'totalEarnings',
+          'status', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.phone is string && data.phone.size() >= 6 && data.phone.size() <= 32
+        && data.affiliateCode is string && data.affiliateCode.size() >= 2 && data.affiliateCode.size() <= 40
+        && data.status in ['pending', 'approved', 'suspended']
+        && data.createdAt is timestamp;
+    }
+
+    match /affiliates/{affiliateId} {
+      allow get: if isAdmin() && isValidId(affiliateId);
+      allow list: if isAdmin();
+      allow create: if isValidId(affiliateId)
+        && isValidAffiliateAccount(incoming())
+        && incoming().id == affiliateId
+        && (incoming().status == 'pending' || isAdmin())
+        && incoming().createdAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(affiliateId)
+        && isValidAffiliateAccount(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(affiliateId);
+    }
+
+    function isValidAffiliateConversion(data) {
+      return data.keys().hasAll(['id', 'affiliateId', 'affiliateCode', 'orderId', 'orderTotal', 'commissionAmount', 'status', 'createdAt'])
+        && data.keys().hasOnly([
+          'id', 'affiliateId', 'affiliateCode', 'orderId', 'customerName', 'orderTotal',
+          'commissionPercent', 'commissionAmount', 'status', 'submittedAt', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.affiliateId is string && data.affiliateId.size() >= 1 && data.affiliateId.size() <= 80
+        && data.affiliateCode is string && data.affiliateCode.size() >= 2 && data.affiliateCode.size() <= 40
+        && data.orderId is string && data.orderId.size() >= 1 && data.orderId.size() <= 80
+        && data.orderTotal is number && data.orderTotal >= 0
+        && data.commissionAmount is number && data.commissionAmount >= 0
+        && data.status in ['pending', 'credited', 'cancelled']
+        && data.createdAt is timestamp;
+    }
+
+    match /affiliate_conversions/{conversionId} {
+      allow get: if isAdmin() && isValidId(conversionId);
+      allow list: if isAdmin();
+      allow create: if isValidId(conversionId)
+        && isValidAffiliateConversion(incoming())
+        && incoming().id == conversionId
+        && (incoming().status == 'pending' || isAdmin())
+        && incoming().createdAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(conversionId)
+        && isValidAffiliateConversion(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(conversionId);
+    }
+
+    function isValidAffiliatePayout(data) {
+      return data.keys().hasAll(['id', 'affiliateId', 'affiliateName', 'method', 'accountNumber', 'amount', 'status', 'createdAt'])
+        && data.keys().hasOnly([
+          'id', 'affiliateId', 'affiliateName', 'affiliatePhone', 'method', 'accountNumber',
+          'amount', 'status', 'trxId', 'note', 'submittedAt', 'processedAt', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.affiliateId is string && data.affiliateId.size() >= 1 && data.affiliateId.size() <= 80
+        && data.method in ['bkash', 'nagad', 'rocket', 'bank']
+        && data.amount is number && data.amount > 0 && data.amount <= 500000
+        && data.status in ['pending', 'paid', 'rejected']
+        && data.createdAt is timestamp;
+    }
+
+    match /affiliate_payouts/{payoutId} {
+      allow get: if isAdmin() && isValidId(payoutId);
+      allow list: if isAdmin();
+      allow create: if isValidId(payoutId)
+        && isValidAffiliatePayout(incoming())
+        && incoming().id == payoutId
+        && (incoming().status == 'pending' || isAdmin())
+        && incoming().createdAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(payoutId)
+        && isValidAffiliatePayout(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(payoutId);
     }
   }
 }

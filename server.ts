@@ -155,8 +155,15 @@ function ensureWavDataUri(base64Data: string, mimeType = ''): string {
   }
 }
 
-// In-memory audio cache to provide instant responses
+// Bounded LRU in-memory audio cache for instant voice playback
 const audioCache = new Map<string, string>();
+function setBoundedAudioCache(key: string, val: string) {
+  if (audioCache.size >= 200) {
+    const oldestKey = audioCache.keys().next().value;
+    if (oldestKey) audioCache.delete(oldestKey);
+  }
+  audioCache.set(key, val);
+}
 
 // Bengali phonetic cleanup helper for silky-smooth human voice
 function cleanBanglaForTTS(rawText: string): string {
@@ -214,7 +221,7 @@ app.post('/api/tts', async (req, res) => {
     
     const voiceStyle = style && style.trim().length > 0 ? style : defaultBangladeshiStyle;
 
-    const response = await ai.models.generateContent({
+    const ttsPromise = ai.models.generateContent({
       model: 'gemini-3.8-flash-lite-tts',
       contents: [
         {
@@ -238,6 +245,10 @@ app.post('/api/tts', async (req, res) => {
         },
       },
     });
+    const response: any = await Promise.race([
+      ttsPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('TTS timeout')), 3800))
+    ]);
 
     const inlinePart = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
     const base64Audio = inlinePart?.data;
@@ -247,7 +258,7 @@ app.post('/api/tts', async (req, res) => {
     }
 
     const audioUrl = ensureWavDataUri(base64Audio, inlinePart?.mimeType || 'audio/L16;rate=24000');
-    audioCache.set(cacheKey, audioUrl);
+    setBoundedAudioCache(cacheKey, audioUrl);
 
     return res.json({
       audioUrl,
@@ -1738,6 +1749,9 @@ function redactSensitiveSettingsForPublic(rawData: any) {
   if (Array.isArray(clone.wholesalers)) {
     clone.wholesalers = clone.wholesalers.map((w: any) => ({ ...w, password: '' }));
   }
+  if (Array.isArray(clone.affiliates)) {
+    clone.affiliates = clone.affiliates.map((a: any) => ({ ...a, password: '' }));
+  }
   return clone;
 }
 
@@ -1766,8 +1780,13 @@ app.post('/api/store/sync', (req, res) => {
     waitlist,
     resellers,
     resellerPayouts,
+    resellerTopUps,
     wholesalers,
     wholesaleQuotes,
+    blogs,
+    affiliates,
+    affiliateConversions,
+    affiliatePayouts,
     bulkSmsLogs,
     users,
     mediaLibrary
@@ -1886,12 +1905,25 @@ app.post('/api/store/sync', (req, res) => {
     resellerPayouts: Array.isArray(resellerPayouts)
       ? unionMergeById(resellerPayouts, current.resellerPayouts)
       : current.resellerPayouts,
+    resellerTopUps: Array.isArray(resellerTopUps)
+      ? unionMergeById(resellerTopUps, current.resellerTopUps)
+      : current.resellerTopUps,
     wholesalers: Array.isArray(wholesalers)
       ? unionMergePartners(preservePasswords(wholesalers, current.wholesalers), current.wholesalers)
       : current.wholesalers,
     wholesaleQuotes: Array.isArray(wholesaleQuotes)
       ? unionMergeById(wholesaleQuotes, current.wholesaleQuotes)
       : current.wholesaleQuotes,
+    blogs: blogs !== undefined ? preserveNonEmpty(blogs, current.blogs) : current.blogs,
+    affiliates: Array.isArray(affiliates)
+      ? unionMergePartners(preservePasswords(affiliates, current.affiliates), current.affiliates)
+      : current.affiliates,
+    affiliateConversions: Array.isArray(affiliateConversions)
+      ? unionMergeById(affiliateConversions, current.affiliateConversions)
+      : current.affiliateConversions,
+    affiliatePayouts: Array.isArray(affiliatePayouts)
+      ? unionMergeById(affiliatePayouts, current.affiliatePayouts)
+      : current.affiliatePayouts,
     bulkSmsLogs: bulkSmsLogs !== undefined ? bulkSmsLogs : current.bulkSmsLogs,
     whatsappMessages: Array.isArray(req.body?.whatsappMessages)
       ? unionMergeById(req.body.whatsappMessages, current.whatsappMessages)
@@ -2007,6 +2039,25 @@ app.post('/api/partner/register', (req, res) => {
     broadcastWs({ type: 'partner:sync', wholesalers: current.wholesalers.map((w: any) => ({ ...w, password: '' })) });
     return res.json({ success: true, partner: { ...created, password: '' } });
   }
+  if (partnerType === 'affiliate') {
+    const list: any[] = Array.isArray(current.affiliates) ? current.affiliates : [];
+    const dup = list.find((a) => String(a.phone || '').replace(/[^0-9]/g, '').slice(-11) === cleanPhone);
+    if (dup) {
+      return res.status(409).json({ success: false, error: 'An affiliate account with this phone number already exists.' });
+    }
+    const autoApprove = Boolean(current?.settings?.affiliateSettings?.autoApprove);
+    const created = {
+      ...account,
+      id: account.id || `aff-${Date.now()}`,
+      status: account.status || (autoApprove ? 'approved' : 'pending'),
+      createdAt: account.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    current.affiliates = [created, ...list];
+    saveStoreData(current);
+    broadcastWs({ type: 'partner:sync', affiliates: current.affiliates.map((a: any) => ({ ...a, password: '' })) });
+    return res.json({ success: true, partner: { ...created, password: '' } });
+  }
   return res.status(400).json({ success: false, error: 'Invalid partner type.' });
 });
 
@@ -2045,6 +2096,19 @@ app.post('/api/partner/update', (req, res) => {
     broadcastWs({ type: 'partner:sync', wholesalers: list.map((w: any) => ({ ...w, password: '' })) });
     return res.json({ success: true, partner: { ...updatedAcc, password: '' } });
   }
+  if (partnerType === 'affiliate') {
+    const list: any[] = Array.isArray(current.affiliates) ? current.affiliates : [];
+    const idx = list.findIndex((a) => a && a.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ success: false, error: 'Affiliate not found.' });
+    }
+    const updatedAcc = { ...list[idx], ...updates, id, updatedAt: new Date().toISOString() };
+    list[idx] = updatedAcc;
+    current.affiliates = list;
+    saveStoreData(current);
+    broadcastWs({ type: 'partner:sync', affiliates: list.map((a: any) => ({ ...a, password: '' })) });
+    return res.json({ success: true, partner: { ...updatedAcc, password: '' } });
+  }
   return res.status(400).json({ success: false, error: 'Invalid partner type.' });
 });
 
@@ -2068,6 +2132,27 @@ app.post('/api/store/delete-item', (req, res) => {
     current.wholesalers = filterList(current.wholesalers);
     saveStoreData(current);
     broadcastWs({ type: 'partner:sync', wholesalers: (current.wholesalers || []).map((w: any) => ({ ...w, password: '' })) });
+    return res.json({ success: true });
+  }
+  if (type === 'affiliate') {
+    current.affiliates = filterList(current.affiliates);
+    saveStoreData(current);
+    broadcastWs({ type: 'partner:sync', affiliates: (current.affiliates || []).map((a: any) => ({ ...a, password: '' })) });
+    return res.json({ success: true });
+  }
+  if (type === 'affiliatePayout') {
+    current.affiliatePayouts = filterList(current.affiliatePayouts);
+    saveStoreData(current);
+    return res.json({ success: true });
+  }
+  if (type === 'blog') {
+    current.blogs = filterList(current.blogs);
+    saveStoreData(current);
+    return res.json({ success: true });
+  }
+  if (type === 'resellerTopUp') {
+    current.resellerTopUps = filterList(current.resellerTopUps);
+    saveStoreData(current);
     return res.json({ success: true });
   }
   if (type === 'resellerPayout') {
@@ -2123,12 +2208,14 @@ app.post('/api/partner/login', (req, res) => {
   const current = loadStoreData() || {};
   const list: any[] = partnerType === 'wholesale'
     ? (Array.isArray(current.wholesalers) ? current.wholesalers : [])
+    : partnerType === 'affiliate'
+    ? (Array.isArray(current.affiliates) ? current.affiliates : [])
     : (Array.isArray(current.resellers) ? current.resellers : []);
 
   const matched = list.find((acc) => {
     const accPhone = String(acc.phone || '').replace(/[^0-9]/g, '').slice(-11);
     const accEmail = String(acc.email || '').trim().toLowerCase();
-    const accCode = String(acc.resellerCode || '').trim().toLowerCase();
+    const accCode = String(acc.resellerCode || acc.affiliateCode || '').trim().toLowerCase();
     return (
       (phoneIdent && accPhone === phoneIdent) ||
       (accEmail && accEmail === rawIdent) ||

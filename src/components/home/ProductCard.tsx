@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Star, ShoppingBag, Heart, ArrowRight, BellRing, Tag, Award } from 'lucide-react';
+import { Star, ShoppingBag, Heart, ArrowRight, BellRing, Tag, Award, Eye, MessageCircle } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
 import { WaitlistModal } from '../common/WaitlistModal';
@@ -17,6 +17,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
     toggleWishlist,
     isWishlisted,
     getPartnerPriceInfo,
+    getProductViewCount,
+    buildProductWhatsAppUrl,
+    getProductCanonicalUrl,
     settings,
     lang,
     t
@@ -34,9 +37,18 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
   const isOutOfStock = (product.stock ?? 0) <= 0;
   const primaryColor = settings.themeColors?.primary || '#059669';
   const orderBtnLabel = t(
-    settings.cmsTexts?.orderNowBtnBn || 'অর্ডার করুন',
-    settings.cmsTexts?.orderNowBtnEn || 'Order Now'
+    settings.cmsTexts?.orderNowBtnBn || 'এখনই কিনুন',
+    settings.cmsTexts?.orderNowBtnEn === 'Order Now' || !settings.cmsTexts?.orderNowBtnEn
+      ? 'Buy Now'
+      : settings.cmsTexts.orderNowBtnEn
   );
+  const viewCount = getProductViewCount(product.id);
+  const showViewerCounter = settings.viewerCounter?.enabled !== false;
+  const waDigits = String(settings.whatsappNumber || '+8801917942662').replace(/[^0-9]/g, '');
+  const formattedWaPhone = waDigits.startsWith('88') ? waDigits : `88${waDigits}`;
+  const orderViaWaHref = `https://wa.me/${formattedWaPhone}?text=${encodeURIComponent(
+    `আসসালামু আলাইকুম BuyOne BD,\nআমি এই পণ্যটি অর্ডার করতে চাই (Order Via WhatsApp):\nপণ্য: ${lang === 'bn' ? product.titleBn : product.title}\nSKU: ${product.sku}\nদাম: ৳${effectiveUnitPrice.toLocaleString()}\nলিংক: ${getProductCanonicalUrl(product)}\n\nআমার নাম ও ঠিকানা:`
+  )}`;
   const cartBtnLabel = t(
     settings.cmsTexts?.addToCartBtnBn || 'কার্টে যোগ করুন',
     settings.cmsTexts?.addToCartBtnEn || 'Add to Cart'
@@ -173,6 +185,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
                 </span>
               </div>
             )}
+            {showViewerCounter && (
+              <p className="mt-1 flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400 tabular-nums">
+                <Eye className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span className="truncate">
+                  {viewCount.toLocaleString()} {t(settings.viewerCounter?.labelBn || 'জন দেখেছেন', settings.viewerCounter?.labelEn || 'viewed this')}
+                </span>
+              </p>
+            )}
           </div>
 
           <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
@@ -194,20 +214,33 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
                     backgroundColor: primaryColor,
                     color: 'var(--brand-on-primary, #ffffff)'
                   }}
-                  className="w-full hover:opacity-95 font-bold text-xs py-2 px-3 rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                  className="w-full hover:opacity-95 font-bold text-xs py-2 px-3 rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 whitespace-nowrap"
                 >
                   <span>{orderBtnLabel}</span>
                   <ArrowRight className="w-3.5 h-3.5 shrink-0" />
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => addToCart(product, 1)}
-                  className="w-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold text-[11px] py-1.5 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <ShoppingBag className="w-3 h-3 text-slate-600 dark:text-slate-400 shrink-0" />
-                  <span className="truncate">{cartBtnLabel}</span>
-                </button>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => addToCart(product, 1)}
+                    className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold text-[11px] py-1.5 px-2 rounded-xl flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <ShoppingBag className="w-3 h-3 text-slate-600 dark:text-slate-400 shrink-0" />
+                    <span className="truncate">{cartBtnLabel}</span>
+                  </button>
+
+                  <a
+                    href={orderViaWaHref || buildProductWhatsAppUrl(product)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 font-semibold text-[11px] py-1.5 px-2 rounded-xl flex items-center justify-center gap-1 transition-colors"
+                    title={t('WhatsApp-এ অর্ডার করুন', 'Order Via WhatsApp')}
+                  >
+                    <MessageCircle className="w-3 h-3 shrink-0" />
+                    <span className="truncate">{t('WA অর্ডার', 'WA Order')}</span>
+                  </a>
+                </div>
               </>
             )}
           </div>

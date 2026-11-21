@@ -182,7 +182,7 @@ export const SEOManagerView: React.FC<SEOManagerViewProps> = ({ onImageUpload })
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="px-3 py-1.5 rounded-xl bg-emerald-950/70 border border-emerald-700/60 text-emerald-300 text-xs font-bold flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
             <span>{at('লাইভ DOM + ডাটাবেজ সিঙ্ক', 'Live Head + DB Sync')}</span>
           </span>
           <button

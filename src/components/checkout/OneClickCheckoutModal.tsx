@@ -13,6 +13,10 @@ export const OneClickCheckoutModal: React.FC = () => {
     cartTotal,
     createOrder,
     customerWalletBalance,
+    spinBonusBalance,
+    spinBonusExpiresAt,
+    upsertAbandonedCheckoutLead,
+    getProductCanonicalUrl,
     customerProfile,
     customerAccounts,
     settings,
@@ -47,6 +51,9 @@ export const OneClickCheckoutModal: React.FC = () => {
 
   // Payment
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cod');
+  const [paymentType, setPaymentType] = useState<'full' | 'partial_due'>('full');
+  const [partialAdvanceAmount, setPartialAdvanceAmount] = useState<number>(100);
+  const [partialChannel, setPartialChannel] = useState<'bkash' | 'nagad' | 'rocket'>('bkash');
   const [trxId, setTrxId] = useState('');
   const [copiedNumber, setCopiedNumber] = useState(false);
   const [advancePayFee, setAdvancePayFee] = useState(false);
@@ -143,11 +150,65 @@ export const OneClickCheckoutModal: React.FC = () => {
   const loyaltyDiscountAmount = Math.round(effectiveLoyaltyPoints * bdtPerPoint);
 
   const subtotalAfterLoyalty = Math.max(0, subtotalAfterCoupon - loyaltyDiscountAmount);
-  const walletDeduction = useWallet ? Math.min(customerWalletBalance, subtotalAfterLoyalty) : 0;
-  const advanceAmount = advancePayFee ? Math.min(settings.paymentSettings.advanceFeeAmount || 100, rawDeliveryFee) : 0;
+  const activeSpinBonus =
+    spinBonusBalance > 0 && (!spinBonusExpiresAt || Date.now() < new Date(spinBonusExpiresAt).getTime())
+      ? spinBonusBalance
+      : 0;
+  const totalWalletAvailable = customerWalletBalance + activeSpinBonus;
+  const walletDeduction = useWallet ? Math.min(totalWalletAvailable, subtotalAfterLoyalty) : 0;
   const grandTotal = Math.max(0, subtotalAfterLoyalty - walletDeduction);
+  const effectiveAdvance =
+    paymentType === 'partial_due'
+      ? Math.max(1, Math.min(grandTotal, Number(partialAdvanceAmount) || 0))
+      : advancePayFee
+      ? Math.min(settings.paymentSettings.advanceFeeAmount || 100, grandTotal)
+      : 0;
   const estimatedPointsEarned = loyaltyEnabled ? Math.floor((grandTotal / 100) * pointsPer100) : 0;
-  const payableOnDelivery = Math.max(0, grandTotal - advanceAmount);
+  const payableOnDelivery = Math.max(0, grandTotal - effectiveAdvance);
+
+  const captureAbandonedCheckout = () => {
+    if (placedOrder || !isOneClickOpen) return;
+    const digits = phone.replace(/[^0-9]/g, '');
+    if (digits.length < 10 || (!name.trim() && !address.trim())) return;
+    const leadItems = isSingleProduct && checkoutProduct
+      ? [
+          {
+            product: checkoutProduct,
+            quantity,
+            selectedColor: checkoutProduct.colors?.[0],
+            selectedSize: checkoutProduct.sizes?.[0]
+          }
+        ]
+      : cart.map((c) => ({
+          product: c.product,
+          quantity: c.quantity,
+          selectedColor: c.selectedColor,
+          selectedSize: c.selectedSize
+        }));
+    upsertAbandonedCheckoutLead({
+      customerName: name.trim(),
+      customerPhone: phone.trim(),
+      customerAddress: `${address.trim()}${thana ? `, ${thana}` : ''}`,
+      customerDistrict: selectedDistrictName,
+      items: leadItems,
+      total: grandTotal
+    });
+  };
+
+  useEffect(() => {
+    if (!isOneClickOpen || placedOrder) return;
+    const digits = phone.replace(/[^0-9]/g, '');
+    if (digits.length < 10 || !name.trim() || !address.trim()) return;
+    const timer = setTimeout(() => {
+      captureAbandonedCheckout();
+    }, 650);
+    return () => clearTimeout(timer);
+  }, [isOneClickOpen, placedOrder, name, phone, address, selectedDistrictName, thana, grandTotal]);
+
+  const handleCloseCheckoutModal = () => {
+    captureAbandonedCheckout();
+    closeOneClickCheckout();
+  };
 
   // Initialize single product defaults
   useEffect(() => {
@@ -163,6 +224,7 @@ export const OneClickCheckoutModal: React.FC = () => {
     }
     setPlacedOrder(null);
     setCustomerQuotedPrice('');
+    setPaymentType('full');
   }, [checkoutProduct, isOneClickOpen]);
 
   // When district changes, update default thana
@@ -268,7 +330,10 @@ export const OneClickCheckoutModal: React.FC = () => {
       errs.address = t('সম্পূর্ণ ডেলিভারি ঠিকানা দিন', 'Provide full delivery address');
     }
 
-    if ((paymentMethod === 'bkash' || paymentMethod === 'nagad' || paymentMethod === 'rocket') && !trxId.trim()) {
+    if (
+      (paymentMethod === 'bkash' || paymentMethod === 'nagad' || paymentMethod === 'rocket' || paymentType === 'partial_due') &&
+      !trxId.trim()
+    ) {
       errs.trxId = t('ট্রানজেকশন আইডি (TrxID) লিখুন', 'Please enter transaction ID');
     }
 
@@ -313,6 +378,10 @@ export const OneClickCheckoutModal: React.FC = () => {
         return;
       }
 
+      const isPartialOrder = effectiveAdvance > 0 && effectiveAdvance < grandTotal;
+      const effectiveMethod: PaymentMethod =
+        paymentType === 'partial_due' ? partialChannel : paymentMethod;
+
       const newOrder = createOrder({
         customer: {
           name: name.trim(),
@@ -323,13 +392,14 @@ export const OneClickCheckoutModal: React.FC = () => {
           note: note.trim()
         },
         items: itemsToOrder,
-        paymentMethod,
+        paymentMethod: effectiveMethod,
         paymentTrxId: trxId.trim() || undefined,
         deliveryZone: currentZone,
         customDeliveryFee: deliveryFee,
         discountAmount: totalPromoDiscount > 0 ? totalPromoDiscount : undefined,
         couponCode: appliedCoupon?.code || (bundleDiscountAmount > 0 ? `BUNDLE${bundlePercent}` : undefined),
-        advancePaid: advanceAmount > 0 ? advanceAmount : undefined,
+        advancePaid: effectiveAdvance > 0 ? effectiveAdvance : undefined,
+        initialStatus: isPartialOrder ? 'partial' : undefined,
         walletUsedAmount: walletDeduction > 0 ? walletDeduction : undefined,
         loyaltyPointsUsed: effectiveLoyaltyPoints > 0 ? effectiveLoyaltyPoints : undefined,
         loyaltyDiscountAmount: loyaltyDiscountAmount > 0 ? loyaltyDiscountAmount : undefined,
@@ -373,7 +443,7 @@ export const OneClickCheckoutModal: React.FC = () => {
             </h2>
           </div>
           <button
-            onClick={closeOneClickCheckout}
+            onClick={handleCloseCheckoutModal}
             className="p-1.5 sm:p-2 rounded-full hover:bg-slate-800 transition-colors text-slate-400 hover:text-white cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -867,24 +937,103 @@ export const OneClickCheckoutModal: React.FC = () => {
                 </button>
               </div>
 
+              {/* Full Payment vs Partial Advance + Due Selector */}
+              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentType('full')}
+                    className={`py-2 px-3 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                      paymentType === 'full'
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {t('সম্পূর্ণ COD / ফুল পে', 'Full COD / Full Pay')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentType('partial_due')}
+                    className={`py-2 px-3 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                      paymentType === 'partial_due'
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-emerald-50'
+                    }`}
+                  >
+                    {t('আংশিক অ্যাডভান্স ও বকেয়া (Partial)', 'Partial Advance + Due COD')}
+                  </button>
+                </div>
+
+                {paymentType === 'partial_due' && (
+                  <div className="space-y-2 pt-1 border-t border-slate-200/80 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-slate-700">
+                        {t('অ্যাডভান্স পেমেন্টের পরিমাণ (৳):', 'Advance Amount (৳):')}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {[100, 200, 500].map((amt) => (
+                          <button
+                            key={amt}
+                            type="button"
+                            onClick={() => setPartialAdvanceAmount(Math.min(grandTotal, amt))}
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border cursor-pointer ${
+                              partialAdvanceAmount === amt
+                                ? 'bg-emerald-600 text-white border-emerald-600'
+                                : 'bg-white text-slate-700 border-slate-300'
+                            }`}
+                          >
+                            ৳{amt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        max={Math.max(1, grandTotal)}
+                        value={partialAdvanceAmount}
+                        onChange={(e) => setPartialAdvanceAmount(Math.max(1, Number(e.target.value) || 0))}
+                        className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-bold text-slate-900"
+                      />
+                      <select
+                        value={partialChannel}
+                        onChange={(e) => setPartialChannel(e.target.value as any)}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-slate-900"
+                      >
+                        <option value="bkash">bKash Advance</option>
+                        <option value="nagad">Nagad Advance</option>
+                        <option value="rocket">Rocket Advance</option>
+                      </select>
+                    </div>
+                    <p className="text-[11px] font-semibold text-emerald-700 tabular-nums">
+                      {t(
+                        `এখন অ্যাডভান্স: ৳${effectiveAdvance.toLocaleString()} · ডেলিভারিতে বাকি (Due): ৳${payableOnDelivery.toLocaleString()}`,
+                        `Advance Now: ৳${effectiveAdvance.toLocaleString()} · Due on Delivery: ৳${payableOnDelivery.toLocaleString()}`
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+
               {/* bKash / Nagad / Rocket Payment Details */}
-              {(paymentMethod === 'bkash' || paymentMethod === 'nagad' || paymentMethod === 'rocket') && (
+              {(paymentType === 'partial_due' || paymentMethod === 'bkash' || paymentMethod === 'nagad' || paymentMethod === 'rocket') && (() => {
+                const activeMfs = paymentType === 'partial_due' ? partialChannel : paymentMethod;
+                const merchantNum =
+                  activeMfs === 'bkash'
+                    ? settings.paymentSettings.bkashMerchant
+                    : activeMfs === 'nagad'
+                    ? settings.paymentSettings.nagadMerchant
+                    : settings.paymentSettings.rocketMerchant;
+                return (
                 <div className="bg-slate-900 text-white rounded-2xl p-3 space-y-2 text-xs animate-in fade-in">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] text-slate-300 font-bold uppercase">
-                      {paymentMethod.toUpperCase()} {t('মার্চেন্ট নম্বর:', 'Number:')}
+                      {activeMfs.toUpperCase()} {t('মার্চেন্ট নম্বর:', 'Number:')}
                     </span>
                     <button
                       type="button"
-                      onClick={() =>
-                        copyToClipboard(
-                          paymentMethod === 'bkash'
-                            ? settings.paymentSettings.bkashMerchant
-                            : paymentMethod === 'nagad'
-                            ? settings.paymentSettings.nagadMerchant
-                            : settings.paymentSettings.rocketMerchant
-                        )
-                      }
+                      onClick={() => copyToClipboard(merchantNum)}
                       className="flex items-center gap-1 text-[10px] bg-slate-800 text-emerald-400 px-2 py-0.5 rounded cursor-pointer"
                     >
                       <Copy className="w-3 h-3" />
@@ -893,11 +1042,7 @@ export const OneClickCheckoutModal: React.FC = () => {
                   </div>
 
                   <div className="font-mono text-emerald-300 font-bold tracking-widest text-sm bg-black/40 px-3 py-1.5 rounded-lg">
-                    {paymentMethod === 'bkash'
-                      ? settings.paymentSettings.bkashMerchant
-                      : paymentMethod === 'nagad'
-                      ? settings.paymentSettings.nagadMerchant
-                      : settings.paymentSettings.rocketMerchant}
+                    {merchantNum}
                   </div>
 
                   <div>
@@ -912,7 +1057,8 @@ export const OneClickCheckoutModal: React.FC = () => {
                     {errors.trxId && <p className="text-[10px] text-rose-400 mt-0.5">{errors.trxId}</p>}
                   </div>
                 </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Loyalty Points Redemption Toggle & Quick Selector */}
@@ -991,8 +1137,8 @@ export const OneClickCheckoutModal: React.FC = () => {
               </div>
             )}
 
-            {/* Gift Wallet deduction toggle */}
-            {customerWalletBalance > 0 && (
+            {/* Gift & Deposited Wallet deduction toggle */}
+            {totalWalletAvailable > 0 && (
               <label className="flex items-center justify-between gap-2 p-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 cursor-pointer transition-colors hover:bg-emerald-50 min-w-0">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <input
@@ -1004,10 +1150,13 @@ export const OneClickCheckoutModal: React.FC = () => {
                   <div className="min-w-0">
                     <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
                       <Wallet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>{t('গিফট ওয়ালেট ব্যালেন্স ব্যবহার করুন', 'Use Gift Wallet Balance')}</span>
+                      <span>{t('ওয়ালেট ও ৪৮-ঘণ্টার স্পিন বোনাস ব্যবহার করুন', 'Use Wallet & 48h Spin Bonus Balance')}</span>
                     </span>
                     <p className="text-[10px] text-slate-600 tabular-nums mt-0.5">
-                      {t(`বর্তমান ব্যালেন্স: ৳ ${customerWalletBalance.toLocaleString()}`, `Available Balance: ৳ ${customerWalletBalance.toLocaleString()}`)}
+                      {t(
+                        `আজীবন ব্যালেন্স: ৳${customerWalletBalance.toLocaleString()} · ৪৮ ঘণ্টা স্পিন বোনাস: ৳${activeSpinBonus.toLocaleString()}`,
+                        `Lifetime Balance: ৳${customerWalletBalance.toLocaleString()} · 48h Spin Bonus: ৳${activeSpinBonus.toLocaleString()}`
+                      )}
                     </p>
                   </div>
                 </div>
@@ -1067,6 +1216,19 @@ export const OneClickCheckoutModal: React.FC = () => {
                 </span>
               </div>
 
+              {effectiveAdvance > 0 && (
+                <div className="pt-1 border-t border-slate-200/70 space-y-0.5 text-[11px] font-bold">
+                  <div className="flex justify-between text-emerald-700">
+                    <span>{t('অগ্রিম পেমেন্ট (Advance):', 'Advance Paid Now:')}</span>
+                    <span className="font-mono">৳ {effectiveAdvance.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-amber-700">
+                    <span>{t('ডেলিভারিতে বাকি (Due COD):', 'Remaining Due on Delivery:')}</span>
+                    <span className="font-mono">৳ {payableOnDelivery.toLocaleString()}</span>
+                  </div>
+                </div>
+              )}
+
               {estimatedPointsEarned > 0 && (
                 <div className="flex items-center justify-between text-[11px] text-amber-700 font-bold pt-1 border-t border-slate-200/70">
                   <span className="flex items-center gap-1">
@@ -1078,17 +1240,38 @@ export const OneClickCheckoutModal: React.FC = () => {
               )}
             </div>
 
-            {/* Submission Button */}
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-black py-3.5 px-4 rounded-2xl shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
-            >
-              <Check className="w-4 h-4 text-emerald-100 shrink-0" />
-              <span className="text-xs sm:text-sm tabular-nums">
-                {isSubmitting ? t('অর্ডার গ্রহণ করা হচ্ছে...', 'Processing Order...') : t(`অর্ডার কনফার্ম করুন (৳ ${grandTotal.toLocaleString()})`, `Confirm Order (৳ ${grandTotal.toLocaleString()})`)}
-              </span>
-            </button>
+            {/* Submission + 1-Click Order Via WhatsApp */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="sm:col-span-7 w-full bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-black py-3.5 px-4 rounded-2xl shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+              >
+                <Check className="w-4 h-4 text-emerald-100 shrink-0" />
+                <span className="text-xs sm:text-sm tabular-nums">
+                  {isSubmitting ? t('অর্ডার গ্রহণ করা হচ্ছে...', 'Processing Order...') : t(`অর্ডার কনফার্ম করুন (৳ ${grandTotal.toLocaleString()})`, `Confirm Order (৳ ${grandTotal.toLocaleString()})`)}
+                </span>
+              </button>
+
+              <a
+                href={(() => {
+                  const waDigits = String(settings.whatsappNumber || '+8801917942662').replace(/[^0-9]/g, '');
+                  const fmtWa = waDigits.startsWith('88') ? waDigits : `88${waDigits}`;
+                  const itemsSummary = isSingleProduct && checkoutProduct
+                    ? `${lang === 'bn' ? checkoutProduct.titleBn : checkoutProduct.title} x${quantity}${selectedColor ? ` (${selectedColor})` : ''}${selectedSize ? ` [${selectedSize}]` : ''}\nURL: ${getProductCanonicalUrl(checkoutProduct)}`
+                    : cart.map((c) => `${lang === 'bn' ? c.product.titleBn : c.product.title} x${c.quantity}`).join(', ');
+                  return `https://wa.me/${fmtWa}?text=${encodeURIComponent(
+                    `আসসালামু আলাইকুম BuyOne BD,\nআমি WhatsApp-এর মাধ্যমে অর্ডার করতে চাই:\n${itemsSummary}\nগ্রাহকের নাম: ${name || '-'}\nফোন: ${phone || '-'}\nঠিকানা: ${address || '-'}, ${thana}, ${selectedDistrictName}\nমোট বিল: ৳${grandTotal.toLocaleString()}${effectiveAdvance > 0 ? ` (Advance ৳${effectiveAdvance}, Due ৳${payableOnDelivery})` : ' (COD)'}`
+                  )}`;
+                })()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="sm:col-span-5 w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-3 rounded-2xl border border-emerald-500/40 flex items-center justify-center gap-1.5 text-xs whitespace-nowrap"
+              >
+                <MessageCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{t('WhatsApp-এ অর্ডার', 'Order Via WhatsApp')}</span>
+              </a>
+            </div>
           </form>
         )}
       </div>

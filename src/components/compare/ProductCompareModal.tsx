@@ -234,7 +234,7 @@ export const ProductCompareModal: React.FC<ProductCompareModalProps> = ({
                           className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20"
                         >
                           <ShoppingBag className="w-3.5 h-3.5" />
-                          <span>{t('১ ক্লিকে কিনুন', 'Order Now')}</span>
+                          <span>{t('১ ক্লিকে কিনুন', 'Buy Now')}</span>
                         </button>
                       </div>
                     </div>

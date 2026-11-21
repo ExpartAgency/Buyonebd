@@ -16,6 +16,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
     goHome,
     openAllProductsPage,
     openAboutPage,
+    openBlogsPage,
     selectCategoryFilter,
     searchQuery,
     setSearchQuery,
@@ -238,6 +239,18 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
             }`}
           >
             {t('আমাদের সম্পর্কে', 'About')}
+          </button>
+
+          <button
+            type="button"
+            onClick={openBlogsPage}
+            className={`hidden lg:inline-flex text-xs font-semibold px-2 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+              storeSubView === 'blogs' || storeSubView === 'blog_post'
+                ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 font-bold'
+                : 'text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400'
+            }`}
+          >
+            {t('ব্লগ', 'Blogs')}
           </button>
         </div>
 

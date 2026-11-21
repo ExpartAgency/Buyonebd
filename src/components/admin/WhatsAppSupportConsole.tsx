@@ -448,7 +448,7 @@ export const WhatsAppSupportConsole: React.FC<WhatsAppSupportConsoleProps> = ({
             <span
               className={`w-2 h-2 rounded-full ${
                 cloudCfg.enabled && cloudCfg.phoneNumberId && cloudCfg.accessToken
-                  ? 'bg-emerald-400 animate-pulse'
+                  ? 'bg-emerald-400'
                   : 'bg-amber-400'
               }`}
             />
@@ -692,7 +692,7 @@ export const WhatsAppSupportConsole: React.FC<WhatsAppSupportConsoleProps> = ({
                     }}
                     className={`w-full p-3.5 text-left transition-colors cursor-pointer flex items-start justify-between gap-2 ${
                       isSelected
-                        ? 'bg-emerald-950/50 border-l-2 border-emerald-500'
+                        ? 'bg-emerald-950/50 ring-1 ring-inset ring-emerald-500/50'
                         : 'hover:bg-slate-950/60'
                     }`}
                   >

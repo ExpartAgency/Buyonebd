@@ -423,7 +423,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                     </div>
 
                     {invCfg.headerNote && (
-                      <div className="px-3 py-2 rounded-xs bg-slate-50 border-l-4 text-[11px] font-semibold text-slate-700" style={{ borderColor: accent }}>
+                      <div className="px-3 py-2 rounded-xs bg-slate-50 border border-slate-300 text-[11px] font-semibold text-slate-700" style={{ borderColor: accent }}>
                         {invCfg.headerNote}
                       </div>
                     )}

@@ -19,7 +19,8 @@ import {
   Tag,
   MessageCircle,
   Copy,
-  ExternalLink
+  ExternalLink,
+  Eye
 } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
@@ -42,6 +43,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
     addProductReview,
     addPriceAlert,
     recordProductView,
+    getProductViewCount,
     getPartnerPriceInfo,
     getProductCanonicalUrl,
     buildProductWhatsAppUrl,
@@ -368,8 +370,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
                   {lang === 'bn' ? product.titleBn : product.title}
                 </h2>
 
-                {/* Rating */}
-                <div className="flex items-center gap-2 mt-2">
+                {/* Rating & Live View Counter */}
+                <div className="flex flex-wrap items-center gap-2 mt-2">
                   <div className="flex items-center text-amber-500">
                     {[...Array(5)].map((_, i) => (
                       <Star
@@ -382,6 +384,16 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
                   </div>
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{product.rating}</span>
                   <span className="text-xs text-slate-400">({product.reviewsCount} {t('রিভিউ', 'reviews')})</span>
+                  {settings.viewerCounter?.enabled !== false && (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                      <span aria-hidden="true">·</span>
+                      <Eye className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        {getProductViewCount(product.id).toLocaleString()}{' '}
+                        {t(settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন', settings.viewerCounter?.labelEn || 'people viewed this')}
+                      </span>
+                    </span>
+                  )}
                 </div>
 
                 {/* Price (Strictly Partner-Aware) */}
@@ -552,13 +564,36 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
                     <span>{t(settings.singleProductCms?.notifyMeBtnBn || 'স্টকে এলে জানান', settings.singleProductCms?.notifyMeBtnEn || 'Notify Me When Available')}</span>
                   </button>
                 ) : (
-                  <button
-                    onClick={handleOrderNow}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm py-3.5 px-4 rounded-2xl shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
-                  >
-                    <span>{t('এখনই অর্ডার করুন', 'Order Now')}</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      onClick={handleOrderNow}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm py-3.5 px-4 rounded-2xl shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
+                    >
+                      <span>
+                        {t(
+                          settings.cmsTexts?.orderNowBtnBn || 'এখনই কিনুন',
+                          settings.cmsTexts?.orderNowBtnEn === 'Order Now' || !settings.cmsTexts?.orderNowBtnEn
+                            ? 'Buy Now'
+                            : settings.cmsTexts.orderNowBtnEn
+                        )}
+                      </span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                    <a
+                      href={`https://wa.me/${(() => {
+                        const d = String(settings.whatsappNumber || '+8801917942662').replace(/[^0-9]/g, '');
+                        return d.startsWith('88') ? d : `88${d}`;
+                      })()}?text=${encodeURIComponent(
+                        `আসসালামু আলাইকুম BuyOne BD,\nআমি এই পণ্যটি অর্ডার করতে চাই (Order Via WhatsApp):\nপণ্য: ${lang === 'bn' ? product.titleBn : product.title}\n${variantSummary ? `ভ্যারিয়েন্ট: ${variantSummary}\n` : ''}পরিমাণ: ${quantity} পিস\nমোট মূল্য: ৳${(displayUnitPrice * quantity).toLocaleString()}\nলিংক: ${canonicalProductUrl}\n\nআমার নাম ও ঠিকানা:`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm py-3.5 px-4 rounded-2xl border border-emerald-500/40 flex items-center justify-center gap-2 transition-all active:scale-95 whitespace-nowrap"
+                    >
+                      <MessageCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>{t('WhatsApp-এ অর্ডার করুন', 'Order Via WhatsApp')}</span>
+                    </a>
+                  </div>
                 )}
 
                 <div className="grid grid-cols-3 gap-2">

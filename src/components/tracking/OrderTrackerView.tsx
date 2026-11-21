@@ -16,6 +16,7 @@ import { Order } from '../../types';
 export const OrderTrackerView: React.FC = () => {
   const {
     orders,
+    settings,
     trackingSearchQuery,
     setActiveView,
     setIsWhatsAppOpen,
@@ -315,7 +316,7 @@ export const OrderTrackerView: React.FC = () => {
               )}
 
               {/* History list */}
-              <div className="space-y-4 relative pl-4 border-l-2 border-slate-200 dark:border-slate-700 ml-2">
+              <div className="space-y-4 relative pl-4 border-l border-slate-200 dark:border-slate-700 ml-2">
                 {selectedOrder.courier.history.map((h, idx) => (
                   <div key={idx} className="relative">
                     <div className="absolute -left-[23px] top-1 w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-white dark:border-slate-900 ring-2 ring-emerald-200 dark:ring-emerald-900" />
@@ -466,6 +467,87 @@ export const OrderTrackerView: React.FC = () => {
           <Package className="w-12 h-12 text-slate-300 mx-auto mb-3" />
           <h3 className="font-bold text-slate-700 dark:text-slate-200 text-base">{t('কোনো অর্ডার সিলেক্ট করা নেই', 'No Order Selected')}</h3>
           <p className="text-xs text-slate-500 mt-1">{t('উপরের সার্চ বক্সে আপনার অর্ডার আইডি দিয়ে সার্চ করুন', 'Search above using Order ID or phone number')}</p>
+        </div>
+      )}
+
+      {/* Strict 1-Copy Printable Customer Invoice (Matched with @media print #buyone-print-root) */}
+      {selectedOrder && (
+        <div id="buyone-print-root" className="hidden print:block bg-white text-slate-950 p-6 max-w-[780px] mx-auto">
+          <div className="flex items-start justify-between border-b-2 border-slate-900 pb-4 mb-4">
+            <div>
+              <h2 className="text-2xl font-black uppercase tracking-tight">{settings.storeName || 'BuyOne BD'}</h2>
+              <p className="text-xs text-slate-600">{settings.whatsappNumber} · {settings.supportEmail}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs uppercase font-bold text-slate-500">Customer Invoice</p>
+              <p className="text-lg font-mono font-black">#{selectedOrder.id}</p>
+              <p className="text-[11px] text-slate-600">{new Date(selectedOrder.createdAt).toLocaleDateString()}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 text-xs mb-5 p-3 border border-slate-300 rounded">
+            <div>
+              <p className="font-black uppercase text-slate-500 text-[10px]">Bill To</p>
+              <p className="font-bold text-sm">{selectedOrder.customer.name}</p>
+              <p className="font-mono font-bold">{selectedOrder.customer.phone}</p>
+              <p>{selectedOrder.customer.address}, {selectedOrder.customer.thana}, {selectedOrder.customer.district}</p>
+            </div>
+            <div className="text-right">
+              <p className="font-black uppercase text-slate-500 text-[10px]">Shipping & Payment</p>
+              <p>Status: <strong className="uppercase">{selectedOrder.status}</strong></p>
+              <p>Method: <strong className="uppercase">{selectedOrder.payment.method}</strong></p>
+              <p>Courier: {selectedOrder.courier.provider} ({selectedOrder.courier.trackingCode || 'Pending'})</p>
+            </div>
+          </div>
+
+          <table className="w-full text-xs border-collapse mb-4">
+            <thead>
+              <tr className="border-y border-slate-900 text-left">
+                <th className="py-2">Item</th>
+                <th className="py-2 text-center">Qty</th>
+                <th className="py-2 text-right">Unit</th>
+                <th className="py-2 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {selectedOrder.items.map((item, idx) => (
+                <tr key={idx}>
+                  <td className="py-2">
+                    <span className="font-bold">{lang === 'bn' ? item.productTitleBn : item.productTitle}</span>
+                    {(item.selectedColor || item.selectedSize) && (
+                      <span className="text-[11px] text-slate-600"> ({[item.selectedColor, item.selectedSize].filter(Boolean).join(', ')})</span>
+                    )}
+                  </td>
+                  <td className="py-2 text-center font-mono">{item.quantity}</td>
+                  <td className="py-2 text-right font-mono">৳{item.price.toLocaleString()}</td>
+                  <td className="py-2 text-right font-mono font-bold">৳{(item.price * item.quantity).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="ml-auto max-w-xs space-y-1 text-xs font-mono border-t border-slate-900 pt-3">
+            <div className="flex justify-between"><span>Subtotal:</span><span>৳{selectedOrder.pricing.subtotal.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span>Delivery Fee:</span><span>৳{selectedOrder.pricing.deliveryFee.toLocaleString()}</span></div>
+            {selectedOrder.pricing.discount > 0 && (
+              <div className="flex justify-between"><span>Discount:</span><span>-৳{selectedOrder.pricing.discount.toLocaleString()}</span></div>
+            )}
+            {(selectedOrder.pricing.advancePaid || 0) > 0 && (
+              <div className="flex justify-between"><span>Advance Paid:</span><span>৳{selectedOrder.pricing.advancePaid?.toLocaleString()}</span></div>
+            )}
+            <div className="flex justify-between font-black text-sm border-t border-slate-300 pt-1">
+              <span>Grand Total:</span><span>৳{selectedOrder.pricing.total.toLocaleString()}</span>
+            </div>
+            {(selectedOrder.payment.dueAmount || 0) > 0 && (
+              <div className="flex justify-between font-bold text-rose-700">
+                <span>Balance Due (COD):</span><span>৳{selectedOrder.payment.dueAmount?.toLocaleString()}</span>
+              </div>
+            )}
+          </div>
+
+          <p className="text-center text-[10px] text-slate-500 mt-8 border-t border-slate-200 pt-3">
+            Thank you for shopping with {settings.storeName || 'BuyOne BD'}!
+          </p>
         </div>
       )}
     </div>

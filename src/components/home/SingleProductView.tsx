@@ -25,7 +25,8 @@ import {
   Tag,
   MessageCircle,
   Copy,
-  ExternalLink
+  ExternalLink,
+  Eye
 } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
@@ -45,6 +46,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
     isWishlisted,
     addPriceAlert,
     recordProductView,
+    getProductViewCount,
     products,
     reviews,
     addProductReview,
@@ -580,6 +582,18 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white leading-tight tracking-tight">
                   {lang === 'bn' ? product.titleBn : product.title}
                 </h1>
+                {settings.viewerCounter?.enabled !== false && (
+                  <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                    <Eye className="w-4 h-4 shrink-0" />
+                    <span>
+                      {getProductViewCount(product.id).toLocaleString()}{' '}
+                      {t(
+                        settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
+                        settings.viewerCounter?.labelEn || 'people viewed this'
+                      )}
+                    </span>
+                  </p>
+                )}
                 <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1.5 line-clamp-2">
                   {lang === 'bn' ? product.descriptionBn : product.description}
                 </p>
@@ -811,7 +825,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     className="flex-1 py-3.5 sm:py-4 px-5 hover:opacity-95 text-white font-black text-sm rounded-2xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
                   >
                     <Zap className="w-5 h-5 text-amber-300 fill-amber-300 shrink-0" />
-                    <span>{t('১ ক্লিকে অর্ডার করুন (COD)', '1-Click Order Now (COD)')}</span>
+                    <span>{t('১ ক্লিকে কিনুন (COD)', '1-Click Buy Now (COD)')}</span>
                   </button>
                 )}
 
@@ -848,7 +862,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 </div>
               </div>
 
-              {/* Direct WhatsApp Chat With This Product URL */}
+              {/* Direct Order Via WhatsApp & Chat With Product URL */}
               {(() => {
                 const canonicalUrl = getProductCanonicalUrl(product);
                 const variantParts = [
@@ -861,19 +875,34 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   variantText: variantSummary,
                   quantity
                 });
+                const rawWaDigits = String(settings.whatsappNumber || '+8801917942662').replace(/[^0-9]/g, '');
+                const fmtWa = rawWaDigits.startsWith('88') ? rawWaDigits : `88${rawWaDigits}`;
+                const orderViaWaHref = `https://wa.me/${fmtWa}?text=${encodeURIComponent(
+                  `আসসালামু আলাইকুম BuyOne BD,\nআমি এই পণ্যটি অর্ডার করতে চাই (Order Via WhatsApp):\nপণ্য: ${lang === 'bn' ? product.titleBn : product.title}\nSKU: ${product.sku}\n${variantSummary ? `ভ্যারিয়েন্ট: ${variantSummary}\n` : ''}পরিমাণ: ${quantity} পিস\nমোট মূল্য: ৳${totalPayable.toLocaleString()}\nলিংক: ${canonicalUrl}\n\nআমার নাম ও ঠিকানা:`
+                )}`;
 
                 return (
                   <div className="p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70 space-y-2.5">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <a
+                        href={orderViaWaHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="py-2.5 px-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer whitespace-nowrap"
+                      >
+                        <MessageCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>{t('WhatsApp-এ অর্ডার করুন', 'Order Via WhatsApp')}</span>
+                      </a>
+
                       <a
                         href={directWaHref}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer whitespace-nowrap"
+                        className="py-2.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer whitespace-nowrap"
                       >
                         <MessageCircle className="w-4 h-4 shrink-0" />
                         <span>
-                          {t('পণ্যের লিংকসহ WhatsApp-এ চ্যাট করুন', 'Chat on WhatsApp (With Product URL)')}
+                          {t('URL সহ চ্যাট', 'Chat (Product URL)')}
                         </span>
                         <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                       </a>
@@ -889,7 +918,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                         className="py-2.5 px-3.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-slate-800 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
                       >
                         <Send className="w-3.5 h-3.5 shrink-0" />
-                        <span>{t('ইন-সাইট WhatsApp ডেস্ক', 'In-Site WhatsApp Desk')}</span>
+                        <span>{t('ইন-সাইট ডেস্ক', 'In-Site Desk')}</span>
                       </button>
                     </div>
 

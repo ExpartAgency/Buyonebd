@@ -38,7 +38,12 @@ import {
   WholesaleAccount,
   WholesaleQuoteRequest,
   BulkSmsCampaignLog,
-  AIReviewTask
+  AIReviewTask,
+  BlogPost,
+  ResellerTopUpRequest,
+  AffiliateAccount,
+  AffiliateConversion,
+  AffiliatePayoutRequest
 } from '../types';
 import { speakClearText, stopAllVoicePlayback } from '../utils/voiceAudio';
 import {
@@ -50,6 +55,7 @@ import {
   INITIAL_ABANDONED_CARTS,
   INITIAL_USERS,
   INITIAL_REVIEWS,
+  INITIAL_BLOGS,
   BUSINESS_THEME_PRESETS
 } from '../data/initialData';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
@@ -124,7 +130,15 @@ import {
   saveWholesaleQuoteToFirestore,
   deleteWholesaleQuoteFromFirestore,
   saveAIReviewTaskToFirestore,
-  deleteAIReviewTaskFromFirestore
+  deleteAIReviewTaskFromFirestore,
+  saveBlogPostToFirestore,
+  deleteBlogPostFromFirestore,
+  fetchBlogPostsFromFirestore,
+  saveResellerTopUpToFirestore,
+  saveAffiliateToFirestore,
+  deleteAffiliateFromFirestore,
+  saveAffiliateConversionToFirestore,
+  saveAffiliatePayoutToFirestore
 } from '../firebase';
 import { WebRTCAudioSession } from '../utils/webrtcAudio';
 
@@ -228,14 +242,18 @@ interface StoreContextType {
   setSelectedSubcategory: (sub: string | null) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
-  storeSubView: 'home' | 'products' | 'about';
-  setStoreSubView: (view: 'home' | 'products' | 'about') => void;
+  storeSubView: 'home' | 'products' | 'about' | 'blogs' | 'blog_post';
+  setStoreSubView: (view: 'home' | 'products' | 'about' | 'blogs' | 'blog_post') => void;
+  selectedBlogSlug: string | null;
   goHome: () => void;
   openAllProductsPage: () => void;
   openAboutPage: () => void;
+  openBlogsPage: () => void;
+  openBlogPostPage: (slugOrId: string) => void;
   selectCategoryFilter: (catSlug: string, subSlug?: string | null) => void;
   openProductPage: (product: Product) => void;
   navigateToPath: (path: string, replace?: boolean) => void;
+  getProductViewCount: (productId: string) => number;
 
   // Products
   products: Product[];
@@ -316,9 +334,13 @@ interface StoreContextType {
   adjustSpecificCustomerBalance: (identifier: string, delta: number, reason?: string) => boolean;
   resetCustomerWalletExpiry: (identifier: string, expireNow?: boolean) => boolean;
   updateCustomerAccountByAdmin: (identifier: string, updates: Partial<CustomerProfile>) => boolean;
+  createCustomerAccountByAdmin: (data: { name: string; phone: string; email?: string; address?: string; district?: string }) => CustomerProfile;
   deleteCustomerAccountByAdmin: (identifier: string) => boolean;
   customerWalletBalance: number;
+  spinBonusBalance: number;
+  spinBonusExpiresAt: string | null;
   addToWallet: (amount: number, reason?: string) => void;
+  claimSpinBonus: (amount: number, reason?: string) => void;
   deductWallet: (amount: number) => boolean;
   walletLastPurchaseAt: string | null;
   walletLastCreditAt: string | null;
@@ -500,8 +522,17 @@ interface StoreContextType {
   appendBrowserCallMessage: (callId: string, speaker: 'customer' | 'assistant' | 'ai', text: string, textBn?: string) => void;
   endBrowserCallSession: (callId: string, confirmed?: boolean) => void;
 
-  // Abandoned Carts
+  // Abandoned Carts & Unchecked-Out Leads
   abandonedCarts: AbandonedCart[];
+  upsertAbandonedCheckoutLead: (lead: {
+    customerName: string;
+    customerPhone: string;
+    customerAddress: string;
+    customerDistrict?: string;
+    items: { product: Product; quantity: number; selectedColor?: string; selectedSize?: string }[];
+    total: number;
+    sourceLabel?: string;
+  }) => void;
   markAbandonedCartWhatsAppSent: (cartId: string) => void;
   recoverAbandonedCart: (cartId: string) => void;
   editAbandonedCart: (cartId: string, updates: Partial<AbandonedCart>) => void;
@@ -648,6 +679,16 @@ interface StoreContextType {
   updateResellerPayout: (id: string, updates: Partial<ResellerPayoutRequest>) => void;
   deleteResellerPayout: (id: string) => void;
 
+  resellerTopUps: ResellerTopUpRequest[];
+  submitResellerTopUp: (payload: {
+    method: ResellerTopUpRequest['method'];
+    amount: number;
+    senderNumber: string;
+    trxId: string;
+  }) => boolean;
+  processResellerTopUp: (id: string, status: 'approved' | 'rejected', note?: string) => void;
+  deleteResellerTopUp: (id: string) => void;
+
   wholesalers: WholesaleAccount[];
   activeWholesaler: WholesaleAccount | null;
   isWholesaleLoggedIn: boolean;
@@ -672,10 +713,49 @@ interface StoreContextType {
   deleteWholesaleQuote: (id: string) => void;
   bulkUpdateWholesaleQuotes: (ids: string[], updates: Partial<WholesaleQuoteRequest>) => void;
   bulkDeleteWholesaleQuotes: (ids: string[]) => void;
+  submitWholesaleDebtPayment: (buyerId: string, amount: number, note?: string) => boolean;
+  convertWholesaleQuoteToOrder: (quoteId: string) => Order | null;
+
+  // Blogs CMS
+  blogs: BlogPost[];
+  addBlogPost: (post: Omit<BlogPost, 'id' | 'createdAt' | 'updatedAt'>) => BlogPost;
+  updateBlogPost: (id: string, updates: Partial<BlogPost>) => void;
+  deleteBlogPost: (id: string) => void;
+  bulkUpdateBlogPosts: (ids: string[], updates: Partial<BlogPost>) => void;
+  bulkDeleteBlogPosts: (ids: string[]) => void;
+
+  // Affiliate System
+  affiliates: AffiliateAccount[];
+  activeAffiliate: AffiliateAccount | null;
+  isAffiliateLoggedIn: boolean;
+  affiliateConversions: AffiliateConversion[];
+  affiliatePayouts: AffiliatePayoutRequest[];
+  attributedAffiliateCode: string | null;
+  registerAffiliate: (
+    data: Omit<
+      AffiliateAccount,
+      'id' | 'affiliateCode' | 'commissionPercent' | 'clicksCount' | 'totalOrders' | 'walletBalance' | 'totalEarnings' | 'status' | 'createdAt'
+    >
+  ) => Promise<{ success: boolean; error?: string; affiliate?: AffiliateAccount }>;
+  loginAffiliate: (identifier: string, password?: string) => Promise<{ success: boolean; error?: string; affiliate?: AffiliateAccount }>;
+  logoutAffiliate: () => void;
+  updateAffiliateAccount: (id: string, updates: Partial<AffiliateAccount>) => void;
+  deleteAffiliateAccount: (id: string) => void;
+  bulkUpdateAffiliates: (ids: string[], updates: Partial<AffiliateAccount>) => void;
+  bulkDeleteAffiliates: (ids: string[]) => void;
+  adjustAffiliateWallet: (id: string, delta: number, note?: string) => void;
+  requestAffiliatePayout: (payload: {
+    method: AffiliatePayoutRequest['method'];
+    accountNumber: string;
+    amount: number;
+  }) => boolean;
+  processAffiliatePayout: (id: string, status: 'paid' | 'rejected', trxId?: string, note?: string) => void;
+  deleteAffiliatePayout: (id: string) => void;
+  buildAffiliateReferralUrl: (product?: Product | null) => string;
 
   isPartnerPortalOpen: boolean;
-  partnerPortalTab: 'reseller' | 'wholesale';
-  openPartnerPortal: (tab?: 'reseller' | 'wholesale') => void;
+  partnerPortalTab: 'reseller' | 'wholesale' | 'affiliate';
+  openPartnerPortal: (tab?: 'reseller' | 'wholesale' | 'affiliate') => void;
   closePartnerPortal: () => void;
   getPartnerPriceInfo: (
     product: Product,
@@ -800,7 +880,14 @@ function mergeSettings(raw: any): StoreSettings {
       textEn: migrateLegacyPhoneStr(raw.announcementBar?.textEn ?? INITIAL_SETTINGS.announcementBar.textEn)
     },
     themeColors: { ...INITIAL_SETTINGS.themeColors!, ...(raw.themeColors || {}) },
-    cmsTexts: { ...INITIAL_SETTINGS.cmsTexts!, ...(raw.cmsTexts || {}) },
+    cmsTexts: {
+      ...INITIAL_SETTINGS.cmsTexts!,
+      ...(raw.cmsTexts || {}),
+      orderNowBtnEn:
+        !raw.cmsTexts?.orderNowBtnEn || raw.cmsTexts.orderNowBtnEn === 'Order Now'
+          ? 'Buy Now'
+          : raw.cmsTexts.orderNowBtnEn
+    },
     seoSettings: { ...INITIAL_SETTINGS.seoSettings!, ...(raw.seoSettings || {}) },
     spinSettings: {
       ...INITIAL_SETTINGS.spinSettings,
@@ -949,6 +1036,14 @@ function mergeSettings(raw: any): StoreSettings {
       customFields: Array.isArray(raw.invoiceSettings?.customFields)
         ? raw.invoiceSettings.customFields
         : INITIAL_SETTINGS.invoiceSettings!.customFields
+    },
+    viewerCounter: {
+      ...INITIAL_SETTINGS.viewerCounter!,
+      ...(raw.viewerCounter || {})
+    },
+    affiliateSettings: {
+      ...INITIAL_SETTINGS.affiliateSettings!,
+      ...(raw.affiliateSettings || {})
     }
   };
 }
@@ -1180,8 +1275,141 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch {}
   }, [bulkSmsLogs]);
 
+  const [resellerTopUps, setResellerTopUps] = useState<ResellerTopUpRequest[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_reseller_topups_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const resellerTopUpsRef = useRef<ResellerTopUpRequest[]>(resellerTopUps);
+  resellerTopUpsRef.current = resellerTopUps;
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_reseller_topups_v1', JSON.stringify(resellerTopUps));
+    } catch {}
+  }, [resellerTopUps]);
+
+  const [blogs, setBlogs] = useState<BlogPost[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_blogs_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return INITIAL_BLOGS;
+  });
+  const blogsRef = useRef<BlogPost[]>(blogs);
+  blogsRef.current = blogs;
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_blogs_v1', JSON.stringify(blogs));
+    } catch {}
+  }, [blogs]);
+
+  const [affiliates, setAffiliates] = useState<AffiliateAccount[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_affiliates_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const affiliatesRef = useRef<AffiliateAccount[]>(affiliates);
+  affiliatesRef.current = affiliates;
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_affiliates_v1', JSON.stringify(affiliates));
+    } catch {}
+  }, [affiliates]);
+
+  const [activeAffiliate, setActiveAffiliate] = useState<AffiliateAccount | null>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_active_affiliate_v1');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (activeAffiliate) {
+        localStorage.setItem('buyonebd_active_affiliate_v1', JSON.stringify(activeAffiliate));
+      } else {
+        localStorage.removeItem('buyonebd_active_affiliate_v1');
+      }
+    } catch {}
+  }, [activeAffiliate]);
+
+  useEffect(() => {
+    if (!activeAffiliate) return;
+    const match = affiliates.find((a) => a.id === activeAffiliate.id);
+    if (!match) return;
+    if (
+      match.status !== activeAffiliate.status ||
+      match.commissionPercent !== activeAffiliate.commissionPercent ||
+      match.walletBalance !== activeAffiliate.walletBalance ||
+      match.totalEarnings !== activeAffiliate.totalEarnings ||
+      match.totalOrders !== activeAffiliate.totalOrders ||
+      match.clicksCount !== activeAffiliate.clicksCount
+    ) {
+      setActiveAffiliate((prev) => (prev ? { ...prev, ...match, password: prev.password || match.password } : match));
+    }
+  }, [affiliates]);
+
+  const isAffiliateLoggedIn = Boolean(activeAffiliate);
+
+  const [affiliateConversions, setAffiliateConversions] = useState<AffiliateConversion[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_affiliate_conversions_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const affiliateConversionsRef = useRef<AffiliateConversion[]>(affiliateConversions);
+  affiliateConversionsRef.current = affiliateConversions;
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_affiliate_conversions_v1', JSON.stringify(affiliateConversions));
+    } catch {}
+  }, [affiliateConversions]);
+
+  const [affiliatePayouts, setAffiliatePayouts] = useState<AffiliatePayoutRequest[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_affiliate_payouts_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const affiliatePayoutsRef = useRef<AffiliatePayoutRequest[]>(affiliatePayouts);
+  affiliatePayoutsRef.current = affiliatePayouts;
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_affiliate_payouts_v1', JSON.stringify(affiliatePayouts));
+    } catch {}
+  }, [affiliatePayouts]);
+
+  const [attributedAffiliateCode, setAttributedAffiliateCode] = useState<string | null>(() => {
+    try {
+      const raw = localStorage.getItem('buyonebd_ref_affiliate');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed?.code && parsed?.capturedAt) {
+        const cookieMs = 30 * 86400000;
+        if (Date.now() - Number(parsed.capturedAt) < cookieMs) {
+          return String(parsed.code);
+        }
+      }
+    } catch {}
+    return null;
+  });
+
   const [isPartnerPortalOpen, setIsPartnerPortalOpen] = useState<boolean>(false);
-  const [partnerPortalTab, setPartnerPortalTab] = useState<'reseller' | 'wholesale'>('reseller');
+  const [partnerPortalTab, setPartnerPortalTab] = useState<'reseller' | 'wholesale' | 'affiliate'>('reseller');
 
   // Categories (ensure upgraded subcategory slugs for legacy localStorage)
   const [categories, setCategories] = useState<Category[]>(() => {
@@ -1537,6 +1765,61 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const upsertAbandonedCheckoutLead = (lead: {
+    customerName: string;
+    customerPhone: string;
+    customerAddress: string;
+    customerDistrict?: string;
+    items: { product: Product; quantity: number; selectedColor?: string; selectedSize?: string }[];
+    total: number;
+    sourceLabel?: string;
+  }) => {
+    const cleanName = String(lead.customerName || '').trim();
+    const phoneDigits = String(lead.customerPhone || '').replace(/[^0-9]/g, '').slice(-11);
+    const cleanAddress = String(lead.customerAddress || '').trim();
+    if (!cleanName || phoneDigits.length < 10 || !cleanAddress) return;
+
+    const existing = abandonedCartsRef.current.find(
+      (c) => !c.recovered && String(c.customerPhone || '').replace(/[^0-9]/g, '').slice(-11) === phoneDigits
+    );
+    const nowIso = new Date().toISOString();
+    const mappedItems = (lead.items || []).map((i) => ({
+      product: i.product,
+      quantity: Math.max(1, Number(i.quantity) || 1),
+      selectedColor: i.selectedColor,
+      selectedSize: i.selectedSize
+    }));
+
+    if (existing) {
+      const updated: AbandonedCart = {
+        ...existing,
+        customerName: cleanName,
+        customerPhone: lead.customerPhone.trim(),
+        customerAddress: `${cleanAddress}${lead.customerDistrict ? ` (${lead.customerDistrict})` : ''}`,
+        items: mappedItems.length > 0 ? mappedItems : existing.items,
+        total: Math.max(0, Number(lead.total) || existing.total),
+        createdAt: nowIso
+      };
+      setAbandonedCarts((prev) => prev.map((c) => (c.id === existing.id ? updated : c)));
+      saveAbandonedCartToFirestore(updated).catch(() => {});
+      return;
+    }
+
+    const newLead: AbandonedCart = {
+      id: `lead-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
+      customerName: cleanName,
+      customerPhone: lead.customerPhone.trim(),
+      customerAddress: `${cleanAddress}${lead.customerDistrict ? ` (${lead.customerDistrict})` : ''}`,
+      items: mappedItems,
+      total: Math.max(0, Number(lead.total) || 0),
+      createdAt: nowIso,
+      recovered: false,
+      whatsappSent: false
+    };
+    setAbandonedCarts((prev) => [newLead, ...prev].slice(0, 120));
+    saveAbandonedCartToFirestore(newLead).catch(() => {});
+  };
+
   // Product Comparison (up to 3)
   const [compareList, setCompareList] = useState<string[]>(() => {
     try {
@@ -1756,8 +2039,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         waitlist: waitlistEntriesRef.current,
         resellers: resellersRef.current,
         resellerPayouts: resellerPayoutsRef.current,
+        resellerTopUps: resellerTopUpsRef.current,
         wholesalers: wholesalersRef.current,
         wholesaleQuotes: wholesaleQuotesRef.current,
+        blogs: blogsRef.current,
+        affiliates: affiliatesRef.current,
+        affiliateConversions: affiliateConversionsRef.current,
+        affiliatePayouts: affiliatePayoutsRef.current,
         users: usersRef.current
       });
       setCommittedSettings(settingsRef.current);
@@ -1817,15 +2105,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       }
 
-      const [fsProducts, fsMedia] = await Promise.all([
+      const [fsProducts, fsMedia, fsBlogs] = await Promise.all([
         fetchProductsFromFirestore(),
-        fetchMediaLibraryFromFirestore().catch(() => [])
+        fetchMediaLibraryFromFirestore().catch(() => []),
+        fetchBlogPostsFromFirestore(false).catch(() => [])
       ]);
       if (fsProducts.length > 0) {
         setProducts(fsProducts);
       }
       if (fsMedia.length > 0) {
         setMediaLibrary(fsMedia);
+      }
+      if (fsBlogs.length > 0) {
+        setBlogs((prev) => {
+          const map = new Map(prev.map((b) => [b.id, b]));
+          fsBlogs.forEach((b) => map.set(b.id, b));
+          return Array.from(map.values());
+        });
       }
 
       if (auth.currentUser) {
@@ -1937,6 +2233,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     abandonedCarts: abandonedCartsRef.current,
     priceAlerts: priceAlertsRef.current,
     waitlist: waitlistEntriesRef.current,
+    resellers: resellersRef.current,
+    resellerPayouts: resellerPayoutsRef.current,
+    resellerTopUps: resellerTopUpsRef.current,
+    wholesalers: wholesalersRef.current,
+    wholesaleQuotes: wholesaleQuotesRef.current,
+    blogs: blogsRef.current,
+    affiliates: affiliatesRef.current,
+    affiliateConversions: affiliateConversionsRef.current,
+    affiliatePayouts: affiliatePayoutsRef.current,
     users: usersRef.current
   });
 
@@ -1962,7 +2267,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const nextTopUps = Array.isArray(backup.walletTopUps) ? backup.walletTopUps : walletTopUpsRef.current;
       const nextCarts = Array.isArray(backup.abandonedCarts) ? backup.abandonedCarts : abandonedCartsRef.current;
       const nextAlerts = Array.isArray(backup.priceAlerts) ? backup.priceAlerts : priceAlertsRef.current;
-      const nextWaitlist = Array.isArray(backup.waitlist) ? backup.waitlist : waitlistEntriesRef.current;
+      const nextBlogs = Array.isArray(backup.blogs) ? backup.blogs : blogsRef.current;
+      const nextResellerTopUps = Array.isArray(backup.resellerTopUps) ? backup.resellerTopUps : resellerTopUpsRef.current;
+      const nextAffiliates = Array.isArray(backup.affiliates) ? backup.affiliates : affiliatesRef.current;
+      const nextAffConversions = Array.isArray(backup.affiliateConversions) ? backup.affiliateConversions : affiliateConversionsRef.current;
+      const nextAffPayouts = Array.isArray(backup.affiliatePayouts) ? backup.affiliatePayouts : affiliatePayoutsRef.current;
       const nextUsers = Array.isArray(backup.users) ? backup.users : usersRef.current;
 
       setSettings(nextSettings);
@@ -1976,6 +2285,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setWalletTopUps(nextTopUps);
       setAbandonedCarts(nextCarts);
       setPriceAlerts(nextAlerts);
+      setBlogs(nextBlogs);
+      setResellerTopUps(nextResellerTopUps);
+      setAffiliates(nextAffiliates);
+      setAffiliateConversions(nextAffConversions);
+      setAffiliatePayouts(nextAffPayouts);
       setUsers(nextUsers);
 
       fetch('/api/store/sync', {
@@ -1993,6 +2307,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           walletTopUps: nextTopUps,
           abandonedCarts: nextCarts,
           priceAlerts: nextAlerts,
+          blogs: nextBlogs,
+          resellerTopUps: nextResellerTopUps,
+          affiliates: nextAffiliates,
+          affiliateConversions: nextAffConversions,
+          affiliatePayouts: nextAffPayouts,
           users: nextUsers
         })
       }).catch(() => {});
@@ -2012,6 +2331,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             walletTopUps: nextTopUps,
             abandonedCarts: nextCarts,
             priceAlerts: nextAlerts,
+            blogs: nextBlogs,
+            resellerTopUps: nextResellerTopUps,
+            affiliates: nextAffiliates,
+            affiliateConversions: nextAffConversions,
+            affiliatePayouts: nextAffPayouts,
             users: nextUsers
           });
           setLastCloudSyncAt(new Date().toLocaleTimeString());
@@ -2300,7 +2624,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     addToast('info', lang === 'bn' ? 'স্পিন অফার মোছা হয়েছে' : 'Spin Offer Deleted', '');
   };
 
-  // Customer Gift Wallet Balance (earned strictly from Lucky Spin wheel rewards)
+  // Customer Lifetime Deposited Wallet Balance + 48-Hour Spin Bonus Balance
   const [customerWalletBalance, setCustomerWalletBalance] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('buyonebd_customer_wallet_v3');
@@ -2309,6 +2633,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return 0;
     }
   });
+  const [spinBonusBalance, setSpinBonusBalance] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_spin_bonus_bal_v1');
+      return saved ? Math.max(0, Number(saved)) : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [spinBonusExpiresAt, setSpinBonusExpiresAt] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('buyonebd_spin_bonus_exp_v1') || null;
+    } catch {
+      return null;
+    }
+  });
+  const [sessionViewDeltas, setSessionViewDeltas] = useState<Record<string, number>>({});
 
   // Customer Auth & Account Registry
   const [isCustomerLoggedIn, setIsCustomerLoggedIn] = useState<boolean>(() => {
@@ -2584,6 +2924,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const recordProductView = (productId: string) => {
     if (!productId) return;
+    setSessionViewDeltas((prev) => ({
+      ...prev,
+      [productId]: (prev[productId] || 0) + 1
+    }));
     setRecentlyViewedIds((prev) => {
       if (prev[0] === productId) return prev;
       const next = [productId, ...prev.filter((id) => id !== productId)].slice(0, 5);
@@ -2598,6 +2942,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const nextHistory = [productId, ...history.filter((id) => id !== productId)].slice(0, 5);
       return { ...prev, browsingHistory: nextHistory };
     });
+  };
+
+  const getProductViewCount = (productId: string): number => {
+    const vc = settings.viewerCounter;
+    const base = Math.max(0, Number(vc?.baseCount ?? 76439) || 0);
+    const delta = vc?.autoIncrement !== false ? sessionViewDeltas[productId] || 0 : 0;
+    return base + delta;
   };
 
   const clearRecentlyViewed = () => {
@@ -2661,43 +3012,41 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const walletDaysRemaining = React.useMemo(() => {
     if (customerWalletBalance <= 0) return expiryDaysSetting;
-    const anchor = walletLastPurchaseAt || walletLastCreditAt;
-    if (!anchor) return expiryDaysSetting;
-    const elapsedDays = Math.floor((Date.now() - new Date(anchor).getTime()) / 86400000);
-    return Math.max(0, expiryDaysSetting - elapsedDays);
-  }, [customerWalletBalance, walletLastPurchaseAt, walletLastCreditAt, expiryDaysSetting]);
+    return 9999; // Deposited customer wallet balance is lifetime
+  }, [customerWalletBalance, expiryDaysSetting]);
 
+  // Only expire 48-hour Spin Bonus balance automatically; deposited customerWalletBalance stays lifetime
   const runWalletExpirySweep = (forceExpireDemo = false): number => {
-    const expiryMs = expiryDaysSetting * 86400000;
     let expiredCount = 0;
-    const anchor = walletLastPurchaseAt || walletLastCreditAt;
-    const isExpired =
+    const nowMs = Date.now();
+    const isSpinExpired =
       forceExpireDemo ||
-      (anchor ? Date.now() - new Date(anchor).getTime() >= expiryMs : false);
+      (spinBonusExpiresAt ? nowMs >= new Date(spinBonusExpiresAt).getTime() : false);
 
-    if (customerWalletBalance > 0 && isExpired) {
-      setCustomerWalletBalance(0);
-      localStorage.setItem('buyonebd_customer_wallet_v3', '0');
-      setCustomerProfile((cp) => ({ ...cp, walletBalance: 0 }));
+    if (spinBonusBalance > 0 && isSpinExpired) {
+      const expiredAmt = spinBonusBalance;
+      setSpinBonusBalance(0);
+      setSpinBonusExpiresAt(null);
+      localStorage.setItem('buyonebd_spin_bonus_bal_v1', '0');
+      localStorage.removeItem('buyonebd_spin_bonus_exp_v1');
+      setCustomerProfile((cp) => ({ ...cp, spinBonusBalance: 0, spinBonusExpiresAt: undefined }));
       expiredCount += 1;
       addToast(
         'warning',
-        t(`৩০ দিন অতিক্রান্ত — ব্যালেন্স ৳০ হয়েছে`, `Balance Reset to ৳0 (${expiryDaysSetting}-Day Expiry)`),
+        t(`৪৮ ঘণ্টার স্পিন বোনাস মেয়াদোত্তীর্ণ`, `48-Hour Spin Bonus Expired`),
         t(
-          `গত ${expiryDaysSetting} দিনে কোনো পণ্য না কেনায় গিফট/ওয়ালেট ব্যালেন্স শূন্য (৳০) হয়ে গেছে।`,
-          `No product was purchased in ${expiryDaysSetting} days, so wallet balance expired to ৳0.`
+          `৪৮ ঘণ্টা অতিক্রান্ত হওয়ায় স্পিন বোনাস ৳${expiredAmt} স্বয়ংক্রিয়ভাবে বাদ হয়েছে। আপনার মূল ওয়ালেট ব্যালেন্স (৳${customerWalletBalance}) আজীবন সুরক্ষিত রয়েছে।`,
+          `৳${expiredAmt} Spin Bonus expired after 48 hours. Your deposited wallet balance (৳${customerWalletBalance}) remains lifetime.`
         )
       );
     }
 
-    // Also sweep stored customerAccounts whose lastPurchaseAt/lastWalletCreditAt > expiryDays
     setCustomerAccounts((prev) =>
       prev.map((acc) => {
-        if (acc.walletBalance <= 0) return acc;
-        const accAnchor = acc.lastPurchaseAt || acc.lastWalletCreditAt;
-        if (forceExpireDemo || (accAnchor && Date.now() - new Date(accAnchor).getTime() >= expiryMs)) {
+        if ((acc.spinBonusBalance || 0) <= 0) return acc;
+        if (forceExpireDemo || (acc.spinBonusExpiresAt && nowMs >= new Date(acc.spinBonusExpiresAt).getTime())) {
           expiredCount += 1;
-          const updated = { ...acc, walletBalance: 0 };
+          const updated = { ...acc, spinBonusBalance: 0, spinBonusExpiresAt: undefined };
           saveCustomerToFirestore(updated).catch(() => {});
           return updated;
         }
@@ -2708,21 +3057,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return expiredCount;
   };
 
-  // Enforce 30-day no-purchase balance expiry automatically on load & when settings change
+  // Enforce 48-hour auto-expiry for Spin Bonus only (on mount + every 60s)
   useEffect(() => {
-    if (customerWalletBalance <= 0) return;
-    const anchor = walletLastPurchaseAt || walletLastCreditAt;
-    if (!anchor) {
-      const nowIso = new Date().toISOString();
-      setWalletLastCreditAt(nowIso);
-      localStorage.setItem('buyonebd_wallet_last_credit_v1', nowIso);
+    if (spinBonusBalance <= 0) return;
+    if (!spinBonusExpiresAt) {
+      const expIso = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+      setSpinBonusExpiresAt(expIso);
+      localStorage.setItem('buyonebd_spin_bonus_exp_v1', expIso);
       return;
     }
-    const expiryMs = expiryDaysSetting * 86400000;
-    if (Date.now() - new Date(anchor).getTime() >= expiryMs) {
+    if (Date.now() >= new Date(spinBonusExpiresAt).getTime()) {
       runWalletExpirySweep(false);
     }
-  }, [customerWalletBalance, walletLastPurchaseAt, walletLastCreditAt, expiryDaysSetting]);
+    const timer = setInterval(() => {
+      if (spinBonusExpiresAt && Date.now() >= new Date(spinBonusExpiresAt).getTime()) {
+        runWalletExpirySweep(false);
+      }
+    }, 60000);
+    return () => clearInterval(timer);
+  }, [spinBonusBalance, spinBonusExpiresAt]);
 
   const redeemLoyaltyPoints = (points: number) => {
     const cfg = settings.loyaltySettings;
@@ -2968,6 +3321,42 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return true;
   };
 
+  const createCustomerAccountByAdmin = (data: {
+    name: string;
+    phone: string;
+    email?: string;
+    address?: string;
+    district?: string;
+  }): CustomerProfile => {
+    const cleanPhone = data.phone.trim();
+    const digits = cleanPhone.replace(/[^0-9]/g, '').slice(-11);
+    const existing = customerAccountsRef.current.find(
+      (acc) => digits && acc.phone.replace(/[^0-9]/g, '').slice(-11) === digits
+    );
+    if (existing) {
+      addToast('info', t('কাস্টমার প্রোফাইল পাওয়া গেছে', 'Existing Customer Selected'), existing.name);
+      return existing;
+    }
+    const cleanUser = (digits || data.name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || `cust${Date.now()}`).slice(0, 20);
+    const created: CustomerProfile = {
+      name: data.name.trim() || 'POS Customer',
+      username: cleanUser,
+      phone: cleanPhone,
+      email: data.email?.trim() || `${cleanUser}@buyonebd.com`,
+      address: data.address?.trim() || 'Counter / Local Pickup',
+      district: data.district?.trim() || 'Dhaka - Inside City',
+      loyaltyPoints: 0,
+      walletBalance: 0,
+      browsingHistory: [],
+      savedCoupons: []
+    };
+    lastLocalMutationAtRef.current = Date.now();
+    setCustomerAccounts((prev) => [created, ...prev]);
+    saveCustomerToFirestore(created).catch(() => {});
+    addToast('success', t('নতুন কাস্টমার যোগ হয়েছে', 'Customer Added'), `${created.name} (${created.phone})`);
+    return created;
+  };
+
   const deleteCustomerAccountByAdmin = (identifier: string): boolean => {
     const cleanId = identifier.trim().toLowerCase();
     const cleanDigits = identifier.replace(/[^0-9]/g, '').slice(-11);
@@ -3030,14 +3419,63 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
-  const deductWallet = (amount: number): boolean => {
-    if (customerWalletBalance < amount) return false;
-    setCustomerWalletBalance((prev) => {
-      const next = Math.max(0, prev - amount);
-      localStorage.setItem('buyonebd_customer_wallet_v3', next.toString());
-      setCustomerProfile((cp) => ({ ...cp, walletBalance: next }));
+  const claimSpinBonus = (amount: number, reason?: string) => {
+    const cleanAmt = Math.max(0, Math.round(Number(amount) || 0));
+    if (cleanAmt <= 0) return;
+    const expIso = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+    setSpinBonusBalance((prev) => {
+      const next = prev + cleanAmt;
+      localStorage.setItem('buyonebd_spin_bonus_bal_v1', next.toString());
+      localStorage.setItem('buyonebd_spin_bonus_exp_v1', expIso);
+      setSpinBonusExpiresAt(expIso);
+      setCustomerProfile((cp) => ({
+        ...cp,
+        spinBonusBalance: next,
+        spinBonusExpiresAt: expIso
+      }));
+      addToast(
+        'success',
+        reason || t(`৳${cleanAmt} স্পিন বোনাস যোগ হয়েছে! (মেয়াদ: ৪৮ ঘণ্টা)`, `৳${cleanAmt} Spin Bonus Added! (Valid 48h)`),
+        t('৪৮ ঘণ্টার মধ্যে যেকোনো অর্ডারে ব্যবহার করুন। আপনার মূল ওয়ালেট ব্যালেন্স আজীবন মেয়াদী।', 'Use within 48 hours on checkout. Deposited balance never expires.')
+      );
       return next;
     });
+  };
+
+  const deductWallet = (amount: number): boolean => {
+    const activeSpin =
+      spinBonusBalance > 0 && (!spinBonusExpiresAt || Date.now() < new Date(spinBonusExpiresAt).getTime())
+        ? spinBonusBalance
+        : 0;
+    const totalAvailable = customerWalletBalance + activeSpin;
+    if (totalAvailable < amount) return false;
+
+    const fromSpin = Math.min(activeSpin, amount);
+    const fromLifetime = Math.max(0, amount - fromSpin);
+
+    if (fromSpin > 0) {
+      const nextSpin = Math.max(0, spinBonusBalance - fromSpin);
+      setSpinBonusBalance(nextSpin);
+      localStorage.setItem('buyonebd_spin_bonus_bal_v1', nextSpin.toString());
+      if (nextSpin === 0) {
+        setSpinBonusExpiresAt(null);
+        localStorage.removeItem('buyonebd_spin_bonus_exp_v1');
+      }
+      setCustomerProfile((cp) => ({
+        ...cp,
+        spinBonusBalance: nextSpin,
+        spinBonusExpiresAt: nextSpin > 0 ? cp.spinBonusExpiresAt : undefined
+      }));
+    }
+
+    if (fromLifetime > 0) {
+      setCustomerWalletBalance((prev) => {
+        const next = Math.max(0, prev - fromLifetime);
+        localStorage.setItem('buyonebd_customer_wallet_v3', next.toString());
+        setCustomerProfile((cp) => ({ ...cp, walletBalance: next }));
+        return next;
+      });
+    }
     return true;
   };
 
@@ -3855,7 +4293,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [storeSubView, setStoreSubView] = useState<'home' | 'products' | 'about'>('home');
+  const [storeSubView, setStoreSubView] = useState<'home' | 'products' | 'about' | 'blogs' | 'blog_post'>('home');
+  const [selectedBlogSlug, setSelectedBlogSlug] = useState<string | null>(null);
 
   const [isCartOpen, setIsCartOpenState] = useState(false);
   const [checkoutProduct, setCheckoutProduct] = useState<Product | null>(null);
@@ -4189,6 +4628,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ) {
         const target = selectedProductForPage
           ? `/product/${selectedProductForPage.seo?.slug || selectedProductForPage.id}`
+          : storeSubView === 'blog_post' && selectedBlogSlug
+          ? `/blog/${selectedBlogSlug}`
+          : storeSubView === 'blogs'
+          ? '/blogs'
           : storeSubView === 'products'
           ? '/products'
           : storeSubView === 'about'
@@ -4207,6 +4650,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } else if (window.location.pathname === '/cart') {
       const target = selectedProductForPage
         ? `/product/${selectedProductForPage.seo?.slug || selectedProductForPage.id}`
+        : storeSubView === 'blog_post' && selectedBlogSlug
+        ? `/blog/${selectedBlogSlug}`
+        : storeSubView === 'blogs'
+        ? '/blogs'
         : storeSubView === 'products'
         ? '/products'
         : storeSubView === 'about'
@@ -4219,6 +4666,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const goHome = () => {
     setActiveViewState('store');
     setStoreSubView('home');
+    setSelectedBlogSlug(null);
     setSelectedProductForPage(null);
     setSelectedCategory('all');
     setSelectedSubcategory(null);
@@ -4234,6 +4682,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const openAllProductsPage = () => {
     setActiveViewState('store');
     setStoreSubView('products');
+    setSelectedBlogSlug(null);
     setSelectedProductForPage(null);
     setSelectedCategory('all');
     setSelectedSubcategory(null);
@@ -4245,11 +4694,47 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const openAboutPage = () => {
     setActiveViewState('store');
     setStoreSubView('about');
+    setSelectedBlogSlug(null);
     setSelectedProductForPage(null);
     setIsCartOpenState(false);
     setIsOneClickOpen(false);
     navigateToPath('/about');
     recordPageVisit('/about', t('আমাদের সম্পর্কে ও সেবা সমূহ', 'About BuyOne BD'));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openBlogsPage = () => {
+    setActiveViewState('store');
+    setStoreSubView('blogs');
+    setSelectedBlogSlug(null);
+    setSelectedProductForPage(null);
+    setIsCartOpenState(false);
+    setIsOneClickOpen(false);
+    navigateToPath('/blogs');
+    recordPageVisit('/blogs', t('ব্লগ ও শপিং গাইড', 'BuyOne BD Blogs'));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openBlogPostPage = (slugOrId: string) => {
+    const matched = blogsRef.current.find(
+      (b) => b.slug === slugOrId || b.id === slugOrId
+    );
+    const targetSlug = matched?.slug || slugOrId;
+    if (matched) {
+      setBlogs((prev) =>
+        prev.map((b) =>
+          b.id === matched.id ? { ...b, viewsCount: (b.viewsCount || 0) + 1 } : b
+        )
+      );
+    }
+    setActiveViewState('store');
+    setStoreSubView('blog_post');
+    setSelectedBlogSlug(targetSlug);
+    setSelectedProductForPage(null);
+    setIsCartOpenState(false);
+    setIsOneClickOpen(false);
+    navigateToPath(`/blog/${targetSlug}`);
+    recordPageVisit(`/blog/${targetSlug}`, matched ? (lang === 'bn' ? matched.titleBn : matched.title) : 'Blog Article');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -4306,6 +4791,31 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const lowerHash = window.location.hash.toLowerCase();
       const searchParams = new URLSearchParams(window.location.search);
       const queryProductSlug = searchParams.get('product');
+      const refCode = searchParams.get('ref') || searchParams.get('aff');
+
+      if (refCode && refCode.trim()) {
+        const cleanRef = refCode.trim();
+        try {
+          localStorage.setItem('buyonebd_ref_affiliate', JSON.stringify({ code: cleanRef, capturedAt: Date.now() }));
+        } catch {}
+        setAttributedAffiliateCode(cleanRef);
+        const clickSessionKey = `buyonebd_aff_clicked_${cleanRef.toUpperCase()}`;
+        let alreadyClicked = false;
+        try {
+          alreadyClicked = sessionStorage.getItem(clickSessionKey) === '1';
+          if (!alreadyClicked) sessionStorage.setItem(clickSessionKey, '1');
+        } catch {}
+        if (!alreadyClicked) {
+          setAffiliates((prev) =>
+            prev.map((a) => {
+              if (a.affiliateCode.toLowerCase() !== cleanRef.toLowerCase()) return a;
+              const updated = { ...a, clicksCount: (a.clicksCount || 0) + 1 };
+              saveAffiliateToFirestore(updated).catch(() => {});
+              return updated;
+            })
+          );
+        }
+      }
 
       if (lowerPath === '/hossain' || lowerPath.startsWith('/hossain/') || lowerHash === '#hossain') {
         if (window.location.pathname !== '/hossain' || window.location.hash !== '') {
@@ -4338,6 +4848,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (lowerPath === '/products') {
         setActiveViewState('store');
         setStoreSubView('products');
+        setSelectedBlogSlug(null);
         setSelectedProductForPage(null);
         setSelectedCategory('all');
         setSelectedSubcategory(null);
@@ -4346,6 +4857,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (lowerPath === '/about') {
         setActiveViewState('store');
         setStoreSubView('about');
+        setSelectedBlogSlug(null);
+        setSelectedProductForPage(null);
+        return;
+      }
+      if (lowerPath === '/blogs' || lowerPath === '/blog') {
+        setActiveViewState('store');
+        setStoreSubView('blogs');
+        setSelectedBlogSlug(null);
+        setSelectedProductForPage(null);
+        return;
+      }
+      if (lowerPath.startsWith('/blog/')) {
+        const blogSlugOrId = decodeURIComponent(rawPath.replace(/^\/blog\//i, '').trim());
+        setActiveViewState('store');
+        setStoreSubView('blog_post');
+        setSelectedBlogSlug(blogSlugOrId || null);
         setSelectedProductForPage(null);
         return;
       }
@@ -4371,10 +4898,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setIsPartnerPortalOpen(true);
         return;
       }
+      if (lowerPath === '/affiliate' || lowerPath === '/affiliate-dashboard') {
+        setActiveViewState('store');
+        setPartnerPortalTab('affiliate');
+        setIsPartnerPortalOpen(true);
+        return;
+      }
       if (lowerPath.startsWith('/category/')) {
         const parts = rawPath.replace(/^\/category\//i, '').split('/').filter(Boolean);
         setActiveViewState('store');
         setStoreSubView('home');
+        setSelectedBlogSlug(null);
         setSelectedProductForPage(null);
         setSelectedCategory(parts[0] || 'all');
         setSelectedSubcategory(parts[1] || null);
@@ -4383,6 +4917,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Root /
       setActiveViewState('store');
       setStoreSubView('home');
+      setSelectedBlogSlug(null);
       setSelectedProductForPage(null);
       setIsCartOpenState(false);
       setIsOneClickOpen(false);
@@ -4613,6 +5148,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (Array.isArray(data.priceAlerts)) setPriceAlerts(data.priceAlerts);
             if (Array.isArray(data.users) && data.users.length > 0) setUsers(data.users);
             if (Array.isArray(data.mediaLibrary) && data.mediaLibrary.length > 0) setMediaLibrary(data.mediaLibrary);
+            if (Array.isArray(data.blogs) && data.blogs.length > 0) setBlogs(data.blogs);
+            if (Array.isArray(data.resellerTopUps)) setResellerTopUps(data.resellerTopUps);
+            if (Array.isArray(data.affiliates)) setAffiliates(data.affiliates);
+            if (Array.isArray(data.affiliateConversions)) setAffiliateConversions(data.affiliateConversions);
+            if (Array.isArray(data.affiliatePayouts)) setAffiliatePayouts(data.affiliatePayouts);
+          } else {
+            if (Array.isArray(data.blogs) && data.blogs.length > 0 && !isRecentlyMutatedLocally) setBlogs(data.blogs);
+            if (Array.isArray(data.resellerTopUps) && !isRecentlyMutatedLocally) setResellerTopUps(data.resellerTopUps);
+            if (Array.isArray(data.affiliates) && data.affiliates.length > 0 && !isRecentlyMutatedLocally) setAffiliates(data.affiliates);
+            if (Array.isArray(data.affiliateConversions) && !isRecentlyMutatedLocally) setAffiliateConversions(data.affiliateConversions);
+            if (Array.isArray(data.affiliatePayouts) && !isRecentlyMutatedLocally) setAffiliatePayouts(data.affiliatePayouts);
           }
         } else if (!hasHydratedFromServerRef.current) {
           fetch('/api/store/sync', {
@@ -4633,8 +5179,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               waitlist: waitlistEntriesRef.current,
               resellers: resellersRef.current,
               resellerPayouts: resellerPayoutsRef.current,
+              resellerTopUps: resellerTopUpsRef.current,
               wholesalers: wholesalersRef.current,
               wholesaleQuotes: wholesaleQuotesRef.current,
+              blogs: blogsRef.current,
+              affiliates: affiliatesRef.current,
+              affiliateConversions: affiliateConversionsRef.current,
+              affiliatePayouts: affiliatePayoutsRef.current,
               bulkSmsLogs: bulkSmsLogsRef.current,
               users,
               mediaLibrary
@@ -4691,6 +5242,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setProducts((prev) => {
           const map = new Map(prev.map((p) => [p.id, p]));
           fsProducts.forEach((p) => map.set(p.id, p));
+          return Array.from(map.values());
+        });
+      }
+      const fsBlogs = await fetchBlogPostsFromFirestore(true).catch(() => []);
+      if (fsBlogs.length > 0 && Date.now() - lastLocalMutationAtRef.current >= 3000) {
+        setBlogs((prev) => {
+          const map = new Map(prev.map((b) => [b.id, b]));
+          fsBlogs.forEach((b) => map.set(b.id, b));
           return Array.from(map.values());
         });
       }
@@ -5163,8 +5722,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           waitlist: waitlistEntries,
           resellers,
           resellerPayouts,
+          resellerTopUps,
           wholesalers,
           wholesaleQuotes,
+          blogs,
+          affiliates,
+          affiliateConversions,
+          affiliatePayouts,
           bulkSmsLogs,
           users,
           mediaLibrary
@@ -5186,8 +5750,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     waitlistEntries,
     resellers,
     resellerPayouts,
+    resellerTopUps,
     wholesalers,
     wholesaleQuotes,
+    blogs,
+    affiliates,
+    affiliateConversions,
+    affiliatePayouts,
     bulkSmsLogs,
     users
   ]);
@@ -7255,6 +7824,47 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updatedAt: nowIso
     };
 
+    // Affiliate referral attribution & commission crediting
+    if (orderData.source !== 'pos' && settingsRef.current.affiliateSettings?.enabled !== false && attributedAffiliateCode) {
+      const matchedAff = affiliatesRef.current.find(
+        (a) =>
+          a.status === 'approved' &&
+          a.affiliateCode.toLowerCase() === attributedAffiliateCode.toLowerCase()
+      );
+      if (matchedAff) {
+        const commPct = matchedAff.commissionPercent || settingsRef.current.affiliateSettings?.defaultCommissionPercent || 8;
+        const commAmt = Math.max(0, Math.round((total * commPct) / 100));
+        newOrder.affiliateId = matchedAff.id;
+        newOrder.affiliateCode = matchedAff.affiliateCode;
+        newOrder.affiliateCommission = commAmt;
+
+        const conv: AffiliateConversion = {
+          id: `affc-${Date.now()}-${Math.floor(10 + Math.random() * 89)}`,
+          affiliateId: matchedAff.id,
+          affiliateCode: matchedAff.affiliateCode,
+          orderId: newOrder.id,
+          customerName: newOrder.customer.name,
+          orderTotal: total,
+          commissionPercent: commPct,
+          commissionAmount: commAmt,
+          status: 'credited',
+          createdAt: nowIso
+        };
+        const updatedAff: AffiliateAccount = {
+          ...matchedAff,
+          totalOrders: (matchedAff.totalOrders || 0) + 1,
+          walletBalance: (matchedAff.walletBalance || 0) + commAmt,
+          totalEarnings: (matchedAff.totalEarnings || 0) + commAmt,
+          updatedAt: nowIso
+        };
+        setAffiliateConversions((prev) => [conv, ...prev].slice(0, 200));
+        setAffiliates((prev) => prev.map((a) => (a.id === matchedAff.id ? updatedAff : a)));
+        if (activeAffiliate?.id === matchedAff.id) setActiveAffiliate(updatedAff);
+        saveAffiliateConversionToFirestore(conv).catch(() => {});
+        saveAffiliateToFirestore(updatedAff).catch(() => {});
+      }
+    }
+
     if (isApprovedReseller && activeReseller) {
       const updatedReseller: ResellerAccount = {
         ...activeReseller,
@@ -7265,6 +7875,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setActiveReseller(updatedReseller);
       setResellers((prev) => prev.map((r) => (r.id === activeReseller.id ? updatedReseller : r)));
       saveResellerToFirestore(updatedReseller).catch(() => {});
+    }
+
+    // Mark matching unchecked-out leads for this customer phone as recovered
+    const leadPhoneDigits = String(orderData.customer.phone || '').replace(/[^0-9]/g, '').slice(-11);
+    if (leadPhoneDigits.length >= 10) {
+      setAbandonedCarts((prev) =>
+        prev.map((c) => {
+          if (!c.recovered && String(c.customerPhone || '').replace(/[^0-9]/g, '').slice(-11) === leadPhoneDigits) {
+            const recoveredLead = { ...c, recovered: true, recoveredAt: nowIso };
+            saveAbandonedCartToFirestore(recoveredLead).catch(() => {});
+            return recoveredLead;
+          }
+          return c;
+        })
+      );
     }
 
     lastLocalMutationAtRef.current = Date.now();
@@ -8261,16 +8886,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   };
 
-  // Reseller Registration, Login & Payout Management
-  const openPartnerPortal = (tab: 'reseller' | 'wholesale' = 'reseller') => {
+  // Reseller, Wholesale & Affiliate Partner Portal Routing
+  const openPartnerPortal = (tab: 'reseller' | 'wholesale' | 'affiliate' = 'reseller') => {
     setPartnerPortalTab(tab);
     setIsPartnerPortalOpen(true);
-    navigateToPath(tab === 'wholesale' ? '/wholesale' : '/reseller');
+    navigateToPath(tab === 'wholesale' ? '/wholesale' : tab === 'affiliate' ? '/affiliate' : '/reseller');
   };
   const closePartnerPortal = () => {
     setIsPartnerPortalOpen(false);
     const p = window.location.pathname.toLowerCase();
-    if (p === '/reseller' || p === '/reseller-dashboard' || p === '/wholesale' || p === '/partner') {
+    if (p === '/reseller' || p === '/reseller-dashboard' || p === '/wholesale' || p === '/affiliate' || p === '/affiliate-dashboard' || p === '/partner') {
       navigateToPath('/', true);
     }
   };
@@ -8831,6 +9456,446 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify({ type: 'wholesaleQuote', ids })
     }).catch(() => {});
     addToast('info', t(`${ids.length}টি কোটেশন মোছা হয়েছে`, `${ids.length} Quotes Deleted`), '');
+  };
+
+  // Reseller Balance Top-Up Requests
+  const submitResellerTopUp = (payload: {
+    method: ResellerTopUpRequest['method'];
+    amount: number;
+    senderNumber: string;
+    trxId: string;
+  }): boolean => {
+    if (!activeReseller) return false;
+    const cleanAmt = Math.round(Number(payload.amount) || 0);
+    if (cleanAmt < 100 || !payload.trxId.trim()) {
+      addToast('warning', t('সঠিক তথ্য দিন', 'Invalid Request'), t('সর্বনিম্ন ৳১০০ এবং TrxID দিন।', 'Enter minimum ৳100 and a valid TrxID.'));
+      return false;
+    }
+    const newReq: ResellerTopUpRequest = {
+      id: `rtop-${Date.now()}`,
+      resellerId: activeReseller.id,
+      resellerName: activeReseller.name,
+      resellerPhone: activeReseller.phone,
+      method: payload.method,
+      amount: cleanAmt,
+      senderNumber: payload.senderNumber.trim(),
+      trxId: payload.trxId.trim(),
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+    lastLocalMutationAtRef.current = Date.now();
+    setResellerTopUps((prev) => [newReq, ...prev]);
+    saveResellerTopUpToFirestore(newReq).catch(() => {});
+    addToast('success', t('টপ-আপ রিকোয়েস্ট জমা হয়েছে!', 'Balance Top-Up Submitted!'), `৳${cleanAmt} • TrxID: ${newReq.trxId}`);
+    return true;
+  };
+
+  const processResellerTopUp = (id: string, status: 'approved' | 'rejected', note?: string) => {
+    const req = resellerTopUpsRef.current.find((r) => r.id === id);
+    if (!req || req.status !== 'pending') return;
+    const nowIso = new Date().toISOString();
+    lastLocalMutationAtRef.current = Date.now();
+    const updatedReq: ResellerTopUpRequest = { ...req, status, note, processedAt: nowIso };
+    setResellerTopUps((prev) => prev.map((r) => (r.id === id ? updatedReq : r)));
+    saveResellerTopUpToFirestore(updatedReq).catch(() => {});
+
+    if (status === 'approved') {
+      setResellers((prev) =>
+        prev.map((r) => {
+          if (r.id !== req.resellerId) return r;
+          const nextRes: ResellerAccount = {
+            ...r,
+            walletBalance: (r.walletBalance || 0) + req.amount
+          };
+          saveResellerToFirestore(nextRes).catch(() => {});
+          if (activeReseller?.id === r.id) setActiveReseller(nextRes);
+          return nextRes;
+        })
+      );
+      addToast('success', t('রিসেলার ব্যালেন্স যোগ সম্পন্ন!', 'Reseller Top-Up Approved!'), `+৳${req.amount} -> ${req.resellerName}`);
+    } else {
+      addToast('info', t('টপ-আপ রিকোয়েস্ট বাতিল হয়েছে', 'Top-Up Rejected'), req.resellerName);
+    }
+  };
+
+  const deleteResellerTopUp = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setResellerTopUps((prev) => prev.filter((r) => r.id !== id));
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'resellerTopUp', ids: [id] })
+    }).catch(() => {});
+    addToast('info', t('টপ-আপ রিকোয়েস্ট মোছা হয়েছে', 'Top-Up Deleted'), '');
+  };
+
+  // Wholesale B2B Debt Settlement & Quote-to-Order Conversion
+  const submitWholesaleDebtPayment = (buyerId: string, amount: number, note?: string): boolean => {
+    const cleanAmt = Math.max(0, Math.round(Number(amount) || 0));
+    const buyer = wholesalersRef.current.find((w) => w.id === buyerId);
+    if (!buyer || cleanAmt <= 0) return false;
+    lastLocalMutationAtRef.current = Date.now();
+    const nextUsed = Math.max(0, (buyer.creditUsedBdt || 0) - cleanAmt);
+    const updated: WholesaleAccount = { ...buyer, creditUsedBdt: nextUsed, updatedAt: new Date().toISOString() };
+    setWholesalers((prev) => prev.map((w) => (w.id === buyerId ? updated : w)));
+    if (activeWholesaler?.id === buyerId) setActiveWholesaler(updated);
+    saveWholesalerToFirestore(updated).catch(() => {});
+    addToast(
+      'success',
+      t(`৳${cleanAmt} B2B ক্রেডিট পরিশোধ সম্পন্ন`, `৳${cleanAmt} B2B Credit Repayment Recorded`),
+      note || buyer.companyName
+    );
+    return true;
+  };
+
+  const convertWholesaleQuoteToOrder = (quoteId: string): Order | null => {
+    const quote = wholesaleQuotesRef.current.find((q) => q.id === quoteId);
+    if (!quote) return null;
+    const buyer = wholesalersRef.current.find((w) => w.id === quote.wholesalerId);
+    const matchedProd =
+      (quote.productId && productsRef.current.find((p) => p.id === quote.productId)) ||
+      productsRef.current[0];
+    if (!matchedProd) return null;
+
+    const unitPrice = Math.max(
+      1,
+      Number(quote.adminQuotedPrice || quote.targetUnitPrice || matchedProd.wholesalePrice || matchedProd.price)
+    );
+    const virtualProd: Product = { ...matchedProd, price: unitPrice };
+    const created = createOrder({
+      customer: {
+        name: buyer?.contactName || quote.companyName,
+        phone: buyer?.phone || quote.phone,
+        address: buyer?.address || quote.companyName,
+        district: buyer?.district || 'Dhaka - Inside City',
+        thana: 'B2B Wholesale',
+        note: `Converted from RFQ #${quote.id}${quote.notes ? ` — ${quote.notes}` : ''}`
+      },
+      items: [{ product: virtualProd, quantity: Math.max(1, quote.requestedQty) }],
+      paymentMethod: 'cod',
+      deliveryZone: buyer?.district?.includes('Inside') ? 'dhaka_inside' : 'dhaka_outside',
+      partnerType: 'wholesale',
+      skipAICall: true
+    });
+    updateWholesaleQuote(quoteId, { status: 'accepted', adminQuotedPrice: unitPrice });
+    addToast('success', t('RFQ থেকে হোলসেল অর্ডার তৈরি!', 'Quote Converted to B2B Order!'), `#${created.id}`);
+    return created;
+  };
+
+  // Blogs CMS CRUD
+  const addBlogPost = (post: Omit<BlogPost, 'id' | 'createdAt' | 'updatedAt'>): BlogPost => {
+    const nowIso = new Date().toISOString();
+    const safeSlug =
+      (post.slug || post.title || 'article')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') || `post-${Date.now()}`;
+    const newPost: BlogPost = {
+      ...post,
+      id: `blog-${Date.now()}`,
+      slug: safeSlug,
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+    lastLocalMutationAtRef.current = Date.now();
+    setBlogs((prev) => [newPost, ...prev]);
+    saveBlogPostToFirestore(newPost).catch(() => {});
+    addToast('success', t('নতুন ব্লগ প্রকাশিত হয়েছে!', 'Blog Post Saved!'), lang === 'bn' ? newPost.titleBn : newPost.title);
+    return newPost;
+  };
+
+  const updateBlogPost = (id: string, updates: Partial<BlogPost>) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setBlogs((prev) =>
+      prev.map((b) => {
+        if (b.id !== id) return b;
+        const next: BlogPost = { ...b, ...updates, updatedAt: new Date().toISOString() };
+        saveBlogPostToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
+    addToast('success', t('ব্লগ আপডেট সম্পন্ন', 'Blog Post Updated'), '');
+  };
+
+  const deleteBlogPost = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setBlogs((prev) => prev.filter((b) => b.id !== id));
+    deleteBlogPostFromFirestore(id).catch(() => {});
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'blog', ids: [id] })
+    }).catch(() => {});
+    addToast('info', t('ব্লগ পোস্ট মুছে ফেলা হয়েছে', 'Blog Post Deleted'), '');
+  };
+
+  const bulkUpdateBlogPosts = (ids: string[], updates: Partial<BlogPost>) => {
+    if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const idSet = new Set(ids);
+    const nowIso = new Date().toISOString();
+    setBlogs((prev) =>
+      prev.map((b) => {
+        if (!idSet.has(b.id)) return b;
+        const next: BlogPost = { ...b, ...updates, updatedAt: nowIso };
+        saveBlogPostToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
+    addToast('success', t(`${ids.length}টি ব্লগ আপডেট হয়েছে`, `${ids.length} Blog Posts Updated`), '');
+  };
+
+  const bulkDeleteBlogPosts = (ids: string[]) => {
+    if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const idSet = new Set(ids);
+    setBlogs((prev) => prev.filter((b) => !idSet.has(b.id)));
+    ids.forEach((id) => deleteBlogPostFromFirestore(id).catch(() => {}));
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'blog', ids })
+    }).catch(() => {});
+    addToast('info', t(`${ids.length}টি ব্লগ মোছা হয়েছে`, `${ids.length} Blog Posts Deleted`), '');
+  };
+
+  // Affiliate Partner System CRUD, Login, Attribution & Payouts
+  const registerAffiliate = async (
+    data: Omit<
+      AffiliateAccount,
+      'id' | 'affiliateCode' | 'commissionPercent' | 'clicksCount' | 'totalOrders' | 'walletBalance' | 'totalEarnings' | 'status' | 'createdAt'
+    >
+  ): Promise<{ success: boolean; error?: string; affiliate?: AffiliateAccount }> => {
+    const cleanPhone = String(data.phone || '').replace(/[^0-9]/g, '').slice(-11);
+    if (cleanPhone.length < 10) {
+      return { success: false, error: t('সঠিক মোবাইল নম্বর দিন।', 'Please provide a valid phone number.') };
+    }
+    const existingLocal = affiliatesRef.current.find(
+      (a) => String(a.phone || '').replace(/[^0-9]/g, '').slice(-11) === cleanPhone
+    );
+    if (existingLocal) {
+      return { success: false, error: t('এই নম্বরে অ্যাফিলিয়েট অ্যাকাউন্ট রয়েছে।', 'An affiliate account already exists for this phone.') };
+    }
+
+    const affCfg = settingsRef.current.affiliateSettings || INITIAL_SETTINGS.affiliateSettings!;
+    const status: AffiliateAccount['status'] = affCfg.autoApprove ? 'approved' : 'pending';
+    const baseName = String(data.name || 'PARTNER')
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, 4)
+      .toUpperCase() || 'AFF';
+    const newAffiliate: AffiliateAccount = {
+      ...data,
+      id: `aff-${Date.now()}`,
+      affiliateCode: `${baseName}-${cleanPhone.slice(-4)}`,
+      commissionPercent: affCfg.defaultCommissionPercent || 8,
+      clicksCount: 0,
+      totalOrders: 0,
+      walletBalance: 0,
+      totalEarnings: 0,
+      status,
+      createdAt: new Date().toISOString()
+    };
+
+    lastLocalMutationAtRef.current = Date.now();
+    setAffiliates((prev) => [newAffiliate, ...prev]);
+    setActiveAffiliate(newAffiliate);
+    saveAffiliateToFirestore(newAffiliate).catch(() => {});
+    addToast(
+      'success',
+      t('অ্যাফিলিয়েট অ্যাকাউন্ট তৈরি হয়েছে!', 'Affiliate Account Registered!'),
+      newAffiliate.status === 'approved'
+        ? t(`আপনার রেফারেল কোড: ${newAffiliate.affiliateCode}`, `Referral Code: ${newAffiliate.affiliateCode}`)
+        : t('অ্যাডমিন অনুমোদনের পর রেফারেল কমিশন চালু হবে।', 'Pending admin approval.')
+    );
+    return { success: true, affiliate: newAffiliate };
+  };
+
+  const loginAffiliate = async (
+    identifier: string,
+    password?: string
+  ): Promise<{ success: boolean; error?: string; affiliate?: AffiliateAccount }> => {
+    const cleanId = identifier.trim().toLowerCase();
+    const digits = cleanId.replace(/[^0-9]/g, '').slice(-11);
+    const localMatch = affiliatesRef.current.find(
+      (a) =>
+        (digits && String(a.phone || '').replace(/[^0-9]/g, '').slice(-11) === digits) ||
+        (a.email && a.email.toLowerCase() === cleanId) ||
+        a.affiliateCode.toLowerCase() === cleanId
+    );
+    if (localMatch && (!localMatch.password || !password || localMatch.password === password)) {
+      setActiveAffiliate(localMatch);
+      addToast('success', t(`স্বাগতম ${localMatch.name}!`, `Welcome ${localMatch.name}!`), localMatch.affiliateCode);
+      return { success: true, affiliate: localMatch };
+    }
+    return { success: false, error: t('সঠিক ফোন/কোড ও পাসওয়ার্ড দিন।', 'Invalid affiliate credentials.') };
+  };
+
+  const logoutAffiliate = () => {
+    setActiveAffiliate(null);
+    addToast('info', t('অ্যাফিলিয়েট সাইন আউট সম্পন্ন', 'Affiliate Signed Out'), '');
+  };
+
+  const updateAffiliateAccount = (id: string, updates: Partial<AffiliateAccount>) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setAffiliates((prev) =>
+      prev.map((a) => {
+        if (a.id !== id) return a;
+        const next: AffiliateAccount = { ...a, ...updates, updatedAt: new Date().toISOString() };
+        saveAffiliateToFirestore(next).catch(() => {});
+        if (activeAffiliate?.id === id) setActiveAffiliate(next);
+        return next;
+      })
+    );
+    addToast('success', t('অ্যাফিলিয়েট তথ্য আপডেট হয়েছে', 'Affiliate Updated'), '');
+  };
+
+  const deleteAffiliateAccount = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setAffiliates((prev) => prev.filter((a) => a.id !== id));
+    if (activeAffiliate?.id === id) setActiveAffiliate(null);
+    deleteAffiliateFromFirestore(id).catch(() => {});
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'affiliate', ids: [id] })
+    }).catch(() => {});
+    addToast('info', t('অ্যাফিলিয়েট অ্যাকাউন্ট মোছা হয়েছে', 'Affiliate Deleted'), '');
+  };
+
+  const bulkUpdateAffiliates = (ids: string[], updates: Partial<AffiliateAccount>) => {
+    if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const idSet = new Set(ids);
+    const nowIso = new Date().toISOString();
+    setAffiliates((prev) =>
+      prev.map((a) => {
+        if (!idSet.has(a.id)) return a;
+        const next: AffiliateAccount = { ...a, ...updates, updatedAt: nowIso };
+        saveAffiliateToFirestore(next).catch(() => {});
+        if (activeAffiliate?.id === a.id) setActiveAffiliate(next);
+        return next;
+      })
+    );
+    addToast('success', t(`${ids.length} জন অ্যাফিলিয়েট আপডেট হয়েছে`, `${ids.length} Affiliates Updated`), '');
+  };
+
+  const bulkDeleteAffiliates = (ids: string[]) => {
+    if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const idSet = new Set(ids);
+    setAffiliates((prev) => prev.filter((a) => !idSet.has(a.id)));
+    if (activeAffiliate && idSet.has(activeAffiliate.id)) setActiveAffiliate(null);
+    ids.forEach((id) => deleteAffiliateFromFirestore(id).catch(() => {}));
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'affiliate', ids })
+    }).catch(() => {});
+    addToast('info', t(`${ids.length} জন অ্যাফিলিয়েট মোছা হয়েছে`, `${ids.length} Affiliates Deleted`), '');
+  };
+
+  const adjustAffiliateWallet = (id: string, delta: number, note?: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setAffiliates((prev) =>
+      prev.map((a) => {
+        if (a.id !== id) return a;
+        const nextWallet = Math.max(0, Math.round((a.walletBalance || 0) + delta));
+        const nextEarnings = delta > 0 ? Math.round((a.totalEarnings || 0) + delta) : a.totalEarnings || 0;
+        const next: AffiliateAccount = { ...a, walletBalance: nextWallet, totalEarnings: nextEarnings };
+        saveAffiliateToFirestore(next).catch(() => {});
+        if (activeAffiliate?.id === id) setActiveAffiliate(next);
+        return next;
+      })
+    );
+    addToast('success', t(`অ্যাফিলিয়েট ওয়ালেট আপডেট (${delta >= 0 ? '+' : ''}৳${delta})`, `Affiliate Wallet Updated (${delta >= 0 ? '+' : ''}৳${delta})`), note || '');
+  };
+
+  const requestAffiliatePayout = (payload: {
+    method: AffiliatePayoutRequest['method'];
+    accountNumber: string;
+    amount: number;
+  }): boolean => {
+    if (!activeAffiliate || activeAffiliate.status !== 'approved') return false;
+    const minPayout = settingsRef.current.affiliateSettings?.minPayoutBdt || 300;
+    if (payload.amount < minPayout || payload.amount > (activeAffiliate.walletBalance || 0)) {
+      addToast('warning', t('অবৈধ পরিমাণ', 'Invalid Amount'), t(`সর্বনিম্ন ৳${minPayout} থেকে ৳${activeAffiliate.walletBalance} পর্যন্ত তোলা যাবে।`, `Withdraw between ৳${minPayout} and ৳${activeAffiliate.walletBalance}.`));
+      return false;
+    }
+    const req: AffiliatePayoutRequest = {
+      id: `affp-${Date.now()}`,
+      affiliateId: activeAffiliate.id,
+      affiliateName: activeAffiliate.name,
+      affiliatePhone: activeAffiliate.phone,
+      method: payload.method,
+      accountNumber: payload.accountNumber.trim(),
+      amount: Math.round(payload.amount),
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+    const updatedAff: AffiliateAccount = {
+      ...activeAffiliate,
+      walletBalance: Math.max(0, (activeAffiliate.walletBalance || 0) - req.amount)
+    };
+    lastLocalMutationAtRef.current = Date.now();
+    setActiveAffiliate(updatedAff);
+    setAffiliates((prev) => prev.map((a) => (a.id === updatedAff.id ? updatedAff : a)));
+    setAffiliatePayouts((prev) => [req, ...prev]);
+    saveAffiliateToFirestore(updatedAff).catch(() => {});
+    saveAffiliatePayoutToFirestore(req).catch(() => {});
+    addToast('success', t('অ্যাফিলিয়েট পে-আউট রিকোয়েস্ট জমা!', 'Affiliate Payout Requested!'), `৳${req.amount}`);
+    return true;
+  };
+
+  const processAffiliatePayout = (id: string, status: 'paid' | 'rejected', trxId?: string, note?: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setAffiliatePayouts((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const next: AffiliatePayoutRequest = {
+          ...p,
+          status,
+          ...(trxId ? { trxId } : {}),
+          ...(note ? { note } : {}),
+          processedAt: new Date().toISOString()
+        };
+        if (status === 'rejected' && p.status === 'pending') {
+          setAffiliates((aPrev) =>
+            aPrev.map((a) => {
+              if (a.id !== p.affiliateId) return a;
+              const refunded = { ...a, walletBalance: (a.walletBalance || 0) + p.amount };
+              saveAffiliateToFirestore(refunded).catch(() => {});
+              if (activeAffiliate?.id === a.id) setActiveAffiliate(refunded);
+              return refunded;
+            })
+          );
+        }
+        saveAffiliatePayoutToFirestore(next).catch(() => {});
+        return next;
+      })
+    );
+    addToast('success', status === 'paid' ? t('অ্যাফিলিয়েট পেমেন্ট সম্পন্ন', 'Affiliate Payout Paid') : t('পে-আউট বাতিল', 'Payout Rejected'), '');
+  };
+
+  const deleteAffiliatePayout = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setAffiliatePayouts((prev) => prev.filter((p) => p.id !== id));
+    fetch('/api/store/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'affiliatePayout', ids: [id] })
+    }).catch(() => {});
+    addToast('info', t('অ্যাফিলিয়েট পে-আউট মোছা হয়েছে', 'Affiliate Payout Deleted'), '');
+  };
+
+  const buildAffiliateReferralUrl = (product?: Product | null): string => {
+    const baseUrl =
+      typeof window !== 'undefined' ? window.location.origin : 'https://buyonebd.com';
+    const code = activeAffiliate?.affiliateCode || 'AFF-PARTNER';
+    if (product) {
+      const slug = product.seo?.slug || product.id;
+      return `${baseUrl}/product/${slug}?ref=${encodeURIComponent(code)}`;
+    }
+    return `${baseUrl}/?ref=${encodeURIComponent(code)}`;
   };
 
   // Bangladesh Bulk SMS Campaign Dispatcher
@@ -9764,12 +10829,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setSearchQuery,
         storeSubView,
         setStoreSubView,
+        selectedBlogSlug,
         goHome,
         openAllProductsPage,
         openAboutPage,
+        openBlogsPage,
+        openBlogPostPage,
         selectCategoryFilter,
         openProductPage,
         navigateToPath,
+        getProductViewCount,
         products,
         addProduct,
         updateProduct,
@@ -9790,9 +10859,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         adjustSpecificCustomerBalance,
         resetCustomerWalletExpiry,
         updateCustomerAccountByAdmin,
+        createCustomerAccountByAdmin,
         deleteCustomerAccountByAdmin,
         customerWalletBalance,
+        spinBonusBalance,
+        spinBonusExpiresAt,
         addToWallet,
+        claimSpinBonus,
         deductWallet,
         walletLastPurchaseAt,
         walletLastCreditAt,
@@ -9901,6 +10974,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         appendBrowserCallMessage,
         endBrowserCallSession,
         abandonedCarts,
+        upsertAbandonedCheckoutLead,
         markAbandonedCartWhatsAppSent,
         recoverAbandonedCart,
         editAbandonedCart,
@@ -9972,6 +11046,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         activeReseller,
         isResellerLoggedIn,
         resellerPayouts,
+        resellerTopUps,
+        submitResellerTopUp,
+        processResellerTopUp,
+        deleteResellerTopUp,
         registerReseller,
         loginReseller,
         logoutReseller,
@@ -10001,6 +11079,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteWholesaleQuote,
         bulkUpdateWholesaleQuotes,
         bulkDeleteWholesaleQuotes,
+        submitWholesaleDebtPayment,
+        convertWholesaleQuoteToOrder,
+        blogs,
+        addBlogPost,
+        updateBlogPost,
+        deleteBlogPost,
+        bulkUpdateBlogPosts,
+        bulkDeleteBlogPosts,
+        affiliates,
+        activeAffiliate,
+        isAffiliateLoggedIn,
+        affiliateConversions,
+        affiliatePayouts,
+        attributedAffiliateCode,
+        registerAffiliate,
+        loginAffiliate,
+        logoutAffiliate,
+        updateAffiliateAccount,
+        deleteAffiliateAccount,
+        bulkUpdateAffiliates,
+        bulkDeleteAffiliates,
+        adjustAffiliateWallet,
+        requestAffiliatePayout,
+        processAffiliatePayout,
+        deleteAffiliatePayout,
+        buildAffiliateReferralUrl,
         isPartnerPortalOpen,
         partnerPortalTab,
         openPartnerPortal,

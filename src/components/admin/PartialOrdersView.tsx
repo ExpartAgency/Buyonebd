@@ -25,6 +25,11 @@ interface PartialOrdersViewProps {
 export const PartialOrdersView: React.FC<PartialOrdersViewProps> = ({ onOpenInvoice, onEditOrder }) => {
   const {
     orders,
+    abandonedCarts,
+    markAbandonedCartWhatsAppSent,
+    recoverAbandonedCart,
+    deleteAbandonedCart,
+    initiateCustomerBrowserCall,
     recordPartialPayment,
     bookOrderCourier,
     aiConfirmOrderByCustomer,
@@ -387,6 +392,94 @@ export const PartialOrdersView: React.FC<PartialOrdersViewProps> = ({ onOpenInvo
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Auto-Captured Unchecked-Out Checkout Leads (Name + Phone + Address without completing checkout) */}
+      <div className="bg-slate-900 rounded-2xl border border-amber-500/30 p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h4 className="text-sm font-black text-white flex items-center gap-2">
+              <MessageCircle className="w-4 h-4 text-amber-400" />
+              <span>{at('চেকআউট অসম্পূর্ণ লিডস (নাম, ফোন ও ঠিকানা দিয়েছে কিন্তু অর্ডার করেনি)', 'Unchecked-Out Checkout Leads (Remind Customers)')}</span>
+            </h4>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {at(
+                'ক্রেতা ফর্ম পূরণ করে চেকআউট না করলেই স্বয়ংক্রিয়ভাবে এখানে সেভ হয় — ১ ক্লিকে হোয়াটসঅ্যাপ রিমাইন্ডার বা কল করুন।',
+                'Captured automatically when shoppers type their Name, Phone & Address without placing the order.'
+              )}
+            </p>
+          </div>
+          <span className="px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-mono font-bold tabular-nums">
+            {abandonedCarts.filter((c) => !c.recovered).length} Active Leads
+          </span>
+        </div>
+
+        {abandonedCarts.filter((c) => !c.recovered).length === 0 ? (
+          <p className="text-xs text-slate-400 py-4 text-center">
+            {at('কোনো অসম্পূর্ণ চেকআউট লিড নেই।', 'No pending unchecked-out checkout leads right now.')}
+          </p>
+        ) : (
+          <div className="divide-y divide-slate-800 text-xs tabular-nums">
+            {abandonedCarts
+              .filter((c) => !c.recovered)
+              .slice(0, 12)
+              .map((lead) => {
+                const digits = (lead.customerPhone || '').replace(/[^0-9]/g, '');
+                const waDigits = digits.startsWith('88') ? digits : `88${digits}`;
+                const reminderText = `আসসালামু আলাইকুম ${lead.customerName || 'স্যার/ম্যাডাম'}, BuyOne BD-তে আপনার পছন্দের ${lead.items.map((i) => i.product.titleBn || i.product.title).join(', ')} (৳${lead.total.toLocaleString()}) অর্ডারটি অসম্পূর্ণ রয়েছে। ডেলিভারি নিশ্চিত করতে এখনই রিপ্লাই দিন!`;
+                return (
+                  <div key={lead.id} className="py-3 flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <p className="font-bold text-white">
+                        {lead.customerName || 'Guest'} · <span className="font-mono text-emerald-400">{lead.customerPhone}</span>
+                      </p>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        {lead.customerAddress || lead.customerDistrict} · {lead.items.map((i) => `${i.product.titleBn || i.product.title} x${i.quantity}`).join(', ')}
+                      </p>
+                      <p className="text-[10px] text-slate-500 font-mono">
+                        Total ৳{lead.total.toLocaleString()} · {new Date(lead.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                      <a
+                        href={`https://wa.me/${waDigits}?text=${encodeURIComponent(reminderText)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => markAbandonedCartWhatsAppSent(lead.id)}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] inline-flex items-center gap-1"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>{lead.whatsappSent ? at('পুনঃরিমাইন্ড', 'Remind Again') : at('WA রিমাইন্ডার', 'WA Remind')}</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => initiateCustomerBrowserCall(null, { name: lead.customerName, phone: lead.customerPhone, direction: 'admin_to_customer' })}
+                        className="px-2.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <PhoneCall className="w-3.5 h-3.5" />
+                        <span>{at('কল করুন', 'Call')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => recoverAbandonedCart(lead.id)}
+                        className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-emerald-700 text-emerald-300 font-bold text-[11px] cursor-pointer"
+                      >
+                        {at('রিকভার্ড', 'Recovered')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteAbandonedCart(lead.id)}
+                        className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-600 text-rose-300 hover:text-white cursor-pointer"
+                        title={at('মুছুন', 'Delete Lead')}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        )}
       </div>
 
       {/* Collect Payment Modal */}

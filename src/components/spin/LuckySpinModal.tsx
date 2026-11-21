@@ -36,7 +36,7 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
     addToast,
     remainingSpinsToday,
     recordSpinUsed,
-    addToWallet,
+    claimSpinBonus,
     saveSpinCoupon
   } = useStore();
 
@@ -114,7 +114,7 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
         saveSpinCoupon(selected);
       }
       if (selected.value > 0 && !selected.isTryAgain) {
-        addToWallet(selected.value, 'Lucky Spin Reward');
+        claimSpinBonus(selected.value, 'Lucky Spin 48h Bonus');
       }
 
       addToast(
@@ -171,7 +171,7 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
             {lang === 'bn' ? settings.spinSettings?.headlineBn : settings.spinSettings?.headlineEn}
           </h3>
           <p className="text-[11px] text-slate-400">
-            {t('চাকা ঘুরিয়ে সরাসরি ওয়ালেটে গিফট ব্যালেন্স ও কুপন জিতুন!', 'Spin to win instant gift cash added directly to your wallet balance!')}
+            {t('চাকা ঘুরিয়ে সরাসরি ৪৮-ঘণ্টা মেয়াদী স্পিন বোনাস ও কুপন জিতুন!', 'Spin to win 48-hour bonus cash & coupons for your next order!')}
           </p>
 
           <div className="flex items-center justify-center gap-2 pt-1 text-xs">
@@ -295,8 +295,8 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
                 </h4>
                 <p className="text-[11px] text-emerald-300 font-medium">
                   {t(
-                    '৳' + selectedReward.value + ' উপহার ক্যাশ সরাসরি আপনার গিফট ওয়ালেটে যোগ হয়েছে!',
-                    '৳' + selectedReward.value + ' gift cash added directly to your gift wallet!'
+                    `৳${selectedReward.value} স্পিন বোনাস ওয়ালেটে যোগ হয়েছে (মেয়াদ: ৪৮ ঘণ্টা · অ্যাড করা ব্যালেন্স আজীবন থাকবে)।`,
+                    `৳${selectedReward.value} Spin Bonus added! Valid for 48 hours (deposited cash remains lifetime).`
                   )}
                 </p>
               </div>

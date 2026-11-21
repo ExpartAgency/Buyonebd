@@ -18,6 +18,7 @@ import { PartnerPortalModal } from './components/partner/PartnerPortalModal';
 import { LuckySpinLeftLauncher } from './components/spin/LuckySpinModal';
 import { SingleProductView } from './components/home/SingleProductView';
 import { AboutView } from './components/home/AboutView';
+import { BlogView } from './components/home/BlogView';
 import { Product } from './types';
 import { Flame, PackageSearch, Clock, Sparkles, X, Copy, Gift, History, Trash2 } from 'lucide-react';
 
@@ -474,6 +475,42 @@ function StoreMainContent() {
         />
         <main className="flex-1 w-full max-w-full overflow-x-clip">
           <AboutView />
+        </main>
+        <Footer />
+        <OneClickCheckoutModal />
+        <CartDrawer />
+        <Suspense fallback={null}>
+          <AIVoiceCallModal />
+          <WhatsAppAgentModal />
+          <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
+          <CustomerDashboardModal />
+        </Suspense>
+        <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
+        <CustomerLoginModal />
+        <MobileCategoryDrawer
+          isOpen={isMobileCategoryDrawerOpen}
+          onClose={() => setIsMobileCategoryDrawerOpen(false)}
+          selectedCategory={selectedCategory}
+          onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
+        />
+        <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
+        <PartnerPortalModal />
+        <ToastContainer />
+        <MobileBottomNav onOpenCategories={() => setIsMobileCategoryDrawerOpen(true)} />
+      </div>
+    );
+  }
+
+  // View: Blogs & Editorial Post Page
+  if (storeSubView === 'blogs' || storeSubView === 'blog_post') {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 pb-16 md:pb-0 overflow-x-clip w-full max-w-full">
+        <Navbar
+          onOpenMobileCategories={() => setIsMobileCategoryDrawerOpen(true)}
+          onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
+        />
+        <main className="flex-1 w-full max-w-full overflow-x-clip">
+          <BlogView />
         </main>
         <Footer />
         <OneClickCheckoutModal />

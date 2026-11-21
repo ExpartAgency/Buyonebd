@@ -26,7 +26,13 @@ import {
   Calculator,
   Bot,
   Volume2,
-  Plus
+  Plus,
+  Download,
+  Share2,
+  CreditCard,
+  RotateCcw,
+  FileSpreadsheet,
+  Award
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BD_DISTRICTS } from '../../data/initialData';
@@ -45,6 +51,8 @@ export const PartnerPortalModal: React.FC = () => {
     settings,
     activeReseller,
     resellerPayouts,
+    resellerTopUps,
+    submitResellerTopUp,
     registerReseller,
     loginReseller,
     logoutReseller,
@@ -56,6 +64,16 @@ export const PartnerPortalModal: React.FC = () => {
     loginWholesaler,
     logoutWholesaler,
     submitWholesaleQuote,
+    submitWholesaleDebtPayment,
+    convertWholesaleQuoteToOrder,
+    activeAffiliate,
+    affiliateConversions,
+    affiliatePayouts,
+    registerAffiliate,
+    loginAffiliate,
+    logoutAffiliate,
+    requestAffiliatePayout,
+    buildAffiliateReferralUrl,
     getPartnerPriceInfo,
     createOrder,
     addToCart,
@@ -135,10 +153,14 @@ export const PartnerPortalModal: React.FC = () => {
     }
   }, [activeReseller?.id]);
 
-  // Reseller Payout Request State
+  // Reseller Payout & Balance Top-Up Request State
   const [payoutMethod, setPayoutMethod] = useState<'bkash' | 'nagad' | 'rocket' | 'bank'>('bkash');
   const [payoutAccount, setPayoutAccount] = useState('');
   const [payoutAmount, setPayoutAmount] = useState<number>(500);
+  const [topUpMethod, setTopUpMethod] = useState<'bkash' | 'nagad' | 'rocket' | 'bank'>('bkash');
+  const [topUpAmount, setTopUpAmount] = useState<number>(1000);
+  const [topUpSender, setTopUpSender] = useState('');
+  const [topUpTrxId, setTopUpTrxId] = useState('');
 
   // Wholesale Auth Form State
   const [wsAuthMode, setWsAuthMode] = useState<'login' | 'register'>('register');
@@ -157,14 +179,37 @@ export const PartnerPortalModal: React.FC = () => {
   const [wError, setWError] = useState('');
   const [wSubmitting, setWSubmitting] = useState(false);
 
-  // Wholesale Catalog & Quote State
+  // Wholesale Catalog, Bulk Sheet Builder, Debt Repayment & Quote State
   const [wsQtys, setWsQtys] = useState<Record<string, number>>({});
   const [wsSearch, setWsSearch] = useState('');
+  const [wsBulkSheet, setWsBulkSheet] = useState<{ productId: string; qty: number }[]>([]);
+  const [wsBulkPickId, setWsBulkPickId] = useState('');
+  const [wsBulkPickQty, setWsBulkPickQty] = useState<number>(10);
+  const [wsDebtPayAmount, setWsDebtPayAmount] = useState<string>('');
+  const [wsDebtPayNote, setWsDebtPayNote] = useState<string>('');
   const [quoteProductId, setQuoteProductId] = useState<string>('');
   const [quoteCustomProduct, setQuoteCustomProduct] = useState('');
   const [quoteQty, setQuoteQty] = useState<number>(25);
   const [quoteTargetPrice, setQuoteTargetPrice] = useState<string>('');
   const [quoteNotes, setQuoteNotes] = useState('');
+
+  // Affiliate Partner Auth & Workspace State
+  const [affAuthMode, setAffAuthMode] = useState<'login' | 'register'>('register');
+  const [affIdentifier, setAffIdentifier] = useState('');
+  const [affLoginPassword, setAffLoginPassword] = useState('');
+  const [affName, setAffName] = useState('');
+  const [affPhone, setAffPhone] = useState('');
+  const [affEmail, setAffEmail] = useState('');
+  const [affDistrict, setAffDistrict] = useState('Dhaka - Inside City');
+  const [affChannelUrl, setAffChannelUrl] = useState('');
+  const [affBkash, setAffBkash] = useState('');
+  const [affPassword, setAffPassword] = useState('');
+  const [affError, setAffError] = useState('');
+  const [affSubmitting, setAffSubmitting] = useState(false);
+  const [affLinkProdId, setAffLinkProdId] = useState<string>('');
+  const [affPayMethod, setAffPayMethod] = useState<'bkash' | 'nagad' | 'rocket' | 'bank'>('bkash');
+  const [affPayAccount, setAffPayAccount] = useState('');
+  const [affPayAmount, setAffPayAmount] = useState<number>(500);
 
   const myResellerOrders = useMemo(() => {
     if (!activeReseller) return [];
@@ -308,6 +353,48 @@ export const PartnerPortalModal: React.FC = () => {
     }
   };
 
+  const handleResellerTopUpSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeReseller || topUpAmount <= 0 || !topUpTrxId.trim()) return;
+    const ok = submitResellerTopUp({
+      method: topUpMethod,
+      amount: topUpAmount,
+      senderNumber: topUpSender.trim() || activeReseller.phone,
+      trxId: topUpTrxId.trim().toUpperCase()
+    });
+    if (ok) {
+      setTopUpSender('');
+      setTopUpTrxId('');
+    }
+  };
+
+  const handleDownloadResellerCatalogCsv = () => {
+    const header = ['SKU', 'Title', 'TitleBn', 'Category', 'RetailPrice', 'ResellerPrice', 'EstProfit', 'Stock'];
+    const rows = filteredCatalog.map((p) => {
+      const info = getPartnerPriceInfo(p, 1);
+      const profit = Math.max(0, p.price - info.unitPrice);
+      return [
+        p.sku || p.id,
+        `"${(p.title || '').replace(/"/g, '""')}"`,
+        `"${(p.titleBn || '').replace(/"/g, '""')}"`,
+        p.category,
+        p.price,
+        info.unitPrice,
+        profit,
+        p.stock
+      ];
+    });
+    const csv = [header.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `buyonebd-reseller-catalog-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    addToast('success', t('CSV ক্যাটালগ ডাউনলোড সম্পন্ন!', 'Reseller CSV Catalog Downloaded!'), `${filteredCatalog.length} items`);
+  };
+
   const handleQuoteSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const chosen = products.find((p) => p.id === quoteProductId);
@@ -325,6 +412,46 @@ export const PartnerPortalModal: React.FC = () => {
       setQuoteTargetPrice('');
       setQuoteNotes('');
     }
+  };
+
+  const handleAffiliateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAffError('');
+    setAffSubmitting(true);
+    try {
+      if (affAuthMode === 'login') {
+        const res = await loginAffiliate(affIdentifier, affLoginPassword);
+        if (!res.success) setAffError(res.error || t('লগইন তথ্য সঠিক নয়।', 'Invalid affiliate credentials.'));
+      } else {
+        if (!affName.trim() || !affPhone.trim() || !affPassword.trim()) {
+          setAffError(t('নাম, মোবাইল ও পাসওয়ার্ড দিন।', 'Name, phone and password are required.'));
+          return;
+        }
+        const res = await registerAffiliate({
+          name: affName.trim(),
+          phone: affPhone.trim(),
+          email: affEmail.trim() || `${affPhone.replace(/[^0-9]/g, '')}@aff.buyonebd.com`,
+          district: affDistrict,
+          channelUrl: affChannelUrl.trim(),
+          bkashNumber: affBkash.trim() || affPhone.trim(),
+          password: affPassword
+        });
+        if (!res.success) setAffError(res.error || t('নিবন্ধন ব্যর্থ হয়েছে।', 'Affiliate registration failed.'));
+      }
+    } finally {
+      setAffSubmitting(false);
+    }
+  };
+
+  const handleAffiliatePayoutSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeAffiliate) return;
+    const ok = requestAffiliatePayout({
+      method: affPayMethod,
+      accountNumber: affPayAccount.trim() || activeAffiliate.bkashNumber || activeAffiliate.nagadNumber || activeAffiliate.phone,
+      amount: affPayAmount
+    });
+    if (ok) setAffPayAccount('');
   };
 
   const handleOpenQuickCustomerOrder = (product: Product) => {
@@ -464,9 +591,34 @@ export const PartnerPortalModal: React.FC = () => {
   const myPayouts = activeReseller
     ? resellerPayouts.filter((p) => p.resellerId === activeReseller.id)
     : [];
+  const myResellerTopUps = activeReseller
+    ? resellerTopUps.filter((tReq) => tReq.resellerId === activeReseller.id)
+    : [];
   const myQuotes = activeWholesaler
     ? wholesaleQuotes.filter((q) => q.wholesalerId === activeWholesaler.id)
     : [];
+  const myWholesaleOrders = activeWholesaler
+    ? orders.filter(
+        (o) =>
+          o.partnerType === 'wholesale' &&
+          (o.wholesaleBuyerId === activeWholesaler.id || o.customer.phone === activeWholesaler.phone)
+      )
+    : [];
+  const myAffiliateConversions = activeAffiliate
+    ? affiliateConversions.filter((c) => c.affiliateId === activeAffiliate.id)
+    : [];
+  const myAffiliatePayouts = activeAffiliate
+    ? affiliatePayouts.filter((p) => p.affiliateId === activeAffiliate.id)
+    : [];
+  const affiliateCfg = settings.affiliateSettings || {
+    enabled: true,
+    autoApprove: false,
+    defaultCommissionPercent: 8,
+    minPayoutBdt: 500,
+    cookieDays: 30,
+    welcomeMsgBn: 'আপনার অ্যাফিলিয়েট লিংক শেয়ার করে প্রতিটি সেল থেকে আজীবন কমিশন আয় করুন!',
+    welcomeMsgEn: 'Share your referral link & earn commission on every confirmed order!'
+  };
 
   const isApprovedReseller = Boolean(activeReseller && activeReseller.status === 'approved');
   const referralUrl =
@@ -506,7 +658,7 @@ export const PartnerPortalModal: React.FC = () => {
           </button>
         </div>
 
-        {/* Mode Switcher Tabs (Reseller / Wholesale) */}
+        {/* Mode Switcher Tabs (Reseller / Wholesale / Affiliate) */}
         <div className="px-4 sm:px-5 pt-2.5 border-b border-slate-200 dark:border-slate-800 flex items-center gap-4 bg-white dark:bg-slate-900 shrink-0 overflow-x-auto">
           <button
             type="button"
@@ -532,6 +684,19 @@ export const PartnerPortalModal: React.FC = () => {
           >
             <Building2 className="w-4 h-4" />
             <span>{t('হোলসেল / B2B ট্রেড', 'Wholesale / B2B Trade')}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openPartnerPortal('affiliate')}
+            className={`pb-2.5 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer whitespace-nowrap ${
+              partnerPortalTab === 'affiliate'
+                ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400'
+                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <Award className="w-4 h-4" />
+            <span>{t('অ্যাফিলিয়েট পার্টনার', 'Affiliate Program')}</span>
           </button>
         </div>
 
@@ -1050,6 +1215,14 @@ export const PartnerPortalModal: React.FC = () => {
                                 </option>
                               ))}
                             </select>
+                            <button
+                              type="button"
+                              onClick={handleDownloadResellerCatalogCsv}
+                              className="px-3 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                            >
+                              <Download className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>{t('CSV ক্যাটালগ', 'Export CSV')}</span>
+                            </button>
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1332,100 +1505,207 @@ export const PartnerPortalModal: React.FC = () => {
                     </div>
                   )}
 
-                  {/* SUB-TAB 4: WALLET & PAYOUTS */}
+                  {/* SUB-TAB 4: WALLET, BALANCE TOP-UP, CASH-OUT & LEDGER */}
                   {resDashTab === 'payouts' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                      <form
-                        onSubmit={handlePayoutSubmit}
-                        className="lg:col-span-5 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 space-y-3 text-xs"
-                      >
-                        <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                          <Wallet className="w-4 h-4 text-emerald-600" />
-                          <span>{t('টাকা উত্তোলন আবেদন', 'Request Commission Payout')}</span>
-                        </h4>
-                        <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex justify-between tabular-nums">
-                          <span className="text-slate-500">{t('উত্তোলনযোগ্য ব্যালেন্স:', 'Available Wallet:')}</span>
-                          <span className="font-mono font-bold text-emerald-600">৳{activeReseller.walletBalance.toLocaleString()}</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-slate-500 mb-1">{t('মাধ্যম', 'Method')}</label>
-                            <select
-                              value={payoutMethod}
-                              onChange={(e) => setPayoutMethod(e.target.value as any)}
-                              className="w-full px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
-                            >
-                              <option value="bkash">bKash</option>
-                              <option value="nagad">Nagad</option>
-                              <option value="rocket">Rocket</option>
-                              <option value="bank">Bank Transfer</option>
-                            </select>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                        {/* Cash-Out / Withdrawal Request */}
+                        <form
+                          onSubmit={handlePayoutSubmit}
+                          className="lg:col-span-6 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 space-y-3 text-xs"
+                        >
+                          <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                            <Wallet className="w-4 h-4 text-emerald-600" />
+                            <span>{t('ক্যাশ-আউট / টাকা উত্তোলন আবেদন', 'Cash-Out / Withdraw Commission')}</span>
+                          </h4>
+                          <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex justify-between tabular-nums">
+                            <span className="text-slate-500">{t('উত্তোলনযোগ্য ব্যালেন্স:', 'Available Wallet:')}</span>
+                            <span className="font-mono font-bold text-emerald-600">৳{activeReseller.walletBalance.toLocaleString()}</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-slate-500 mb-1">{t('মাধ্যম', 'Method')}</label>
+                              <select
+                                value={payoutMethod}
+                                onChange={(e) => setPayoutMethod(e.target.value as any)}
+                                className="w-full px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                              >
+                                <option value="bkash">bKash</option>
+                                <option value="nagad">Nagad</option>
+                                <option value="rocket">Rocket</option>
+                                <option value="bank">Bank Transfer</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-slate-500 mb-1">{t('পরিমাণ (৳)', 'Amount (৳)')}</label>
+                              <input
+                                type="number"
+                                min={resellerCfg.minPayoutBdt}
+                                max={Math.max(resellerCfg.minPayoutBdt, activeReseller.walletBalance)}
+                                value={payoutAmount}
+                                onChange={(e) => setPayoutAmount(Number(e.target.value) || 0)}
+                                className="w-full px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                              />
+                            </div>
                           </div>
                           <div>
-                            <label className="block text-slate-500 mb-1">{t('পরিমাণ (৳)', 'Amount (৳)')}</label>
+                            <label className="block text-slate-500 mb-1">{t('অ্যাকাউন্ট / বিকাশ নম্বর', 'Account / Wallet Number')}</label>
                             <input
-                              type="number"
-                              min={resellerCfg.minPayoutBdt}
-                              max={Math.max(resellerCfg.minPayoutBdt, activeReseller.walletBalance)}
-                              value={payoutAmount}
-                              onChange={(e) => setPayoutAmount(Number(e.target.value) || 0)}
-                              className="w-full px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                              type="text"
+                              value={payoutAccount}
+                              onChange={(e) => setPayoutAccount(e.target.value)}
+                              placeholder={activeReseller.bkashNumber || activeReseller.nagadNumber || activeReseller.phone}
+                              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                             />
                           </div>
-                        </div>
-                        <div>
-                          <label className="block text-slate-500 mb-1">{t('অ্যাকাউন্ট / বিকাশ নম্বর', 'Account / Wallet Number')}</label>
-                          <input
-                            type="text"
-                            value={payoutAccount}
-                            onChange={(e) => setPayoutAccount(e.target.value)}
-                            placeholder={activeReseller.bkashNumber || activeReseller.nagadNumber || activeReseller.phone}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
-                          />
-                        </div>
-                        <button
-                          type="submit"
-                          disabled={!isApprovedReseller || activeReseller.walletBalance < resellerCfg.minPayoutBdt}
-                          className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer disabled:opacity-50"
-                        >
-                          {t('উইথড্র রিকোয়েস্ট পাঠান', 'Submit Payout Request')}
-                        </button>
-                      </form>
+                          <button
+                            type="submit"
+                            disabled={!isApprovedReseller || activeReseller.walletBalance < resellerCfg.minPayoutBdt}
+                            className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer disabled:opacity-50"
+                          >
+                            {t('ক্যাশ-আউট রিকোয়েস্ট পাঠান', 'Submit Cash-Out Request')}
+                          </button>
+                        </form>
 
-                      <div className="lg:col-span-7 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 space-y-2.5 text-xs">
-                        <h4 className="font-bold text-slate-900 dark:text-white">{t('পেমেন্ট হিস্ট্রি', 'Payout History')}</h4>
-                        {myPayouts.length === 0 ? (
-                          <p className="text-slate-500 py-4">{t('এখনো কোনো উত্তোলন অনুরোধ নেই।', 'No payout requests yet.')}</p>
-                        ) : (
-                          <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto">
-                            {myPayouts.map((pay) => (
-                              <div key={pay.id} className="py-2.5 flex items-center justify-between gap-2 tabular-nums">
-                                <div>
-                                  <p className="font-bold text-slate-900 dark:text-white uppercase">
-                                    {pay.method} · {pay.accountNumber}
-                                  </p>
-                                  <p className="text-[11px] text-slate-500">
-                                    {new Date(pay.createdAt).toLocaleDateString()} {pay.trxId ? `· TrxID: ${pay.trxId}` : ''}
-                                  </p>
-                                </div>
-                                <div className="text-right">
-                                  <p className="font-mono font-bold text-slate-900 dark:text-white">৳{pay.amount.toLocaleString()}</p>
-                                  <span
-                                    className={`text-[10px] font-bold uppercase ${
-                                      pay.status === 'paid'
-                                        ? 'text-emerald-600'
-                                        : pay.status === 'rejected'
-                                        ? 'text-rose-500'
-                                        : 'text-amber-600'
-                                    }`}
-                                  >
-                                    {pay.status}
-                                  </span>
-                                </div>
-                              </div>
-                            ))}
+                        {/* Add Balance via MFS Top-Up */}
+                        <form
+                          onSubmit={handleResellerTopUpSubmit}
+                          className="lg:col-span-6 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 space-y-3 text-xs"
+                        >
+                          <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                            <CreditCard className="w-4 h-4 text-sky-600" />
+                            <span>{t('ওয়ালেটে ব্যালেন্স যোগ করুন (Add Balance)', 'Add Reseller Wallet Balance')}</span>
+                          </h4>
+                          <p className="text-[11px] text-slate-500">
+                            {t(
+                              `মার্চেন্ট/পার্সোনাল (${settings.paymentSettings?.bkashMerchant || settings.whatsappNumber}) নম্বরে Send Money করে TrxID দিন — অনুমোদনের পর ওয়ালেটে যুক্ত হবে।`,
+                              `Send Money to ${settings.paymentSettings?.bkashMerchant || settings.whatsappNumber} and enter TrxID below to top up your reseller wallet.`
+                            )}
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-slate-500 mb-1">{t('পেমেন্ট মাধ্যম', 'Channel')}</label>
+                              <select
+                                value={topUpMethod}
+                                onChange={(e) => setTopUpMethod(e.target.value as any)}
+                                className="w-full px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                              >
+                                <option value="bkash">bKash</option>
+                                <option value="nagad">Nagad</option>
+                                <option value="rocket">Rocket</option>
+                                <option value="bank">Bank Deposit</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-slate-500 mb-1">{t('টাকার পরিমাণ (৳)', 'Top-Up Amount (৳)')}</label>
+                              <input
+                                type="number"
+                                min={100}
+                                required
+                                value={topUpAmount}
+                                onChange={(e) => setTopUpAmount(Number(e.target.value) || 0)}
+                                className="w-full px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                              />
+                            </div>
                           </div>
-                        )}
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="tel"
+                              value={topUpSender}
+                              onChange={(e) => setTopUpSender(e.target.value)}
+                              placeholder={t('প্রেরক নম্বর', 'Sender Number')}
+                              className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                            />
+                            <input
+                              type="text"
+                              required
+                              value={topUpTrxId}
+                              onChange={(e) => setTopUpTrxId(e.target.value.toUpperCase())}
+                              placeholder="TrxID (e.g. BL9K3...)"
+                              className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono uppercase"
+                            />
+                          </div>
+                          <button
+                            type="submit"
+                            className="w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold cursor-pointer"
+                          >
+                            {t('ব্যালেন্স টপ-আপ জমা দিন', 'Submit Balance Top-Up')}
+                          </button>
+                        </form>
+                      </div>
+
+                      {/* History & Wallet Ledger Grid */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+                        <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 space-y-2.5">
+                          <h4 className="font-bold text-slate-900 dark:text-white">{t('ক্যাশ-আউট ও টপ-আপ হিস্ট্রি', 'Cash-Out & Top-Up History')}</h4>
+                          {myPayouts.length === 0 && myResellerTopUps.length === 0 ? (
+                            <p className="text-slate-500 py-4">{t('এখনো কোনো উত্তোলন বা টপ-আপ নেই।', 'No payout or top-up requests yet.')}</p>
+                          ) : (
+                            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto tabular-nums">
+                              {myResellerTopUps.map((tp) => (
+                                <div key={tp.id} className="py-2 flex items-center justify-between gap-2">
+                                  <div>
+                                    <p className="font-bold text-sky-700 dark:text-sky-400 uppercase">
+                                      +TOPUP · {tp.method} ({tp.trxId})
+                                    </p>
+                                    <p className="text-[11px] text-slate-500">{new Date(tp.createdAt).toLocaleDateString()}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="font-mono font-bold text-slate-900 dark:text-white">+৳{tp.amount.toLocaleString()}</p>
+                                    <span className={`text-[10px] font-bold uppercase ${tp.status === 'approved' ? 'text-emerald-600' : tp.status === 'rejected' ? 'text-rose-500' : 'text-amber-600'}`}>
+                                      {tp.status}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                              {myPayouts.map((pay) => (
+                                <div key={pay.id} className="py-2 flex items-center justify-between gap-2">
+                                  <div>
+                                    <p className="font-bold text-slate-900 dark:text-white uppercase">
+                                      CASHOUT · {pay.method} · {pay.accountNumber}
+                                    </p>
+                                    <p className="text-[11px] text-slate-500">
+                                      {new Date(pay.createdAt).toLocaleDateString()} {pay.trxId ? `· TrxID: ${pay.trxId}` : ''}
+                                    </p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="font-mono font-bold text-slate-900 dark:text-white">-৳{pay.amount.toLocaleString()}</p>
+                                    <span
+                                      className={`text-[10px] font-bold uppercase ${
+                                        pay.status === 'paid'
+                                          ? 'text-emerald-600'
+                                          : pay.status === 'rejected'
+                                          ? 'text-rose-500'
+                                          : 'text-amber-600'
+                                      }`}
+                                    >
+                                      {pay.status}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 space-y-2.5">
+                          <h4 className="font-bold text-slate-900 dark:text-white">{t('অর্ডার প্রফিট লেজার', 'Order Commission Ledger')}</h4>
+                          {myResellerOrders.length === 0 ? (
+                            <p className="text-slate-500 py-4">{t('কোনো অর্ডার প্রফিট রেকর্ড নেই।', 'No resold order profits recorded yet.')}</p>
+                          ) : (
+                            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto tabular-nums">
+                              {myResellerOrders.map((ord) => (
+                                <div key={ord.id} className="py-2 flex items-center justify-between gap-2">
+                                  <div>
+                                    <p className="font-bold text-slate-900 dark:text-white">#{ord.id} · {ord.customer.name}</p>
+                                    <p className="text-[11px] text-slate-500">{new Date(ord.createdAt).toLocaleDateString()} · {ord.status}</p>
+                                  </div>
+                                  <span className="font-mono font-bold text-emerald-600">+৳{(ord.resellerProfit || 0).toLocaleString()}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2104,7 +2384,223 @@ export const PartnerPortalModal: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Custom Bulk Quote (RFQ) + History */}
+                  {/* Wholesale Credit Limit & Repayment Tracker */}
+                  <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/70 space-y-3 text-xs tabular-nums">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <CreditCard className="w-4 h-4 text-emerald-600" />
+                        <span>{t('B2B ক্রেডিট লিমিট ও নেট পেমেন্ট টার্মস', 'B2B Trade Credit Line & Due Settlement')}</span>
+                      </h4>
+                      <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-600/15 text-emerald-700 dark:text-emerald-400">
+                        Terms: {activeWholesaler.paymentTerms || 'Net-15'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                        <span className="text-[10px] text-slate-500 block">{t('ক্রেডিট লিমিট', 'Credit Limit')}</span>
+                        <span className="font-mono font-bold text-sm text-slate-900 dark:text-white">
+                          ৳{(activeWholesaler.creditLimitBdt || 100000).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                        <span className="text-[10px] text-slate-500 block">{t('ব্যবহৃত / বকেয়া', 'Current Due')}</span>
+                        <span className="font-mono font-bold text-sm text-amber-600">
+                          ৳{(activeWholesaler.creditUsedBdt || 0).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                        <span className="text-[10px] text-slate-500 block">{t('অবশিষ্ট ক্রেডিট', 'Available Credit')}</span>
+                        <span className="font-mono font-bold text-sm text-emerald-600">
+                          ৳{Math.max(0, (activeWholesaler.creditLimitBdt || 100000) - (activeWholesaler.creditUsedBdt || 0)).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <input
+                        type="number"
+                        min={1}
+                        value={wsDebtPayAmount}
+                        onChange={(e) => setWsDebtPayAmount(e.target.value)}
+                        placeholder={t('বকেয়া পরিশোধ পরিমাণ (৳)', 'Repayment Amount (৳)')}
+                        className="w-40 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                      />
+                      <input
+                        type="text"
+                        value={wsDebtPayNote}
+                        onChange={(e) => setWsDebtPayNote(e.target.value)}
+                        placeholder={t('ব্যাংক/বিকাশ TrxID...', 'Bank / bKash Ref / TrxID...')}
+                        className="flex-1 min-w-[180px] px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const amt = Number(wsDebtPayAmount) || 0;
+                          if (amt <= 0) return;
+                          const ok = submitWholesaleDebtPayment(activeWholesaler.id, amt, wsDebtPayNote.trim() || 'B2B Due Settlement');
+                          if (ok) {
+                            setWsDebtPayAmount('');
+                            setWsDebtPayNote('');
+                          }
+                        }}
+                        className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                      >
+                        {t('বকেয়া পরিশোধ রেকর্ড', 'Record Repayment')}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Multi-SKU Bulk Order Sheet Builder */}
+                  <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/70 space-y-3 text-xs tabular-nums">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                        <span>{t('মাল্টি-SKU বাল্ক অর্ডার শীট বিল্ডার', 'Multi-SKU Bulk Order Sheet Builder')}</span>
+                      </h4>
+                      {wsBulkSheet.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const lines = wsBulkSheet.map((row) => {
+                                const pr = products.find((p) => p.id === row.productId);
+                                if (!pr) return '';
+                                const info = getPartnerPriceInfo(pr, row.qty);
+                                return `${pr.sku || pr.id},"${pr.title.replace(/"/g, '""')}",${row.qty},${info.unitPrice},${info.unitPrice * row.qty}`;
+                              }).filter(Boolean);
+                              const csv = ['SKU,Product,Qty,B2BUnitPrice,LineTotal', ...lines].join('\n');
+                              const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `b2b-order-sheet-${Date.now()}.csv`;
+                              a.click();
+                              URL.revokeObjectURL(url);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Download className="w-3 h-3" />
+                            <span>CSV Sheet</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              wsBulkSheet.forEach((row) => {
+                                const pr = products.find((p) => p.id === row.productId);
+                                if (pr) addToCart(pr, row.qty);
+                              });
+                              closePartnerPortal();
+                              addToast('success', t('বাল্ক অর্ডার শীট কার্টে যোগ হয়েছে!', 'All Sheet Items Added to Cart!'), `${wsBulkSheet.length} SKUs`);
+                            }}
+                            className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                          >
+                            {t('সবগুলো কার্টে যোগ করুন', 'Add All to Cart')}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={wsBulkPickId}
+                        onChange={(e) => setWsBulkPickId(e.target.value)}
+                        className="flex-1 min-w-[200px] px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                      >
+                        <option value="">-- {t('পণ্য বাছাই করুন', 'Pick Catalog SKU')} --</option>
+                        {products.filter((p) => p.wholesaleEnabled !== false && p.stock > 0).map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.sku || p.id} · {p.title} (MOQ {p.wholesaleMinQty || wholesaleCfg.defaultMinQty || 10})
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min={1}
+                        value={wsBulkPickQty}
+                        onChange={(e) => setWsBulkPickQty(Math.max(1, Number(e.target.value) || 1))}
+                        className="w-24 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                      />
+                      <button
+                        type="button"
+                        disabled={!wsBulkPickId}
+                        onClick={() => {
+                          if (!wsBulkPickId) return;
+                          setWsBulkSheet((prev) => {
+                            const exists = prev.find((x) => x.productId === wsBulkPickId);
+                            if (exists) return prev.map((x) => (x.productId === wsBulkPickId ? { ...x, qty: x.qty + wsBulkPickQty } : x));
+                            return [...prev, { productId: wsBulkPickId, qty: wsBulkPickQty }];
+                          });
+                        }}
+                        className="px-3 py-2 rounded-lg bg-slate-900 dark:bg-emerald-600 text-white font-bold cursor-pointer disabled:opacity-50"
+                      >
+                        + {t('শীটে যোগ', 'Add Row')}
+                      </button>
+                    </div>
+                    {wsBulkSheet.length > 0 && (
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                        {wsBulkSheet.map((row) => {
+                          const pr = products.find((p) => p.id === row.productId);
+                          if (!pr) return null;
+                          const info = getPartnerPriceInfo(pr, row.qty);
+                          return (
+                            <div key={row.productId} className="px-3 py-2 flex items-center justify-between gap-2 bg-slate-50/70 dark:bg-slate-900/50">
+                              <div className="min-w-0 flex-1">
+                                <p className="font-bold text-slate-900 dark:text-white truncate">{pr.title}</p>
+                                <p className="text-[10px] text-slate-500 font-mono">
+                                  {row.qty} pcs × ৳{info.unitPrice.toLocaleString()} = ৳{(info.unitPrice * row.qty).toLocaleString()}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setWsBulkSheet((prev) => prev.filter((x) => x.productId !== row.productId))}
+                                className="text-rose-500 font-bold text-[11px] cursor-pointer"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quick Reorder Past Wholesale Orders */}
+                  {myWholesaleOrders.length > 0 && (
+                    <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/70 space-y-2.5 text-xs tabular-nums">
+                      <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <RotateCcw className="w-4 h-4 text-emerald-600" />
+                        <span>{t('পূর্বের B2B অর্ডার ১-ক্লিকে পুনরায় অর্ডার করুন', 'Quick Reorder Past B2B Orders')}</span>
+                      </h4>
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-44 overflow-y-auto">
+                        {myWholesaleOrders.slice(0, 6).map((ord) => (
+                          <div key={ord.id} className="py-2 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-900 dark:text-white truncate">
+                                #{ord.id} · {ord.items.map((i) => `${i.productTitle} x${i.quantity}`).join(', ')}
+                              </p>
+                              <p className="text-[11px] text-slate-500">
+                                {new Date(ord.createdAt).toLocaleDateString()} · ৳{ord.pricing.total.toLocaleString()} · {ord.status}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                ord.items.forEach((it) => {
+                                  const pr = products.find((p) => p.id === it.productId);
+                                  if (pr) addToCart(pr, it.quantity, it.selectedColor, it.selectedSize);
+                                });
+                                closePartnerPortal();
+                                addToast('success', t('অর্ডার আইটেম কার্টে যোগ হয়েছে!', 'Past Order Items Added to Cart!'), `#${ord.id}`);
+                              }}
+                              className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shrink-0 cursor-pointer"
+                            >
+                              {t('রি-অর্ডার', 'Reorder')}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Custom Bulk Quote (RFQ) + History with 1-Click Quote-to-Order */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
                     <form
                       onSubmit={handleQuoteSubmit}
@@ -2182,7 +2678,7 @@ export const PartnerPortalModal: React.FC = () => {
                     </form>
 
                     <div className="lg:col-span-6 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 space-y-2.5 text-xs">
-                      <h4 className="font-bold text-slate-900 dark:text-white">{t('কোটেশন ইতিহাস', 'My Quote Requests')}</h4>
+                      <h4 className="font-bold text-slate-900 dark:text-white">{t('কোটেশন ইতিহাস ও ১-ক্লিক কনভার্সন', 'My Quote Requests & Conversion')}</h4>
                       {myQuotes.length === 0 ? (
                         <p className="text-slate-500 py-4">{t('এখনো কোনো কোটেশন পাঠানো হয়নি।', 'No quotes submitted yet.')}</p>
                       ) : (
@@ -2212,6 +2708,376 @@ export const PartnerPortalModal: React.FC = () => {
                                   {qt.notes}
                                 </p>
                               )}
+                              {qt.status === 'quoted' && (
+                                <button
+                                  type="button"
+                                  onClick={() => convertWholesaleQuoteToOrder(qt.id)}
+                                  className="mt-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] cursor-pointer"
+                                >
+                                  {t('কোটেশন অর্ডারে কনভার্ট করুন', 'Convert Quote to Order')}
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ================= AFFILIATE PARTNER WORKSPACE TAB ================= */}
+          {partnerPortalTab === 'affiliate' && (
+            <>
+              {!affiliateCfg.enabled ? (
+                <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-center space-y-2">
+                  <AlertCircle className="w-8 h-8 text-slate-400 mx-auto" />
+                  <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                    {t('অ্যাফিলিয়েট প্রোগ্রাম সাময়িক বন্ধ রয়েছে।', 'Affiliate program is temporarily paused.')}
+                  </p>
+                </div>
+              ) : !activeAffiliate ? (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                  <div className="lg:col-span-5 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/70 space-y-4">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      {t('BuyOne BD অ্যাফিলিয়েট প্রোগ্রাম — শেয়ার করে আয় করুন', 'Earn Commission Promoting BuyOne BD')}
+                    </h3>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                      {lang === 'bn' ? affiliateCfg.welcomeMsgBn : affiliateCfg.welcomeMsgEn}
+                    </p>
+                    <dl className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-slate-800 text-xs tabular-nums">
+                      <div className="flex justify-between">
+                        <dt className="text-slate-500">{t('ডিফল্ট কমিশন হার', 'Commission Rate')}</dt>
+                        <dd className="font-bold text-emerald-600">{affiliateCfg.defaultCommissionPercent}% per Sale</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-slate-500">{t('কুকি উইন্ডো', 'Attribution Window')}</dt>
+                        <dd className="font-bold text-slate-900 dark:text-white">{affiliateCfg.cookieDays} Days</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-slate-500">{t('সর্বনিম্ন উইথড্র', 'Min Payout')}</dt>
+                        <dd className="font-bold text-slate-900 dark:text-white">৳{affiliateCfg.minPayoutBdt}</dd>
+                      </div>
+                    </dl>
+                  </div>
+
+                  <form onSubmit={handleAffiliateSubmit} className="lg:col-span-7 space-y-4">
+                    <div className="grid grid-cols-2 gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+                      <button
+                        type="button"
+                        onClick={() => { setAffAuthMode('register'); setAffError(''); }}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold cursor-pointer ${
+                          affAuthMode === 'register'
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        {t('অ্যাফিলিয়েট আবেদন', 'Join Affiliate')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setAffAuthMode('login'); setAffError(''); }}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold cursor-pointer ${
+                          affAuthMode === 'login'
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        {t('অ্যাফিলিয়েট লগইন', 'Affiliate Sign In')}
+                      </button>
+                    </div>
+
+                    {affError && (
+                      <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs font-semibold text-rose-700 dark:text-rose-300">
+                        {affError}
+                      </div>
+                    )}
+
+                    {affAuthMode === 'login' ? (
+                      <div className="space-y-3 text-xs">
+                        <div>
+                          <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                            {t('ফোন, ইমেইল বা কোড', 'Phone, Email or Affiliate Code')}
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={affIdentifier}
+                            onChange={(e) => setAffIdentifier(e.target.value)}
+                            placeholder="01XXXXXXXXX or AFF-XXXX"
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                            {t('পাসওয়ার্ড', 'Password')}
+                          </label>
+                          <input
+                            type="password"
+                            required
+                            value={affLoginPassword}
+                            onChange={(e) => setAffLoginPassword(e.target.value)}
+                            placeholder="••••••••"
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">{t('পূর্ণ নাম *', 'Full Name *')}</label>
+                          <input
+                            type="text"
+                            required
+                            value={affName}
+                            onChange={(e) => setAffName(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">{t('মোবাইল নম্বর *', 'Phone *')}</label>
+                          <input
+                            type="tel"
+                            required
+                            value={affPhone}
+                            onChange={(e) => setAffPhone(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">{t('ইমেইল', 'Email')}</label>
+                          <input
+                            type="email"
+                            value={affEmail}
+                            onChange={(e) => setAffEmail(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">{t('YouTube / FB / TikTok চ্যানেল', 'Social / Blog Channel URL')}</label>
+                          <input
+                            type="text"
+                            value={affChannelUrl}
+                            onChange={(e) => setAffChannelUrl(e.target.value)}
+                            placeholder="https://youtube.com/@channel"
+                            className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">{t('বিকাশ / পেআউট নম্বর', 'bKash Payout Number')}</label>
+                          <input
+                            type="tel"
+                            value={affBkash}
+                            onChange={(e) => setAffBkash(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">{t('জেলা', 'District')}</label>
+                          <select
+                            value={affDistrict}
+                            onChange={(e) => setAffDistrict(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                          >
+                            {BD_DISTRICTS.map((d) => (
+                              <option key={d.name} value={d.name}>{d.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">{t('পাসওয়ার্ড *', 'Password *')}</label>
+                          <input
+                            type="password"
+                            required
+                            value={affPassword}
+                            onChange={(e) => setAffPassword(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={affSubmitting}
+                      className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer disabled:opacity-60"
+                    >
+                      {affSubmitting
+                        ? t('অপেক্ষা করুন...', 'Processing...')
+                        : affAuthMode === 'login'
+                        ? t('অ্যাফিলিয়েট ড্যাশবোর্ডে প্রবেশ করুন', 'Sign In to Affiliate Workspace')
+                        : t('অ্যাফিলিয়েট অ্যাকাউন্ট তৈরি করুন', 'Create Affiliate Account')}
+                    </button>
+                  </form>
+                </div>
+              ) : (
+                /* Active Affiliate Partner Workspace */
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                    <div>
+                      <div className="flex items-center gap-2 text-xs font-bold">
+                        {activeAffiliate.status === 'approved' ? (
+                          <span className="text-emerald-600 flex items-center gap-1">
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>{t('ভেরিফাইড অ্যাফিলিয়েট সক্রিয়', 'Verified Affiliate Active')}</span>
+                          </span>
+                        ) : (
+                          <span className="text-amber-600 flex items-center gap-1">
+                            <Clock className="w-4 h-4" />
+                            <span>{t('অ্যাডমিন অনুমোদনের অপেক্ষায়', `Status: ${activeAffiliate.status}`)}</span>
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-base font-bold text-slate-900 dark:text-white mt-0.5">
+                        {activeAffiliate.name} · <span className="font-mono text-emerald-600">{activeAffiliate.affiliateCode}</span>
+                      </h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={logoutAffiliate}
+                      className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>{t('সাইন আউট', 'Sign Out')}</span>
+                    </button>
+                  </div>
+
+                  {/* 4 Metrics */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 tabular-nums">
+                    <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+                      <span className="text-[11px] text-slate-500 block">{t('ওয়ালেট ব্যালেন্স', 'Available Wallet')}</span>
+                      <span className="text-lg font-bold font-mono text-emerald-600">৳{activeAffiliate.walletBalance.toLocaleString()}</span>
+                    </div>
+                    <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+                      <span className="text-[11px] text-slate-500 block">{t('মোট আয়', 'Lifetime Earnings')}</span>
+                      <span className="text-lg font-bold font-mono text-slate-900 dark:text-white">৳{activeAffiliate.totalEarnings.toLocaleString()}</span>
+                    </div>
+                    <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+                      <span className="text-[11px] text-slate-500 block">{t('রেফার্ড অর্ডার / ক্লিক', 'Orders / Clicks')}</span>
+                      <span className="text-lg font-bold font-mono text-slate-900 dark:text-white">
+                        {activeAffiliate.totalOrders} / {activeAffiliate.clicksCount}
+                      </span>
+                    </div>
+                    <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+                      <span className="text-[11px] text-slate-500 block">{t('কমিশন হার', 'Commission Rate')}</span>
+                      <span className="text-lg font-bold font-mono text-emerald-600">{activeAffiliate.commissionPercent}%</span>
+                    </div>
+                  </div>
+
+                  {/* Referral & Product Link Builder */}
+                  <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/70 space-y-3 text-xs">
+                    <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <Share2 className="w-4 h-4 text-emerald-600" />
+                      <span>{t('অ্যাফিলিয়েট রেফারেল ও প্রোডাক্ট লিংক জেনারেটর', 'Referral & Product Deep-Link Builder')}</span>
+                    </h4>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <select
+                        value={affLinkProdId}
+                        onChange={(e) => setAffLinkProdId(e.target.value)}
+                        className="sm:w-64 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                      >
+                        <option value="">{t('হোমপেজ / স্টোর লিংক', 'Store Homepage Link')}</option>
+                        {products.map((p) => (
+                          <option key={p.id} value={p.id}>{p.title} (৳{p.price})</option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        readOnly
+                        value={buildAffiliateReferralUrl(products.find((p) => p.id === affLinkProdId) || null)}
+                        className="flex-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleCopyText(
+                            'aff-link',
+                            buildAffiliateReferralUrl(products.find((p) => p.id === affLinkProdId) || null),
+                            t('অ্যাফিলিয়েট লিংক কপি হয়েছে!', 'Affiliate Link Copied!')
+                          )
+                        }
+                        className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                      >
+                        {copiedId === 'aff-link' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{t('লিংক কপি', 'Copy Link')}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Conversions + Payout Request Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 text-xs">
+                    <form
+                      onSubmit={handleAffiliatePayoutSubmit}
+                      className="lg:col-span-5 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 space-y-3"
+                    >
+                      <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <Wallet className="w-4 h-4 text-emerald-600" />
+                        <span>{t('কমিশন উইথড্র আবেদন', 'Withdraw Affiliate Earnings')}</span>
+                      </h4>
+                      <div className="grid grid-cols-2 gap-2">
+                        <select
+                          value={affPayMethod}
+                          onChange={(e) => setAffPayMethod(e.target.value as any)}
+                          className="px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                        >
+                          <option value="bkash">bKash</option>
+                          <option value="nagad">Nagad</option>
+                          <option value="rocket">Rocket</option>
+                          <option value="bank">Bank</option>
+                        </select>
+                        <input
+                          type="number"
+                          min={affiliateCfg.minPayoutBdt}
+                          value={affPayAmount}
+                          onChange={(e) => setAffPayAmount(Number(e.target.value) || 0)}
+                          className="px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        value={affPayAccount}
+                        onChange={(e) => setAffPayAccount(e.target.value)}
+                        placeholder={activeAffiliate.bkashNumber || activeAffiliate.phone}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                      />
+                      <button
+                        type="submit"
+                        disabled={activeAffiliate.status !== 'approved' || activeAffiliate.walletBalance < affiliateCfg.minPayoutBdt}
+                        className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer disabled:opacity-50"
+                      >
+                        {t('পে-আউট রিকোয়েস্ট পাঠান', 'Submit Payout Request')}
+                      </button>
+                    </form>
+
+                    <div className="lg:col-span-7 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 space-y-3">
+                      <h4 className="font-bold text-slate-900 dark:text-white">
+                        {t('কমিশন কনভার্সন ও পে-আউট লগ', 'Conversions & Payout Log')}
+                      </h4>
+                      {myAffiliateConversions.length === 0 && myAffiliatePayouts.length === 0 ? (
+                        <p className="text-slate-500 py-4">{t('এখনো কোনো রেফারেল অর্ডার বা পে-আউট নেই।', 'No conversions or payout requests yet.')}</p>
+                      ) : (
+                        <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto tabular-nums">
+                          {myAffiliateConversions.map((conv) => (
+                            <div key={conv.id} className="py-2 flex items-center justify-between gap-2">
+                              <div>
+                                <p className="font-bold text-slate-900 dark:text-white">Order #{conv.orderId} · {conv.customerName}</p>
+                                <p className="text-[11px] text-slate-500">Order ৳{conv.orderTotal.toLocaleString()} ({conv.commissionPercent}%)</p>
+                              </div>
+                              <span className="font-mono font-bold text-emerald-600">+৳{conv.commissionAmount.toLocaleString()}</span>
+                            </div>
+                          ))}
+                          {myAffiliatePayouts.map((pay) => (
+                            <div key={pay.id} className="py-2 flex items-center justify-between gap-2">
+                              <div>
+                                <p className="font-bold text-slate-900 dark:text-white uppercase">PAYOUT · {pay.method} · {pay.accountNumber}</p>
+                                <p className="text-[11px] text-slate-500">{new Date(pay.createdAt).toLocaleDateString()} {pay.trxId ? `· ${pay.trxId}` : ''}</p>
+                              </div>
+                              <div className="text-right">
+                                <span className="font-mono font-bold text-slate-900 dark:text-white block">-৳{pay.amount.toLocaleString()}</span>
+                                <span className="text-[10px] font-bold uppercase text-emerald-600">{pay.status}</span>
+                              </div>
                             </div>
                           ))}
                         </div>

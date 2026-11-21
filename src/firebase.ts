@@ -33,7 +33,12 @@ import {
   WalletTopUpRequest,
   WholesaleAccount,
   WholesaleQuoteRequest,
-  AIReviewTask
+  AIReviewTask,
+  BlogPost,
+  ResellerTopUpRequest,
+  AffiliateAccount,
+  AffiliateConversion,
+  AffiliatePayoutRequest
 } from './types';
 
 const app = initializeApp(firebaseConfig);
@@ -137,7 +142,8 @@ const ALLOWED_PUBLIC_SETTINGS_KEYS = [
   'cmsTexts', 'spinSettings', 'whatsappTemplates', 'marketingTemplates',
   'aiSettings', 'seoSettings', 'flashSale', 'footerSettings', 'singleProductCms',
   'organicMarketing', 'walletSettings', 'promoCoupons', 'deliveryBoys', 'brandAttributes',
-  'loyaltySettings', 'resellerSettings', 'wholesaleSettings', 'globalMarketingSettings', 'aiAutopilotSettings', 'invoiceSettings'
+  'loyaltySettings', 'resellerSettings', 'wholesaleSettings', 'globalMarketingSettings', 'aiAutopilotSettings', 'invoiceSettings',
+  'viewerCounter', 'affiliateSettings'
 ] as const;
 
 const ALLOWED_PRODUCT_KEYS = [
@@ -288,6 +294,9 @@ function sanitizeOrderForFirestore(order: Order) {
     ...(order.customerQuotedPrice !== undefined ? { customerQuotedPrice: safeNum(order.customerQuotedPrice, 0) } : {}),
     ...(order.wholesaleBuyerId ? { wholesaleBuyerId: String(order.wholesaleBuyerId).slice(0, 80) } : {}),
     ...(order.wholesaleCompany ? { wholesaleCompany: String(order.wholesaleCompany).slice(0, 160) } : {}),
+    ...(order.affiliateId ? { affiliateId: String(order.affiliateId).slice(0, 80) } : {}),
+    ...(order.affiliateCode ? { affiliateCode: String(order.affiliateCode).slice(0, 40) } : {}),
+    ...(order.affiliateCommission !== undefined ? { affiliateCommission: safeNum(order.affiliateCommission, 0) } : {}),
     createdAt: String(order.createdAt || new Date().toISOString()).slice(0, 64)
   };
 }
@@ -731,6 +740,8 @@ export async function saveCustomerToFirestore(customer: CustomerProfile): Promis
       district: String(customer.district || 'Dhaka - Inside City').trim().slice(0, 120),
       loyaltyPoints: safeNum(customer.loyaltyPoints, 0),
       walletBalance: safeNum(customer.walletBalance, 0),
+      ...(customer.spinBonusBalance !== undefined ? { spinBonusBalance: safeNum(customer.spinBonusBalance, 0) } : {}),
+      ...(customer.spinBonusExpiresAt ? { spinBonusExpiresAt: String(customer.spinBonusExpiresAt).slice(0, 64) } : {}),
       ...(customer.lastPurchaseAt ? { lastPurchaseAt: String(customer.lastPurchaseAt).slice(0, 64) } : {}),
       ...(customer.lastWalletCreditAt
         ? { lastWalletCreditAt: String(customer.lastWalletCreditAt).slice(0, 64) }
@@ -784,6 +795,8 @@ export function mapFirestoreDocToCustomer(data: Record<string, any>): CustomerPr
     district: String(data.district || 'Dhaka - Inside City'),
     loyaltyPoints: Number(data.loyaltyPoints) || 0,
     walletBalance: Number(data.walletBalance) || 0,
+    spinBonusBalance: data.spinBonusBalance !== undefined ? Number(data.spinBonusBalance) || 0 : 0,
+    spinBonusExpiresAt: data.spinBonusExpiresAt ? String(data.spinBonusExpiresAt) : undefined,
     lastPurchaseAt: data.lastPurchaseAt ? String(data.lastPurchaseAt) : undefined,
     lastWalletCreditAt: data.lastWalletCreditAt ? String(data.lastWalletCreditAt) : undefined,
     browsingHistory: Array.isArray(data.browsingHistory) ? data.browsingHistory : [],
@@ -1341,6 +1354,8 @@ export async function saveWholesalerToFirestore(buyer: WholesaleAccount): Promis
       tier: buyer.tier === 'Gold' || buyer.tier === 'Platinum' ? buyer.tier : 'Silver',
       extraDiscountPercent: safeNum(buyer.extraDiscountPercent, 5),
       ...(buyer.creditLimitBdt !== undefined ? { creditLimitBdt: safeNum(buyer.creditLimitBdt, 0) } : {}),
+      ...(buyer.creditUsedBdt !== undefined ? { creditUsedBdt: safeNum(buyer.creditUsedBdt, 0) } : {}),
+      ...(buyer.paymentTerms ? { paymentTerms: String(buyer.paymentTerms).slice(0, 40) } : {}),
       status: buyer.status === 'approved' || buyer.status === 'suspended' ? buyer.status : 'pending'
     });
     if (!auth.currentUser) {
@@ -1380,6 +1395,8 @@ export async function fetchWholesalersFromFirestore(): Promise<WholesaleAccount[
         tier: (data.tier || 'Silver') as WholesaleAccount['tier'],
         extraDiscountPercent: Number(data.extraDiscountPercent) || 5,
         creditLimitBdt: data.creditLimitBdt !== undefined ? Number(data.creditLimitBdt) : undefined,
+        creditUsedBdt: data.creditUsedBdt !== undefined ? Number(data.creditUsedBdt) : undefined,
+        paymentTerms: data.paymentTerms ? (String(data.paymentTerms) as WholesaleAccount['paymentTerms']) : undefined,
         status: (data.status || 'pending') as WholesaleAccount['status'],
         createdAt: createdTs || String(data.createdAt || new Date().toISOString())
       };
@@ -1516,6 +1533,217 @@ export async function fetchAIReviewQueueFromFirestore(): Promise<AIReviewTask[]>
   }
 }
 
+// ======================= BLOG POSTS =======================
+export async function saveBlogPostToFirestore(post: BlogPost): Promise<void> {
+  if (!auth.currentUser) return;
+  const cleanId = sanitizeFirestoreId(post.id, 'blog');
+  const path = `blog_posts/${cleanId}`;
+  try {
+    const cleanCover =
+      post.coverImage && (!post.coverImage.startsWith('data:') || post.coverImage.length < 240000)
+        ? post.coverImage
+        : '';
+    const payload = stripUndefinedDeep({
+      id: cleanId,
+      title: (String(post.title || '').trim() || 'Untitled Article').slice(0, 240),
+      titleBn: String(post.titleBn || post.title || '').slice(0, 240),
+      slug: sanitizeFirestoreId(post.slug || cleanId, 'article').slice(0, 160),
+      excerpt: String(post.excerpt || '').slice(0, 600),
+      excerptBn: String(post.excerptBn || '').slice(0, 600),
+      content: String(post.content || '').slice(0, 30000),
+      contentBn: String(post.contentBn || '').slice(0, 30000),
+      category: String(post.category || 'Shopping Guide').slice(0, 80),
+      categoryBn: String(post.categoryBn || 'শপিং গাইড').slice(0, 80),
+      coverImage: cleanCover,
+      author: String(post.author || 'BuyOne Editorial').slice(0, 120),
+      tags: Array.isArray(post.tags) ? post.tags.slice(0, 25) : [],
+      ...(post.seoTitle ? { seoTitle: String(post.seoTitle).slice(0, 240) } : {}),
+      ...(post.seoDescription ? { seoDescription: String(post.seoDescription).slice(0, 500) } : {}),
+      readTimeMinutes: Math.max(1, Number(post.readTimeMinutes) || 3),
+      viewsCount: Math.max(0, Number(post.viewsCount) || 0),
+      isPublished: post.isPublished !== false,
+      publishedAt: String(post.publishedAt || new Date().toISOString()).slice(0, 64),
+      createdAt: String(post.createdAt || new Date().toISOString()).slice(0, 64),
+      updatedAt: serverTimestamp()
+    });
+    await setDoc(doc(db, 'blog_posts', cleanId), payload, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteBlogPostFromFirestore(blogId: string): Promise<void> {
+  if (!auth.currentUser) return;
+  const cleanId = sanitizeFirestoreId(blogId, 'blog');
+  try {
+    await deleteDoc(doc(db, 'blog_posts', cleanId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `blog_posts/${cleanId}`);
+  }
+}
+
+export async function fetchBlogPostsFromFirestore(publishedOnly = true): Promise<BlogPost[]> {
+  try {
+    const col = collection(db, 'blog_posts');
+    const q = publishedOnly && !auth.currentUser ? query(col, where('isPublished', '==', true)) : col;
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ ...d.data(), id: d.id } as BlogPost));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'blog_posts');
+    return [];
+  }
+}
+
+// ======================= RESELLER TOP-UPS =======================
+export async function saveResellerTopUpToFirestore(topUp: ResellerTopUpRequest): Promise<void> {
+  const cleanId = sanitizeFirestoreId(topUp.id, 'rtop');
+  const path = `reseller_topups/${cleanId}`;
+  try {
+    const ref = doc(db, 'reseller_topups', cleanId);
+    const base = stripUndefinedDeep({
+      id: cleanId,
+      resellerId: String(topUp.resellerId || '').slice(0, 80),
+      resellerName: String(topUp.resellerName || 'Reseller').slice(0, 120),
+      resellerPhone: String(topUp.resellerPhone || '').slice(0, 32),
+      method: topUp.method || 'bkash',
+      amount: Math.min(500000, Math.max(1, safeNum(topUp.amount, 1))),
+      senderNumber: String(topUp.senderNumber || '').slice(0, 32),
+      trxId: (String(topUp.trxId || '').trim() || 'TRX00').slice(0, 80),
+      status: topUp.status === 'approved' || topUp.status === 'rejected' ? topUp.status : 'pending',
+      ...(topUp.note ? { note: String(topUp.note).slice(0, 300) } : {}),
+      submittedAt: String(topUp.createdAt || new Date().toISOString()).slice(0, 64),
+      ...(topUp.processedAt ? { processedAt: String(topUp.processedAt).slice(0, 64) } : {})
+    });
+    if (!auth.currentUser) {
+      await setDoc(ref, { ...base, status: 'pending', createdAt: serverTimestamp() });
+      return;
+    }
+    const existingSnap = await getDoc(ref);
+    if (!existingSnap.exists()) {
+      await setDoc(ref, { ...base, createdAt: serverTimestamp() });
+    } else {
+      await setDoc(ref, { ...base, createdAt: existingSnap.data().createdAt, updatedAt: serverTimestamp() }, { merge: true });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+// ======================= AFFILIATE SYSTEM =======================
+export async function saveAffiliateToFirestore(affiliate: AffiliateAccount): Promise<void> {
+  const cleanId = sanitizeFirestoreId(affiliate.id, 'aff');
+  const path = `affiliates/${cleanId}`;
+  try {
+    const ref = doc(db, 'affiliates', cleanId);
+    const payload = stripUndefinedDeep({
+      id: cleanId,
+      name: (String(affiliate.name || '').trim() || 'Affiliate').slice(0, 120),
+      phone: (String(affiliate.phone || '').trim() || '01700000000').slice(0, 32),
+      ...(affiliate.email ? { email: String(affiliate.email).trim().slice(0, 160) } : {}),
+      ...(affiliate.district ? { district: String(affiliate.district).slice(0, 120) } : {}),
+      ...(affiliate.channelUrl ? { channelUrl: String(affiliate.channelUrl).slice(0, 240) } : {}),
+      ...(affiliate.bkashNumber ? { bkashNumber: String(affiliate.bkashNumber).slice(0, 32) } : {}),
+      ...(affiliate.nagadNumber ? { nagadNumber: String(affiliate.nagadNumber).slice(0, 32) } : {}),
+      ...(affiliate.bankDetails ? { bankDetails: String(affiliate.bankDetails).slice(0, 300) } : {}),
+      affiliateCode: String(affiliate.affiliateCode || `AFF-${cleanId.slice(-4)}`).slice(0, 40),
+      commissionPercent: safeNum(affiliate.commissionPercent, 8),
+      clicksCount: Math.max(0, Math.round(Number(affiliate.clicksCount) || 0)),
+      totalOrders: Math.max(0, Math.round(Number(affiliate.totalOrders) || 0)),
+      walletBalance: safeNum(affiliate.walletBalance, 0),
+      totalEarnings: safeNum(affiliate.totalEarnings, 0),
+      status: affiliate.status === 'approved' || affiliate.status === 'suspended' ? affiliate.status : 'pending'
+    });
+    if (!auth.currentUser) {
+      await setDoc(ref, { ...payload, status: 'pending', createdAt: serverTimestamp() });
+      return;
+    }
+    const existingSnap = await getDoc(ref);
+    if (!existingSnap.exists()) {
+      await setDoc(ref, { ...payload, createdAt: serverTimestamp() });
+    } else {
+      await setDoc(ref, { ...payload, createdAt: existingSnap.data().createdAt, updatedAt: serverTimestamp() }, { merge: true });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteAffiliateFromFirestore(affiliateId: string): Promise<void> {
+  if (!auth.currentUser) return;
+  const cleanId = sanitizeFirestoreId(affiliateId, 'aff');
+  try {
+    await deleteDoc(doc(db, 'affiliates', cleanId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `affiliates/${cleanId}`);
+  }
+}
+
+export async function saveAffiliateConversionToFirestore(conv: AffiliateConversion): Promise<void> {
+  const cleanId = sanitizeFirestoreId(conv.id, 'affc');
+  const path = `affiliate_conversions/${cleanId}`;
+  try {
+    const ref = doc(db, 'affiliate_conversions', cleanId);
+    const payload = stripUndefinedDeep({
+      id: cleanId,
+      affiliateId: String(conv.affiliateId || '').slice(0, 80),
+      affiliateCode: String(conv.affiliateCode || '').slice(0, 40),
+      orderId: String(conv.orderId || '').slice(0, 80),
+      customerName: String(conv.customerName || 'Customer').slice(0, 120),
+      orderTotal: safeNum(conv.orderTotal, 0),
+      commissionPercent: safeNum(conv.commissionPercent, 8),
+      commissionAmount: safeNum(conv.commissionAmount, 0),
+      status: conv.status === 'credited' || conv.status === 'cancelled' ? conv.status : 'pending',
+      submittedAt: String(conv.createdAt || new Date().toISOString()).slice(0, 64)
+    });
+    if (!auth.currentUser) {
+      await setDoc(ref, { ...payload, status: 'pending', createdAt: serverTimestamp() });
+      return;
+    }
+    const existingSnap = await getDoc(ref);
+    if (!existingSnap.exists()) {
+      await setDoc(ref, { ...payload, createdAt: serverTimestamp() });
+    } else {
+      await setDoc(ref, { ...payload, createdAt: existingSnap.data().createdAt, updatedAt: serverTimestamp() }, { merge: true });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function saveAffiliatePayoutToFirestore(payout: AffiliatePayoutRequest): Promise<void> {
+  const cleanId = sanitizeFirestoreId(payout.id, 'affp');
+  const path = `affiliate_payouts/${cleanId}`;
+  try {
+    const ref = doc(db, 'affiliate_payouts', cleanId);
+    const payload = stripUndefinedDeep({
+      id: cleanId,
+      affiliateId: String(payout.affiliateId || '').slice(0, 80),
+      affiliateName: String(payout.affiliateName || 'Affiliate').slice(0, 120),
+      affiliatePhone: String(payout.affiliatePhone || '').slice(0, 32),
+      method: payout.method || 'bkash',
+      accountNumber: String(payout.accountNumber || '').slice(0, 160),
+      amount: Math.max(1, safeNum(payout.amount, 1)),
+      status: payout.status === 'paid' || payout.status === 'rejected' ? payout.status : 'pending',
+      ...(payout.trxId ? { trxId: String(payout.trxId).slice(0, 80) } : {}),
+      ...(payout.note ? { note: String(payout.note).slice(0, 300) } : {}),
+      submittedAt: String(payout.createdAt || new Date().toISOString()).slice(0, 64),
+      ...(payout.processedAt ? { processedAt: String(payout.processedAt).slice(0, 64) } : {})
+    });
+    if (!auth.currentUser) {
+      await setDoc(ref, { ...payload, status: 'pending', createdAt: serverTimestamp() });
+      return;
+    }
+    const existingSnap = await getDoc(ref);
+    if (!existingSnap.exists()) {
+      await setDoc(ref, { ...payload, createdAt: serverTimestamp() });
+    } else {
+      await setDoc(ref, { ...payload, createdAt: existingSnap.data().createdAt, updatedAt: serverTimestamp() }, { merge: true });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
 // ======================= UNIFIED ALL-SETTINGS SYNC & DIAGNOSTICS =======================
 export interface FullCloudSyncPayload {
   settings: StoreSettings;
@@ -1532,8 +1760,13 @@ export interface FullCloudSyncPayload {
   waitlist?: WaitlistEntry[];
   resellers?: ResellerAccount[];
   resellerPayouts?: ResellerPayoutRequest[];
+  resellerTopUps?: ResellerTopUpRequest[];
   wholesalers?: WholesaleAccount[];
   wholesaleQuotes?: WholesaleQuoteRequest[];
+  blogs?: BlogPost[];
+  affiliates?: AffiliateAccount[];
+  affiliateConversions?: AffiliateConversion[];
+  affiliatePayouts?: AffiliatePayoutRequest[];
   users: UserStaff[];
 }
 
@@ -1702,6 +1935,51 @@ export async function syncAllAdminDataToFirestore(
       counts.staffUsers += 1;
     } catch (err) {
       errors.push(`staff ${u.id}: ${extractFirestoreErrorReason(err)}`);
+    }
+  }
+
+  for (const b of payload.blogs || []) {
+    try {
+      await saveBlogPostToFirestore(b);
+      counts.blogs = (counts.blogs || 0) + 1;
+    } catch (err) {
+      errors.push(`blog ${b.id}: ${extractFirestoreErrorReason(err)}`);
+    }
+  }
+
+  for (const rt of payload.resellerTopUps || []) {
+    try {
+      await saveResellerTopUpToFirestore(rt);
+      counts.resellerTopUps = (counts.resellerTopUps || 0) + 1;
+    } catch (err) {
+      errors.push(`reseller_topup ${rt.id}: ${extractFirestoreErrorReason(err)}`);
+    }
+  }
+
+  for (const aff of payload.affiliates || []) {
+    try {
+      await saveAffiliateToFirestore(aff);
+      counts.affiliates = (counts.affiliates || 0) + 1;
+    } catch (err) {
+      errors.push(`affiliate ${aff.id}: ${extractFirestoreErrorReason(err)}`);
+    }
+  }
+
+  for (const conv of payload.affiliateConversions || []) {
+    try {
+      await saveAffiliateConversionToFirestore(conv);
+      counts.affiliateConversions = (counts.affiliateConversions || 0) + 1;
+    } catch (err) {
+      errors.push(`affiliate_conversion ${conv.id}: ${extractFirestoreErrorReason(err)}`);
+    }
+  }
+
+  for (const ap of payload.affiliatePayouts || []) {
+    try {
+      await saveAffiliatePayoutToFirestore(ap);
+      counts.affiliatePayouts = (counts.affiliatePayouts || 0) + 1;
+    } catch (err) {
+      errors.push(`affiliate_payout ${ap.id}: ${extractFirestoreErrorReason(err)}`);
     }
   }
 
