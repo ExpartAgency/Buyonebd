@@ -1267,6 +1267,9 @@ export const INITIAL_SETTINGS: StoreSettings = {
     checkoutRateLimitSeconds: 20,
     blockDuplicateOrdersMinutes: 5,
     blockedPhones: [],
+    blockedIps: [],
+    idleLogoutMinutes: 60,
+    enablePayloadSanitizer: true,
     enableStrictHeaders: true,
     maskPublicSecrets: true
   },
@@ -1370,7 +1373,62 @@ export const INITIAL_SETTINGS: StoreSettings = {
     baseCount: 76439,
     labelBn: 'জন এই পণ্যটি দেখেছেন',
     labelEn: 'people viewed this',
-    autoIncrement: true
+    autoIncrement: true,
+    showOnSingleProduct: true,
+    showOnCards: false
+  },
+  urgencySettings: {
+    enabled: true,
+    lowStockThreshold: 12,
+    showStockProgress: true,
+    showLiveLookers: true,
+    showRecentSold: true,
+    showCountdown: true,
+    countdownHours: 6,
+    showDispatchCutoff: true,
+    dispatchCutoffHour: 17,
+    lowStockTextBn: 'স্টক দ্রুত ফুরিয়ে যাচ্ছে! মাত্র {stock} টি বাকি',
+    lowStockTextEn: 'Selling fast — only {stock} left in stock',
+    dispatchTextBn: 'আজ বিকাল ৫টার আগে অর্ডার করলে আজই ডিসপ্যাচ হবে',
+    dispatchTextEn: 'Order before 5:00 PM for same-day dispatch'
+  },
+  socialAutoConfig: {
+    facebook: {
+      enabled: true,
+      accountName: 'BuyOne BD Official Page',
+      pageOrChannelId: '',
+      webhookUrl: '',
+      accessToken: '',
+      autoPostEnabled: false,
+      intervalHours: 6
+    },
+    instagram: {
+      enabled: true,
+      accountName: '@buyonebd.official',
+      pageOrChannelId: '',
+      webhookUrl: '',
+      accessToken: '',
+      autoPostEnabled: false,
+      intervalHours: 8
+    },
+    tiktok: {
+      enabled: true,
+      accountName: '@buyonebd',
+      pageOrChannelId: '',
+      webhookUrl: '',
+      accessToken: '',
+      autoPostEnabled: false,
+      intervalHours: 12
+    },
+    youtube: {
+      enabled: true,
+      accountName: 'BuyOne BD Shorts & Reviews',
+      pageOrChannelId: '',
+      webhookUrl: '',
+      accessToken: '',
+      autoPostEnabled: false,
+      intervalHours: 24
+    }
   },
   affiliateSettings: {
     enabled: true,

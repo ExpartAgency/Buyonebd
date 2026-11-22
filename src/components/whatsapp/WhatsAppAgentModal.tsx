@@ -56,6 +56,7 @@ export const WhatsAppAgentModal: React.FC = () => {
     setWhatsappProductDraft,
     buildProductWhatsAppUrl,
     sendCustomerWhatsAppInquiry,
+    submitChatInquiry,
     getPartnerPriceInfo,
     addToast,
     customerProfile,
@@ -74,18 +75,54 @@ export const WhatsAppAgentModal: React.FC = () => {
   const [isSendingWaInquiry, setIsSendingWaInquiry] = useState(false);
   const [waSentReceipt, setWaSentReceipt] = useState(false);
   const [copiedProductUrl, setCopiedProductUrl] = useState(false);
+  const [showInquiryForm, setShowInquiryForm] = useState(true);
+  const [leadName, setLeadName] = useState(customerProfile?.name || '');
+  const [leadCountryCode, setLeadCountryCode] = useState('+880');
+  const [leadPhone, setLeadPhone] = useState(customerProfile?.phone || '');
+  const [leadQuery, setLeadQuery] = useState('');
+  const [isSubmittingLead, setIsSubmittingLead] = useState(false);
+  const [leadSubmittedOk, setLeadSubmittedOk] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (customerProfile?.name) {
       setCallerName((prev) => prev || customerProfile.name);
       setWaName((prev) => prev || customerProfile.name);
+      setLeadName((prev) => prev || customerProfile.name);
     }
     if (customerProfile?.phone) {
       setCallerPhone((prev) => prev || customerProfile.phone);
       setWaPhone((prev) => prev || customerProfile.phone);
+      setLeadPhone((prev) => prev || customerProfile.phone);
     }
   }, [customerProfile?.name, customerProfile?.phone]);
+
+  const handleLeadInquirySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmittingLead) return;
+    if (!leadName.trim() || !leadPhone.trim() || !leadQuery.trim()) return;
+    setIsSubmittingLead(true);
+    try {
+      const attachedProduct = whatsappProductDraft?.product;
+      const res = await submitChatInquiry({
+        name: leadName.trim(),
+        countryCode: leadCountryCode,
+        phone: leadPhone.trim(),
+        message: leadQuery.trim(),
+        productId: attachedProduct?.id,
+        productTitle: attachedProduct ? (lang === 'bn' ? attachedProduct.titleBn || attachedProduct.title : attachedProduct.title) : undefined,
+        productUrl: whatsappProductDraft?.productUrl
+      });
+      if (res.success) {
+        setLeadSubmittedOk(true);
+        setWaName(leadName.trim());
+        setWaPhone(`${leadCountryCode}${leadPhone.trim().replace(/^0+/, '')}`);
+        await sendCustomerChatMessage(`[Inquiry from ${leadName.trim()} (${leadCountryCode} ${leadPhone.trim()})]: ${leadQuery.trim()}`);
+      }
+    } finally {
+      setIsSubmittingLead(false);
+    }
+  };
 
   // Automatically open WhatsApp tab and prefill product details + URL when opened from a product page
   useEffect(() => {
@@ -395,39 +432,194 @@ export const WhatsAppAgentModal: React.FC = () => {
             </button>
           </div>
 
-          {/* TAB 1: LIVE SUPPORT CHAT */}
+          {/* TAB 1: LIVE SUPPORT CHAT & INQUIRY FORM */}
           {activeTab === 'chat' && (
             <>
               <div className="bg-slate-50 dark:bg-slate-950/70 px-4 py-2 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 text-[11px] shrink-0">
                 <span className="font-medium text-slate-600 dark:text-slate-300 truncate flex items-center gap-1.5">
                   <MessageSquareText className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <span className="truncate">
-                    {currentSession?.manualMode
+                    {showInquiryForm
+                      ? t('কাস্টমার সহায়তা ফর্ম', 'Customer Support Inquiry Form')
+                      : currentSession?.manualMode
                       ? t('সরাসরি সাপোর্ট ডেস্ক সক্রিয়', 'Direct Support Desk Active')
                       : t('স্মার্ট শপিং অ্যাসিস্ট্যান্ট সক্রিয়', 'Smart Shopping Assistant Active')}
                   </span>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!currentSession) return;
-                    if (currentSession.manualMode) {
-                      toggleChatManualMode(currentSession.id, false);
-                    } else {
-                      requestDirectDeskSupport(currentSession.id);
-                    }
-                  }}
-                  className={`px-2.5 py-1 rounded-md font-semibold text-[11px] cursor-pointer shrink-0 transition-colors border whitespace-nowrap ${
-                    currentSession?.manualMode
-                      ? 'bg-emerald-700 border-emerald-700 text-white hover:bg-emerald-800'
-                      : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-emerald-600 hover:text-emerald-700 dark:hover:text-emerald-400'
-                  }`}
-                >
-                  {currentSession?.manualMode
-                    ? t('অটো সহায়তা চালু', 'Switch to Auto Help')
-                    : t('সরাসরি ডেস্ক', 'Direct Specialist')}
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowInquiryForm((v) => !v);
+                      setLeadSubmittedOk(false);
+                    }}
+                    className="px-2.5 py-1 rounded-md font-semibold text-[11px] cursor-pointer transition-colors border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-emerald-600 whitespace-nowrap"
+                  >
+                    {showInquiryForm ? t('লাইভ চ্যাট', 'Open Live Chat') : t('ইনকোয়ারি ফর্ম', 'Inquiry Form')}
+                  </button>
+                  {!showInquiryForm && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!currentSession) return;
+                        if (currentSession.manualMode) {
+                          toggleChatManualMode(currentSession.id, false);
+                        } else {
+                          requestDirectDeskSupport(currentSession.id);
+                        }
+                      }}
+                      className={`px-2.5 py-1 rounded-md font-semibold text-[11px] cursor-pointer shrink-0 transition-colors border whitespace-nowrap ${
+                        currentSession?.manualMode
+                          ? 'bg-emerald-700 border-emerald-700 text-white hover:bg-emerald-800'
+                          : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-emerald-600 hover:text-emerald-700 dark:hover:text-emerald-400'
+                      }`}
+                    >
+                      {currentSession?.manualMode
+                        ? t('অটো সহায়তা চালু', 'Switch to Auto Help')
+                        : t('সরাসরি ডেস্ক', 'Direct Specialist')}
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {showInquiryForm ? (
+                <div className="flex-1 overflow-y-auto p-5 bg-white dark:bg-slate-900 flex flex-col justify-between">
+                  {!leadSubmittedOk ? (
+                    <form onSubmit={handleLeadInquirySubmit} className="space-y-4">
+                      <h3 className="text-center font-extrabold text-base sm:text-lg text-slate-900 dark:text-white leading-snug px-2">
+                        {t('আমরা আপনাকে কীভাবে সাহায্য করতে পারি?', 'Let us know if we can help you with anything at all.')}
+                      </h3>
+
+                      <div className="space-y-3">
+                        <input
+                          type="text"
+                          required
+                          value={leadName}
+                          onChange={(e) => setLeadName(e.target.value)}
+                          placeholder={t('আপনার নাম লিখুন', 'Enter your name')}
+                          className="w-full px-3.5 py-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#4CAF50] focus:ring-1 focus:ring-[#4CAF50]"
+                        />
+
+                        <div className="flex items-stretch gap-2">
+                          <select
+                            value={leadCountryCode}
+                            onChange={(e) => setLeadCountryCode(e.target.value)}
+                            aria-label="Country code"
+                            className="w-24 px-2 py-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#4CAF50]"
+                          >
+                            <option value="+880">+880</option>
+                            <option value="+91">+91</option>
+                            <option value="+1">+1</option>
+                            <option value="+44">+44</option>
+                            <option value="+971">+971</option>
+                            <option value="+966">+966</option>
+                            <option value="+60">+60</option>
+                          </select>
+                          <input
+                            type="tel"
+                            required
+                            value={leadPhone}
+                            onChange={(e) => setLeadPhone(e.target.value)}
+                            placeholder={t('আপনার মোবাইল নম্বর লিখুন', 'Enter your mobile number')}
+                            className="flex-1 px-3.5 py-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#4CAF50] focus:ring-1 focus:ring-[#4CAF50]"
+                          />
+                        </div>
+
+                        <div className="relative pb-6">
+                          <textarea
+                            rows={4}
+                            required
+                            value={leadQuery}
+                            onChange={(e) => setLeadQuery(e.target.value)}
+                            placeholder={t('আপনার প্রশ্নটি এখানে লিখুন', 'Write your query here')}
+                            className="w-full px-3.5 py-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#4CAF50] focus:ring-1 focus:ring-[#4CAF50] resize-none"
+                          />
+
+                          <button
+                            type="submit"
+                            disabled={isSubmittingLead || !leadName.trim() || !leadPhone.trim() || !leadQuery.trim()}
+                            title={t('পাঠান', 'Send Query')}
+                            aria-label="Send Inquiry"
+                            className="absolute right-2 bottom-0 w-12 h-12 rounded-full bg-[#4CAF50] hover:bg-[#43A047] disabled:opacity-50 text-white shadow-lg flex items-center justify-center cursor-pointer transition-transform active:scale-95"
+                          >
+                            <Send className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => setShowInquiryForm(false)}
+                          className="text-emerald-700 dark:text-emerald-400 font-semibold hover:underline cursor-pointer"
+                        >
+                          {t('সরাসরি লাইভ চ্যাট খুলুন →', 'Switch to Live Chat →')}
+                        </button>
+                        <a
+                          href={getWhatsAppDirectLink()}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-emerald-700 dark:text-emerald-400 font-semibold hover:underline inline-flex items-center gap-1"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span>{t('WhatsApp অ্যাপে চ্যাট', 'Open WhatsApp')}</span>
+                        </a>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="my-auto p-5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-center space-y-4">
+                      <div className="w-12 h-12 rounded-full bg-[#4CAF50] text-white mx-auto flex items-center justify-center shadow">
+                        <Check className="w-6 h-6" />
+                      </div>
+                      <div className="space-y-1">
+                        <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                          {t('আপনার মেসেজ সফলভাবে পাঠানো হয়েছে!', 'Your inquiry has been submitted!')}
+                        </h4>
+                        <p className="text-xs text-slate-600 dark:text-slate-300">
+                          {t(
+                            'আমাদের টিম শীঘ্রই আপনাকে রিপ্লাই দেবে। চাইলে এখনই লাইভ চ্যাটে কথা বলতে পারেন।',
+                            'Our support team received your request on the Admin Dashboard and will reply shortly.'
+                          )}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowInquiryForm(false);
+                            setLeadQuery('');
+                          }}
+                          className="w-full py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs cursor-pointer"
+                        >
+                          {t('লাইভ চ্যাটে উত্তর দেখুন', 'Continue in Live Chat')}
+                        </button>
+                        <a
+                          href={`https://wa.me/${String(settings.whatsappNumber || '8801917942662').replace(/[^\d]/g, '')}?text=${encodeURIComponent(
+                            `Name: ${leadName}\nPhone: ${leadCountryCode}${leadPhone}\nQuery: ${leadQuery}`
+                          )}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5"
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                          <span>{t('WhatsApp অ্যাপে পাঠান', 'Continue on WhatsApp App')}</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLeadSubmittedOk(false);
+                            setLeadQuery('');
+                          }}
+                          className="text-[11px] text-slate-500 hover:underline cursor-pointer pt-1"
+                        >
+                          {t('আরেকটি প্রশ্ন পাঠান', 'Send another query')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
 
               <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50/70 dark:bg-slate-950 text-xs">
                 {sessionMessages.map((msg, idx) => {
@@ -586,6 +778,8 @@ export const WhatsAppAgentModal: React.FC = () => {
                   <Send className="w-4 h-4" />
                 </button>
               </div>
+                </>
+              )}
             </>
           )}
 

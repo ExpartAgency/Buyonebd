@@ -576,7 +576,8 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white leading-tight tracking-tight">
                   {lang === 'bn' ? product.titleBn : product.title}
                 </h1>
-                {settings.viewerCounter?.enabled !== false && (
+                {settings.viewerCounter?.enabled !== false &&
+                  settings.viewerCounter?.showOnSingleProduct !== false && (
                   <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
                     <Eye className="w-4 h-4 shrink-0" />
                     <span>
@@ -588,9 +589,18 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     </span>
                   </p>
                 )}
-                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1.5 line-clamp-2">
-                  {lang === 'bn' ? product.descriptionBn : product.description}
-                </p>
+                {(() => {
+                  const shortDesc =
+                    lang === 'bn'
+                      ? (product.descriptionBn?.trim() || product.description?.trim())
+                      : (product.description?.trim() || product.descriptionBn?.trim());
+                  if (!shortDesc) return null;
+                  return (
+                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1.5 line-clamp-2">
+                      {shortDesc}
+                    </p>
+                  );
+                })()}
               </div>
 
               {/* Elevated Price, Total & Savings Panel */}
@@ -794,9 +804,103 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
               </div>
             </div>
 
+            {/* Urgency & Scarcity Conversion Block */}
+            {settings.urgencySettings?.enabled !== false && (product.stock ?? 0) > 0 && (() => {
+              const urg = settings.urgencySettings;
+              const threshold = urg?.lowStockThreshold ?? 20;
+              const showLowStock = (urg?.showStockProgress !== false) && (product.stock ?? 0) <= threshold;
+              const stockFillPct = Math.max(18, Math.min(92, Math.round(((product.stock ?? 5) / Math.max(threshold, 1)) * 100)));
+              const idHash = product.id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+              const liveLookers = 11 + (idHash % 17);
+              const soldToday = Math.max(4, Math.min(42, Math.round((product.soldCount || 48) / 9) + (idHash % 7)));
+              const now = new Date();
+              const cutoffHour = urg?.dispatchCutoffHour ?? 17;
+              const cutoffTarget = new Date(now);
+              cutoffTarget.setHours(cutoffHour, 0, 0, 0);
+              if (cutoffTarget.getTime() <= now.getTime()) {
+                cutoffTarget.setDate(cutoffTarget.getDate() + 1);
+              }
+              const cutoffMinsTotal = Math.max(15, Math.floor((cutoffTarget.getTime() - now.getTime()) / 60000));
+              const cutoffH = Math.floor(cutoffMinsTotal / 60);
+              const cutoffM = cutoffMinsTotal % 60;
+
+              return (
+                <div className="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/25 border border-amber-200/80 dark:border-amber-800/60 space-y-2.5 text-xs">
+                  {(urg?.showLiveLookers !== false || urg?.showRecentSold !== false) && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold text-slate-800 dark:text-slate-200 tabular-nums">
+                      {urg?.showLiveLookers !== false && (
+                        <span className="inline-flex items-center gap-1.5 text-rose-700 dark:text-rose-400">
+                          <Eye className="w-3.5 h-3.5 shrink-0" />
+                          <span>
+                            {t(
+                              `এখন ${liveLookers} জন এই পণ্যটি দেখছেন`,
+                              `${liveLookers} people are viewing this right now`
+                            )}
+                          </span>
+                        </span>
+                      )}
+                      {urg?.showRecentSold !== false && (
+                        <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300">
+                          <Flame className="w-3.5 h-3.5 shrink-0" />
+                          <span>
+                            {t(
+                              `গত ২৪ ঘণ্টায় ${soldToday}টি অর্ডার হয়েছে`,
+                              `${soldToday} sold in last 24h`
+                            )}
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {showLowStock && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[11px] font-extrabold text-rose-700 dark:text-rose-400 tabular-nums">
+                        <span>
+                          {t(
+                            (urg?.lowStockTextBn || 'তাড়াতাড়ি করুন! স্টকে আর মাত্র {stock} পিস বাকি আছে').replace('{stock}', String(product.stock)),
+                            (urg?.lowStockTextEn || 'Hurry! Only {stock} items left in stock').replace('{stock}', String(product.stock))
+                          )}
+                        </span>
+                        <span>{stockFillPct}%</span>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-rose-200/70 dark:bg-rose-950 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-amber-500 to-rose-600 transition-all duration-500"
+                          style={{ width: `${stockFillPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {(urg?.showCountdown !== false || urg?.showDispatchCutoff !== false) && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-amber-200/70 dark:border-amber-800/40 text-[11px] tabular-nums">
+                      {urg?.showDispatchCutoff !== false && (
+                        <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-800 dark:text-emerald-300">
+                          <Truck className="w-3.5 h-3.5 shrink-0" />
+                          <span>
+                            {t(
+                              urg?.dispatchTextBn || `আজকে শিপমেন্ট পেতে ${cutoffH} ঘণ্টা ${cutoffM} মিনিটের মধ্যে অর্ডার করুন`,
+                              urg?.dispatchTextEn || `Order within ${cutoffH}h ${cutoffM}m for same-day courier dispatch`
+                            )}
+                          </span>
+                        </span>
+                      )}
+                      {urg?.showCountdown !== false && (
+                        <span className="font-mono font-black text-rose-700 dark:text-rose-300">
+                          {t('অফার শেষ:', 'Deal ends:')}{' '}
+                          {timeLeft.hours.toString().padStart(2, '0')}:{timeLeft.minutes.toString().padStart(2, '0')}:{timeLeft.seconds.toString().padStart(2, '0')}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Primary Checkout Stack */}
             <div className="space-y-3 pt-2">
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+              <div className="flex items-stretch gap-2.5">
                 {(product.stock ?? 0) <= 0 ? (
                   <button
                     type="button"
@@ -812,55 +916,54 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     </span>
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => openOneClickCheckout(product)}
-                    style={{ backgroundColor: settings.themeColors?.primary || '#059669' }}
-                    className="flex-1 py-3.5 sm:py-4 px-5 hover:opacity-95 text-white font-black text-sm rounded-2xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
-                  >
-                    <Zap className="w-5 h-5 text-amber-300 fill-amber-300 shrink-0" />
-                    <span>
-                      {t(
-                        settings.cmsTexts?.orderNowBtnBn || 'এখনই কিনুন',
-                        settings.cmsTexts?.orderNowBtnEn === 'Order Now' || !settings.cmsTexts?.orderNowBtnEn
-                          ? 'Buy Now'
-                          : settings.cmsTexts.orderNowBtnEn
-                      )}
-                    </span>
-                  </button>
+                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2.5 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => openOneClickCheckout(product)}
+                      style={{ backgroundColor: settings.themeColors?.primary || '#059669' }}
+                      className="w-full py-3.5 sm:py-4 px-5 hover:opacity-95 text-white font-black text-sm rounded-2xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
+                    >
+                      <Zap className="w-5 h-5 text-amber-300 fill-amber-300 shrink-0" />
+                      <span>
+                        {t(
+                          settings.cmsTexts?.orderNowBtnBn || 'এখনই কিনুন',
+                          settings.cmsTexts?.orderNowBtnEn === 'Order Now' || !settings.cmsTexts?.orderNowBtnEn
+                            ? 'Buy Now'
+                            : settings.cmsTexts.orderNowBtnEn
+                        )}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        addToCart(product, quantity, selectedColor, selectedSize, selectedAttributes);
+                        addToast(
+                          'success',
+                          t('কার্টে যোগ হয়েছে!', 'Added to Cart!'),
+                          lang === 'bn' ? product.titleBn : product.title
+                        );
+                      }}
+                      className="w-full py-3.5 sm:py-4 px-5 bg-slate-900 hover:bg-slate-800 text-white font-black text-sm rounded-2xl border border-slate-700 shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
+                    >
+                      <ShoppingBag className="w-5 h-5 text-emerald-400 shrink-0" />
+                      <span>{t('কার্টে রাখুন', 'Add to Cart')}</span>
+                    </button>
+                  </div>
                 )}
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={(product.stock ?? 0) <= 0}
-                    onClick={() => {
-                      addToCart(product, quantity, selectedColor, selectedSize, selectedAttributes);
-                      addToast(
-                        'success',
-                        t('কার্টে যোগ হয়েছে!', 'Added to Cart!'),
-                        lang === 'bn' ? product.titleBn : product.title
-                      );
-                    }}
-                    className="flex-1 sm:flex-none py-3.5 sm:py-4 px-5 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-bold text-sm rounded-2xl border border-slate-700 flex items-center justify-center gap-2 cursor-pointer transition-colors active:scale-95"
-                  >
-                    <ShoppingBag className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>{t('কার্টে রাখুন', 'Add to Cart')}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => toggleWishlist(product.id)}
-                    className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer shrink-0 ${
-                      isWishlisted(product.id)
-                        ? 'bg-rose-50 border-rose-300 text-rose-600'
-                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:text-rose-600'
-                    }`}
-                    title={t('পছন্দ তালিকা', 'Wishlist')}
-                  >
-                    <Heart className={`w-5 h-5 ${isWishlisted(product.id) ? 'fill-rose-600' : ''}`} />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleWishlist(product.id)}
+                  className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer shrink-0 flex items-center justify-center ${
+                    isWishlisted(product.id)
+                      ? 'bg-rose-50 border-rose-300 text-rose-600'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:text-rose-600'
+                  }`}
+                  title={t('পছন্দ তালিকা', 'Wishlist')}
+                >
+                  <Heart className={`w-5 h-5 ${isWishlisted(product.id) ? 'fill-rose-600' : ''}`} />
+                </button>
               </div>
 
               {/* Direct Order Via WhatsApp */}
@@ -1078,9 +1181,21 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
 
           {activeDetailTab === 'overview' && (
             <div className="space-y-6 animate-fade-in">
-              <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">
-                {lang === 'bn' ? product.descriptionBn : product.description}
-              </p>
+              {(() => {
+                const fullDescription =
+                  lang === 'bn'
+                    ? (product.descriptionBn?.trim() || product.description?.trim())
+                    : (product.description?.trim() || product.descriptionBn?.trim());
+                const fallbackOverview = lang === 'bn'
+                  ? `${product.titleBn || product.title} — ${product.categoryBn || product.category} ক্যাটাগরির প্রিমিয়াম ও ১০০% অরিজিনাল পণ্য। ${product.brandBn || product.brand ? `ব্র্যান্ড: ${product.brandBn || product.brand}। ` : ''}সারা বাংলাদেশে ক্যাশ অন ডেলিভারি এবং ${product.warrantyInfoBn || product.warrantyInfo || '৭ দিনের সহজ রিপ্লেসমেন্ট ওয়ারেন্টি'} সুবিধা সহ নিশ্চিন্তে অর্ডার করুন।`
+                  : `${product.title || product.titleBn} — Authentic, quality-checked item in ${product.category || product.categoryBn}. ${product.brand ? `Brand: ${product.brand}. ` : ''}Available across all 64 districts in Bangladesh with Cash on Delivery and ${product.warrantyInfo || '7-day easy replacement warranty'}.`;
+
+                return (
+                  <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">
+                    {fullDescription || fallbackOverview}
+                  </p>
+                );
+              })()}
 
               {(lang === 'bn' ? product.featuresBn || product.features : product.features) && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">

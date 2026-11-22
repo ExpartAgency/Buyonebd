@@ -43,7 +43,11 @@ import {
   ResellerTopUpRequest,
   AffiliateAccount,
   AffiliateConversion,
-  AffiliatePayoutRequest
+  AffiliatePayoutRequest,
+  ChatInquiry,
+  SocialScheduledPost,
+  ExpenseEntry,
+  AITeamBriefing
 } from '../types';
 import { speakClearText, stopAllVoicePlayback } from '../utils/voiceAudio';
 import {
@@ -595,10 +599,12 @@ interface StoreContextType {
   updateUser: (id: string, updates: Partial<UserStaff>) => void;
   deleteUser: (id: string) => void;
 
-  // Admin Auth (Hossain login & Cloud Firebase Sync)
+  // Admin Auth (Hossain login & Cloud Firebase Sync) + 1-Hour Idle Auto-Logout
   isAdminLoggedIn: boolean;
   isAdminLoginOpen: boolean;
   setIsAdminLoginOpen: (open: boolean) => void;
+  adminSessionRemainingSec: number;
+  lockAdminSessionNow: () => void;
   loginAdmin: (email: string, pass: string) => boolean;
   logoutAdmin: () => void;
   firebaseAdminUserEmail: string | null;
@@ -614,6 +620,41 @@ interface StoreContextType {
   testFirebaseCloudConnection: () => Promise<{ ok: boolean; details: FirebaseDiagnosticStep[] }>;
   exportFullDatabaseBackup: () => Record<string, any>;
   restoreDatabaseFromBackup: (backup: Record<string, any>, pushToCloud?: boolean) => Promise<boolean>;
+
+  // Customer Chat Inquiry Lead Form (Screenshots A & B)
+  chatInquiries: ChatInquiry[];
+  submitChatInquiry: (payload: {
+    name: string;
+    countryCode?: string;
+    phone: string;
+    message: string;
+    productId?: string;
+    productTitle?: string;
+    productUrl?: string;
+  }) => Promise<{ success: boolean; inquiry?: ChatInquiry; error?: string }>;
+  updateChatInquiry: (id: string, updates: Partial<ChatInquiry>) => Promise<void>;
+  deleteChatInquiry: (id: string) => Promise<void>;
+  bulkChatInquiriesAction: (ids: string[], action: 'delete' | 'replied' | 'closed' | 'following_up') => Promise<void>;
+
+  // Social Auto-Scheduler (FB, IG, TikTok, YouTube)
+  socialPosts: SocialScheduledPost[];
+  addSocialPost: (post: Omit<SocialScheduledPost, 'id' | 'createdAt' | 'updatedAt'>) => SocialScheduledPost;
+  updateSocialPost: (id: string, updates: Partial<SocialScheduledPost>) => void;
+  deleteSocialPost: (id: string) => void;
+  bulkDeleteSocialPosts: (ids: string[]) => void;
+  dispatchSocialPostNow: (postId: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Business Expense & Net Profit Ledger
+  expenses: ExpenseEntry[];
+  addExpense: (entry: Omit<ExpenseEntry, 'id' | 'createdAt'>) => ExpenseEntry;
+  updateExpense: (id: string, updates: Partial<ExpenseEntry>) => void;
+  deleteExpense: (id: string) => void;
+
+  // Solo-Founder AI Company Team (Sales, Marketing, Accounts, Support)
+  aiTeamBriefings: AITeamBriefing[];
+  isRunningAITeam: boolean;
+  runAITeamBriefing: (focusPrompt?: string, autoExecute?: boolean) => Promise<AITeamBriefing | null>;
+  executeAITeamAction: (briefingId: string, actionId: string) => Promise<boolean>;
 
   // Spin Rewards CRUD & Limit
   spinRewards: SpinReward[];
@@ -842,6 +883,8 @@ const LOCAL_STORAGE_ABANDONED = 'buyonebd_abandoned_v3';
 const LOCAL_STORAGE_USERS = 'buyonebd_users_v3';
 const LOCAL_STORAGE_REVIEWS = 'buyonebd_reviews_v3';
 const LOCAL_STORAGE_ADMIN_AUTH = 'buyonebd_admin_auth_v3';
+const LOCAL_STORAGE_ADMIN_LAST_ACTIVITY = 'buyonebd_admin_last_activity';
+const LOCAL_STORAGE_ADMIN_TOKEN = 'buyonebd_admin_token_v1';
 const LOCAL_STORAGE_SPIN_STATS = 'buyonebd_spin_stats_v3';
 const LOCAL_STORAGE_LANG = 'buyonebd_lang_v3';
 const LOCAL_STORAGE_RECENTLY_VIEWED = 'buyonebd_recently_viewed_v1';
@@ -1040,6 +1083,30 @@ function mergeSettings(raw: any): StoreSettings {
     viewerCounter: {
       ...INITIAL_SETTINGS.viewerCounter!,
       ...(raw.viewerCounter || {})
+    },
+    urgencySettings: {
+      ...INITIAL_SETTINGS.urgencySettings!,
+      ...(raw.urgencySettings || {})
+    },
+    socialAutoConfig: {
+      ...INITIAL_SETTINGS.socialAutoConfig!,
+      ...(raw.socialAutoConfig || {}),
+      facebook: {
+        ...INITIAL_SETTINGS.socialAutoConfig!.facebook,
+        ...(raw.socialAutoConfig?.facebook || {})
+      },
+      instagram: {
+        ...INITIAL_SETTINGS.socialAutoConfig!.instagram,
+        ...(raw.socialAutoConfig?.instagram || {})
+      },
+      tiktok: {
+        ...INITIAL_SETTINGS.socialAutoConfig!.tiktok,
+        ...(raw.socialAutoConfig?.tiktok || {})
+      },
+      youtube: {
+        ...INITIAL_SETTINGS.socialAutoConfig!.youtube,
+        ...(raw.socialAutoConfig?.youtube || {})
+      }
     },
     affiliateSettings: {
       ...INITIAL_SETTINGS.affiliateSettings!,
@@ -1308,6 +1375,71 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       localStorage.setItem('buyonebd_blogs_v1', JSON.stringify(blogs));
     } catch {}
   }, [blogs]);
+
+  const [chatInquiries, setChatInquiries] = useState<ChatInquiry[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_chat_inquiries_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const chatInquiriesRef = useRef<ChatInquiry[]>(chatInquiries);
+  chatInquiriesRef.current = chatInquiries;
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_chat_inquiries_v1', JSON.stringify(chatInquiries.slice(0, 300)));
+    } catch {}
+  }, [chatInquiries]);
+
+  const [socialPosts, setSocialPosts] = useState<SocialScheduledPost[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_social_posts_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const socialPostsRef = useRef<SocialScheduledPost[]>(socialPosts);
+  socialPostsRef.current = socialPosts;
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_social_posts_v1', JSON.stringify(socialPosts.slice(0, 300)));
+    } catch {}
+  }, [socialPosts]);
+
+  const [expenses, setExpenses] = useState<ExpenseEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_expenses_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const expensesRef = useRef<ExpenseEntry[]>(expenses);
+  expensesRef.current = expenses;
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_expenses_v1', JSON.stringify(expenses.slice(0, 500)));
+    } catch {}
+  }, [expenses]);
+
+  const [aiTeamBriefings, setAiTeamBriefings] = useState<AITeamBriefing[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_ai_team_briefings_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const aiTeamBriefingsRef = useRef<AITeamBriefing[]>(aiTeamBriefings);
+  aiTeamBriefingsRef.current = aiTeamBriefings;
+  useEffect(() => {
+    try {
+      localStorage.setItem('buyonebd_ai_team_briefings_v1', JSON.stringify(aiTeamBriefings.slice(0, 30)));
+    } catch {}
+  }, [aiTeamBriefings]);
+  const [isRunningAITeam, setIsRunningAITeam] = useState(false);
 
   const [affiliates, setAffiliates] = useState<AffiliateAccount[]>(() => {
     try {
@@ -1983,11 +2115,35 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return norm === '/hossain' || norm.startsWith('/hossain/') || h === '#hossain';
   };
 
-  // Keep admin authenticated across page reloads on /hossain until explicit logout
+  // Keep admin authenticated across page reloads on /hossain until explicit logout OR 1-hour inactivity expiration
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     try {
-      return localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true';
+      const isAuthed = localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true';
+      if (!isAuthed) return false;
+      const lastActRaw = localStorage.getItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY);
+      if (lastActRaw) {
+        const elapsedMs = Date.now() - Number(lastActRaw);
+        let idleLimitMin = 60;
+        try {
+          const savedCfg = localStorage.getItem(LOCAL_STORAGE_SETTINGS);
+          if (savedCfg) {
+            const parsedCfg = JSON.parse(savedCfg);
+            if (parsedCfg?.securitySettings?.idleLogoutMinutes) {
+              idleLimitMin = Math.max(5, Number(parsedCfg.securitySettings.idleLogoutMinutes) || 60);
+            }
+          }
+        } catch {}
+        if (Number.isFinite(elapsedMs) && elapsedMs >= idleLimitMin * 60 * 1000) {
+          localStorage.removeItem(LOCAL_STORAGE_ADMIN_AUTH);
+          localStorage.removeItem(LOCAL_STORAGE_ADMIN_TOKEN);
+          localStorage.removeItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY);
+          return false;
+        }
+      } else {
+        localStorage.setItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
+      }
+      return true;
     } catch {
       return false;
     }
@@ -2000,6 +2156,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch {}
     return isHossainPathInitial() && !persisted;
   });
+  const [adminSessionRemainingSec, setAdminSessionRemainingSec] = useState<number>(3600);
   const [firebaseAdminUserEmail, setFirebaseAdminUserEmail] = useState<string | null>(() => {
     return auth.currentUser?.email || null;
   });
@@ -2217,7 +2374,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const exportFullDatabaseBackup = () => ({
-    version: '2.0',
+    version: '2.1',
     exportedAt: new Date().toISOString(),
     firebaseProjectId: 'vital-compass-gmn89',
     firestoreDatabaseId: 'ai-studio-buyonebdecommerc-a1b62e5b-8854-4b1d-8906-5fbaa39d4372',
@@ -2242,6 +2399,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     affiliates: affiliatesRef.current,
     affiliateConversions: affiliateConversionsRef.current,
     affiliatePayouts: affiliatePayoutsRef.current,
+    chatInquiries: chatInquiriesRef.current,
+    socialPosts: socialPostsRef.current,
+    expenses: expensesRef.current,
+    aiTeamBriefings: aiTeamBriefingsRef.current,
     users: usersRef.current
   });
 
@@ -2504,27 +2665,115 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     ) {
       setIsAdminLoggedIn(true);
       localStorage.setItem(LOCAL_STORAGE_ADMIN_AUTH, 'true');
+      localStorage.setItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
       setIsAdminLoginOpen(false);
       setActiveView('admin');
       if (window.location.pathname !== '/hossain') {
         window.history.pushState({}, '', '/hossain');
       }
+      fetch('/api/admin/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password: pass,
+          pin: settingsRef.current.securitySettings?.adminPin || ''
+        })
+      })
+        .then((r) => safeParseJson<any>(r))
+        .then((res) => {
+          if (res?.token) {
+            try {
+              localStorage.setItem(LOCAL_STORAGE_ADMIN_TOKEN, res.token);
+            } catch {}
+          }
+        })
+        .catch(() => {});
       addSecurityLog('Admin Login Success', `Authenticated as ${email.trim().toLowerCase()}`, 'info');
       addToast('success', t('অ্যাডমিন লগইন সফল!', 'Admin Logged In!'), t('স্বাগতম হোসেন ভাই, ড্যাশবোর্ডে প্রবেশের অনুমতি দেওয়া হয়েছে।', 'Welcome Hossain, dashboard unlocked.'));
       return true;
     }
+    fetch('/api/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim(), password: pass })
+    }).catch(() => {});
     addSecurityLog('Admin Login Failed', `Rejected attempt for ${email.trim() || 'unknown'}`, 'warning');
     addToast('error', t('ভুল ইমেইল বা পাসওয়ার্ড', 'Invalid Credentials'), t('দয়া করে সঠিক ইমেইল ও পাসওয়ার্ড প্রদান করুন।', 'Please provide correct credentials.'));
     return false;
   };
 
-  const logoutAdmin = () => {
+  const logoutAdmin = (reason?: string) => {
     setIsAdminLoggedIn(false);
     localStorage.removeItem(LOCAL_STORAGE_ADMIN_AUTH);
+    localStorage.removeItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY);
+    localStorage.removeItem(LOCAL_STORAGE_ADMIN_TOKEN);
     setActiveView('store');
     window.history.pushState({}, '', '/');
-    addToast('info', t('লগআউট সম্পন্ন', 'Logged Out'), t('অ্যাডমিন প্যানেল সুরক্ষিত রাখা হয়েছে।', 'Session terminated.'));
+    addToast(
+      'info',
+      reason === 'idle' ? t('সেশন টাইমআউট — স্বয়ংক্রিয় লগআউট', 'Auto-Logged Out (Inactivity)') : t('লগআউট সম্পন্ন', 'Logged Out'),
+      reason === 'idle'
+        ? t('নিরাপত্তার জন্য ১ ঘন্টা ব্যবহার না করায় অ্যাডমিন সেশন লক হয়েছে।', 'Admin session automatically locked after inactivity.')
+        : t('অ্যাডমিন প্যানেল সুরক্ষিত রাখা হয়েছে।', 'Session terminated.')
+    );
   };
+
+  const lockAdminSessionNow = () => logoutAdmin('manual_lock');
+
+  // 1-Hour (Configurable via securitySettings.idleLogoutMinutes, default 60m) Admin Inactivity Auto-Logout
+  useEffect(() => {
+    if (!isAdminLoggedIn || typeof window === 'undefined') return;
+    const getTimeoutMs = () => {
+      const mins = Number(settingsRef.current.securitySettings?.idleLogoutMinutes ?? 60);
+      return Math.max(5, Math.min(480, mins || 60)) * 60 * 1000;
+    };
+
+    if (!localStorage.getItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY)) {
+      localStorage.setItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
+    }
+
+    let lastTouchWrite = 0;
+    const recordActivity = () => {
+      const now = Date.now();
+      if (now - lastTouchWrite < 4000) return;
+      lastTouchWrite = now;
+      try {
+        localStorage.setItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(now));
+      } catch {}
+    };
+
+    const events: (keyof WindowEventMap)[] = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'];
+    events.forEach((ev) => window.addEventListener(ev, recordActivity, { passive: true }));
+
+    const checker = setInterval(() => {
+      try {
+        const lastStr = localStorage.getItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY);
+        const lastMs = lastStr ? Number(lastStr) : Date.now();
+        const limitMs = getTimeoutMs();
+        const elapsed = Date.now() - lastMs;
+        const remaining = Math.max(0, Math.floor((limitMs - elapsed) / 1000));
+        setAdminSessionRemainingSec(remaining);
+        if (elapsed >= limitMs) {
+          addSecurityLog('Admin Idle Auto-Logout', `Locked session after ${Math.round(limitMs / 60000)}m inactivity`, 'info');
+          logoutAdmin('idle');
+        }
+      } catch {}
+    }, 10000);
+
+    // Initialize countdown immediately
+    try {
+      const lastStr = localStorage.getItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY);
+      const lastMs = lastStr ? Number(lastStr) : Date.now();
+      const limitMs = getTimeoutMs();
+      setAdminSessionRemainingSec(Math.max(0, Math.floor((limitMs - (Date.now() - lastMs)) / 1000)));
+    } catch {}
+
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, recordActivity));
+      clearInterval(checker);
+    };
+  }, [isAdminLoggedIn]);
 
   // Daily Spin Limit (1 spin per day like Temu)
   const [spinStats, setSpinStats] = useState<{ date: string; count: number; lastSpinTime: number }>(() => {
@@ -5136,6 +5385,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (Array.isArray(data.aiReviewQueue) && data.aiReviewQueue.length > 0) {
               setAiReviewQueue(data.aiReviewQueue);
             }
+            if (Array.isArray(data.chatInquiries)) {
+              setChatInquiries((prev) => {
+                const map = new Map(prev.map((q) => [q.id, q]));
+                data.chatInquiries.forEach((q: ChatInquiry) => { if (q?.id) map.set(q.id, q); });
+                return Array.from(map.values()).sort(
+                  (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+                );
+              });
+            }
+            if (Array.isArray(data.socialPosts) && data.socialPosts.length > 0) {
+              setSocialPosts(data.socialPosts);
+            }
+            if (Array.isArray(data.expenses) && data.expenses.length > 0) {
+              setExpenses(data.expenses);
+            }
+            if (Array.isArray(data.aiTeamBriefings) && data.aiTeamBriefings.length > 0) {
+              setAiTeamBriefings(data.aiTeamBriefings);
+            }
           }
 
           if (!hasHydratedFromServerRef.current) {
@@ -5186,6 +5453,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               affiliates: affiliatesRef.current,
               affiliateConversions: affiliateConversionsRef.current,
               affiliatePayouts: affiliatePayoutsRef.current,
+              chatInquiries: chatInquiriesRef.current,
+              socialPosts: socialPostsRef.current,
+              expenses: expensesRef.current,
+              aiTeamBriefings: aiTeamBriefingsRef.current,
               bulkSmsLogs: bulkSmsLogsRef.current,
               users,
               mediaLibrary
@@ -5729,6 +6000,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           affiliates,
           affiliateConversions,
           affiliatePayouts,
+          chatInquiries,
+          socialPosts,
+          expenses,
+          aiTeamBriefings,
           bulkSmsLogs,
           users,
           mediaLibrary
@@ -5757,6 +6032,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     affiliates,
     affiliateConversions,
     affiliatePayouts,
+    chatInquiries,
+    socialPosts,
+    expenses,
+    aiTeamBriefings,
     bulkSmsLogs,
     users
   ]);
@@ -5917,6 +6196,28 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (Array.isArray(msg.aiReviewQueue) && msg.aiReviewQueue.length > 0) {
             setAiReviewQueue(msg.aiReviewQueue);
           }
+          if (Array.isArray(msg.chatInquiries)) {
+            setChatInquiries(msg.chatInquiries);
+          }
+          if (Array.isArray(msg.socialPosts) && msg.socialPosts.length > 0) {
+            setSocialPosts(msg.socialPosts);
+          }
+          return;
+        }
+
+        if (msg.type === 'inquiries:sync' && Array.isArray(msg.chatInquiries)) {
+          setChatInquiries(msg.chatInquiries);
+          try {
+            localStorage.setItem('buyonebd_chat_inquiries_v1', JSON.stringify(msg.chatInquiries));
+          } catch {}
+          return;
+        }
+
+        if (msg.type === 'social:sync' && Array.isArray(msg.socialPosts)) {
+          setSocialPosts(msg.socialPosts);
+          try {
+            localStorage.setItem('buyonebd_social_posts_v1', JSON.stringify(msg.socialPosts));
+          } catch {}
           return;
         }
 
@@ -10800,6 +11101,365 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return { reply, executed, mode: data.mode || 'gemini_live' };
   };
 
+  // --- Customer Inquiry Lead Form Handlers (/api/inquiries) ---
+  const submitChatInquiry = async (payload: {
+    name: string;
+    countryCode?: string;
+    phone: string;
+    message: string;
+    productId?: string;
+    productTitle?: string;
+    productUrl?: string;
+  }): Promise<{ success: boolean; inquiry?: ChatInquiry; error?: string }> => {
+    try {
+      const res = await fetch('/api/inquiries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const json = await safeParseJson<any>(res);
+      if (!res.ok || !json?.inquiry) {
+        return { success: false, error: json?.error || 'Could not submit inquiry' };
+      }
+      lastLocalMutationAtRef.current = Date.now();
+      setChatInquiries((prev) => [json.inquiry, ...prev.filter((q) => q.id !== json.inquiry.id)].slice(0, 300));
+      addToast('success', t('আপনার বার্তা পাঠানো হয়েছে!', 'Inquiry Sent!'), t('আমাদের টিম শীঘ্রই উত্তর দেবে।', 'We received your inquiry and will reply shortly.'));
+      return { success: true, inquiry: json.inquiry };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error' };
+    }
+  };
+
+  const updateChatInquiry = async (id: string, updates: Partial<ChatInquiry>): Promise<void> => {
+    lastLocalMutationAtRef.current = Date.now();
+    setChatInquiries((prev) =>
+      prev.map((q) => (q.id === id ? { ...q, ...updates, updatedAt: new Date().toISOString() } : q))
+    );
+    try {
+      await fetch(`/api/inquiries/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      addToast('success', t('ইনকোয়ারি আপডেট সম্পন্ন', 'Inquiry Updated'), '');
+    } catch {}
+  };
+
+  const deleteChatInquiry = async (id: string): Promise<void> => {
+    lastLocalMutationAtRef.current = Date.now();
+    setChatInquiries((prev) => prev.filter((q) => q.id !== id));
+    try {
+      await fetch(`/api/inquiries/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      addToast('info', t('ইনকোয়ারি মুছে ফেলা হয়েছে', 'Inquiry Deleted'), '');
+    } catch {}
+  };
+
+  const bulkChatInquiriesAction = async (
+    ids: string[],
+    action: 'delete' | 'replied' | 'closed' | 'following_up'
+  ): Promise<void> => {
+    if (!ids.length) return;
+    lastLocalMutationAtRef.current = Date.now();
+    const idSet = new Set(ids);
+    if (action === 'delete') {
+      setChatInquiries((prev) => prev.filter((q) => !idSet.has(q.id)));
+      await Promise.all(ids.map((id) => fetch(`/api/inquiries/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {})));
+      addToast('info', t(`${ids.length}টি ইনকোয়ারি মোছা হয়েছে`, `Deleted ${ids.length} Inquiries`), '');
+    } else {
+      const nowIso = new Date().toISOString();
+      setChatInquiries((prev) =>
+        prev.map((q) => (idSet.has(q.id) ? { ...q, status: action, updatedAt: nowIso } : q))
+      );
+      await Promise.all(
+        ids.map((id) =>
+          fetch(`/api/inquiries/${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: action })
+          }).catch(() => {})
+        )
+      );
+      addToast('success', t(`${ids.length}টি ইনকোয়ারি আপডেট সম্পন্ন`, `Updated ${ids.length} Inquiries`), '');
+    }
+  };
+
+  // --- Social Auto-Scheduler CRUD & Immediate Dispatch ---
+  const addSocialPost = (postData: Omit<SocialScheduledPost, 'id' | 'createdAt' | 'updatedAt'>): SocialScheduledPost => {
+    const nowIso = new Date().toISOString();
+    const created: SocialScheduledPost = {
+      ...postData,
+      id: `soc-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+    lastLocalMutationAtRef.current = Date.now();
+    setSocialPosts((prev) => [created, ...prev].slice(0, 300));
+    addToast('success', t('সোশ্যাল পোস্ট শিডিউল করা হয়েছে!', 'Social Post Scheduled!'), `${created.platform.toUpperCase()} · ${created.title}`);
+    return created;
+  };
+
+  const updateSocialPost = (id: string, updates: Partial<SocialScheduledPost>) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setSocialPosts((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p))
+    );
+    addToast('success', t('পোস্ট আপডেট সম্পন্ন', 'Scheduled Post Updated'), '');
+  };
+
+  const deleteSocialPost = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setSocialPosts((prev) => prev.filter((p) => p.id !== id));
+    addToast('info', t('পোস্ট মুছে ফেলা হয়েছে', 'Scheduled Post Deleted'), '');
+  };
+
+  const bulkDeleteSocialPosts = (ids: string[]) => {
+    if (!ids.length) return;
+    const idSet = new Set(ids);
+    lastLocalMutationAtRef.current = Date.now();
+    setSocialPosts((prev) => prev.filter((p) => !idSet.has(p.id)));
+    addToast('info', t(`${ids.length}টি পোস্ট ডিলিট সম্পন্ন`, `Deleted ${ids.length} Posts`), '');
+  };
+
+  const dispatchSocialPostNow = async (postId: string): Promise<{ success: boolean; error?: string }> => {
+    const post = socialPostsRef.current.find((p) => p.id === postId);
+    if (!post) return { success: false, error: 'Post not found' };
+    try {
+      const res = await fetch('/api/social/dispatch-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, post })
+      });
+      const json = await safeParseJson<any>(res);
+      if (Array.isArray(json?.socialPosts)) {
+        lastLocalMutationAtRef.current = Date.now();
+        setSocialPosts(json.socialPosts);
+      } else if (json?.post) {
+        lastLocalMutationAtRef.current = Date.now();
+        setSocialPosts((prev) => prev.map((p) => (p.id === postId ? json.post : p)));
+      }
+      if (json?.success) {
+        addToast('success', t('পোস্ট সফলভাবে পাবলিশ হয়েছে!', 'Social Post Published!'), post.platform.toUpperCase());
+        return { success: true };
+      }
+      addToast('warning', t('পাবলিশ ফলাফল', 'Dispatch Status'), json?.error || 'Queued');
+      return { success: false, error: json?.error };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Dispatch failed' };
+    }
+  };
+
+  // --- Expense & Net Profit Ledger CRUD ---
+  const addExpense = (entry: Omit<ExpenseEntry, 'id' | 'createdAt'>): ExpenseEntry => {
+    const item: ExpenseEntry = {
+      ...entry,
+      id: `exp-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
+      createdAt: new Date().toISOString()
+    };
+    lastLocalMutationAtRef.current = Date.now();
+    setExpenses((prev) => [item, ...prev].slice(0, 500));
+    addToast('success', t('খরচ যোগ হয়েছে', 'Expense Logged'), `${item.title} · ৳${item.amount.toLocaleString()}`);
+    return item;
+  };
+
+  const updateExpense = (id: string, updates: Partial<ExpenseEntry>) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setExpenses((prev) => prev.map((e) => (e.id === id ? { ...e, ...updates } : e)));
+    addToast('success', t('খরচ আপডেট সম্পন্ন', 'Expense Updated'), '');
+  };
+
+  const deleteExpense = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setExpenses((prev) => prev.filter((e) => e.id !== id));
+    addToast('info', t('খরচ মুছে ফেলা হয়েছে', 'Expense Deleted'), '');
+  };
+
+  // --- Solo-Founder Virtual AI Company Team (Sales, Marketing, Accounts, Support) ---
+  const executeSingleTeamAction = async (action: {
+    actionType: string;
+    payload?: Record<string, any>;
+    title?: string;
+  }): Promise<boolean> => {
+    const p = action.payload || {};
+    switch (action.actionType) {
+      case 'confirm_pending_orders': {
+        const limit = Number(p.limit || 20);
+        const targets = ordersRef.current
+          .filter((o) => o.status === 'pending' && (o.fraudCheck?.successRate ?? 90) >= 60)
+          .slice(0, limit);
+        targets.forEach((o) => aiConfirmOrderByCustomer(o.id, 'AI Sales Manager'));
+        return targets.length > 0;
+      }
+      case 'send_courier_bulk': {
+        const prov = (p.provider || 'Steadfast') as CourierProvider;
+        const targets = ordersRef.current
+          .filter((o) => (o.status === 'ai_confirmed' || o.status === 'processing') && !o.courier?.trackingCode)
+          .slice(0, Number(p.limit || 10));
+        for (const ord of targets) {
+          await bookOrderCourier(ord.id, prov);
+        }
+        return targets.length > 0;
+      }
+      case 'recover_carts_whatsapp': {
+        const pendingIds = abandonedCartsRef.current.filter((c) => !c.recovered && !c.whatsappSent).map((c) => c.id);
+        if (pendingIds.length > 0) {
+          bulkAbandonedCartsAction(pendingIds, 'whatsapp');
+          return true;
+        }
+        return false;
+      }
+      case 'enable_flash_sale': {
+        const enableVal = p.enabled !== false;
+        updateSettings(
+          {
+            flashSale: {
+              ...settingsRef.current.flashSale,
+              enabled: enableVal
+            }
+          },
+          { commit: true }
+        );
+        return true;
+      }
+      case 'restock_low_items': {
+        const addQty = Math.max(5, Number(p.addQty || 20));
+        const lowIds = productsRef.current.filter((pr) => (pr.stock ?? 0) <= 5).map((pr) => pr.id);
+        if (lowIds.length > 0) {
+          lowIds.forEach((pid) => {
+            const cur = productsRef.current.find((pr) => pr.id === pid);
+            if (cur) updateProduct(pid, { stock: (cur.stock || 0) + addQty });
+          });
+          return true;
+        }
+        return false;
+      }
+      case 'schedule_social_promo': {
+        const topProd =
+          productsRef.current.find((pr) => pr.id === p.productId) ||
+          productsRef.current.find((pr) => pr.stock > 0) ||
+          productsRef.current[0];
+        if (!topProd) return false;
+        const plat = (p.platform || 'facebook') as SocialScheduledPost['platform'];
+        const url = getProductCanonicalUrl(topProd);
+        addSocialPost({
+          platform: plat,
+          productId: topProd.id,
+          productTitle: topProd.title,
+          productUrl: url,
+          title: topProd.title,
+          caption: `${topProd.titleBn || topProd.title}\nঅফার মূল্য: ৳${topProd.price} (আগের মূল্য ৳${topProd.originalPrice})\nঅর্ডার করুন: ${url}`,
+          hashtags: ['#BuyOneBD', '#BangladeshShopping', '#CashOnDelivery', `#${topProd.category.replace(/\s+/g, '')}`],
+          imageUrl: topProd.images?.[0] || '',
+          scheduledAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+          status: 'scheduled',
+          autoGenerated: true
+        });
+        return true;
+      }
+      case 'flag_risky_orders': {
+        const risky = ordersRef.current.filter(
+          (o) => o.status === 'pending' && (o.fraudCheck?.successRate ?? 100) < 60
+        );
+        risky.forEach((o) => updateOrderStatus(o.id, 'on_hold'));
+        return risky.length > 0;
+      }
+      default:
+        return false;
+    }
+  };
+
+  const runAITeamBriefing = async (focusPrompt?: string, autoExecute = false): Promise<AITeamBriefing | null> => {
+    if (isRunningAITeam) return null;
+    setIsRunningAITeam(true);
+    try {
+      const revenueTotal = ordersRef.current
+        .filter((o) => o.status !== 'cancelled')
+        .reduce((s, o) => s + (o.pricing?.total || 0), 0);
+      const expenseTotal = expensesRef.current.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+      const res = await fetch('/api/ai/team-run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          focusPrompt,
+          lang: adminLang,
+          storeSummary: {
+            revenueTotal,
+            expenseTotal,
+            netProfit: revenueTotal - expenseTotal,
+            pendingOrders: ordersRef.current.filter((o) => o.status === 'pending').length,
+            confirmedAwaitingCourier: ordersRef.current.filter((o) => o.status === 'ai_confirmed' && !o.courier?.trackingCode).length,
+            lowStockProducts: productsRef.current.filter((p) => (p.stock ?? 0) <= 5).map((p) => ({ id: p.id, title: p.title, stock: p.stock })),
+            abandonedUnrecovered: abandonedCartsRef.current.filter((c) => !c.recovered).length,
+            newInquiries: chatInquiriesRef.current.filter((q) => q.status === 'new').length,
+            scheduledSocialCount: socialPostsRef.current.filter((s) => s.status === 'scheduled').length
+          }
+        })
+      });
+      const json = await safeParseJson<{ success?: boolean; briefing?: AITeamBriefing }>(res);
+      if (!json?.briefing) return null;
+      let finalBriefing = json.briefing;
+
+      if (autoExecute && Array.isArray(finalBriefing.recommendedActions)) {
+        const updatedActions = [];
+        for (const act of finalBriefing.recommendedActions) {
+          let parsedPayload: Record<string, any> = {};
+          try {
+            parsedPayload = act.payloadJson ? JSON.parse(act.payloadJson) : {};
+          } catch {}
+          const ok = await executeSingleTeamAction({
+            actionType: act.actionType,
+            payload: parsedPayload,
+            title: act.title
+          });
+          updatedActions.push(ok ? { ...act, executed: true } : act);
+        }
+        finalBriefing = { ...finalBriefing, recommendedActions: updatedActions };
+      }
+
+      lastLocalMutationAtRef.current = Date.now();
+      setAiTeamBriefings((prev) => [finalBriefing, ...prev].slice(0, 30));
+      addToast(
+        'success',
+        t('AI ম্যানেজমেন্ট টিম রিপোর্ট তৈরি!', 'AI Management Team Briefing Ready!'),
+        autoExecute ? t('অ্যাকশনগুলো স্বয়ংক্রিয়ভাবে কার্যকর হয়েছে', 'Recommended actions executed') : t('নিচে রিভিউ করে ১-ক্লিকে চালু করুন', 'Review & execute with 1 click')
+      );
+      return finalBriefing;
+    } catch {
+      return null;
+    } finally {
+      setIsRunningAITeam(false);
+    }
+  };
+
+  const executeAITeamAction = async (briefingId: string, actionId: string): Promise<boolean> => {
+    const briefing = aiTeamBriefingsRef.current.find((b) => b.id === briefingId);
+    const act = briefing?.recommendedActions?.find((a) => a.id === actionId);
+    if (!act) return false;
+    let parsedPayload: Record<string, any> = {};
+    try {
+      parsedPayload = act.payloadJson ? JSON.parse(act.payloadJson) : {};
+    } catch {}
+    const ok = await executeSingleTeamAction({
+      actionType: act.actionType,
+      payload: parsedPayload,
+      title: act.title
+    });
+    lastLocalMutationAtRef.current = Date.now();
+    setAiTeamBriefings((prev) =>
+      prev.map((b) =>
+        b.id !== briefingId
+          ? b
+          : {
+              ...b,
+              recommendedActions: (b.recommendedActions || []).map((a) =>
+                a.id === actionId ? { ...a, executed: true } : a
+              )
+            }
+      )
+    );
+    addToast(ok ? 'success' : 'info', ok ? t('অ্যাকশন কার্যকর হয়েছে!', 'Action Executed!') : t('অ্যাকশন সম্পন্ন', 'Action Processed'), act.title);
+    return true;
+  };
+
   const closeOneClickCheckout = () => {
     setIsOneClickOpen(false);
     setCheckoutProduct(null);
@@ -10999,8 +11659,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isAdminLoggedIn,
         isAdminLoginOpen,
         setIsAdminLoginOpen,
+        adminSessionRemainingSec,
+        lockAdminSessionNow,
         loginAdmin,
         logoutAdmin,
+        chatInquiries,
+        submitChatInquiry,
+        updateChatInquiry,
+        deleteChatInquiry,
+        bulkChatInquiriesAction,
+        socialPosts,
+        addSocialPost,
+        updateSocialPost,
+        deleteSocialPost,
+        bulkDeleteSocialPosts,
+        dispatchSocialPostNow,
+        expenses,
+        addExpense,
+        updateExpense,
+        deleteExpense,
+        aiTeamBriefings,
+        isRunningAITeam,
+        runAITeamBriefing,
+        executeAITeamAction,
         firebaseAdminUserEmail,
         isFirebaseAdminConnected,
         cloudSyncError,

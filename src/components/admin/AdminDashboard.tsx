@@ -89,7 +89,9 @@ import {
   ChevronDown,
   Globe2,
   Save,
-  AlertCircle
+  AlertCircle,
+  CalendarClock,
+  Briefcase
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BUSINESS_THEME_PRESETS } from '../../data/initialData';
@@ -115,7 +117,8 @@ import {
   CustomerProfile,
   InvoicePaperSize,
   PriceAlert,
-  WaitlistEntry
+  WaitlistEntry,
+  ChatInquiry
 } from '../../types';
 import { CreativeMarketingStudio } from './CreativeMarketingStudio';
 import { PartialOrdersView } from './PartialOrdersView';
@@ -131,6 +134,8 @@ import { InvoiceSetupPanel } from './InvoiceSetupPanel';
 import { BulkSectionShell, BulkCommandBar } from './BulkSectionShell';
 import { BlogAdminView } from './BlogAdminView';
 import { AffiliateAdminView } from './AffiliateAdminView';
+import { SocialAutoScheduler } from './SocialAutoScheduler';
+import { AITeamWorkspace } from './AITeamWorkspace';
 
 const parseJsonSafe = async (res: Response): Promise<any> => {
   const txt = await res.text();
@@ -297,7 +302,16 @@ export const AdminDashboard: React.FC = () => {
     generateBrandColorAttributes,
     securityLogs,
     addSecurityLog,
-    clearSecurityLogs
+    clearSecurityLogs,
+    adminSessionRemainingSec,
+    lockAdminSessionNow,
+    chatInquiries,
+    updateChatInquiry,
+    deleteChatInquiry,
+    bulkChatInquiriesAction,
+    socialPosts,
+    expenses,
+    aiTeamBriefings
   } = useStore();
 
   // Pure language translation helper based on admin language preference
@@ -371,6 +385,8 @@ export const AdminDashboard: React.FC = () => {
     | 'affiliates'
     | 'global_marketing'
     | 'marketing'
+    | 'social_autopilot'
+    | 'ai_team'
     | 'seo_metadata'
     | 'ai_hub'
     | 'spin_wheel'
@@ -490,6 +506,14 @@ export const AdminDashboard: React.FC = () => {
   const [newBlockedPhone, setNewBlockedPhone] = useState('');
   const [editingBlockedPhoneIdx, setEditingBlockedPhoneIdx] = useState<number | null>(null);
   const [editingBlockedPhoneVal, setEditingBlockedPhoneVal] = useState('');
+  const [newBlockedIp, setNewBlockedIp] = useState('');
+
+  // Website Chat Inquiries Lead Manager State
+  const [inquirySearch, setInquirySearch] = useState('');
+  const [inquiryStatusFilter, setInquiryStatusFilter] = useState<'all' | 'new' | 'following_up' | 'replied' | 'closed'>('all');
+  const [selectedInquiryIds, setSelectedInquiryIds] = useState<string[]>([]);
+  const [editingInquiry, setEditingInquiry] = useState<ChatInquiry | null>(null);
+  const [inquiryReplyDrafts, setInquiryReplyDrafts] = useState<Record<string, string>>({});
 
   // UTM Campaign Link Builder State
   const [utmSource, setUtmSource] = useState('facebook');
@@ -1261,7 +1285,8 @@ export const AdminDashboard: React.FC = () => {
 
   const ringingCalls = browserCalls.filter((c) => c.status === 'ringing_backend');
   const unreadChatCount = supportChats.reduce((sum, c) => sum + (c.unreadByAdmin || 0), 0);
-  const supportDeskBadge = ringingCalls.length + unreadChatCount;
+  const newInquiryCount = chatInquiries.filter((q) => q.status === 'new').length;
+  const supportDeskBadge = ringingCalls.length + unreadChatCount + newInquiryCount;
 
   const activeChatObj =
     supportChats.find((c) => c.id === selectedChatId) || supportChats[0] || null;
@@ -1618,6 +1643,13 @@ export const AdminDashboard: React.FC = () => {
       titleEn: '4. Growth & Marketing',
       items: [
         { id: 'global_marketing', labelBn: 'গ্লোবাল মার্কেটিং ও বাল্ক SMS', labelEn: 'Global & Bulk SMS Hub', icon: Globe2 },
+        {
+          id: 'social_autopilot',
+          labelBn: 'সোশ্যাল অটো-পোস্ট (FB/IG/TT/YT)',
+          labelEn: 'Social Auto-Scheduler',
+          icon: CalendarClock,
+          badge: socialPosts.filter((p) => p.status === 'scheduled').length || undefined
+        },
         { id: 'marketing', labelBn: 'মার্কেটিং ও পিক্সেল হাব', labelEn: 'Marketing & Pixel', icon: BarChart3 },
         { id: 'seo_metadata', labelBn: 'SEO মেটাডাটা ও হেড ট্যাগ', labelEn: 'SEO Metadata Studio', icon: Globe },
         { id: 'flash_sale', labelBn: 'ফ্ল্যাশ সেল ম্যানেজার', labelEn: 'Flash Sale', icon: Flame },
@@ -1630,6 +1662,13 @@ export const AdminDashboard: React.FC = () => {
       titleBn: '৫. এআই, WhatsApp ও লাইভ সাপোর্ট',
       titleEn: '5. AI, WhatsApp & Support',
       items: [
+        {
+          id: 'ai_team',
+          labelBn: 'সম্পূর্ণ AI কোম্পানি টিম',
+          labelEn: 'AI Company Team (Solo)',
+          icon: Briefcase,
+          badge: aiTeamBriefings.length || undefined
+        },
         { id: 'whatsapp_desk', labelBn: 'ডিরেক্ট WhatsApp API ও AI চ্যাট', labelEn: 'WhatsApp API & AI Chat', icon: MessageCircle, badge: whatsappMessages.length || undefined },
         {
           id: 'ai_operator',
@@ -1638,7 +1677,7 @@ export const AdminDashboard: React.FC = () => {
           icon: Sparkles,
           badge: aiReviewQueue.filter((t) => t.status === 'pending_review').length || undefined
         },
-        { id: 'support_desk', labelBn: 'লাইভ চ্যাট ও ব্রাউজার কল', labelEn: 'Live Chat & Calls', icon: Headphones, badge: supportDeskBadge || undefined },
+        { id: 'support_desk', labelBn: 'লাইভ চ্যাট ও ইনকোয়ারি ডেস্ক', labelEn: 'Live Chat, Calls & Inquiries', icon: Headphones, badge: supportDeskBadge || undefined },
         { id: 'ai_hub', labelBn: 'এআই ও ভয়েস কল সেটআপ', labelEn: 'AI Voice Hub', icon: Bot },
         { id: 'reviews', labelBn: 'কাস্টমার রিভিউ ও রেটিং', labelEn: 'Customer Reviews', icon: MessageCircle, badge: reviews.length }
       ]
@@ -1777,6 +1816,19 @@ export const AdminDashboard: React.FC = () => {
             <RefreshCw className="w-3.5 h-3.5" />
             <span className="hidden md:inline">{at('ক্যাশ ক্লিয়ার', 'Clear Cache')}</span>
           </button>
+
+          <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800/80 border border-slate-700 rounded-xl text-[11px] font-mono text-slate-300 tabular-nums">
+            <Clock className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{Math.max(1, Math.ceil(adminSessionRemainingSec / 60))}m</span>
+            <button
+              type="button"
+              onClick={lockAdminSessionNow}
+              title={at('এখনই সেশন লক করুন', 'Lock Admin Session Now')}
+              className="ml-1 px-1.5 py-0.5 rounded bg-slate-700 hover:bg-rose-700 text-white text-[10px] font-sans font-bold cursor-pointer"
+            >
+              Lock
+            </button>
+          </div>
 
           <button
             onClick={() => {
@@ -3230,6 +3282,226 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* C. WEBSITE CHAT INQUIRY FORM LEADS (SCREENSHOTS A & B) */}
+              {(() => {
+                const qText = inquirySearch.trim().toLowerCase();
+                const filteredInquiries = chatInquiries.filter((inq) => {
+                  const matchStatus = inquiryStatusFilter === 'all' || inq.status === inquiryStatusFilter;
+                  const matchSearch =
+                    !qText ||
+                    inq.name.toLowerCase().includes(qText) ||
+                    inq.phone.toLowerCase().includes(qText) ||
+                    inq.query.toLowerCase().includes(qText) ||
+                    (inq.productTitle || '').toLowerCase().includes(qText);
+                  return matchStatus && matchSearch;
+                });
+                const allInqSelected =
+                  filteredInquiries.length > 0 && filteredInquiries.every((i) => selectedInquiryIds.includes(i.id));
+
+                return (
+                  <BulkSectionShell
+                    indexCode="BULK // INQUIRIES"
+                    title={at(`ওয়েবসাইট চ্যাট ইনকোয়ারি ও প্রশ্ন (${chatInquiries.length})`, `Website Chat Inquiries & Customer Queries (${chatInquiries.length})`)}
+                    subtitle={at(
+                      'চ্যাট ফর্ম থেকে পাঠানো ক্রেতার নাম, নম্বর, প্রশ্ন দেখুন — এডিট, ডিলিট, বাল্ক সিলেক্ট এবং সরাসরি উত্তর দিন',
+                      'Manage every customer inquiry sent from the website chat form — reply directly, WhatsApp, edit, bulk-update, or delete'
+                    )}
+                    selectedCount={selectedInquiryIds.length}
+                    totalCount={filteredInquiries.length}
+                    accent="emerald"
+                    headerActions={
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          value={inquirySearch}
+                          onChange={(e) => setInquirySearch(e.target.value)}
+                          placeholder={at('নাম, ফোন বা প্রশ্ন খুঁজুন...', 'Search name, phone, query...')}
+                          className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                        />
+                        <select
+                          value={inquiryStatusFilter}
+                          onChange={(e) => setInquiryStatusFilter(e.target.value as any)}
+                          className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                        >
+                          <option value="all">{at('সকল স্ট্যাটাস', 'All Status')}</option>
+                          <option value="new">{at('নতুন (New)', 'New')}</option>
+                          <option value="following_up">{at('ফলো-আপ', 'Following Up')}</option>
+                          <option value="replied">{at('উত্তর দেওয়া হয়েছে', 'Replied')}</option>
+                          <option value="closed">{at('বন্ধ (Closed)', 'Closed')}</option>
+                        </select>
+                      </div>
+                    }
+                  >
+                    <BulkCommandBar
+                      selectedCount={selectedInquiryIds.length}
+                      totalCount={filteredInquiries.length}
+                      allSelected={allInqSelected}
+                      onToggleSelectAll={() =>
+                        setSelectedInquiryIds(allInqSelected ? [] : filteredInquiries.map((i) => i.id))
+                      }
+                      onClearSelection={() => setSelectedInquiryIds([])}
+                      itemLabel="inquiries"
+                    >
+                      {selectedInquiryIds.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              bulkChatInquiriesAction(selectedInquiryIds, 'replied');
+                              setSelectedInquiryIds([]);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer whitespace-nowrap shrink-0"
+                          >
+                            {at('উত্তর হয়েছে মার্ক', 'Mark Replied')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              bulkChatInquiriesAction(selectedInquiryIds, 'closed');
+                              setSelectedInquiryIds([]);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-bold text-[11px] cursor-pointer whitespace-nowrap shrink-0"
+                          >
+                            {at('বন্ধ করুন', 'Mark Closed')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              bulkChatInquiriesAction(selectedInquiryIds, 'delete');
+                              setSelectedInquiryIds([]);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] cursor-pointer whitespace-nowrap shrink-0"
+                          >
+                            {at('বাল্ক ডিলিট', 'Delete Selected')}
+                          </button>
+                        </div>
+                      )}
+                    </BulkCommandBar>
+                    {filteredInquiries.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-slate-400">
+                        {at('এখনো কোনো চ্যাট ইনকোয়ারি নেই।', 'No customer chat inquiries match this filter yet.')}
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-slate-800 max-h-[520px] overflow-y-auto">
+                        {filteredInquiries.map((inq) => {
+                          const isChecked = selectedInquiryIds.includes(inq.id);
+                          const waNum = `${inq.countryCode || '+880'}${inq.phone.replace(/^0+/, '')}`.replace(/[^\d]/g, '');
+                          const draftReply = inquiryReplyDrafts[inq.id] ?? inq.adminReply ?? '';
+
+                          return (
+                            <div
+                              key={inq.id}
+                              className={`p-4 space-y-2.5 text-xs ${isChecked ? 'bg-emerald-950/20' : 'hover:bg-slate-800/30'}`}
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div className="flex items-start gap-2.5 min-w-0">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) =>
+                                      setSelectedInquiryIds((prev) =>
+                                        e.target.checked ? [...prev, inq.id] : prev.filter((x) => x !== inq.id)
+                                      )
+                                    }
+                                    className="w-4 h-4 mt-0.5 accent-emerald-500 cursor-pointer shrink-0"
+                                  />
+                                  <div className="min-w-0 space-y-0.5">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="font-bold text-white text-sm">{inq.name}</span>
+                                      <span className="font-mono text-emerald-400 font-bold">
+                                        {inq.countryCode} {inq.phone}
+                                      </span>
+                                      <span className="text-[10px] font-mono text-slate-400">
+                                        {new Date(inq.createdAt).toLocaleString()}
+                                      </span>
+                                      <span
+                                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                          inq.status === 'new'
+                                            ? 'bg-amber-500/20 text-amber-300'
+                                            : inq.status === 'replied'
+                                            ? 'bg-emerald-500/20 text-emerald-300'
+                                            : inq.status === 'following_up'
+                                            ? 'bg-sky-500/20 text-sky-300'
+                                            : 'bg-slate-800 text-slate-400'
+                                        }`}
+                                      >
+                                        {inq.status}
+                                      </span>
+                                    </div>
+                                    <p className="text-slate-200 whitespace-pre-wrap">{inq.query}</p>
+                                    {inq.productTitle && (
+                                      <p className="text-[11px] text-sky-400">
+                                        {at('পণ্য:', 'Product:')} {inq.productTitle}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <a
+                                    href={`https://wa.me/${waNum}?text=${encodeURIComponent(
+                                      `আসসালামু আলাইকুম ${inq.name}, BuyOne BD থেকে আপনার প্রশ্নের উত্তর: ${draftReply || ''}`
+                                    )}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] inline-flex items-center gap-1"
+                                  >
+                                    <MessageCircle className="w-3.5 h-3.5" />
+                                    <span>WhatsApp</span>
+                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingInquiry({ ...inq })}
+                                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 cursor-pointer"
+                                    title={at('এডিট', 'Edit')}
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteChatInquiry(inq.id)}
+                                    className="p-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 text-rose-300 cursor-pointer"
+                                    title={at('ডিলিট', 'Delete')}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="pl-6 flex flex-wrap items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={draftReply}
+                                  onChange={(e) =>
+                                    setInquiryReplyDrafts((prev) => ({ ...prev, [inq.id]: e.target.value }))
+                                  }
+                                  placeholder={at('এখানে সরাসরি উত্তর লিখুন এবং Save চাপুন...', 'Type direct admin reply here...')}
+                                  className="flex-1 min-w-[220px] px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-white"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!draftReply.trim()) return;
+                                    updateChatInquiry(inq.id, {
+                                      adminReply: draftReply.trim(),
+                                      status: 'replied'
+                                    });
+                                    addToast('success', at('উত্তর সেভ হয়েছে', 'Reply Saved'), inq.name);
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold cursor-pointer"
+                                >
+                                  {at('উত্তর সেভ ও রিপ্লাইড', 'Save Reply')}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </BulkSectionShell>
+                );
+              })()}
             </div>
           )}
 
@@ -3244,31 +3516,31 @@ export const AdminDashboard: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
+                    onClick={() => setActiveTab('ai_team')}
+                    className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 cursor-pointer"
+                  >
+                    {at('AI কোম্পানি টিম', 'AI Company Team')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('social_autopilot')}
+                    className="px-3 py-1 rounded-full text-xs font-bold bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 cursor-pointer"
+                  >
+                    {at('সোশ্যাল অটো-পোস্ট', 'Social Auto-Post')}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setActiveTab('whatsapp_desk')}
                     className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 cursor-pointer"
                   >
-                    💬 {at('WhatsApp API চ্যাট', 'WhatsApp API Desk')}
+                    {at('WhatsApp API চ্যাট', 'WhatsApp API Desk')}
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('resellers')}
                     className="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 cursor-pointer"
                   >
-                    🤝 {at(`রিসেলার (${pendingResellerCount} পেন্ডিং)`, `Resellers (${pendingResellerCount})`)}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('seo_metadata')}
-                    className="px-3 py-1 rounded-full text-xs font-bold bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 cursor-pointer"
-                  >
-                    🌐 {at('SEO ও সাইট টাইটেল', 'Site Title & SEO')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('ai_operator')}
-                    className="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 cursor-pointer"
-                  >
-                    ✨ {at('AI এজেন্ট খুলুন', 'Open AI Agent')}
+                    {at(`রিসেলার (${pendingResellerCount} পেন্ডিং)`, `Resellers (${pendingResellerCount})`)}
                   </button>
                   <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-400" />
@@ -3284,10 +3556,10 @@ export const AdminDashboard: React.FC = () => {
                     <span>{t('মোট বিক্রয় আয়', 'Total Revenue')}</span>
                     <DollarSign className="w-4 h-4 text-emerald-400" />
                   </div>
-                  <div className="text-2xl font-black text-white">৳ {totalRevenue.toLocaleString()}</div>
-                  <div className="text-[11px] text-emerald-400 mt-2 flex items-center gap-1">
-                    <TrendingUp className="w-3.5 h-3.5" />
-                    <span>+২৪% গত সপ্তাহের তুলনায়</span>
+                  <div className="text-2xl font-black text-white tabular-nums">৳ {totalRevenue.toLocaleString()}</div>
+                  <div className="text-[11px] text-emerald-400 mt-2 tabular-nums">
+                    {at('নিট লাভ (খরচ বাদে):', 'Net After Expenses:')}{' '}
+                    ৳{(totalRevenue - expenses.reduce((s, e) => s + Number(e.amount || 0), 0)).toLocaleString()}
                   </div>
                 </div>
 
@@ -3296,7 +3568,7 @@ export const AdminDashboard: React.FC = () => {
                     <span>{t('মোট অর্ডার', 'Total Orders')}</span>
                     <ShoppingCart className="w-4 h-4 text-teal-400" />
                   </div>
-                  <div className="text-2xl font-black text-white">{orders.length} টি</div>
+                  <div className="text-2xl font-black text-white tabular-nums">{orders.length} টি</div>
                   <div className="text-[11px] text-slate-400 mt-2">
                     {confirmedOrders.length} {t('টি অর্ডার নিশ্চিত', 'Orders Confirmed')}
                   </div>
@@ -3307,7 +3579,7 @@ export const AdminDashboard: React.FC = () => {
                     <span>{t('এআই কল সাফল্য হার', 'AI Call Success')}</span>
                     <Bot className="w-4 h-4 text-cyan-400" />
                   </div>
-                  <div className="text-2xl font-black text-white">{aiSuccessRate}%</div>
+                  <div className="text-2xl font-black text-white tabular-nums">{aiSuccessRate}%</div>
                   <div className="text-[11px] text-emerald-400 mt-2">
                     {t('স্বয়ংক্রিয় ভয়েস কনফার্ম', 'Voice verified')}
                   </div>
@@ -3318,12 +3590,59 @@ export const AdminDashboard: React.FC = () => {
                     <span>{t('সফল ডেলিভারি (Steadfast)', 'Delivered Orders')}</span>
                     <Truck className="w-4 h-4 text-amber-400" />
                   </div>
-                  <div className="text-2xl font-black text-white">{deliveredCount} টি</div>
+                  <div className="text-2xl font-black text-white tabular-nums">{deliveredCount} টি</div>
                   <div className="text-[11px] text-emerald-400 mt-2">
                     {t('৯৬.২% ডেলিভারি রেট', '96.2% success rate')}
                   </div>
                 </div>
               </div>
+
+              {/* Solo-Founder Operations Strip: Low-Stock Alert & Expense Summary */}
+              {(() => {
+                const lowStockThreshold = settings.urgencySettings?.lowStockThreshold ?? 15;
+                const lowStockList = products.filter((p) => (p.stock ?? 0) <= lowStockThreshold);
+                const totalExpensesBdt = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div className="p-4 rounded-2xl bg-slate-900 border border-amber-500/30 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-bold text-amber-300">
+                          {at(`লো-স্টক ও আউট-অফ-স্টক অ্যালার্ট (${lowStockList.length}টি পণ্য)`, `Low-Stock Restock Alert (${lowStockList.length} items ≤ ${lowStockThreshold} pcs)`)}
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-0.5 truncate max-w-md">
+                          {lowStockList.slice(0, 3).map((p) => `${p.title} (${p.stock})`).join(' · ') ||
+                            at('সব পণ্যের স্টক পর্যাপ্ত আছে', 'All catalog products have healthy inventory')}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('ai_team')}
+                        className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold shrink-0 cursor-pointer"
+                      >
+                        {at('রিস্টক দেখুন', 'Manage Stock')}
+                      </button>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-900 border border-emerald-500/30 flex items-center justify-between gap-3 tabular-nums">
+                      <div>
+                        <p className="font-bold text-emerald-300">
+                          {at('সোলো ফাউন্ডার হিসাব ও খরচ লেজার', 'Solo Founder Expense & Net Profit Ledger')}
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          {at('মোট খরচ:', 'Logged Expenses:')} ৳{totalExpensesBdt.toLocaleString()} · {at('চ্যাট ইনকোয়ারি:', 'New Chat Leads:')} {newInquiryCount}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('ai_team')}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold shrink-0 cursor-pointer"
+                      >
+                        {at('খরচ ও AI টিম', 'Open Ledger')}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Overview Interactive SVG Analytics Graphics */}
               {(() => {
@@ -4317,6 +4636,28 @@ export const AdminDashboard: React.FC = () => {
                                   </button>
                                 </div>
                                 <div className="text-[10px] font-mono text-slate-400">{ord.customer.phone}</div>
+                                {(() => {
+                                  const ordNorm = normalizePhoneKey(ord.customer.phone);
+                                  const ordTs = new Date(ord.createdAt).getTime();
+                                  const hasDup24h =
+                                    Boolean(ordNorm) &&
+                                    orders.some(
+                                      (other) =>
+                                        other.id !== ord.id &&
+                                        normalizePhoneKey(other.customer.phone) === ordNorm &&
+                                        Math.abs(new Date(other.createdAt).getTime() - ordTs) < 86400000
+                                    );
+                                  const isLowSuccess =
+                                    ord.fraudCheck?.checked && (ord.fraudCheck.successRate ?? 100) < 65;
+                                  if (!hasDup24h && !isLowSuccess) return null;
+                                  return (
+                                    <div className="text-[10px] font-bold text-rose-400 mt-0.5">
+                                      {isLowSuccess ? `High RTO (${ord.fraudCheck?.successRate}%)` : ''}
+                                      {isLowSuccess && hasDup24h ? ' · ' : ''}
+                                      {hasDup24h ? 'Duplicate Phone (24h)' : ''}
+                                    </div>
+                                  );
+                                })()}
                               </td>
                               <td className="py-3 px-3 whitespace-nowrap text-slate-400 text-[11px]">{dateStr}</td>
                               <td className="py-3 px-3">
@@ -13092,28 +13433,65 @@ export const AdminDashboard: React.FC = () => {
                         <span>{at('লাইভ প্রোডাক্ট ভিউয়ার কাউন্টার ("76,439 people viewed this")', 'Live Product Viewer Counter ("76,439 people viewed this")')}</span>
                       </h4>
                       <p className="text-[11px] text-slate-400">
-                        {at('প্রোডাক্ট কার্ড, কুইক-ভিউ ও সিঙ্গেল প্রোডাক্ট পেজের লাইভ ভিজিটর কাউন্ট এখান থেকে নিয়ন্ত্রণ করুন।', 'Control the social-proof view counter shown across storefront product cards, modals, and single product pages.')}
+                        {at('প্রোডাক্ট কার্ড ও সিঙ্গেল প্রোডাক্ট পেজের লাইভ ভিজিটর কাউন্ট সম্পূর্ণ নিয়ন্ত্রণ করুন।', 'Full control over view count, display placement (Single Product / Cards), and labels.')}
                       </p>
                     </div>
-                    <label className="flex items-center gap-2 text-xs font-bold text-emerald-400 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={settings.viewerCounter?.enabled !== false}
-                        onChange={(e) =>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
                           updateSettings({
                             viewerCounter: {
-                              enabled: e.target.checked,
-                              baseCount: settings.viewerCounter?.baseCount ?? 76439,
-                              autoIncrement: settings.viewerCounter?.autoIncrement !== false,
+                              ...settings.viewerCounter,
+                              enabled: settings.viewerCounter?.enabled !== false,
+                              baseCount: (settings.viewerCounter?.baseCount ?? 76439) + 100,
                               labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
                               labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
                             }
                           })
                         }
-                        className="w-4 h-4 accent-emerald-500 rounded"
-                      />
-                      <span>{at('কাউন্টার চালু', 'Enable Counter')}</span>
-                    </label>
+                        className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[11px] font-bold text-emerald-400 cursor-pointer"
+                      >
+                        +100
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateSettings({
+                            viewerCounter: {
+                              ...settings.viewerCounter,
+                              enabled: settings.viewerCounter?.enabled !== false,
+                              baseCount: 76439,
+                              labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
+                              labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
+                            }
+                          })
+                        }
+                        className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[11px] font-bold text-slate-300 cursor-pointer"
+                      >
+                        Reset 76439
+                      </button>
+                      <label className="flex items-center gap-2 text-xs font-bold text-emerald-400 cursor-pointer pl-1">
+                        <input
+                          type="checkbox"
+                          checked={settings.viewerCounter?.enabled !== false}
+                          onChange={(e) =>
+                            updateSettings({
+                              viewerCounter: {
+                                ...settings.viewerCounter,
+                                enabled: e.target.checked,
+                                baseCount: settings.viewerCounter?.baseCount ?? 76439,
+                                autoIncrement: settings.viewerCounter?.autoIncrement !== false,
+                                labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
+                                labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
+                              }
+                            })
+                          }
+                          className="w-4 h-4 accent-emerald-500 rounded"
+                        />
+                        <span>{at('কাউন্টার চালু', 'Enable Counter')}</span>
+                      </label>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
@@ -13126,6 +13504,7 @@ export const AdminDashboard: React.FC = () => {
                         onChange={(e) =>
                           updateSettings({
                             viewerCounter: {
+                              ...settings.viewerCounter,
                               enabled: settings.viewerCounter?.enabled !== false,
                               baseCount: Math.max(0, Number(e.target.value) || 0),
                               autoIncrement: settings.viewerCounter?.autoIncrement !== false,
@@ -13145,6 +13524,7 @@ export const AdminDashboard: React.FC = () => {
                         onChange={(e) =>
                           updateSettings({
                             viewerCounter: {
+                              ...settings.viewerCounter,
                               enabled: settings.viewerCounter?.enabled !== false,
                               baseCount: settings.viewerCounter?.baseCount ?? 76439,
                               autoIncrement: settings.viewerCounter?.autoIncrement !== false,
@@ -13164,6 +13544,7 @@ export const AdminDashboard: React.FC = () => {
                         onChange={(e) =>
                           updateSettings({
                             viewerCounter: {
+                              ...settings.viewerCounter,
                               enabled: settings.viewerCounter?.enabled !== false,
                               baseCount: settings.viewerCounter?.baseCount ?? 76439,
                               autoIncrement: settings.viewerCounter?.autoIncrement !== false,
@@ -13178,30 +13559,176 @@ export const AdminDashboard: React.FC = () => {
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                    <label className="flex items-center gap-2 text-xs font-bold text-slate-300 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={settings.viewerCounter?.autoIncrement !== false}
-                        onChange={(e) =>
-                          updateSettings({
-                            viewerCounter: {
-                              enabled: settings.viewerCounter?.enabled !== false,
-                              baseCount: settings.viewerCounter?.baseCount ?? 76439,
-                              autoIncrement: e.target.checked,
-                              labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
-                              labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
-                            }
-                          })
-                        }
-                        className="w-4 h-4 accent-emerald-500 rounded"
-                      />
-                      <span>{at('রিয়েল ভিজিটে অটো সংখ্যা বাড়বে (+1 প্রতি সেশন)', 'Auto-Increment Live Views (+1 per unique product view)')}</span>
-                    </label>
+                    <div className="flex flex-wrap items-center gap-4 text-xs font-bold text-slate-300">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={settings.viewerCounter?.autoIncrement !== false}
+                          onChange={(e) =>
+                            updateSettings({
+                              viewerCounter: {
+                                ...settings.viewerCounter,
+                                enabled: settings.viewerCounter?.enabled !== false,
+                                baseCount: settings.viewerCounter?.baseCount ?? 76439,
+                                autoIncrement: e.target.checked,
+                                labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
+                                labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
+                              }
+                            })
+                          }
+                          className="w-4 h-4 accent-emerald-500 rounded"
+                        />
+                        <span>{at('অটো ইনক্রিমেন্ট (+1)', 'Auto-Increment')}</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={settings.viewerCounter?.showOnSingleProduct !== false}
+                          onChange={(e) =>
+                            updateSettings({
+                              viewerCounter: {
+                                ...settings.viewerCounter,
+                                enabled: settings.viewerCounter?.enabled !== false,
+                                baseCount: settings.viewerCounter?.baseCount ?? 76439,
+                                labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
+                                labelEn: settings.viewerCounter?.labelEn || 'people viewed this',
+                                showOnSingleProduct: e.target.checked
+                              }
+                            })
+                          }
+                          className="w-4 h-4 accent-emerald-500 rounded"
+                        />
+                        <span>{at('সিঙ্গেল প্রোডাক্ট পেজে দেখান', 'Show on Single Product')}</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(settings.viewerCounter?.showOnCards)}
+                          onChange={(e) =>
+                            updateSettings({
+                              viewerCounter: {
+                                ...settings.viewerCounter,
+                                enabled: settings.viewerCounter?.enabled !== false,
+                                baseCount: settings.viewerCounter?.baseCount ?? 76439,
+                                labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
+                                labelEn: settings.viewerCounter?.labelEn || 'people viewed this',
+                                showOnCards: e.target.checked
+                              }
+                            })
+                          }
+                          className="w-4 h-4 accent-emerald-500 rounded"
+                        />
+                        <span>{at('প্রোডাক্ট কার্ডেও দেখান', 'Show on Cards')}</span>
+                      </label>
+                    </div>
                     <div className="px-3 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-200 font-mono">
-                      👁 {(settings.viewerCounter?.baseCount ?? 76439).toLocaleString()} {at(settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন', settings.viewerCounter?.labelEn || 'people viewed this')}
+                      {(settings.viewerCounter?.baseCount ?? 76439).toLocaleString()} {at(settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন', settings.viewerCounter?.labelEn || 'people viewed this')}
                     </div>
                   </div>
                 </div>
+
+                {/* Single Product Page Conversion Urgency & Scarcity Controls */}
+                {(() => {
+                  const urg = settings.urgencySettings || {
+                    enabled: true,
+                    lowStockThreshold: 20,
+                    showStockProgress: true,
+                    showLiveLookers: true,
+                    showRecentSold: true,
+                    showCountdown: true,
+                    countdownHours: 6,
+                    showDispatchCutoff: true,
+                    dispatchCutoffHour: 17,
+                    lowStockTextBn: 'তাড়াতাড়ি করুন! স্টকে আর মাত্র {stock} পিস বাকি আছে',
+                    lowStockTextEn: 'Hurry! Only {stock} items left in stock',
+                    dispatchTextBn: '',
+                    dispatchTextEn: ''
+                  };
+                  const patchUrg = (patch: Partial<typeof urg>) =>
+                    updateSettings({ urgencySettings: { ...urg, ...patch } });
+
+                  return (
+                    <div className="p-5 rounded-2xl bg-slate-950 border border-amber-500/35 space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                            <Flame className="w-4 h-4 text-amber-400" />
+                            <span>{at('সিঙ্গেল প্রোডাক্ট আর্জেন্সি ও স্টক লিমিট সেটিংস', 'Single Product Urgency & Scarcity Controls')}</span>
+                          </h4>
+                          <p className="text-[11px] text-slate-400">
+                            {at('ক্রেতার দ্রুত অর্ডার বাড়াতে লো-স্টক বার, লাইভ লুকার্স, রিসেন্ট সেল এবং সেম-ডে ডিসপ্যাচ টাইমার নিয়ন্ত্রণ করুন।', 'Configure low-stock scarcity bars, live viewers, 24h order proof, deal timer & same-day courier dispatch cutoff.')}
+                          </p>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs font-bold text-amber-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={urg.enabled !== false}
+                            onChange={(e) => patchUrg({ enabled: e.target.checked })}
+                            className="w-4 h-4 accent-amber-500 rounded"
+                          />
+                          <span>{at('আর্জেন্সি চালু', 'Enable Urgency')}</span>
+                        </label>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div>
+                          <label className="block text-slate-300 font-bold mb-1">{at('লো-স্টক থ্রেশহোল্ড', 'Low Stock Threshold')}</label>
+                          <input
+                            type="number"
+                            min={1}
+                            value={urg.lowStockThreshold}
+                            onChange={(e) => patchUrg({ lowStockThreshold: Math.max(1, Number(e.target.value) || 20) })}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-amber-300 font-mono font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-slate-300 font-bold mb-1">{at('কাউন্টডাউন (ঘণ্টা)', 'Countdown Hours')}</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={72}
+                            value={urg.countdownHours}
+                            onChange={(e) => patchUrg({ countdownHours: Math.max(1, Number(e.target.value) || 6) })}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-slate-300 font-bold mb-1">{at('সেম-ডে ডিসপ্যাচ কাট-অফ (২৪h)', 'Dispatch Cutoff Hour (0-23)')}</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={23}
+                            value={urg.dispatchCutoffHour}
+                            onChange={(e) => patchUrg({ dispatchCutoffHour: Math.min(23, Math.max(0, Number(e.target.value) || 17)) })}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-4 text-xs text-slate-300 font-bold">
+                        {(
+                          [
+                            ['showStockProgress', at('লো-স্টক বার', 'Stock Progress Bar')],
+                            ['showLiveLookers', at('লাইভ ভিউয়ার', 'Live Lookers')],
+                            ['showRecentSold', at('২৪ ঘণ্টায় বিক্রি', '24h Sold Proof')],
+                            ['showCountdown', at('অফার টাইমার', 'Offer Timer')],
+                            ['showDispatchCutoff', at('কুরিয়ার কাট-অফ টাইমার', 'Dispatch Cutoff')]
+                          ] as const
+                        ).map(([key, label]) => (
+                          <label key={key} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={(urg as any)[key] !== false}
+                              onChange={(e) => patchUrg({ [key]: e.target.checked })}
+                              className="w-4 h-4 accent-amber-500 rounded"
+                            />
+                            <span>{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Editable Home Storefront USP Feature Strip */}
                 <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
@@ -15273,6 +15800,53 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                         className="w-4 h-4 accent-emerald-500 rounded"
                       />
                     </label>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">
+                          {at('নিষ্ক্রিয় থাকলে অটো লগআউট (মিনিট)', 'Idle Session Auto-Logout (Minutes)')}
+                        </label>
+                        <input
+                          type="number"
+                          min={5}
+                          max={480}
+                          value={sec.idleLogoutMinutes ?? 60}
+                          onChange={(e) => updateSec({ idleLogoutMinutes: Math.max(5, Number(e.target.value) || 60) })}
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-emerald-400 font-mono font-bold"
+                        />
+                      </div>
+                      <label className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
+                        <div>
+                          <p className="font-bold text-white">{at('XSS / স্ক্রিপ্ট স্যানিটাইজার', 'XSS Payload Sanitizer')}</p>
+                          <p className="text-[10px] text-slate-400">{at('API ইনপুট ক্লিন করে', 'Strips <script> tags')}</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={sec.enablePayloadSanitizer !== false}
+                          onChange={(e) => updateSec({ enablePayloadSanitizer: e.target.checked })}
+                          className="w-4 h-4 accent-emerald-500 rounded"
+                        />
+                      </label>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const backup = exportFullDatabaseBackup();
+                        const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `buyonebd-backup-${new Date().toISOString().slice(0, 10)}.json`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        addToast('success', at('ব্যাকআপ ডাউনলোড হয়েছে', 'Full Backup Downloaded'), '');
+                      }}
+                      className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-300 font-bold flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>{at('সম্পূর্ণ ওয়েবসাইট JSON ব্যাকআপ ডাউনলোড', 'Download Full JSON Store Backup')}</span>
+                    </button>
                   </div>
 
                   {/* Checkout Anti-Bot & Blacklisted Phone Firewall */}
@@ -15413,6 +15987,66 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                             </span>
                           ))
                         )}
+                      </div>
+                    </div>
+
+                    {/* IP Address Firewall Blacklist */}
+                    <div className="space-y-2 pt-3 border-t border-slate-800">
+                      <label className="block text-[10px] text-sky-300 font-bold">
+                        {at('ব্লকড IP ফায়ারওয়াল (অতিরিক্ত অ্যাটাক IP ব্লক করুন)', 'Blocked IP Firewall Blacklist')}
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newBlockedIp}
+                          onChange={(e) => setNewBlockedIp(e.target.value)}
+                          placeholder="e.g. 103.45.67.89"
+                          className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const ip = newBlockedIp.trim();
+                            if (!ip) return;
+                            const nextIps = Array.from(new Set([ip, ...(sec.blockedIps || [])]));
+                            updateSec({ blockedIps: nextIps });
+                            await fetch('/api/security/block-ip', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ ip, action: 'block' })
+                            }).catch(() => {});
+                            addSecurityLog('IP Blocked', `Blocked IP ${ip}`, 'blocked');
+                            setNewBlockedIp('');
+                            addToast('success', at('IP ব্লক হয়েছে', 'IP Blocked'), ip);
+                          }}
+                          className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold cursor-pointer"
+                        >
+                          {at('ব্লক IP', 'Block IP')}
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {(sec.blockedIps || []).map((ip) => (
+                          <span
+                            key={ip}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-500/15 border border-sky-500/30 text-sky-200 font-mono text-[11px]"
+                          >
+                            <span>{ip}</span>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                updateSec({ blockedIps: (sec.blockedIps || []).filter((x) => x !== ip) });
+                                await fetch('/api/security/block-ip', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ ip, action: 'unblock' })
+                                }).catch(() => {});
+                              }}
+                              className="text-rose-400 hover:text-white cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -16667,6 +17301,8 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
           {activeTab === 'affiliates' && <AffiliateAdminView />}
           {activeTab === 'blogs' && <BlogAdminView onImageUpload={handleImageFileUpload} />}
           {activeTab === 'global_marketing' && <GlobalMarketingHub />}
+          {activeTab === 'social_autopilot' && <SocialAutoScheduler />}
+          {activeTab === 'ai_team' && <AITeamWorkspace />}
         </main>
       </div>
 
@@ -16841,6 +17477,92 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                 আপডেট সংরক্ষণ করুন
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* CHAT INQUIRY EDIT MODAL */}
+      {editingInquiry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-3 text-xs">
+            <button
+              type="button"
+              onClick={() => setEditingInquiry(null)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h3 className="text-base font-black text-white">{at('চ্যাট ইনকোয়ারি এডিট', 'Edit Customer Inquiry')}</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">{at('নাম', 'Name')}</label>
+                <input
+                  type="text"
+                  value={editingInquiry.name}
+                  onChange={(e) => setEditingInquiry({ ...editingInquiry, name: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">{at('মোবাইল', 'Mobile')}</label>
+                <input
+                  type="text"
+                  value={editingInquiry.phone}
+                  onChange={(e) => setEditingInquiry({ ...editingInquiry, phone: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-slate-300 font-bold mb-1">{at('প্রশ্ন / মেসেজ', 'Query')}</label>
+              <textarea
+                rows={3}
+                value={editingInquiry.query}
+                onChange={(e) => setEditingInquiry({ ...editingInquiry, query: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">{at('স্ট্যাটাস', 'Status')}</label>
+                <select
+                  value={editingInquiry.status}
+                  onChange={(e) => setEditingInquiry({ ...editingInquiry, status: e.target.value as any })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                >
+                  <option value="new">New</option>
+                  <option value="following_up">Following Up</option>
+                  <option value="replied">Replied</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">{at('অ্যাডমিন উত্তর', 'Admin Reply')}</label>
+                <input
+                  type="text"
+                  value={editingInquiry.adminReply || ''}
+                  onChange={(e) => setEditingInquiry({ ...editingInquiry, adminReply: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                await updateChatInquiry(editingInquiry.id, {
+                  name: editingInquiry.name,
+                  phone: editingInquiry.phone,
+                  query: editingInquiry.query,
+                  status: editingInquiry.status,
+                  adminReply: editingInquiry.adminReply
+                });
+                setEditingInquiry(null);
+                addToast('success', at('ইনকোয়ারি আপডেট হয়েছে', 'Inquiry Updated'), '');
+              }}
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl cursor-pointer"
+            >
+              {at('পরিবর্তন সেভ করুন', 'Save Inquiry Changes')}
+            </button>
           </div>
         </div>
       )}

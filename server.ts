@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import https from 'https';
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
@@ -34,11 +35,37 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '15mb' }));
 
+// Recursive XSS / Script Sanitizer Helper for public form & inquiry payloads
+function sanitizeInput<T>(value: T): T {
+  if (typeof value === 'string') {
+    return value
+      .replace(/<\s*script[^>]*>[\s\S]*?<\s*\/\s*script\s*>/gi, '')
+      .replace(/javascript\s*:/gi, '')
+      .replace(/on\w+\s*=/gi, '') as unknown as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeInput(item)) as unknown as T;
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(value as Record<string, any>)) {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+      out[k] = sanitizeInput(v);
+    }
+    return out as T;
+  }
+  return value;
+}
+
+function getClientIp(req: express.Request): string {
+  return String(req.headers['x-forwarded-for'] || req.ip || 'unknown').split(',')[0].trim();
+}
+
 // Sliding-Window In-Memory Rate Limiter for Sensitive API Endpoints
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 function createRateLimiter(bucketName: string, maxRequests: number, windowMs: number) {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const ip = String(req.headers['x-forwarded-for'] || req.ip || 'unknown').split(',')[0].trim();
+    const ip = getClientIp(req);
     const key = `${bucketName}:${ip}`;
     const now = Date.now();
     const entry = rateLimitBuckets.get(key);
@@ -57,12 +84,36 @@ function createRateLimiter(bucketName: string, maxRequests: number, windowMs: nu
   };
 }
 
+// IP Firewall Middleware (blocks explicitly blacklisted abusive IPs on API mutations)
+app.use('/api', (req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/admin')) return next();
+  try {
+    if (fs.existsSync(path.join(__dirname, 'data', 'store.json'))) {
+      const raw = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'store.json'), 'utf-8'));
+      const blockedIps: string[] = raw?.settings?.securitySettings?.blockedIps || [];
+      const ip = getClientIp(req);
+      if (blockedIps.includes(ip)) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied by store IP firewall.'
+        });
+      }
+    }
+  } catch {}
+  next();
+});
+
 app.use('/api/orders', createRateLimiter('orders', 40, 60 * 1000));
+app.use('/api/inquiries', createRateLimiter('inquiries', 30, 60 * 1000));
 app.use('/api/email', createRateLimiter('email', 25, 60 * 1000));
 app.use('/api/database', createRateLimiter('database', 30, 60 * 1000));
 app.use('/api/steadfast', createRateLimiter('steadfast', 45, 60 * 1000));
 app.use('/api/chat', createRateLimiter('chat', 50, 60 * 1000));
 app.use('/api/tts', createRateLimiter('tts', 40, 60 * 1000));
+app.use('/api/store/sync', createRateLimiter('store_sync', 90, 60 * 1000));
+app.use('/api/ai', createRateLimiter('ai_endpoints', 35, 60 * 1000));
+app.use('/api/agent', createRateLimiter('agent', 40, 60 * 1000));
+app.use('/api/admin', createRateLimiter('admin_auth', 25, 60 * 1000));
 
 // Initialize GoogleGenAI server-side client with v1alpha for high-grade speech
 const ai = new GoogleGenAI({
@@ -1742,6 +1793,13 @@ function redactSensitiveSettingsForPublic(rawData: any) {
         smsApiKey: ''
       };
     }
+    if (s.socialAutoConfig && typeof s.socialAutoConfig === 'object') {
+      const redactedSocial: Record<string, any> = {};
+      for (const [k, ch] of Object.entries<any>(s.socialAutoConfig)) {
+        redactedSocial[k] = ch ? { ...ch, accessToken: '', webhookUrl: '' } : ch;
+      }
+      s.socialAutoConfig = redactedSocial;
+    }
   }
   if (Array.isArray(clone.resellers)) {
     clone.resellers = clone.resellers.map((r: any) => ({ ...r, password: '' }));
@@ -1829,7 +1887,24 @@ app.post('/api/store/sync', (req, res) => {
           settings.globalMarketingSettings?.smsApiKey ||
           current.settings.globalMarketingSettings?.smsApiKey ||
           ''
-      }
+      },
+      socialAutoConfig: (() => {
+        const nextCfg: Record<string, any> = {
+          ...(current.settings.socialAutoConfig || {}),
+          ...(settings.socialAutoConfig || {})
+        };
+        for (const k of Object.keys(nextCfg)) {
+          const curCh = current.settings.socialAutoConfig?.[k] || {};
+          const incCh = settings.socialAutoConfig?.[k] || {};
+          nextCfg[k] = {
+            ...curCh,
+            ...incCh,
+            accessToken: incCh.accessToken || curCh.accessToken || '',
+            webhookUrl: incCh.webhookUrl || curCh.webhookUrl || ''
+          };
+        }
+        return nextCfg;
+      })()
     };
   }
 
@@ -1931,6 +2006,18 @@ app.post('/api/store/sync', (req, res) => {
     aiReviewQueue: Array.isArray(req.body?.aiReviewQueue)
       ? unionMergeById(req.body.aiReviewQueue, current.aiReviewQueue)
       : current.aiReviewQueue,
+    chatInquiries: Array.isArray(req.body?.chatInquiries)
+      ? unionMergeById(req.body.chatInquiries, current.chatInquiries)
+      : current.chatInquiries || [],
+    socialPosts: Array.isArray(req.body?.socialPosts)
+      ? unionMergeById(req.body.socialPosts, current.socialPosts)
+      : current.socialPosts || [],
+    expenses: Array.isArray(req.body?.expenses)
+      ? unionMergeById(req.body.expenses, current.expenses)
+      : current.expenses || [],
+    aiTeamBriefings: Array.isArray(req.body?.aiTeamBriefings)
+      ? unionMergeById(req.body.aiTeamBriefings, current.aiTeamBriefings)
+      : current.aiTeamBriefings || [],
     users: preserveNonEmpty(users, current.users),
     mediaLibrary: preserveNonEmpty(mediaLibrary, current.mediaLibrary),
     lastUpdated: new Date().toISOString()
@@ -4317,10 +4404,471 @@ function injectDynamicSeoIntoHtml(html: string): string {
   return out;
 }
 
+// Security Auth Lockout, Customer Chat Inquiries, Social Auto-Scheduler & AI Company Team APIs
+const adminLoginAttempts = new Map<string, { failures: number; lockedUntil: number }>();
+const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.createHash('sha256').update(process.env.GEMINI_API_KEY || 'buyonebd_hossain_shield_v1').digest('hex');
+
+function signAdminSessionToken(email: string, ttlMs: number): string {
+  const payload = JSON.stringify({ email, exp: Date.now() + ttlMs });
+  const encoded = Buffer.from(payload).toString('base64url');
+  const sig = crypto.createHmac('sha256', ADMIN_SESSION_SECRET).update(encoded).digest('base64url');
+  return `${encoded}.${sig}`;
+}
+
+function appendServerSecurityEvent(event: string, detail: string, severity: 'info' | 'warning' | 'blocked') {
+  try {
+    const saved = loadStoreData() || {};
+    const list: any[] = Array.isArray(saved.securityLogs) ? saved.securityLogs : [];
+    const entry = {
+      id: `sec-srv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      event,
+      detail,
+      severity,
+      timestamp: new Date().toISOString()
+    };
+    saved.securityLogs = [entry, ...list].slice(0, 150);
+    saveStoreData(saved);
+  } catch {}
+}
+
+app.post('/api/admin/auth/login', (req, res) => {
+  const ip = getClientIp(req);
+  const saved = loadStoreData() || {};
+  const sec = saved?.settings?.securitySettings || {};
+  const maxAttempts = Math.max(2, Number(sec.maxLoginAttempts) || 5);
+  const lockoutMs = Math.max(1, Number(sec.lockoutMinutes) || 15) * 60 * 1000;
+  const idleMinutes = Math.max(5, Number(sec.idleLogoutMinutes) || 60);
+
+  const attempt = adminLoginAttempts.get(ip) || { failures: 0, lockedUntil: 0 };
+  if (sec.loginLockoutEnabled !== false && attempt.lockedUntil > Date.now()) {
+    const waitSec = Math.ceil((attempt.lockedUntil - Date.now()) / 1000);
+    appendServerSecurityEvent('Brute-Force Blocked', `Blocked locked IP ${ip} (${waitSec}s left)`, 'blocked');
+    return res.status(423).json({ success: false, locked: true, waitSeconds: waitSec, error: `Locked for ${waitSec}s after too many failed attempts.` });
+  }
+
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const password = String(req.body?.password || '');
+  const pin = String(req.body?.pin || '');
+
+  const expectedPin = sec.adminPinEnabled && sec.adminPin ? String(sec.adminPin) : '';
+  const validCreds = email === 'hossain@gmail.com' && password === 'Hossain777@#$' && (!expectedPin || pin === expectedPin);
+
+  if (!validCreds) {
+    const nextFailures = attempt.failures + 1;
+    const lockedUntil = nextFailures >= maxAttempts ? Date.now() + lockoutMs : 0;
+    adminLoginAttempts.set(ip, { failures: nextFailures, lockedUntil });
+    appendServerSecurityEvent(
+      lockedUntil ? 'Admin IP Locked' : 'Admin Login Failed',
+      `Failed login for ${email || 'unknown'} from IP ${ip} (attempt ${nextFailures}/${maxAttempts})`,
+      lockedUntil ? 'blocked' : 'warning'
+    );
+    return res.status(401).json({
+      success: false,
+      error: lockedUntil
+        ? `Too many failed attempts. Locked for ${Math.ceil(lockoutMs / 60000)} minutes.`
+        : 'Invalid admin credentials.'
+    });
+  }
+
+  adminLoginAttempts.delete(ip);
+  const token = signAdminSessionToken(email, idleMinutes * 60 * 1000);
+  appendServerSecurityEvent('Admin Authenticated', `Verified server session for ${email} from IP ${ip}`, 'info');
+  return res.json({ success: true, token, expiresInMinutes: idleMinutes });
+});
+
+app.get('/api/security/logs', (_req, res) => {
+  const saved = loadStoreData() || {};
+  return res.json({ success: true, securityLogs: saved.securityLogs || [] });
+});
+
+app.post('/api/security/block-ip', (req, res) => {
+  const ip = String(req.body?.ip || '').trim();
+  if (!ip) return res.status(400).json({ success: false, error: 'IP required' });
+  const saved = loadStoreData() || {};
+  saved.settings = saved.settings || {};
+  saved.settings.securitySettings = saved.settings.securitySettings || {};
+  const list: string[] = Array.isArray(saved.settings.securitySettings.blockedIps) ? saved.settings.securitySettings.blockedIps : [];
+  if (!list.includes(ip)) {
+    saved.settings.securitySettings.blockedIps = [ip, ...list];
+    saveStoreData(saved);
+    appendServerSecurityEvent('Firewall IP Blocked', `Admin blocked IP ${ip}`, 'blocked');
+  }
+  return res.json({ success: true, blockedIps: saved.settings.securitySettings.blockedIps });
+});
+
+// Chat Inquiries CRUD API (/api/inquiries)
+app.get('/api/inquiries', (_req, res) => {
+  const saved = loadStoreData() || {};
+  return res.json({ success: true, inquiries: saved.chatInquiries || [] });
+});
+
+app.post('/api/inquiries', (req, res) => {
+  const clean = sanitizeInput(req.body || {});
+  const name = String(clean.name || '').trim();
+  const countryCode = String(clean.countryCode || '+880').trim() || '+880';
+  const phone = String(clean.phone || '').trim();
+  const queryText = String(clean.query || '').trim();
+
+  if (!name || !phone || !queryText) {
+    return res.status(400).json({ success: false, error: 'Name, mobile number, and query are required.' });
+  }
+
+  const saved = loadStoreData() || {};
+  const list: any[] = Array.isArray(saved.chatInquiries) ? saved.chatInquiries : [];
+  const item = {
+    id: clean.id || `inq-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
+    name,
+    countryCode,
+    phone,
+    query: queryText,
+    productId: clean.productId ? String(clean.productId) : undefined,
+    productTitle: clean.productTitle ? String(clean.productTitle) : undefined,
+    status: 'new',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  saved.chatInquiries = [item, ...list].slice(0, 500);
+  saveStoreData(saved);
+  broadcastWs({ type: 'inquiries:sync', chatInquiries: saved.chatInquiries });
+  return res.json({ success: true, inquiry: item, inquiries: saved.chatInquiries });
+});
+
+app.patch('/api/inquiries/:id', (req, res) => {
+  const clean = sanitizeInput(req.body || {});
+  const id = req.params.id;
+  const saved = loadStoreData() || {};
+  const list: any[] = Array.isArray(saved.chatInquiries) ? saved.chatInquiries : [];
+  const updatedList = list.map((it) =>
+    it.id === id ? { ...it, ...clean, updatedAt: new Date().toISOString() } : it
+  );
+  saved.chatInquiries = updatedList;
+  saveStoreData(saved);
+  broadcastWs({ type: 'inquiries:sync', chatInquiries: saved.chatInquiries });
+  return res.json({ success: true, inquiries: saved.chatInquiries });
+});
+
+app.delete('/api/inquiries/:id', (req, res) => {
+  const id = req.params.id;
+  const saved = loadStoreData() || {};
+  const list: any[] = Array.isArray(saved.chatInquiries) ? saved.chatInquiries : [];
+  saved.chatInquiries = list.filter((it) => it.id !== id);
+  saveStoreData(saved);
+  broadcastWs({ type: 'inquiries:sync', chatInquiries: saved.chatInquiries });
+  return res.json({ success: true, inquiries: saved.chatInquiries });
+});
+
+// Helper to build structured caption via Gemini 4 Hydrogen for Social Auto-Scheduler
+async function generateSocialCaptionWithGemini(product: any, platform: string, lang: 'bn' | 'en', storeName: string, originUrl: string) {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not configured on the server.');
+  }
+  const slug = product?.seo?.slug || product?.id || '';
+  const productUrl = `${originUrl}/product/${slug}`;
+  const title = lang === 'bn' ? (product.titleBn || product.title) : (product.title || product.titleBn);
+  const price = product.price || 0;
+  const orig = product.originalPrice || price;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-4-hydrogen',
+    contents: `Write a high-converting ${platform.toUpperCase()} social media post in ${lang === 'bn' ? 'Bengali' : 'English'} for Bangladesh e-commerce store "${storeName}".
+Product: ${title}
+Price: ৳${price}${orig > price ? ` (Regular ৳${orig})` : ''}
+Category: ${product.category || 'general'}
+Description: ${String(product.descriptionBn || product.description || '').slice(0, 300)}
+Product URL: ${productUrl}
+Include clear Cash on Delivery (সারাদেশে ৬৪ জেলায় ক্যাশ অন ডেলিভারি) CTA and viral platform-appropriate hashtags.`,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          caption: { type: Type.STRING },
+          hashtags: { type: Type.ARRAY, items: { type: Type.STRING } }
+        },
+        required: ['title', 'caption', 'hashtags']
+      }
+    }
+  });
+  const parsed = JSON.parse(response.text || '{}');
+  return {
+    title: String(parsed.title || title),
+    caption: String(parsed.caption || `${title} — Only ৳${price}! Order now: ${productUrl}`),
+    hashtags: Array.isArray(parsed.hashtags) ? parsed.hashtags.map((h: any) => String(h).replace(/^#*/, '#')) : ['#BuyOneBD', '#CashOnDelivery', '#Bangladesh'],
+    productUrl
+  };
+}
+
+app.post('/api/ai/social-caption', async (req, res) => {
+  try {
+    const { product, platform = 'facebook', lang = 'bn', storeName = 'BuyOne BD', originUrl = 'https://buyonebd.com' } = req.body || {};
+    if (!product) return res.status(400).json({ success: false, error: 'Product is required' });
+    const generated = await generateSocialCaptionWithGemini(product, platform, lang === 'en' ? 'en' : 'bn', storeName, originUrl);
+    return res.json({ success: true, ...generated });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Social caption generation failed' });
+  }
+});
+
+// Dispatch a single social post to configured Webhook (or record live publish)
+async function dispatchSocialPostItem(post: any, channelCfg: any): Promise<{ ok: boolean; error?: string }> {
+  if (channelCfg?.webhookUrl && /^https?:\/\//i.test(channelCfg.webhookUrl)) {
+    try {
+      const resp = await fetch(channelCfg.webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(channelCfg.accessToken ? { Authorization: `Bearer ${channelCfg.accessToken}` } : {})
+        },
+        body: JSON.stringify({
+          platform: post.platform,
+          pageOrChannelId: channelCfg.pageOrChannelId || '',
+          title: post.title,
+          caption: `${post.caption}\n\n${(post.hashtags || []).join(' ')}\n\nOrder Link: ${post.productUrl}`,
+          imageUrl: post.imageUrl,
+          productUrl: post.productUrl,
+          hashtags: post.hashtags || [],
+          publishedAt: new Date().toISOString()
+        })
+      });
+      if (!resp.ok) {
+        return { ok: false, error: `Webhook returned HTTP ${resp.status}` };
+      }
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Webhook dispatch failed' };
+    }
+  }
+  return { ok: true };
+}
+
+app.post('/api/social/dispatch-now', async (req, res) => {
+  const { postId, post: incomingPost } = req.body || {};
+  const saved = loadStoreData() || {};
+  const posts: any[] = Array.isArray(saved.socialPosts) ? [...saved.socialPosts] : [];
+  let target = posts.find((p) => p.id === postId);
+  if (!target && incomingPost && incomingPost.id === postId) {
+    target = incomingPost;
+    posts.unshift(target);
+  }
+  if (!target) return res.status(404).json({ success: false, error: 'Scheduled post not found' });
+
+  const chCfg = saved?.settings?.socialAutoConfig?.[target.platform];
+  const result = await dispatchSocialPostItem(target, chCfg);
+  const nowIso = new Date().toISOString();
+  saved.socialPosts = posts.map((p) =>
+    p.id === postId
+      ? {
+          ...p,
+          status: result.ok ? 'published' : 'failed',
+          publishedAt: result.ok ? nowIso : p.publishedAt,
+          errorNote: result.error || ''
+        }
+      : p
+  );
+  saveStoreData(saved);
+  broadcastWs({ type: 'social:sync', socialPosts: saved.socialPosts });
+  return res.json({ success: result.ok, error: result.error, socialPosts: saved.socialPosts });
+});
+
+// Autonomous AI Company Team Briefing (/api/ai/team-run) using Gemini 4 Hydrogen
+app.post('/api/ai/team-run', async (req, res) => {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ success: false, error: 'GEMINI_API_KEY is not configured on the server.' });
+    }
+    const saved = loadStoreData() || {};
+    const {
+      orders = saved.orders || [],
+      products = saved.products || [],
+      abandonedCarts = saved.abandonedCarts || [],
+      chatInquiries = saved.chatInquiries || [],
+      expenses = saved.expenses || [],
+      socialPosts = saved.socialPosts || [],
+      lang = 'bn'
+    } = req.body || {};
+
+    const validOrders = orders.filter((o: any) => o.status !== 'cancelled');
+    const totalRevenue = validOrders.reduce((s: number, o: any) => s + Number(o?.pricing?.total || 0), 0);
+    const totalExpenses = expenses.reduce((s: number, e: any) => s + Number(e?.amount || 0), 0);
+    const pendingOrders = orders.filter((o: any) => o.status === 'pending' || o.status === 'on_hold');
+    const unbookedConfirmed = orders.filter((o: any) => (o.status === 'ai_confirmed' || o.status === 'processing') && !o?.courier?.trackingCode);
+    const lowStock = products.filter((p: any) => Number(p.stock || 0) <= 10);
+    const openInquiries = chatInquiries.filter((q: any) => q.status === 'new' || q.status === 'following_up');
+    const unrecoveredCarts = abandonedCarts.filter((c: any) => !c.recovered);
+
+    const metricsSummary = {
+      totalOrders: orders.length,
+      pendingOrdersCount: pendingOrders.length,
+      pendingOrderIds: pendingOrders.slice(0, 5).map((o: any) => o.id),
+      unbookedConfirmedIds: unbookedConfirmed.slice(0, 5).map((o: any) => o.id),
+      totalRevenueBdt: totalRevenue,
+      totalExpensesBdt: totalExpenses,
+      netProfitEstimateBdt: totalRevenue - totalExpenses,
+      lowStockProducts: lowStock.slice(0, 6).map((p: any) => ({ id: p.id, title: p.title, stock: p.stock })),
+      unrecoveredCartsCount: unrecoveredCarts.length,
+      openChatInquiriesCount: openInquiries.length,
+      scheduledSocialPostsCount: socialPosts.filter((p: any) => p.status === 'scheduled').length
+    };
+
+    const targetLang = lang === 'en' ? 'English' : 'Bengali (simple clear Bangla mixed with e-commerce terms)';
+    const aiResp = await ai.models.generateContent({
+      model: 'gemini-4-hydrogen',
+      contents: `You are the executive AI Management Team running BuyOne BD (a solo-founder Bangladesh COD e-commerce brand).
+Analyze the live store metrics below and deliver concise department briefings for:
+1. salesSummary (AI Sales Manager)
+2. marketingSummary (AI Marketing Director)
+3. accountsSummary (AI Accounts & Finance Officer)
+4. opsSummary (AI Support & Fulfillment Agent)
+And recommend 3-6 executable actions using ONLY actionType values from: "confirm_pending_orders", "send_courier_bulk", "recover_carts_whatsapp", "schedule_social_promo", "restock_low_items", "enable_flash_sale".
+Write ALL text in ${targetLang}.
+Live metrics JSON:
+${JSON.stringify(metricsSummary)}`,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            headline: { type: Type.STRING },
+            salesSummary: { type: Type.STRING },
+            marketingSummary: { type: Type.STRING },
+            accountsSummary: { type: Type.STRING },
+            opsSummary: { type: Type.STRING },
+            recommendedActions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  role: { type: Type.STRING, enum: ['sales', 'marketing', 'accounts', 'ops'] },
+                  title: { type: Type.STRING },
+                  detail: { type: Type.STRING },
+                  actionType: { type: Type.STRING },
+                  payloadJson: { type: Type.STRING }
+                },
+                required: ['id', 'role', 'title', 'detail', 'actionType', 'payloadJson']
+              }
+            }
+          },
+          required: ['headline', 'salesSummary', 'marketingSummary', 'accountsSummary', 'opsSummary', 'recommendedActions']
+        }
+      }
+    });
+
+    const parsed = JSON.parse(aiResp.text || '{}');
+    const briefing = {
+      id: `brief-${Date.now()}`,
+      generatedAt: new Date().toISOString(),
+      headline: parsed.headline || 'AI Team Daily Executive Briefing',
+      salesSummary: parsed.salesSummary || '',
+      marketingSummary: parsed.marketingSummary || '',
+      accountsSummary: parsed.accountsSummary || '',
+      opsSummary: parsed.opsSummary || '',
+      recommendedActions: Array.isArray(parsed.recommendedActions) ? parsed.recommendedActions : []
+    };
+
+    const prevBriefs: any[] = Array.isArray(saved.aiTeamBriefings) ? saved.aiTeamBriefings : [];
+    saved.aiTeamBriefings = [briefing, ...prevBriefs].slice(0, 20);
+    saveStoreData(saved);
+    return res.json({ success: true, briefing, metrics: metricsSummary });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'AI Team briefing failed' });
+  }
+});
+
 // Mount Vite or serve static files + Attach WebSocket Server (/ws)
 async function startServer() {
   const httpServer = http.createServer(app);
   const wss = new WebSocketServer({ noServer: true });
+
+  // Background 30-second Social Auto-Scheduler & Recurring Auto-Poster
+  setInterval(async () => {
+    try {
+      const saved = loadStoreData();
+      if (!saved) return;
+      let changed = false;
+      const nowMs = Date.now();
+
+      // 1. Dispatch any due scheduled posts
+      const posts: any[] = Array.isArray(saved.socialPosts) ? saved.socialPosts : [];
+      const channels = saved.settings?.socialAutoConfig || {};
+      const nextPosts = [...posts];
+      for (let i = 0; i < nextPosts.length; i++) {
+        const post = nextPosts[i];
+        if (post?.status === 'scheduled' && new Date(post.scheduledAt).getTime() <= nowMs) {
+          const ch = channels[post.platform];
+          const res = await dispatchSocialPostItem(post, ch);
+          nextPosts[i] = {
+            ...post,
+            status: res.ok ? 'published' : 'failed',
+            publishedAt: res.ok ? new Date().toISOString() : undefined,
+            errorNote: res.error || ''
+          };
+          changed = true;
+        }
+      }
+      if (changed) {
+        saved.socialPosts = nextPosts;
+        saveStoreData(saved);
+        broadcastWs({ type: 'social:sync', socialPosts: saved.socialPosts });
+      }
+
+      // 2. Check recurring autoPostEnabled channels to queue fresh product posts automatically
+      const catalog: any[] = Array.isArray(saved.products) ? saved.products.filter((p: any) => (p.stock ?? 0) > 0) : [];
+      if (catalog.length > 0 && saved.settings?.socialAutoConfig) {
+        for (const platform of ['facebook', 'instagram', 'tiktok', 'youtube']) {
+          const ch = saved.settings.socialAutoConfig[platform];
+          if (!ch?.enabled || !ch?.autoPostEnabled) continue;
+          const intervalMs = Math.max(1, Number(ch.intervalHours) || 6) * 3600 * 1000;
+          const lastMs = ch.lastAutoPostedAt ? new Date(ch.lastAutoPostedAt).getTime() : 0;
+          if (nowMs - lastMs >= intervalMs) {
+            const pick = catalog[Math.floor(Math.random() * catalog.length)];
+            const slug = pick.seo?.slug || pick.id;
+            const productUrl = `${saved.settings?.seoSettings?.canonicalUrl || 'https://buyonebd.com'}/product/${slug}`;
+            let gen = {
+              title: pick.titleBn || pick.title,
+              caption: `🔥 ${pick.titleBn || pick.title}\n💰 স্পেশাল দাম: মাত্র ৳${pick.price}!\n🚚 সারা বাংলাদেশের ৬৪ জেলায় ক্যাশ অন ডেলিভারি।\n👉 অর্ডার লিংক: ${productUrl}`,
+              hashtags: ['#BuyOneBD', '#BangladeshShopping', '#CashOnDelivery', `#${platform}`],
+              productUrl
+            };
+            if (process.env.GEMINI_API_KEY) {
+              try {
+                gen = await generateSocialCaptionWithGemini(
+                  pick,
+                  platform,
+                  'bn',
+                  saved.settings?.storeName || 'BuyOne BD',
+                  saved.settings?.seoSettings?.canonicalUrl || 'https://buyonebd.com'
+                );
+              } catch {}
+            }
+            const newPost = {
+              id: `soc-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
+              platform,
+              productId: pick.id,
+              title: gen.title,
+              caption: gen.caption,
+              hashtags: gen.hashtags,
+              productUrl: gen.productUrl,
+              imageUrl: pick.images?.[0] || '',
+              scheduledAt: new Date().toISOString(),
+              status: 'published',
+              autoGenerated: true,
+              publishedAt: new Date().toISOString(),
+              createdAt: new Date().toISOString()
+            };
+            const disp = await dispatchSocialPostItem(newPost, ch);
+            newPost.status = disp.ok ? 'published' : 'failed';
+            saved.socialPosts = [newPost, ...(saved.socialPosts || [])].slice(0, 200);
+            saved.settings.socialAutoConfig[platform].lastAutoPostedAt = new Date().toISOString();
+            saveStoreData(saved);
+            broadcastWs({ type: 'social:sync', socialPosts: saved.socialPosts });
+          }
+        }
+      }
+    } catch {}
+  }, 30 * 1000);
 
   httpServer.on('upgrade', (request, socket, head) => {
     const reqUrl = request.url || '';
@@ -4341,7 +4889,9 @@ async function startServer() {
           supportChats: initialSaved.supportChats || [],
           browserCalls: initialSaved.browserCalls || [],
           whatsappMessages: initialSaved.whatsappMessages || [],
-          aiReviewQueue: initialSaved.aiReviewQueue || []
+          aiReviewQueue: initialSaved.aiReviewQueue || [],
+          chatInquiries: initialSaved.chatInquiries || [],
+          socialPosts: initialSaved.socialPosts || []
         })
       );
     } catch {}

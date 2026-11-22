@@ -16,8 +16,12 @@ import {
   Activity,
   ShieldAlert,
   Award,
-  Zap
+  Zap,
+  QrCode,
+  Printer,
+  Download
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import { useStore } from '../../context/StoreContext';
 import { BulkSmsCampaignLog } from '../../types';
 import { BulkSectionShell } from './BulkSectionShell';
@@ -49,8 +53,73 @@ export const GlobalMarketingHub: React.FC = () => {
   const [editSmsLogTitle, setEditSmsLogTitle] = useState('');
   const [editSmsLogMsg, setEditSmsLogMsg] = useState('');
 
+  // QR Poster & Parcel Coupon Insert Generator
+  const [qrProductId, setQrProductId] = useState<string>('store_home');
+  const [qrCouponCode, setQrCouponCode] = useState<string>('REPEAT50');
+  const [qrHeadline, setQrHeadline] = useState<string>('ধন্যবাদ অর্ডারের জন্য! পরের অর্ডারে ৫০ টাকা ছাড়');
+  const [qrSubtext, setQrSubtext] = useState<string>('স্ক্যান করে সরাসরি স্টোর ভিজিট করুন অথবা WhatsApp-এ অর্ডার করুন');
+  const [qrSvgMarkup, setQrSvgMarkup] = useState<string>('');
+
   const at = (bn: string, en: string) => (adminLang === 'en' ? en : bn);
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://buyonebd.com';
+
+  const qrTargetUrl = useMemo(() => {
+    if (qrProductId === 'store_home') {
+      return `${origin}/?utm_source=parcel_qr&coupon=${encodeURIComponent(qrCouponCode.trim() || 'REPEAT50')}`;
+    }
+    return `${origin}/product/${encodeURIComponent(qrProductId)}?utm_source=parcel_qr&coupon=${encodeURIComponent(qrCouponCode.trim() || 'REPEAT50')}`;
+  }, [origin, qrProductId, qrCouponCode]);
+
+  React.useEffect(() => {
+    let active = true;
+    QRCode.toString(qrTargetUrl, {
+      type: 'svg',
+      margin: 1,
+      width: 180,
+      color: { dark: '#0f172a', light: '#ffffff' }
+    })
+      .then((svg) => {
+        if (active) setQrSvgMarkup(svg);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [qrTargetUrl]);
+
+  const handlePrintQrInsert = () => {
+    const win = window.open('', '_blank', 'width=720,height=640');
+    if (!win) return;
+    win.document.write(`<!doctype html><html><head><title>Parcel Insert — ${settings.storeName}</title><style>
+      body{font-family:system-ui,-apple-system,sans-serif;padding:28px;color:#0f172a;background:#fff}
+      .card{max-width:460px;margin:0 auto;border:2px dashed #059669;border-radius:18px;padding:24px;text-align:center}
+      .brand{font-weight:900;font-size:20px;color:#059669;margin-bottom:6px}
+      .headline{font-weight:800;font-size:16px;margin:8px 0}
+      .sub{font-size:12px;color:#475569;margin-bottom:16px}
+      .qr{display:inline-block;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff}
+      .coupon{margin-top:14px;display:inline-block;padding:6px 14px;border-radius:8px;background:#ecfdf5;border:1px solid #10b981;font-family:monospace;font-weight:900;font-size:15px;color:#047857}
+      .foot{margin-top:14px;font-size:11px;color:#64748b}
+    </style></head><body><div class="card">
+      <div class="brand">${settings.storeName}</div>
+      <div class="headline">${qrHeadline}</div>
+      <div class="sub">${qrSubtext}</div>
+      <div class="qr">${qrSvgMarkup}</div>
+      <div><span class="coupon">CODE: ${qrCouponCode || 'REPEAT50'}</span></div>
+      <div class="foot">Hotline / WhatsApp: ${settings.whatsappNumber || settings.hotline}<br/>${qrTargetUrl}</div>
+    </div><script>window.onload=function(){window.print()}</script></body></html>`);
+    win.document.close();
+  };
+
+  const handleDownloadQrSvg = () => {
+    if (!qrSvgMarkup) return;
+    const blob = new Blob([qrSvgMarkup], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `buyonebd-qr-${qrProductId}.svg`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const gmCfg = settings.globalMarketingSettings || {
     defaultExportCurrency: 'BDT' as const,
@@ -1222,6 +1291,123 @@ export const GlobalMarketingHub: React.FC = () => {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+      {/* 7. Printable QR Code Poster & Courier Parcel Thank-You Coupon Insert */}
+      <div className="p-5 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-4 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h4 className="text-sm font-bold text-white flex items-center gap-2">
+              <QrCode className="w-4 h-4 text-emerald-400" />
+              <span>{at('প্রিন্টেবল QR কোড ও পার্সেল ডিসকাউন্ট কার্ড জেনারেটর', 'Printable QR Code Poster & Parcel Coupon Insert Studio')}</span>
+            </h4>
+            <p className="text-[11px] text-slate-400">
+              {at(
+                'প্রতিটি কুরিয়ার পার্সেলের ভিতরে দেওয়ার জন্য রিপিট-অর্ডার QR কার্ড ও দোকানের পোস্টার প্রিন্ট করুন',
+                'Generate scannable SVG QR cards linking to store or product pages with coupon codes for courier parcel inserts'
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleDownloadQrSvg}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold flex items-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{at('SVG ডাউনলোড', 'Download SVG')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handlePrintQrInsert}
+              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>{at('পার্সেল কার্ড প্রিন্ট', 'Print Parcel Insert')}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 mb-1">
+                {at('QR টার্গেট পেজ / পণ্য', 'QR Target Page or Product')}
+              </label>
+              <select
+                value={qrProductId}
+                onChange={(e) => setQrProductId(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
+              >
+                <option value="store_home">{at('হোম স্টোরফ্রন্ট (/home)', 'Main Storefront Home')}</option>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {at(p.titleBn || p.title, p.title)} (৳{p.price})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 mb-1">
+                {at('রিপিট-অর্ডার কুপন কোড', 'Coupon Code on Insert')}
+              </label>
+              <input
+                type="text"
+                value={qrCouponCode}
+                onChange={(e) => setQrCouponCode(e.target.value.toUpperCase())}
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-emerald-400 font-mono font-bold"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[10px] font-bold text-slate-400 mb-1">
+                {at('কার্ডের হেডলাইন', 'Card Headline')}
+              </label>
+              <input
+                type="text"
+                value={qrHeadline}
+                onChange={(e) => setQrHeadline(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[10px] font-bold text-slate-400 mb-1">
+                {at('সাব-টেক্সট নির্দেশনা', 'Instruction Subtext')}
+              </label>
+              <input
+                type="text"
+                value={qrSubtext}
+                onChange={(e) => setQrSubtext(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-300"
+              />
+            </div>
+            <div className="sm:col-span-2 p-2.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[10px] text-slate-400 truncate">
+              URL: {qrTargetUrl}
+            </div>
+          </div>
+
+          <div className="lg:col-span-5 flex justify-center">
+            <div className="w-full max-w-xs p-5 rounded-2xl bg-white text-slate-900 border-2 border-dashed border-emerald-500 text-center space-y-2.5 shadow-lg">
+              <p className="font-black text-sm text-emerald-700">{settings.storeName}</p>
+              <p className="font-bold text-xs leading-snug">{qrHeadline}</p>
+              <div className="inline-flex p-2 rounded-xl border border-slate-200 bg-white">
+                {qrSvgMarkup ? (
+                  <div
+                    className="w-36 h-36 [&>svg]:w-full [&>svg]:h-full"
+                    dangerouslySetInnerHTML={{ __html: qrSvgMarkup }}
+                  />
+                ) : (
+                  <div className="w-36 h-36 bg-slate-100 rounded-lg" />
+                )}
+              </div>
+              <div>
+                <span className="inline-block px-3 py-1 rounded-lg bg-emerald-50 border border-emerald-300 font-mono font-black text-xs text-emerald-800">
+                  CODE: {qrCouponCode || 'REPEAT50'}
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500">{qrSubtext}</p>
+            </div>
           </div>
         </div>
       </div>
