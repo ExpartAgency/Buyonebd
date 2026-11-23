@@ -9,7 +9,6 @@ import {
   RotateCcw,
   Bell,
   BellRing,
-  Heart,
   Share2,
   Check,
   Clock,
@@ -40,11 +39,11 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
   const {
     openOneClickCheckout,
     addToCart,
-    toggleWishlist,
-    isWishlisted,
     addPriceAlert,
     recordProductView,
     getProductViewCount,
+    getProductRealStats,
+    activeLiveViewers,
     products,
     reviews,
     addProductReview,
@@ -436,8 +435,8 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   <div className="w-full h-full bg-slate-200 dark:bg-slate-800" />
                 )}
 
-                {/* Top Left Status Badges */}
-                <div className="absolute top-4 left-4 flex flex-col gap-1.5 pointer-events-none">
+                {/* Top Right Status Badges */}
+                <div className="absolute top-4 right-4 flex flex-col items-end gap-1.5 pointer-events-none">
                   {discountPercent > 0 && (
                     <span className="bg-emerald-600 text-white text-xs font-black px-3 py-1 rounded-xl shadow-md tabular-nums">
                       -{discountPercent}% {t('ছাড়', 'OFF')}
@@ -545,30 +544,35 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   )}
                 </div>
 
-                <div className="flex items-center gap-2.5 text-xs tabular-nums">
-                  <button
-                    type="button"
-                    onClick={() => setActiveDetailTab('reviews')}
-                    className="flex items-center gap-1 text-amber-500 font-bold cursor-pointer hover:underline"
-                  >
-                    <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
-                    <span>{product.rating}</span>
-                    <span className="text-slate-400 font-normal">
-                      ({productReviews.length || product.reviewsCount || 24} {t('রিভিউ', 'reviews')})
-                    </span>
-                  </button>
-                  <span className="text-slate-300 dark:text-slate-700">|</span>
-                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                    {product.stock > 0
-                      ? t(`${cms?.inStockLabelBn || 'স্টকে আছে'} (${product.stock})`, `${cms?.inStockLabelEn || 'In Stock'} (${product.stock})`)
-                      : t(cms?.outOfStockLabelBn || 'স্টক শেষ', cms?.outOfStockLabelEn || 'Out of Stock')}
-                  </span>
-                  {product.soldCount ? (
-                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                      · {product.soldCount}+ {t('বিক্রি', 'sold')}
-                    </span>
-                  ) : null}
-                </div>
+                {(() => {
+                  const realStats = getProductRealStats(product.id);
+                  return (
+                    <div className="flex items-center gap-2.5 text-xs tabular-nums">
+                      <button
+                        type="button"
+                        onClick={() => setActiveDetailTab('reviews')}
+                        className="flex items-center gap-1 text-amber-500 font-bold cursor-pointer hover:underline"
+                      >
+                        <Star className={`w-4 h-4 ${realStats.reviewsCount > 0 ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} />
+                        <span>{realStats.reviewsCount > 0 ? realStats.averageRating : '0.0'}</span>
+                        <span className="text-slate-400 font-normal">
+                          ({realStats.reviewsCount} {t('রিভিউ', 'reviews')})
+                        </span>
+                      </button>
+                      <span className="text-slate-300 dark:text-slate-700">|</span>
+                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                        {product.stock > 0
+                          ? t(`${cms?.inStockLabelBn || 'স্টকে আছে'} (${product.stock})`, `${cms?.inStockLabelEn || 'In Stock'} (${product.stock})`)
+                          : t(cms?.outOfStockLabelBn || 'স্টক শেষ', cms?.outOfStockLabelEn || 'Out of Stock')}
+                      </span>
+                      {realStats.soldCount > 0 && (
+                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                          · {realStats.soldCount} {t('বিক্রি', 'sold')}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Product Title */}
@@ -810,9 +814,9 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
               const threshold = urg?.lowStockThreshold ?? 20;
               const showLowStock = (urg?.showStockProgress !== false) && (product.stock ?? 0) <= threshold;
               const stockFillPct = Math.max(18, Math.min(92, Math.round(((product.stock ?? 5) / Math.max(threshold, 1)) * 100)));
-              const idHash = product.id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-              const liveLookers = 11 + (idHash % 17);
-              const soldToday = Math.max(4, Math.min(42, Math.round((product.soldCount || 48) / 9) + (idHash % 7)));
+              const realStats = getProductRealStats(product.id);
+              const liveLookers = Math.max(1, activeLiveViewers);
+              const soldToday = realStats.soldLast24h;
               const now = new Date();
               const cutoffHour = urg?.dispatchCutoffHour ?? 17;
               const cutoffTarget = new Date(now);
@@ -826,20 +830,20 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
 
               return (
                 <div className="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/25 border border-amber-200/80 dark:border-amber-800/60 space-y-2.5 text-xs">
-                  {(urg?.showLiveLookers !== false || urg?.showRecentSold !== false) && (
+                  {(urg?.showLiveLookers !== false || (urg?.showRecentSold !== false && soldToday > 0)) && (
                     <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold text-slate-800 dark:text-slate-200 tabular-nums">
                       {urg?.showLiveLookers !== false && (
                         <span className="inline-flex items-center gap-1.5 text-rose-700 dark:text-rose-400">
                           <Eye className="w-3.5 h-3.5 shrink-0" />
                           <span>
                             {t(
-                              `এখন ${liveLookers} জন এই পণ্যটি দেখছেন`,
-                              `${liveLookers} people are viewing this right now`
+                              `এখন ${liveLookers} জন ভিজিটর সক্রিয়`,
+                              `${liveLookers} active visitor${liveLookers > 1 ? 's' : ''} online right now`
                             )}
                           </span>
                         </span>
                       )}
-                      {urg?.showRecentSold !== false && (
+                      {urg?.showRecentSold !== false && soldToday > 0 && (
                         <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300">
                           <Flame className="w-3.5 h-3.5 shrink-0" />
                           <span>
@@ -938,11 +942,6 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                       type="button"
                       onClick={() => {
                         addToCart(product, quantity, selectedColor, selectedSize, selectedAttributes);
-                        addToast(
-                          'success',
-                          t('কার্টে যোগ হয়েছে!', 'Added to Cart!'),
-                          lang === 'bn' ? product.titleBn : product.title
-                        );
                       }}
                       className="w-full py-3.5 sm:py-4 px-5 bg-slate-900 hover:bg-slate-800 text-white font-black text-sm rounded-2xl border border-slate-700 shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
                     >
@@ -951,19 +950,6 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     </button>
                   </div>
                 )}
-
-                <button
-                  type="button"
-                  onClick={() => toggleWishlist(product.id)}
-                  className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer shrink-0 flex items-center justify-center ${
-                    isWishlisted(product.id)
-                      ? 'bg-rose-50 border-rose-300 text-rose-600'
-                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:text-rose-600'
-                  }`}
-                  title={t('পছন্দ তালিকা', 'Wishlist')}
-                >
-                  <Heart className={`w-5 h-5 ${isWishlisted(product.id) ? 'fill-rose-600' : ''}`} />
-                </button>
               </div>
 
               {/* Direct Order Via WhatsApp */}

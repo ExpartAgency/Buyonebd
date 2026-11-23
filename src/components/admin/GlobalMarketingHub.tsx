@@ -19,7 +19,11 @@ import {
   Zap,
   QrCode,
   Printer,
-  Download
+  Download,
+  MapPin,
+  Image as ImageIcon,
+  Share2,
+  CheckSquare
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useStore } from '../../context/StoreContext';
@@ -60,8 +64,133 @@ export const GlobalMarketingHub: React.FC = () => {
   const [qrSubtext, setQrSubtext] = useState<string>('স্ক্যান করে সরাসরি স্টোর ভিজিট করুন অথবা WhatsApp-এ অর্ডার করুন');
   const [qrSvgMarkup, setQrSvgMarkup] = useState<string>('');
 
+  // Zero-Ad-Spend Bangladesh Free Marketing Studio State
+  const [freeProdId, setFreeProdId] = useState<string>(products[0]?.id || '');
+  const [freeArea, setFreeArea] = useState<string>('Dhaka City (Mirpur, Uttara, Dhanmondi & Nationwide COD)');
+  const [flyerTheme, setFlyerTheme] = useState<'emerald' | 'midnight' | 'festive'>('emerald');
+  const [flyerTag, setFlyerTag] = useState<string>('64-DISTRICT CASH ON DELIVERY');
+  const [flyerOfferNote, setFlyerOfferNote] = useState<string>('সীমিত স্টক — আজই অর্ডার করলে ফাস্ট হোম ডেলিভারি!');
+  const flyerCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
+
   const at = (bn: string, en: string) => (adminLang === 'en' ? en : bn);
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://buyonebd.com';
+
+  const freeProduct = useMemo(
+    () => products.find((p) => p.id === freeProdId) || products[0] || null,
+    [products, freeProdId]
+  );
+
+  React.useEffect(() => {
+    const canvas = flyerCanvasRef.current;
+    if (!canvas || !freeProduct) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const palette =
+      flyerTheme === 'midnight'
+        ? { bg1: '#020617', bg2: '#0f172a', accent: '#10b981', pill: '#064e3b', text: '#ffffff', sub: '#94a3b8' }
+        : flyerTheme === 'festive'
+        ? { bg1: '#451a03', bg2: '#78350f', accent: '#f59e0b', pill: '#059669', text: '#ffffff', sub: '#fde68a' }
+        : { bg1: '#022c22', bg2: '#064e3b', accent: '#34d399', pill: '#0f172a', text: '#ffffff', sub: '#a7f3d0' };
+
+    const drawPoster = (imgEl?: HTMLImageElement | null) => {
+      const W = 1080;
+      const H = 1920;
+      const grad = ctx.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0, palette.bg1);
+      grad.addColorStop(1, palette.bg2);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      // Top Brand Header
+      ctx.fillStyle = palette.accent;
+      ctx.font = 'bold 44px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(settings.storeName || 'BuyOne BD', W / 2, 120);
+
+      // Tag Badge
+      ctx.fillStyle = palette.pill;
+      ctx.fillRect(140, 165, W - 280, 74);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 34px system-ui, sans-serif';
+      ctx.fillText(flyerTag.slice(0, 34), W / 2, 214);
+
+      // Center Product Frame
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(110, 290, W - 220, 820);
+      if (imgEl && imgEl.naturalWidth > 0) {
+        try {
+          const box = 780;
+          const ratio = Math.min(box / imgEl.naturalWidth, box / imgEl.naturalHeight);
+          const dw = imgEl.naturalWidth * ratio;
+          const dh = imgEl.naturalHeight * ratio;
+          ctx.drawImage(imgEl, 130 + (box - dw) / 2, 310 + (box - dh) / 2, dw, dh);
+        } catch {
+          ctx.fillStyle = '#f1f5f9';
+          ctx.fillRect(130, 310, W - 260, 780);
+        }
+      } else {
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 42px system-ui, sans-serif';
+        ctx.fillText(freeProduct.category || 'FEATURED DEAL', W / 2, 700);
+      }
+
+      // Product Title (2-line wrap)
+      ctx.fillStyle = palette.text;
+      ctx.font = 'bold 48px system-ui, sans-serif';
+      const titleStr = freeProduct.titleBn || freeProduct.title || 'Best Seller';
+      ctx.fillText(titleStr.slice(0, 34), W / 2, 1225);
+      if (titleStr.length > 34) {
+        ctx.fillText(titleStr.slice(34, 68), W / 2, 1288);
+      }
+
+      // Price Callout
+      ctx.fillStyle = palette.accent;
+      ctx.font = 'bold 96px monospace';
+      ctx.fillText(`৳${freeProduct.price.toLocaleString()}`, W / 2, 1435);
+      if (freeProduct.originalPrice && freeProduct.originalPrice > freeProduct.price) {
+        ctx.fillStyle = palette.sub;
+        ctx.font = 'bold 42px monospace';
+        ctx.fillText(`Regular ৳${freeProduct.originalPrice.toLocaleString()}`, W / 2, 1500);
+      }
+
+      // Offer Note & Hotline Footer
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 34px system-ui, sans-serif';
+      ctx.fillText(flyerOfferNote.slice(0, 46), W / 2, 1615);
+
+      ctx.fillStyle = palette.accent;
+      ctx.fillRect(120, 1690, W - 240, 125);
+      ctx.fillStyle = '#020617';
+      ctx.font = 'bold 42px monospace';
+      ctx.fillText(`Order: ${settings.whatsappNumber || settings.hotline || '+8801917942662'}`, W / 2, 1768);
+    };
+
+    drawPoster(null);
+    const imgSrc = freeProduct.images?.[0];
+    if (imgSrc && imgSrc.trim()) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => drawPoster(img);
+      img.onerror = () => drawPoster(null);
+      img.src = imgSrc;
+    }
+  }, [freeProduct, flyerTheme, flyerTag, flyerOfferNote, settings.storeName, settings.whatsappNumber, settings.hotline]);
+
+  const handleDownloadStoryPng = () => {
+    const canvas = flyerCanvasRef.current;
+    if (!canvas) return;
+    try {
+      const dataUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `buyonebd-story-${freeProduct?.id || 'flyer'}.png`;
+      a.click();
+      addToast('success', at('১০৮০x১৯২০ স্টোরি PNG ডাউনলোড হয়েছে!', '1080x1920 Story Flyer Downloaded!'), 'WhatsApp & FB Status Ready');
+    } catch {
+      addToast('warning', at('CORS ইমেজ রেস্ট্রিকশন — প্লেসহোল্ডার সহ রেন্ডার চেষ্টা করুন', 'External image blocked PNG export'), '');
+    }
+  };
 
   const qrTargetUrl = useMemo(() => {
     if (qrProductId === 'store_home') {
@@ -1408,6 +1537,228 @@ export const GlobalMarketingHub: React.FC = () => {
               </div>
               <p className="text-[10px] text-slate-500">{qrSubtext}</p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 8. Bangladesh Zero-Ad-Spend Free Marketing Engine (FB Marketplace, 1080x1920 PNG Flyer, Free WA Outreach & Barter) */}
+      <div className="p-5 rounded-2xl bg-slate-900 border border-emerald-500/40 space-y-5 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h4 className="text-base font-black text-white flex items-center gap-2">
+              <Share2 className="w-5 h-5 text-emerald-400" />
+              <span>{at('বাংলাদেশ জিরো-বাজেট ফ্রি মার্কেটিং ও অর্গানিক সেলস ইঞ্জিন (৳০ অ্যাড খরচ)', 'Bangladesh Zero-Ad-Spend Free Marketing & Sales Engine')}</span>
+            </h4>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {at(
+                'ফেসবুক মার্কেটপ্লেস লিস্টিং, ১০৮০×১৯২০ হোয়াটসঅ্যাপ স্ট্যাটাস PNG পোস্টার, ডিরেক্ট wa.me ফলো-আপ কিউ এবং ফ্রি BD অর্গানিক চ্যানেল।',
+                'Free high-converting Bangladesh organic channels: Facebook Marketplace copy, 1080x1920 Story PNG Studio, 1-on-1 wa.me outreach & Micro-Creator Barter.'
+              )}
+            </p>
+          </div>
+          <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-mono font-bold text-[11px]">
+            AD BUDGET: ৳0
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* 8A. Facebook Marketplace & Buy/Sell Group Free Listing Generator */}
+          <div className="lg:col-span-6 p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+            <h5 className="font-bold text-white flex items-center gap-2 text-sm">
+              <MapPin className="w-4 h-4 text-sky-400" />
+              <span>{at('১. ফেসবুক মার্কেটপ্লেস ও বাই/সেল গ্রুপ ফ্রি লিস্টিং', '1. Facebook Marketplace & Group Free Listing Studio')}</span>
+            </h5>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-[10px] text-slate-400 font-bold mb-1">{at('পণ্য বাছাই করুন', 'Select Catalog Product')}</label>
+                <select
+                  value={freeProdId}
+                  onChange={(e) => setFreeProdId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white"
+                >
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {at(p.titleBn || p.title, p.title)} (৳{p.price})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-400 font-bold mb-1">{at('টার্গেট এলাকা / সিটি', 'Target BD Area / Hub')}</label>
+                <input
+                  type="text"
+                  value={freeArea}
+                  onChange={(e) => setFreeArea(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white"
+                />
+              </div>
+            </div>
+
+            {freeProduct && (() => {
+              const mpUrl = `${origin}/product/${encodeURIComponent(freeProduct.seo?.slug || freeProduct.id)}?utm_source=fb_marketplace&utm_medium=organic`;
+              const mpText = `🔥 ${freeProduct.titleBn || freeProduct.title} | স্পেশাল মূল্য: ৳${freeProduct.price.toLocaleString()}\n\n📍 এরিয়া ও ডেলিভারি: ${freeArea}\n✅ Condition: Brand New / 100% Original Sealed\n✅ ১ টাকাও অগ্রিম ছাড়া সারা বাংলাদেশের ৬৪ জেলায় ক্যাশ অন ডেলিভারি (COD)\n✅ প্রোডাক্ট হাতে পেয়ে চেক করে পেমেন্ট করার সুবিধা\n\n👉 ডিরেক্ট অর্ডার লিংক: ${mpUrl}\n📞 WhatsApp / Hotline: ${settings.whatsappNumber || settings.hotline}`;
+              return (
+                <>
+                  <textarea
+                    readOnly
+                    rows={7}
+                    value={mpText}
+                    className="w-full p-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-200 font-mono text-[11px] resize-none"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCopy('fb-mp-copy', mpText)}
+                      className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      {copiedFeed === 'fb-mp-copy' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{at('ফ্রি লিস্টিং কপি করুন', 'Copy Free Marketplace Listing')}</span>
+                    </button>
+                    <a
+                      href="https://www.facebook.com/marketplace/create/item"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="py-2 px-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold flex items-center gap-1.5"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Open Marketplace</span>
+                    </a>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+
+          {/* 8B. 1080x1920 WhatsApp Status & FB Story PNG Poster Studio */}
+          <div className="lg:col-span-6 p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h5 className="font-bold text-white flex items-center gap-2 text-sm">
+                <ImageIcon className="w-4 h-4 text-emerald-400" />
+                <span>{at('২. WhatsApp স্ট্যাটাস ও FB স্টোরি PNG পোস্টার (1080×1920)', '2. 1080×1920 Story & WhatsApp Status Flyer Studio')}</span>
+              </h5>
+              <button
+                type="button"
+                onClick={handleDownloadStoryPng}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>{at('PNG ডাউনলোড', 'Download PNG')}</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+              <div className="sm:col-span-7 space-y-2.5">
+                <div>
+                  <label className="block text-[10px] text-slate-400 font-bold mb-1">Theme Style</label>
+                  <select
+                    value={flyerTheme}
+                    onChange={(e) => setFlyerTheme(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white"
+                  >
+                    <option value="emerald">Emerald COD Brand</option>
+                    <option value="midnight">Midnight Pro Tech</option>
+                    <option value="festive">Festive Eid Gold</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] text-slate-400 font-bold mb-1">Top Offer Tag</label>
+                  <input
+                    type="text"
+                    value={flyerTag}
+                    onChange={(e) => setFlyerTag(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-emerald-400 font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-slate-400 font-bold mb-1">Footer Promo Subtext</label>
+                  <input
+                    type="text"
+                    value={flyerOfferNote}
+                    onChange={(e) => setFlyerOfferNote(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white"
+                  />
+                </div>
+              </div>
+              <div className="sm:col-span-5 flex justify-center">
+                <canvas
+                  ref={flyerCanvasRef}
+                  width={1080}
+                  height={1920}
+                  className="w-32 h-56 rounded-xl border border-slate-700 shadow-lg bg-slate-900"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 8C. Free 1-on-1 WhatsApp Outreach Queue + Micro-Creator Barter + BD Free Sales Channels */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          <div className="lg:col-span-7 p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
+            <h5 className="font-bold text-white flex items-center gap-2 text-sm">
+              <MessageSquare className="w-4 h-4 text-emerald-400" />
+              <span>{at('৩. ফ্রি ১-টু-১ কাস্টমার WhatsApp রিমাইন্ডার কিউ (৳০ খরচ)', '3. Zero-Cost Direct wa.me Customer Win-Back Queue')}</span>
+            </h5>
+            <div className="max-h-48 overflow-y-auto divide-y divide-slate-800/80 rounded-xl border border-slate-800">
+              {customerAccounts.slice(0, 8).map((cust, i) => {
+                const digits = (cust.phone || '').replace(/[^0-9]/g, '');
+                if (digits.length < 10) return null;
+                const waDest = digits.startsWith('88') ? digits : `88${digits}`;
+                const msg = encodeURIComponent(
+                  `আসসালামু আলাইকুম ${cust.name || 'স্যার/ম্যাম'}! ${settings.storeName}-এ আজ ${freeProduct?.titleBn || freeProduct?.title || 'আমাদের পণ্যে'} স্পেশাল ফ্ল্যাশ অফার চলছে (৬৪ জেলায় COD)। ভিজিট করুন: ${origin}`
+                );
+                return (
+                  <div key={`${cust.phone}-${i}`} className="px-3 py-2 flex items-center justify-between gap-2 text-[11px]">
+                    <div className="min-w-0">
+                      <p className="font-bold text-white truncate">{cust.name} · <span className="font-mono text-slate-400">{cust.phone}</span></p>
+                      <p className="text-[10px] text-slate-500">Wallet: ৳{cust.walletBalance || 0} · {cust.district || 'Bangladesh'}</p>
+                    </div>
+                    <a
+                      href={`https://wa.me/${waDest}?text=${msg}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold shrink-0"
+                    >
+                      Send Free Offer
+                    </a>
+                  </div>
+                );
+              })}
+              {customerAccounts.length === 0 && (
+                <p className="p-4 text-center text-slate-500">{at('কাস্টমার যুক্ত হলে সরাসরি WhatsApp অফার পাঠাতে পারবেন।', 'Customers appear here for free 1-click WhatsApp reminders.')}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="lg:col-span-5 p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+            <h5 className="font-bold text-white flex items-center gap-2 text-sm">
+              <CheckSquare className="w-4 h-4 text-amber-400" />
+              <span>{at('৪. ফ্রি ক্রিয়েটর বার্টার স্ক্রিপ্ট ও অর্গানিক BD চ্যানেল', '4. Micro-Creator Barter Pitch & Free BD SEO Checklist')}</span>
+            </h5>
+            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <p className="text-[11px] font-bold text-amber-300">{at('ন্যানো ইনফ্লুয়েন্সার প্রোডাক্ট বার্টার DM (৳০ ফি):', 'Nano-Creator Barter Collaborator DM (Zero Cash Fee):')}</p>
+              <p className="text-[10px] text-slate-300 font-mono leading-relaxed">
+                {`হ্যালো! আপনার কন্টেন্ট আমাদের খুব ভালো লেগেছে। আমাদের স্টোরের (${settings.storeName}) সেরা সেলিং "${freeProduct?.title || 'Gadget'}" একদম ফ্রি গিফট হিসেবে পাঠাতে চাই একটি ছোট আনবক্সিং Reel/TikTok রিভিউর বিনিময়ে + আপনার ফলোয়ারদের অর্ডারে লাইফটাইম কমিশন! আগ্রহী হলে জানাবেন।`}
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  handleCopy(
+                    'barter-dm',
+                    `হ্যালো! আপনার কন্টেন্ট আমাদের খুব ভালো লেগেছে। আমাদের স্টোরের (${settings.storeName}) সেরা সেলিং "${freeProduct?.title || 'Gadget'}" একদম ফ্রি গিফট হিসেবে পাঠাতে চাই একটি ছোট আনবক্সিং Reel/TikTok রিভিউর বিনিময়ে + আপনার ফলোয়ারদের অর্ডারে লাইফটাইম কমিশন! আগ্রহী হলে জানাবেন।`
+                  )
+                }
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+              >
+                {copiedFeed === 'barter-dm' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                <span>Copy Barter DM Script</span>
+              </button>
+            </div>
+            <ul className="space-y-1.5 text-[11px] text-slate-300">
+              <li>• Bikroy.com Free Member Shop + Verified Phone Link</li>
+              <li>• Google Business Profile (Dhaka Hub + Product Catalog Sync)</li>
+              <li>• Daily TikTok/Reels + YouTube Shorts Pin Link (Auto-Scheduler Tab)</li>
+              <li>• Parcel Inside Thank-You QR Repeat Coupon Card (Section 7 Above)</li>
+            </ul>
           </div>
         </div>
       </div>

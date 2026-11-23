@@ -311,7 +311,11 @@ export const AdminDashboard: React.FC = () => {
     bulkChatInquiriesAction,
     socialPosts,
     expenses,
-    aiTeamBriefings
+    aiTeamBriefings,
+    setAdminProductViewCount,
+    productViews,
+    activeLiveViewers,
+    getProductCanonicalUrl
   } = useStore();
 
   // Pure language translation helper based on admin language preference
@@ -479,6 +483,8 @@ export const AdminDashboard: React.FC = () => {
   const [selectedWalletPhones, setSelectedWalletPhones] = useState<string[]>([]);
   const [walletBulkStep, setWalletBulkStep] = useState<number>(100);
   const [viewingWalletCustomer, setViewingWalletCustomer] = useState<CustomerProfile | null>(null);
+  const [confirmDeleteWalletKey, setConfirmDeleteWalletKey] = useState<string | null>(null);
+  const [confirmBulkDeleteWallets, setConfirmBulkDeleteWallets] = useState(false);
   const [loyaltyStepAmounts, setLoyaltyStepAmounts] = useState<Record<string, number>>({});
   const [editingLoyaltyAcc, setEditingLoyaltyAcc] = useState<{ targetKey: string; name: string; points: number } | null>(null);
   const [viewingLoyaltyHistoryAcc, setViewingLoyaltyHistoryAcc] = useState<CustomerProfile | null>(null);
@@ -525,6 +531,9 @@ export const AdminDashboard: React.FC = () => {
   const [customerConsoleTab, setCustomerConsoleTab] = useState<'call' | 'chat' | 'orders'>('call');
   const [customerChatDraft, setCustomerChatDraft] = useState('');
   const [isGeneratingCustomerChatAi, setIsGeneratingCustomerChatAi] = useState(false);
+  const [selectedDeskQuickProductId, setSelectedDeskQuickProductId] = useState('');
+  const [visitorTargetProductId, setVisitorTargetProductId] = useState('');
+  const [visitorManualCountInput, setVisitorManualCountInput] = useState('0');
 
   // Reviews CRUD & Bulk Selection State
   const [selectedReviewIds, setSelectedReviewIds] = useState<string[]>([]);
@@ -2177,6 +2186,81 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
+              {/* Support Desk Command KPI Strip + Ringing Alert Banner */}
+              {(() => {
+                const ringingCalls = browserCalls.filter((c) => c.status === 'ringing_backend');
+                const liveActiveCallsCount = browserCalls.filter((c) => c.status === 'connected' || c.status === 'ringing_backend').length;
+                const unreadThreadsCount = supportChats.reduce((sum, ch) => sum + (ch.unreadByAdmin || 0), 0);
+                const pendingInquiriesCount = chatInquiries.filter((q) => q.status === 'new').length;
+
+                return (
+                  <div className="space-y-3">
+                    {ringingCalls.length > 0 && (
+                      <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/50 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 text-xs">
+                          <span className="w-8 h-8 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center shrink-0">
+                            <PhoneIncoming className="w-4 h-4" />
+                          </span>
+                          <div>
+                            <p className="font-black text-amber-200">
+                              {at('ইনকামিং কাস্টমার ব্রাউজার কল রিং হচ্ছে!', 'Incoming Customer Browser Call!')} — {ringingCalls[0].customerName} ({ringingCalls[0].customerPhone})
+                            </p>
+                            <p className="text-[11px] text-amber-300/80">
+                              {at('দ্রুত কল রিসিভ করতে ডান পাশের বাটনে ক্লিক করুন।', 'Click Answer Call to connect live audio immediately.')}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const targetKey = normalizePhoneKey(ringingCalls[0].customerPhone);
+                            if (targetKey) setSelectedCustomerPhone(targetKey);
+                            setSelectedCallId(ringingCalls[0].id);
+                            setCustomerConsoleTab('call');
+                            answerBrowserCallFromBackend(ringingCalls[0].id);
+                          }}
+                          className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-lg"
+                        >
+                          <PhoneIncoming className="w-3.5 h-3.5" />
+                          <span>{at('এখনই কল রিসিভ করুন', 'Answer Call Now')}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs tabular-nums">
+                      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-[11px] text-slate-400 block">{at('সক্রিয় কল / রিং', 'Active / Ringing Calls')}</span>
+                          <span className="text-lg font-black text-emerald-400 font-mono">{liveActiveCallsCount}</span>
+                        </div>
+                        <PhoneCall className="w-5 h-5 text-emerald-500/70" />
+                      </div>
+                      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-[11px] text-slate-400 block">{at('আনরিড লাইভ মেসেজ', 'Unread Chat Messages')}</span>
+                          <span className="text-lg font-black text-sky-400 font-mono">{unreadThreadsCount}</span>
+                        </div>
+                        <MessageCircle className="w-5 h-5 text-sky-500/70" />
+                      </div>
+                      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-[11px] text-slate-400 block">{at('নতুন ফর্ম ইনকোয়ারি', 'New Form Inquiries')}</span>
+                          <span className="text-lg font-black text-amber-400 font-mono">{pendingInquiriesCount}</span>
+                        </div>
+                        <Mail className="w-5 h-5 text-amber-500/70" />
+                      </div>
+                      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-[11px] text-slate-400 block">{at('মোট কাস্টমার রোস্টার', 'Total Desk Contacts')}</span>
+                          <span className="text-lg font-black text-white font-mono">{callCustomersRoster.length}</span>
+                        </div>
+                        <Users className="w-5 h-5 text-slate-500" />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* A. LIVE VOICE CALL CENTER — DISTINCT CUSTOMER DIRECTORY & TELEPHONE CONSOLE */}
               <div className="rounded-2xl bg-slate-900 border border-emerald-900/50 overflow-hidden shadow-xl">
                 <div className="px-5 py-3.5 border-b border-slate-800 bg-gradient-to-r from-slate-950 via-emerald-950/30 to-slate-950 flex flex-wrap items-center justify-between gap-3">
@@ -2404,6 +2488,54 @@ export const AdminDashboard: React.FC = () => {
 
                       return (
                       <>
+                        {/* Customer 360 Context Bar + 1-Click Create POS Order */}
+                        {(() => {
+                          const walletProf = customerAccounts.find(
+                            (ca) => normalizePhoneKey(ca.phone) && normalizePhoneKey(ca.phone) === selectedCallCustomer.key
+                          );
+                          const nonCancelled = selectedCallCustomer.customerOrders.filter((o) => o.status !== 'cancelled').length;
+                          const totalOrd = selectedCallCustomer.customerOrders.length;
+                          const fraudSuccessPct =
+                            selectedCallCustomer.latestOrder?.fraudCheck?.successRate ??
+                            (totalOrd > 0 ? Math.round((nonCancelled / totalOrd) * 100) : 100);
+
+                          return (
+                            <div className="p-3 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px] tabular-nums">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <span className="font-bold text-white">{selectedCallCustomer.name}</span>
+                                <span className="font-mono text-emerald-400">{selectedCallCustomer.phone}</span>
+                                <span className="px-2 py-0.5 rounded-md bg-emerald-950/70 border border-emerald-800/50 text-emerald-300 font-mono font-bold">
+                                  Wallet: ৳{(walletProf?.walletBalance || 0).toLocaleString()}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-700 text-slate-300 font-mono">
+                                  Orders: {totalOrd} (৳{selectedCallCustomer.totalSpent.toLocaleString()})
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded-md font-bold ${
+                                    fraudSuccessPct >= 80
+                                      ? 'bg-emerald-500/15 text-emerald-300'
+                                      : 'bg-amber-500/20 text-amber-300'
+                                  }`}
+                                >
+                                  Trust: {fraudSuccessPct}%
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPosWalkInName(selectedCallCustomer.name);
+                                  setPosWalkInPhone(selectedCallCustomer.phone);
+                                  setActiveTab('pos_system');
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>{at('POS অর্ডার তৈরি করুন', 'Create Order in POS')}</span>
+                              </button>
+                            </div>
+                          );
+                        })()}
+
                         {/* Customer Console Mode Switcher: Live Voice Call | Direct Live Chat | Order History */}
                         <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
                           <div className="inline-flex p-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-bold">
@@ -2542,6 +2674,37 @@ export const AdminDashboard: React.FC = () => {
                             </div>
 
                             <div className="pt-2 border-t border-slate-800 space-y-2">
+                              {/* Quick Product Link Insert into Live Chat */}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <select
+                                  value={selectedDeskQuickProductId}
+                                  onChange={(e) => setSelectedDeskQuickProductId(e.target.value)}
+                                  className="flex-1 min-w-[180px] px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-200"
+                                >
+                                  <option value="">{at('-- চ্যাটে প্রোডাক্ট লিংক যুক্ত করুন --', '-- Pick product link to insert --')}</option>
+                                  {products.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {at(p.titleBn || p.title, p.title)} (৳{p.price})
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  disabled={!selectedDeskQuickProductId}
+                                  onClick={() => {
+                                    const pr = products.find((p) => p.id === selectedDeskQuickProductId);
+                                    if (!pr) return;
+                                    const url = getProductCanonicalUrl(pr);
+                                    const snippet = `${at(pr.titleBn || pr.title, pr.title)} — ৳${pr.price}\n${url}`;
+                                    setCustomerChatDraft((prev) => (prev.trim() ? `${prev.trim()}\n${snippet}` : snippet));
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer shrink-0"
+                                >
+                                  <Link2 className="w-3 h-3" />
+                                  <span>{at('লিংক যোগ', 'Insert Product')}</span>
+                                </button>
+                              </div>
+
                               <div className="flex flex-wrap items-center gap-1.5">
                                 {[
                                   {
@@ -2923,6 +3086,37 @@ export const AdminDashboard: React.FC = () => {
                                 <span>{at('ভয়েস বলুন', 'Speak')}</span>
                               </button>
                             </form>
+                          </div>
+                        )}
+
+                        {/* Quick Call Disposition Outcome Logger */}
+                        {activeCallObj && (
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                            <span className="text-slate-400 font-bold mr-1">
+                              {at('কল ফলাফল ট্যাগ:', 'Call Disposition:')}
+                            </span>
+                            {[
+                              { id: 'confirmed', bn: 'অর্ডার কনফার্মড', en: 'Confirmed' },
+                              { id: 'callback', bn: 'পরে কল ব্যাক', en: 'Callback Later' },
+                              { id: 'no_answer', bn: 'রিসিভ করেনি', en: 'No Answer' },
+                              { id: 'cancelled', bn: 'কাস্টমার বাতিল', en: 'Cancelled' }
+                            ].map((disp) => (
+                              <button
+                                key={disp.id}
+                                type="button"
+                                onClick={() => {
+                                  appendBrowserCallMessage(
+                                    activeCallObj.id,
+                                    'assistant',
+                                    `[Disposition: ${disp.en}] ${at(disp.bn, disp.en)} by Desk Agent`
+                                  );
+                                  addToast('info', at('কল ট্যাগ সেভ হয়েছে', 'Disposition Logged'), at(disp.bn, disp.en));
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-semibold cursor-pointer"
+                              >
+                                {at(disp.bn, disp.en)}
+                              </button>
+                            ))}
                           </div>
                         )}
 
@@ -3487,7 +3681,6 @@ export const AdminDashboard: React.FC = () => {
                                       adminReply: draftReply.trim(),
                                       status: 'replied'
                                     });
-                                    addToast('success', at('উত্তর সেভ হয়েছে', 'Reply Saved'), inq.name);
                                   }}
                                   className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold cursor-pointer"
                                 >
@@ -12359,28 +12552,130 @@ export const AdminDashboard: React.FC = () => {
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <label className="block text-slate-300 font-bold mb-1">{at('টপ বার ঘোষণা (বাংলা)', 'Announcement Bar (BN)')}</label>
-                      <input
-                        type="text"
-                        value={settings.announcementBar?.textBn || ''}
-                        onChange={(e) =>
-                          updateSettings({ announcementBar: { ...settings.announcementBar, textBn: e.target.value } })
-                        }
-                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
-                      />
+                  {/* Top Announcement Bar Complete CMS Editor */}
+                  <div className="p-4 rounded-xl bg-slate-950 border border-emerald-500/30 space-y-3 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h5 className="font-bold text-white text-sm flex items-center gap-2">
+                          <Megaphone className="w-4 h-4 text-emerald-400" />
+                          <span>{at('টপ অ্যানাউন্সমেন্ট বার CMS এডিটর', 'Top Announcement Bar CMS Editor')}</span>
+                        </h5>
+                        <p className="text-[11px] text-slate-400">
+                          {at('স্টোরফ্রন্টের সবার উপরের নোটিশ বার বাংলা/ইংরেজি লেখা, হেল্পলাইন, লিংক এবং রঙ এখান থেকে পরিবর্তন করুন।', 'Edit storefront top notice text, helpline, click URL, and custom colors.')}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-1.5 text-emerald-400 font-bold cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={settings.announcementBar?.enabled !== false}
+                            onChange={(e) =>
+                              updateSettings({ announcementBar: { ...settings.announcementBar, enabled: e.target.checked } })
+                            }
+                            className="w-4 h-4 accent-emerald-500 rounded"
+                          />
+                          <span>{at('দেখান', 'Enabled')}</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => saveSettingsChanges(at('অ্যানাউন্সমেন্ট বার সেভ!', 'Announcement Saved!'), '')}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Save className="w-3.5 h-3.5" />
+                          <span>{at('সেভ করুন', 'Save Bar')}</span>
+                        </button>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-slate-300 font-bold mb-1">{at('টপ বার ঘোষণা (ইংরেজি)', 'Announcement Bar (EN)')}</label>
-                      <input
-                        type="text"
-                        value={settings.announcementBar?.textEn || ''}
-                        onChange={(e) =>
-                          updateSettings({ announcementBar: { ...settings.announcementBar, textEn: e.target.value } })
-                        }
-                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
-                      />
+
+                    {/* Live Preview */}
+                    <div
+                      style={{
+                        backgroundColor: settings.announcementBar?.bgColor || '#0f172a',
+                        color: settings.announcementBar?.textColor || '#ffffff'
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-[11px] font-medium text-center border border-slate-700 truncate"
+                    >
+                      {at(settings.announcementBar?.textBn || '', settings.announcementBar?.textEn || '')}
+                      {settings.announcementBar?.helpline ? ` | Helpline: ${settings.announcementBar.helpline}` : ''}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-slate-300 font-bold mb-1">{at('টপ বার ঘোষণা (বাংলা)', 'Announcement Text (BN)')}</label>
+                        <input
+                          type="text"
+                          value={settings.announcementBar?.textBn || ''}
+                          onChange={(e) =>
+                            updateSettings({ announcementBar: { ...settings.announcementBar, textBn: e.target.value } })
+                          }
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-300 font-bold mb-1">{at('টপ বার ঘোষণা (ইংরেজি)', 'Announcement Text (EN)')}</label>
+                        <input
+                          type="text"
+                          value={settings.announcementBar?.textEn || ''}
+                          onChange={(e) =>
+                            updateSettings({ announcementBar: { ...settings.announcementBar, textEn: e.target.value } })
+                          }
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-300 font-bold mb-1">{at('হেল্পলাইন নম্বর', 'Helpline Number')}</label>
+                        <input
+                          type="text"
+                          value={settings.announcementBar?.helpline || ''}
+                          onChange={(e) =>
+                            updateSettings({ announcementBar: { ...settings.announcementBar, helpline: e.target.value } })
+                          }
+                          placeholder="+8801917942662"
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-emerald-400 font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-300 font-bold mb-1">{at('ক্লিক লিংক URL (ঐচ্ছিক)', 'Click Link URL (Optional)')}</label>
+                        <input
+                          type="text"
+                          value={settings.announcementBar?.linkUrl || ''}
+                          onChange={(e) =>
+                            updateSettings({ announcementBar: { ...settings.announcementBar, linkUrl: e.target.value } })
+                          }
+                          placeholder="/products or https://..."
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-sky-300 font-mono"
+                        />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1">
+                          <label className="block text-slate-300 font-bold mb-1">{at('ব্যাকগ্রাউন্ড রঙ', 'Bar BG Color')}</label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={settings.announcementBar?.bgColor || '#0f172a'}
+                              onChange={(e) =>
+                                updateSettings({ announcementBar: { ...settings.announcementBar, bgColor: e.target.value } })
+                              }
+                              className="w-9 h-9 rounded-lg border border-slate-700 bg-transparent cursor-pointer"
+                            />
+                            <span className="font-mono text-slate-400">{settings.announcementBar?.bgColor || '#0f172a'}</span>
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-slate-300 font-bold mb-1">{at('টেক্সট রঙ', 'Text Color')}</label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={settings.announcementBar?.textColor || '#ffffff'}
+                              onChange={(e) =>
+                                updateSettings({ announcementBar: { ...settings.announcementBar, textColor: e.target.value } })
+                              }
+                              className="w-9 h-9 rounded-lg border border-slate-700 bg-transparent cursor-pointer"
+                            />
+                            <span className="font-mono text-slate-400">{settings.announcementBar?.textColor || '#ffffff'}</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -13433,45 +13728,34 @@ export const AdminDashboard: React.FC = () => {
                         <span>{at('লাইভ প্রোডাক্ট ভিউয়ার কাউন্টার ("76,439 people viewed this")', 'Live Product Viewer Counter ("76,439 people viewed this")')}</span>
                       </h4>
                       <p className="text-[11px] text-slate-400">
-                        {at('প্রোডাক্ট কার্ড ও সিঙ্গেল প্রোডাক্ট পেজের লাইভ ভিজিটর কাউন্ট সম্পূর্ণ নিয়ন্ত্রণ করুন।', 'Full control over view count, display placement (Single Product / Cards), and labels.')}
+                        {at('প্রোডাক্ট কার্ড ও সিঙ্গেল প্রোডাক্ট পেজের আসল ভিজিটর ভিউ কাউন্ট ও লাইভ অনলাইন ইউজার সম্পূর্ণ নিয়ন্ত্রণ করুন।', 'Control real persisted product views, per-product adjustments, optional base offset, display placement, and labels.')}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateSettings({
-                            viewerCounter: {
-                              ...settings.viewerCounter,
-                              enabled: settings.viewerCounter?.enabled !== false,
-                              baseCount: (settings.viewerCounter?.baseCount ?? 76439) + 100,
-                              labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
-                              labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
-                            }
-                          })
-                        }
-                        className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[11px] font-bold text-emerald-400 cursor-pointer"
-                      >
-                        +100
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateSettings({
-                            viewerCounter: {
-                              ...settings.viewerCounter,
-                              enabled: settings.viewerCounter?.enabled !== false,
-                              baseCount: 76439,
-                              labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
-                              labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
-                            }
-                          })
-                        }
-                        className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[11px] font-bold text-slate-300 cursor-pointer"
-                      >
-                        Reset 76439
-                      </button>
-                      <label className="flex items-center gap-2 text-xs font-bold text-emerald-400 cursor-pointer pl-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-lg bg-emerald-950/70 border border-emerald-700/50 text-[11px] font-mono font-bold text-emerald-300 tabular-nums">
+                        Live Visitors: {activeLiveViewers}
+                      </span>
+                      <label className="flex items-center gap-1.5 text-xs font-bold text-sky-400 cursor-pointer pl-1">
+                        <input
+                          type="checkbox"
+                          checked={settings.viewerCounter?.useRealViews !== false}
+                          onChange={(e) =>
+                            updateSettings({
+                              viewerCounter: {
+                                ...settings.viewerCounter,
+                                enabled: settings.viewerCounter?.enabled !== false,
+                                baseCount: settings.viewerCounter?.baseCount ?? 0,
+                                useRealViews: e.target.checked,
+                                labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
+                                labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
+                              }
+                            })
+                          }
+                          className="w-4 h-4 accent-sky-500 rounded"
+                        />
+                        <span>{at('১০০% রিয়েল ভিউ মোড', '100% Real Views Only')}</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 cursor-pointer pl-1">
                         <input
                           type="checkbox"
                           checked={settings.viewerCounter?.enabled !== false}
@@ -13480,8 +13764,9 @@ export const AdminDashboard: React.FC = () => {
                               viewerCounter: {
                                 ...settings.viewerCounter,
                                 enabled: e.target.checked,
-                                baseCount: settings.viewerCounter?.baseCount ?? 76439,
+                                baseCount: settings.viewerCounter?.baseCount ?? 0,
                                 autoIncrement: settings.viewerCounter?.autoIncrement !== false,
+                                useRealViews: settings.viewerCounter?.useRealViews !== false,
                                 labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
                                 labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
                               }
@@ -13494,13 +13779,78 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Per-Product Real Backend View Counter Editor */}
+                  {(() => {
+                    const chosenPid = visitorTargetProductId || products[0]?.id || '';
+                    const realVal = chosenPid ? (productViews[chosenPid] || 0) : 0;
+                    return (
+                      <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end text-xs">
+                        <div className="sm:col-span-6">
+                          <label className="block text-slate-300 font-bold mb-1">
+                            {at('পণ্য অনুযায়ী আসল ভিউ কাউন্ট সম্পাদনা', 'Manage Real Views per Product')}
+                          </label>
+                          <select
+                            value={chosenPid}
+                            onChange={(e) => {
+                              const pid = e.target.value;
+                              setVisitorTargetProductId(pid);
+                              setVisitorManualCountInput(String(productViews[pid] || 0));
+                            }}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
+                          >
+                            {products.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {at(p.titleBn || p.title, p.title)} ({(productViews[p.id] || 0).toLocaleString()} real views)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="sm:col-span-3">
+                          <label className="block text-slate-300 font-bold mb-1">
+                            {at(`বর্তমান: ${realVal.toLocaleString()}`, `Current: ${realVal.toLocaleString()}`)}
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={visitorManualCountInput}
+                            onChange={(e) => setVisitorManualCountInput(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-emerald-400 font-mono font-bold"
+                          />
+                        </div>
+                        <div className="sm:col-span-3 flex gap-1.5">
+                          <button
+                            type="button"
+                            disabled={!chosenPid}
+                            onClick={() => setAdminProductViewCount(chosenPid, Number(visitorManualCountInput) || 0)}
+                            className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                          >
+                            {at('সেট করুন', 'Apply')}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!chosenPid}
+                            onClick={() => {
+                              setVisitorManualCountInput('0');
+                              setAdminProductViewCount(chosenPid, 0);
+                            }}
+                            className="py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold cursor-pointer"
+                          >
+                            0
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                     <div>
-                      <label className="block text-slate-300 font-bold mb-1">{at('বেস ভিউ সংখ্যা (Base Count)', 'Base Viewer Count')}</label>
+                      <label className="block text-slate-300 font-bold mb-1">
+                        {at('অতিরিক্ত বেস অফসেট (রিয়েল মোড অফ থাকলে)', 'Optional Base Offset (when Real-Only is OFF)')}
+                      </label>
                       <input
                         type="number"
                         min={0}
-                        value={settings.viewerCounter?.baseCount ?? 76439}
+                        value={settings.viewerCounter?.baseCount ?? 0}
                         onChange={(e) =>
                           updateSettings({
                             viewerCounter: {
@@ -13508,6 +13858,7 @@ export const AdminDashboard: React.FC = () => {
                               enabled: settings.viewerCounter?.enabled !== false,
                               baseCount: Math.max(0, Number(e.target.value) || 0),
                               autoIncrement: settings.viewerCounter?.autoIncrement !== false,
+                              useRealViews: settings.viewerCounter?.useRealViews !== false,
                               labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
                               labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
                             }
@@ -13526,8 +13877,9 @@ export const AdminDashboard: React.FC = () => {
                             viewerCounter: {
                               ...settings.viewerCounter,
                               enabled: settings.viewerCounter?.enabled !== false,
-                              baseCount: settings.viewerCounter?.baseCount ?? 76439,
+                              baseCount: settings.viewerCounter?.baseCount ?? 0,
                               autoIncrement: settings.viewerCounter?.autoIncrement !== false,
+                              useRealViews: settings.viewerCounter?.useRealViews !== false,
                               labelBn: e.target.value,
                               labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
                             }
@@ -13546,8 +13898,9 @@ export const AdminDashboard: React.FC = () => {
                             viewerCounter: {
                               ...settings.viewerCounter,
                               enabled: settings.viewerCounter?.enabled !== false,
-                              baseCount: settings.viewerCounter?.baseCount ?? 76439,
+                              baseCount: settings.viewerCounter?.baseCount ?? 0,
                               autoIncrement: settings.viewerCounter?.autoIncrement !== false,
+                              useRealViews: settings.viewerCounter?.useRealViews !== false,
                               labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
                               labelEn: e.target.value
                             }
@@ -13563,33 +13916,14 @@ export const AdminDashboard: React.FC = () => {
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={settings.viewerCounter?.autoIncrement !== false}
-                          onChange={(e) =>
-                            updateSettings({
-                              viewerCounter: {
-                                ...settings.viewerCounter,
-                                enabled: settings.viewerCounter?.enabled !== false,
-                                baseCount: settings.viewerCounter?.baseCount ?? 76439,
-                                autoIncrement: e.target.checked,
-                                labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
-                                labelEn: settings.viewerCounter?.labelEn || 'people viewed this'
-                              }
-                            })
-                          }
-                          className="w-4 h-4 accent-emerald-500 rounded"
-                        />
-                        <span>{at('অটো ইনক্রিমেন্ট (+1)', 'Auto-Increment')}</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
                           checked={settings.viewerCounter?.showOnSingleProduct !== false}
                           onChange={(e) =>
                             updateSettings({
                               viewerCounter: {
                                 ...settings.viewerCounter,
                                 enabled: settings.viewerCounter?.enabled !== false,
-                                baseCount: settings.viewerCounter?.baseCount ?? 76439,
+                                baseCount: settings.viewerCounter?.baseCount ?? 0,
+                                useRealViews: settings.viewerCounter?.useRealViews !== false,
                                 labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
                                 labelEn: settings.viewerCounter?.labelEn || 'people viewed this',
                                 showOnSingleProduct: e.target.checked
@@ -13609,7 +13943,8 @@ export const AdminDashboard: React.FC = () => {
                               viewerCounter: {
                                 ...settings.viewerCounter,
                                 enabled: settings.viewerCounter?.enabled !== false,
-                                baseCount: settings.viewerCounter?.baseCount ?? 76439,
+                                baseCount: settings.viewerCounter?.baseCount ?? 0,
+                                useRealViews: settings.viewerCounter?.useRealViews !== false,
                                 labelBn: settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন',
                                 labelEn: settings.viewerCounter?.labelEn || 'people viewed this',
                                 showOnCards: e.target.checked
@@ -13622,7 +13957,9 @@ export const AdminDashboard: React.FC = () => {
                       </label>
                     </div>
                     <div className="px-3 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-200 font-mono">
-                      {(settings.viewerCounter?.baseCount ?? 76439).toLocaleString()} {at(settings.viewerCounter?.labelBn || 'জন এই পণ্যটি দেখেছেন', settings.viewerCounter?.labelEn || 'people viewed this')}
+                      {settings.viewerCounter?.useRealViews !== false
+                        ? at('রিয়েল পার্সিস্টেড ভিউ সক্রিয়', 'Real Persisted Views Active')
+                        : `${(settings.viewerCounter?.baseCount ?? 0).toLocaleString()} base offset`}
                     </div>
                   </div>
                 </div>
@@ -13976,6 +14313,111 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Top Storefront Announcement Bar Quick Editor (Also accessible under General Settings) */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-4 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                  <div>
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Megaphone className="w-4 h-4 text-emerald-400" />
+                      <span>{at('টপ অ্যানাউন্সমেন্ট বার সেটিংস (এডিটযোগ্য)', 'Top Announcement Bar CMS (Editable)')}</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      {at('ওয়েবসাইটের উপরের হেডার নোটিশ টেক্সট, হেল্পলাইন ও কালার সরাসরি এডিট করে সেভ করুন।', 'Edit storefront top header notice text, helpline, click link, and colors.')}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 font-bold text-emerald-400 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.announcementBar?.enabled !== false}
+                        onChange={(e) =>
+                          updateSettings({ announcementBar: { ...settings.announcementBar, enabled: e.target.checked } })
+                        }
+                        className="w-4 h-4 accent-emerald-500 rounded"
+                      />
+                      <span>{at('চালু', 'Enabled')}</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => saveSettingsChanges(at('অ্যানাউন্সমেন্ট বার সেভ!', 'Announcement Bar Saved!'), '')}
+                      className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{at('বার সেভ করুন', 'Save Bar')}</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="lg:col-span-2">
+                    <label className="block text-slate-300 font-bold mb-1">{at('ঘোষণা টেক্সট (বাংলা)', 'Notice Text (BN)')}</label>
+                    <input
+                      type="text"
+                      value={settings.announcementBar?.textBn || ''}
+                      onChange={(e) =>
+                        updateSettings({ announcementBar: { ...settings.announcementBar, textBn: e.target.value } })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+                  <div className="lg:col-span-2">
+                    <label className="block text-slate-300 font-bold mb-1">{at('ঘোষণা টেক্সট (ইংরেজি)', 'Notice Text (EN)')}</label>
+                    <input
+                      type="text"
+                      value={settings.announcementBar?.textEn || ''}
+                      onChange={(e) =>
+                        updateSettings({ announcementBar: { ...settings.announcementBar, textEn: e.target.value } })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">{at('হেল্পলাইন নম্বর', 'Helpline')}</label>
+                    <input
+                      type="text"
+                      value={settings.announcementBar?.helpline || ''}
+                      onChange={(e) =>
+                        updateSettings({ announcementBar: { ...settings.announcementBar, helpline: e.target.value } })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-emerald-400 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">{at('ক্লিক লিংক (ঐচ্ছিক)', 'Link URL (Optional)')}</label>
+                    <input
+                      type="text"
+                      value={settings.announcementBar?.linkUrl || ''}
+                      onChange={(e) =>
+                        updateSettings({ announcementBar: { ...settings.announcementBar, linkUrl: e.target.value } })
+                      }
+                      placeholder="/products"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sky-300 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">{at('ব্যাকগ্রাউন্ড রঙ', 'BG Color')}</label>
+                    <input
+                      type="color"
+                      value={settings.announcementBar?.bgColor || '#0f172a'}
+                      onChange={(e) =>
+                        updateSettings({ announcementBar: { ...settings.announcementBar, bgColor: e.target.value } })
+                      }
+                      className="w-full h-9 rounded-xl border border-slate-800 bg-slate-950 cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">{at('টেক্সট রঙ', 'Text Color')}</label>
+                    <input
+                      type="color"
+                      value={settings.announcementBar?.textColor || '#ffffff'}
+                      onChange={(e) =>
+                        updateSettings({ announcementBar: { ...settings.announcementBar, textColor: e.target.value } })
+                      }
+                      className="w-full h-9 rounded-xl border border-slate-800 bg-slate-950 cursor-pointer"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -16873,6 +17315,49 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                     >
                       Reset 30d
                     </button>
+                    <button
+                      type="button"
+                      disabled={selectedWalletPhones.length === 0}
+                      onClick={() => {
+                        selectedWalletPhones.forEach((ph) => updateCustomerAccountByAdmin(ph, { walletBalance: 0 }));
+                        setSelectedWalletPhones([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      {at('জিরো ৳0', 'Zero ৳0')}
+                    </button>
+                    {confirmBulkDeleteWallets ? (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            selectedWalletPhones.forEach((ph) => deleteCustomerAccountByAdmin(ph));
+                            setSelectedWalletPhones([]);
+                            setConfirmBulkDeleteWallets(false);
+                          }}
+                          className="px-2.5 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer"
+                        >
+                          {at(`নিশ্চিত ডিলিট (${selectedWalletPhones.length})`, `Confirm Delete (${selectedWalletPhones.length})`)}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmBulkDeleteWallets(false)}
+                          className="px-2 py-1.5 rounded bg-slate-700 text-slate-200 text-xs font-bold cursor-pointer"
+                        >
+                          {at('বাতিল', 'Cancel')}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={selectedWalletPhones.length === 0}
+                        onClick={() => setConfirmBulkDeleteWallets(true)}
+                        className="px-2.5 py-1.5 rounded bg-rose-900/80 hover:bg-rose-700 disabled:opacity-40 text-rose-100 font-bold text-xs flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>{at('বাল্ক ডিলিট', 'Bulk Delete')}</span>
+                      </button>
+                    )}
                   </BulkCommandBar>
 
                   {/* Filter Buttons */}
@@ -17027,6 +17512,47 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                                     >
                                       {at('বিস্তারিত', 'Details')}
                                     </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingCustomerOriginalKey(targetKey);
+                                        setEditingCustomerAccount({ ...acc });
+                                      }}
+                                      title={at('কাস্টমার ও ওয়ালেট এডিট', 'Edit Customer & Wallet')}
+                                      className="p-1.5 rounded-lg bg-sky-950/70 hover:bg-sky-800 border border-sky-700 text-sky-300 cursor-pointer"
+                                    >
+                                      <Edit className="w-3.5 h-3.5" />
+                                    </button>
+                                    {confirmDeleteWalletKey === targetKey ? (
+                                      <div className="inline-flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            deleteCustomerAccountByAdmin(targetKey);
+                                            setConfirmDeleteWalletKey(null);
+                                          }}
+                                          className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] cursor-pointer"
+                                        >
+                                          {at('নিশ্চিত', 'Confirm')}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setConfirmDeleteWalletKey(null)}
+                                          className="px-1.5 py-1 rounded-lg bg-slate-700 text-slate-200 font-bold text-[10px] cursor-pointer"
+                                        >
+                                          {at('না', 'No')}
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteWalletKey(targetKey)}
+                                        title={at('কাস্টমার ওয়ালেট ডিলিট', 'Delete Customer Wallet')}
+                                        className="p-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-800 border border-rose-700 text-rose-300 cursor-pointer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
                                     {cleanWaPhone.length >= 10 && (
                                       <a
                                         href={`https://wa.me/${cleanWaPhone.startsWith('88') ? cleanWaPhone : '88' + cleanWaPhone}?text=${encodeURIComponent(
@@ -17557,7 +18083,6 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                   adminReply: editingInquiry.adminReply
                 });
                 setEditingInquiry(null);
-                addToast('success', at('ইনকোয়ারি আপডেট হয়েছে', 'Inquiry Updated'), '');
               }}
               className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl cursor-pointer"
             >

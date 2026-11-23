@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Star, ShoppingCart, Heart, BellRing, Flame, Eye } from 'lucide-react';
+import { Star, ShoppingCart, BellRing, Flame, Eye } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
 import { WaitlistModal } from '../common/WaitlistModal';
@@ -14,14 +14,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
   const {
     openOneClickCheckout,
     addToCart,
-    toggleWishlist,
-    isWishlisted,
     getPartnerPriceInfo,
     getProductViewCount,
+    getProductRealStats,
     settings,
     lang,
-    t,
-    addToast
+    t
   } = useStore();
   const [localWaitlistOpen, setLocalWaitlistOpen] = useState(false);
 
@@ -49,15 +47,22 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
 
   const titleText = lang === 'bn' ? product.titleBn || product.title : product.title || product.titleBn;
   const categoryText = lang === 'bn' ? product.categoryBn || product.category : product.category || product.categoryBn;
-  const brandLabel = lang === 'bn' ? product.brandBn || product.brand : product.brand || product.brandBn;
-  const soldNum = product.soldCount && product.soldCount > 0 ? product.soldCount : 120 + (product.reviewsCount || 18) * 3;
-  const soldFormatted = soldNum >= 1000 ? `${(soldNum / 1000).toFixed(soldNum >= 10000 ? 0 : 1)}K+` : `${soldNum}+`;
-  const reviewsDisplayCount = product.reviewsCount || 128;
+
+  // Strictly real order + review stats from live store data
+  const realStats = getProductRealStats(product.id);
+  const soldNum = realStats.soldCount;
+  const soldFormatted =
+    soldNum >= 1000 ? `${(soldNum / 1000).toFixed(soldNum >= 10000 ? 0 : 1)}K+` : `${soldNum}`;
+  const reviewsDisplayCount = realStats.reviewsCount;
+  const realRating = realStats.averageRating;
+  const roundedStars = realRating > 0 ? Math.round(realRating) : 0;
 
   const highlightPrefix =
-    product.isFlashSale || soldNum >= 200
+    soldNum >= 5
       ? t('বেস্ট সেলিং', 'Best-Selling Item')
-      : t('টপ রেটেড', 'Top Rated');
+      : reviewsDisplayCount >= 2 && realRating >= 4.5
+      ? t('টপ রেটেড', 'Top Rated')
+      : null;
 
   const showCardViews =
     settings.viewerCounter?.enabled !== false && settings.viewerCounter?.showOnCards === true;
@@ -108,23 +113,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
               </span>
             )
           )}
-
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleWishlist(product.id);
-            }}
-            className={`absolute top-2 right-2 p-1.5 rounded-full backdrop-blur-sm cursor-pointer transition-colors ${
-              isWishlisted(product.id)
-                ? 'bg-rose-50 text-rose-600'
-                : 'bg-white/85 dark:bg-slate-900/85 hover:bg-white text-slate-400 hover:text-rose-600'
-            }`}
-            title={t('পছন্দ তালিকা', 'Wishlist')}
-            aria-label={t('পছন্দ তালিকা', 'Wishlist')}
-          >
-            <Heart className={`w-3.5 h-3.5 ${isWishlisted(product.id) ? 'fill-rose-600' : ''}`} />
-          </button>
         </div>
 
         {/* Compact Marketplace Body */}
@@ -139,7 +127,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
               {titleText}
             </h3>
 
-            {/* Price + Original Strikethrough + Flame Sold + Outline Cart Icon Button */}
+            {/* Price + Original Strikethrough + Real Sold + Outline Cart Icon Button */}
             <div className="flex items-center justify-between gap-1.5 pt-0.5">
               <div className="flex items-baseline gap-1.5 min-w-0 flex-wrap tabular-nums">
                 <span className="text-sm sm:text-[15px] font-extrabold text-slate-950 dark:text-white leading-none">
@@ -150,10 +138,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
                     ৳{product.originalPrice.toLocaleString()}
                   </span>
                 )}
-                <span className="inline-flex items-center gap-0.5 text-[11px] text-slate-500 dark:text-slate-400 leading-none">
-                  <Flame className="w-3 h-3 text-orange-500 fill-orange-500 shrink-0" />
-                  <span>{soldFormatted} {t('বিক্রি', 'sold')}</span>
-                </span>
+                {soldNum > 0 && (
+                  <span className="inline-flex items-center gap-0.5 text-[11px] text-slate-500 dark:text-slate-400 leading-none">
+                    <Flame className="w-3 h-3 text-orange-500 fill-orange-500 shrink-0" />
+                    <span>{soldFormatted} {t('বিক্রি', 'sold')}</span>
+                  </span>
+                )}
               </div>
 
               {!isOutOfStock && (
@@ -162,7 +152,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
                   onClick={(e) => {
                     e.stopPropagation();
                     addToCart(product, 1);
-                    addToast('success', t('কার্টে যোগ হয়েছে!', 'Added to Cart'), titleText);
                   }}
                   aria-label={t('কার্টে যোগ করুন', 'Add to Cart')}
                   title={t('কার্টে যোগ করুন', 'Add to Cart')}
@@ -173,24 +162,39 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
               )}
             </div>
 
-            {/* Clean Unboxed Highlight Line */}
+            {/* Clean Category / Real Achievement Line */}
             <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate">
-              <span className="font-semibold text-amber-600 dark:text-amber-400">{highlightPrefix}</span>{' '}
-              <span>{t('ক্যাটাগরি:', 'in')} {categoryText}</span>
+              {highlightPrefix ? (
+                <>
+                  <span className="font-semibold text-amber-600 dark:text-amber-400">{highlightPrefix}</span>{' '}
+                  <span>{t('ক্যাটাগরি:', 'in')} {categoryText}</span>
+                </>
+              ) : (
+                <span>{categoryText}</span>
+              )}
             </p>
 
-            {/* 5-Star Rating + Review Count */}
+            {/* Real Rating + Real Review Count + Real Views */}
             <div
               onClick={() => onViewDetails(product)}
               className="flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-400 cursor-pointer tabular-nums"
             >
-              <div className="flex items-center gap-0.5 text-slate-900 dark:text-amber-400">
+              <div className="flex items-center gap-0.5">
                 {[1, 2, 3, 4, 5].map((idx) => (
-                  <Star key={idx} className="w-3 h-3 fill-current" />
+                  <Star
+                    key={idx}
+                    className={`w-3 h-3 ${
+                      idx <= roundedStars
+                        ? 'text-amber-400 fill-amber-400'
+                        : 'text-slate-300 dark:text-slate-700'
+                    }`}
+                  />
                 ))}
               </div>
               <span className="font-medium text-slate-600 dark:text-slate-300">
-                {reviewsDisplayCount.toLocaleString()}
+                {reviewsDisplayCount > 0
+                  ? `${realRating} (${reviewsDisplayCount.toLocaleString()})`
+                  : t('০ রিভিউ', '0')}
               </span>
               {showCardViews && (
                 <span className="ml-auto inline-flex items-center gap-0.5 text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold">
@@ -212,17 +216,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
             )}
           </div>
 
-          {/* Bottom Clean Brand Line + Compact Buy Now */}
-          <div className="pt-1.5 mt-0.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-            <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate">
-              {t('ব্র্যান্ড:', 'Brand:')} {brandLabel || settings.storeName}
-            </span>
-
+          {/* Bottom Compact Action Row */}
+          <div className="pt-1.5 mt-0.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2">
             {isOutOfStock ? (
               <button
                 type="button"
                 onClick={handleWaitlistClick}
-                className="shrink-0 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] py-1 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
+                className="w-full justify-center bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] py-1.5 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
               >
                 <BellRing className="w-3 h-3 shrink-0" />
                 <span>{notifyBtnLabel}</span>
@@ -238,7 +238,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
                   backgroundColor: primaryColor,
                   color: 'var(--brand-on-primary, #ffffff)'
                 }}
-                className="shrink-0 hover:opacity-95 font-bold text-[11px] py-1 px-2.5 rounded-lg cursor-pointer transition-opacity active:scale-95 whitespace-nowrap"
+                className="w-full justify-center hover:opacity-95 font-bold text-[11px] py-1.5 px-2.5 rounded-lg cursor-pointer transition-opacity active:scale-95 whitespace-nowrap"
               >
                 {orderBtnLabel}
               </button>

@@ -258,6 +258,15 @@ interface StoreContextType {
   openProductPage: (product: Product) => void;
   navigateToPath: (path: string, replace?: boolean) => void;
   getProductViewCount: (productId: string) => number;
+  setAdminProductViewCount: (productId: string, count: number) => Promise<void>;
+  getProductRealStats: (productId: string) => {
+    soldCount: number;
+    soldLast24h: number;
+    reviewsCount: number;
+    averageRating: number;
+  };
+  productViews: Record<string, number>;
+  activeLiveViewers: number;
 
   // Products
   products: Product[];
@@ -627,7 +636,8 @@ interface StoreContextType {
     name: string;
     countryCode?: string;
     phone: string;
-    message: string;
+    query?: string;
+    message?: string;
     productId?: string;
     productTitle?: string;
     productUrl?: string;
@@ -740,6 +750,14 @@ interface StoreContextType {
   loginWholesaler: (identifier: string, password?: string) => Promise<{ success: boolean; error?: string; wholesaler?: WholesaleAccount }>;
   logoutWholesaler: () => void;
   updateWholesalerAccount: (id: string, updates: Partial<WholesaleAccount>) => void;
+  updateActiveWholesalerProfile: (
+    updates: Partial<
+      Pick<
+        WholesaleAccount,
+        'companyName' | 'contactName' | 'email' | 'tradeLicenseNo' | 'nidNumber' | 'district' | 'address' | 'businessType' | 'monthlyVolumeEstimate'
+      >
+    >
+  ) => void;
   deleteWholesalerAccount: (id: string) => void;
   bulkUpdateWholesalers: (ids: string[], updates: Partial<WholesaleAccount>) => void;
   bulkDeleteWholesalers: (ids: string[]) => void;
@@ -781,6 +799,9 @@ interface StoreContextType {
   loginAffiliate: (identifier: string, password?: string) => Promise<{ success: boolean; error?: string; affiliate?: AffiliateAccount }>;
   logoutAffiliate: () => void;
   updateAffiliateAccount: (id: string, updates: Partial<AffiliateAccount>) => void;
+  updateActiveAffiliateProfile: (
+    updates: Partial<Pick<AffiliateAccount, 'name' | 'email' | 'district' | 'channelUrl' | 'bkashNumber' | 'nagadNumber' | 'bankDetails'>>
+  ) => void;
   deleteAffiliateAccount: (id: string) => void;
   bulkUpdateAffiliates: (ids: string[], updates: Partial<AffiliateAccount>) => void;
   bulkDeleteAffiliates: (ids: string[]) => void;
@@ -920,7 +941,11 @@ function mergeSettings(raw: any): StoreSettings {
       ...INITIAL_SETTINGS.announcementBar,
       ...(raw.announcementBar || {}),
       textBn: migrateLegacyPhoneStr(raw.announcementBar?.textBn ?? INITIAL_SETTINGS.announcementBar.textBn),
-      textEn: migrateLegacyPhoneStr(raw.announcementBar?.textEn ?? INITIAL_SETTINGS.announcementBar.textEn)
+      textEn: migrateLegacyPhoneStr(raw.announcementBar?.textEn ?? INITIAL_SETTINGS.announcementBar.textEn),
+      helpline: migrateLegacyPhoneStr(raw.announcementBar?.helpline ?? INITIAL_SETTINGS.announcementBar.helpline ?? ''),
+      bgColor: raw.announcementBar?.bgColor || INITIAL_SETTINGS.announcementBar.bgColor || '#0f172a',
+      textColor: raw.announcementBar?.textColor || INITIAL_SETTINGS.announcementBar.textColor || '#ffffff',
+      linkUrl: raw.announcementBar?.linkUrl ?? ''
     },
     themeColors: { ...INITIAL_SETTINGS.themeColors!, ...(raw.themeColors || {}) },
     cmsTexts: {
@@ -1082,7 +1107,8 @@ function mergeSettings(raw: any): StoreSettings {
     },
     viewerCounter: {
       ...INITIAL_SETTINGS.viewerCounter!,
-      ...(raw.viewerCounter || {})
+      ...(raw.viewerCounter || {}),
+      useRealViews: raw.viewerCounter?.useRealViews !== false
     },
     urgencySettings: {
       ...INITIAL_SETTINGS.urgencySettings!,
@@ -2898,6 +2924,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
   const [sessionViewDeltas, setSessionViewDeltas] = useState<Record<string, number>>({});
+  const [productViews, setProductViews] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_product_views_v1');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {};
+  });
+  const [activeLiveViewers, setActiveLiveViewers] = useState<number>(1);
+  const recordedProductViewSessionRef = useRef<Set<string>>(new Set());
 
   // Customer Auth & Account Registry
   const [isCustomerLoggedIn, setIsCustomerLoggedIn] = useState<boolean>(() => {
@@ -3173,10 +3208,35 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const recordProductView = (productId: string) => {
     if (!productId) return;
-    setSessionViewDeltas((prev) => ({
-      ...prev,
-      [productId]: (prev[productId] || 0) + 1
-    }));
+    if (!recordedProductViewSessionRef.current.has(productId)) {
+      recordedProductViewSessionRef.current.add(productId);
+      setSessionViewDeltas((prev) => ({
+        ...prev,
+        [productId]: (prev[productId] || 0) + 1
+      }));
+      setProductViews((prev) => {
+        const next = { ...prev, [productId]: (prev[productId] || 0) + 1 };
+        try {
+          localStorage.setItem('buyonebd_product_views_v1', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      fetch('/api/analytics/product-view', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId })
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json) => {
+          if (json?.productViews && typeof json.productViews === 'object') {
+            setProductViews(json.productViews);
+            try {
+              localStorage.setItem('buyonebd_product_views_v1', JSON.stringify(json.productViews));
+            } catch {}
+          }
+        })
+        .catch(() => {});
+    }
     setRecentlyViewedIds((prev) => {
       if (prev[0] === productId) return prev;
       const next = [productId, ...prev.filter((id) => id !== productId)].slice(0, 5);
@@ -3195,9 +3255,60 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const getProductViewCount = (productId: string): number => {
     const vc = settings.viewerCounter;
-    const base = Math.max(0, Number(vc?.baseCount ?? 76439) || 0);
-    const delta = vc?.autoIncrement !== false ? sessionViewDeltas[productId] || 0 : 0;
-    return base + delta;
+    const realCount = Math.max(0, Number(productViews[productId] || 0));
+    if (vc?.useRealViews !== false) {
+      return realCount;
+    }
+    const base = Math.max(0, Number(vc?.baseCount ?? 0) || 0);
+    return base + realCount;
+  };
+
+  const setAdminProductViewCount = async (productId: string, count: number): Promise<void> => {
+    const clean = Math.max(0, Math.round(Number(count) || 0));
+    setProductViews((prev) => {
+      const next = { ...prev, [productId]: clean };
+      try {
+        localStorage.setItem('buyonebd_product_views_v1', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    try {
+      const res = await fetch('/api/analytics/product-view/set', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId, count: clean })
+      });
+      const json = await safeParseJson<any>(res);
+      if (json?.productViews && typeof json.productViews === 'object') {
+        setProductViews(json.productViews);
+      }
+      addToast('success', t('ভিউ কাউন্ট আপডেট হয়েছে', 'View Count Updated'), `${clean.toLocaleString()} views`);
+    } catch {}
+  };
+
+  const getProductRealStats = (productId: string) => {
+    const nowMs = Date.now();
+    let soldCount = 0;
+    let soldLast24h = 0;
+    ordersRef.current.forEach((o) => {
+      if (o.status === 'cancelled') return;
+      const createdMs = new Date(o.createdAt || 0).getTime();
+      const isRecent = Number.isFinite(createdMs) && nowMs - createdMs <= 86400000;
+      (o.items || []).forEach((it) => {
+        if (it.productId === productId) {
+          const q = Math.max(1, Number(it.quantity) || 1);
+          soldCount += q;
+          if (isRecent) soldLast24h += q;
+        }
+      });
+    });
+    const prodReviews = reviews.filter((r) => r.productId === productId && r.isApproved !== false);
+    const reviewsCount = prodReviews.length;
+    const averageRating =
+      reviewsCount > 0
+        ? Number((prodReviews.reduce((s, r) => s + (Number(r.rating) || 0), 0) / reviewsCount).toFixed(1))
+        : 0;
+    return { soldCount, soldLast24h, reviewsCount, averageRating };
   };
 
   const clearRecentlyViewed = () => {
@@ -4722,19 +4833,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isPlayingVoiceSample, setIsPlayingVoiceSample] = useState(false);
   const sampleAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Toasts
+  // Toasts (Strictly Single Toast at a time — never stacked/double)
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-
-  const addToast = (type: 'success' | 'info' | 'warning' | 'error', title: string, message: string) => {
-    const id = Date.now().toString() + Math.random().toString().slice(2, 6);
-    setToasts((prev) => [...prev, { id, type, title, message }]);
-    setTimeout(() => {
-      removeToast(id);
-    }, 4500);
-  };
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const removeToast = (id: string) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const addToast = (type: 'success' | 'info' | 'warning' | 'error', title: string, message: string) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    const id = Date.now().toString() + Math.random().toString().slice(2, 6);
+    setToasts([{ id, type, title, message }]);
+    toastTimerRef.current = setTimeout(() => {
+      setToasts((prev) => prev.filter((item) => item.id !== id));
+      toastTimerRef.current = null;
+    }, 4000);
   };
 
   // Server-Side Meta Pixel + Google Analytics 4 Dispatcher
@@ -5301,6 +5422,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const data = json?.data;
 
         if (data && typeof data === 'object') {
+          if (data.productViews && typeof data.productViews === 'object') {
+            setProductViews(data.productViews);
+            try {
+              localStorage.setItem('buyonebd_product_views_v1', JSON.stringify(data.productViews));
+            } catch {}
+          }
+          if (typeof data.activeClients === 'number') {
+            setActiveLiveViewers(Math.max(1, data.activeClients));
+          }
           if (Array.isArray(data.orders)) {
             const deletedSet = new Set<string>(Array.isArray(data.deletedOrderIds) ? data.deletedOrderIds : []);
             mergeRemoteOrders(data.orders, deletedSet, notifyOnNewOrders);
@@ -6201,6 +6331,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
           if (Array.isArray(msg.socialPosts) && msg.socialPosts.length > 0) {
             setSocialPosts(msg.socialPosts);
+          }
+          if (msg.productViews && typeof msg.productViews === 'object') {
+            setProductViews(msg.productViews);
+          }
+          if (typeof msg.activeClients === 'number') {
+            setActiveLiveViewers(Math.max(1, msg.activeClients));
+          }
+          return;
+        }
+
+        if (msg.type === 'views:sync') {
+          if (msg.productViews && typeof msg.productViews === 'object') {
+            setProductViews(msg.productViews);
+            try {
+              localStorage.setItem('buyonebd_product_views_v1', JSON.stringify(msg.productViews));
+            } catch {}
+          }
+          if (typeof msg.activeClients === 'number') {
+            setActiveLiveViewers(Math.max(1, msg.activeClients));
           }
           return;
         }
@@ -9629,6 +9778,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     addToast('success', t('হোলসেল অ্যাকাউন্ট আপডেট হয়েছে', 'Wholesale Account Updated'), '');
   };
 
+  const updateActiveWholesalerProfile = (
+    updates: Partial<
+      Pick<
+        WholesaleAccount,
+        'companyName' | 'contactName' | 'email' | 'tradeLicenseNo' | 'nidNumber' | 'district' | 'address' | 'businessType' | 'monthlyVolumeEstimate'
+      >
+    >
+  ) => {
+    if (!activeWholesaler) return;
+    updateWholesalerAccount(activeWholesaler.id, updates);
+  };
+
   const deleteWholesalerAccount = (id: string) => {
     lastLocalMutationAtRef.current = Date.now();
     setWholesalers((prev) => prev.filter((w) => w.id !== id));
@@ -10048,6 +10209,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       })
     );
     addToast('success', t('অ্যাফিলিয়েট তথ্য আপডেট হয়েছে', 'Affiliate Updated'), '');
+  };
+
+  const updateActiveAffiliateProfile = (
+    updates: Partial<Pick<AffiliateAccount, 'name' | 'email' | 'district' | 'channelUrl' | 'bkashNumber' | 'nagadNumber' | 'bankDetails'>>
+  ) => {
+    if (!activeAffiliate) return;
+    updateAffiliateAccount(activeAffiliate.id, updates);
   };
 
   const deleteAffiliateAccount = (id: string) => {
@@ -11106,16 +11274,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     name: string;
     countryCode?: string;
     phone: string;
-    message: string;
+    query?: string;
+    message?: string;
     productId?: string;
     productTitle?: string;
     productUrl?: string;
   }): Promise<{ success: boolean; inquiry?: ChatInquiry; error?: string }> => {
     try {
+      const normalizedQuery = String(payload.query || payload.message || '').trim();
       const res = await fetch('/api/inquiries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          ...payload,
+          query: normalizedQuery,
+          message: normalizedQuery
+        })
       });
       const json = await safeParseJson<any>(res);
       if (!res.ok || !json?.inquiry) {
@@ -11499,6 +11673,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         openProductPage,
         navigateToPath,
         getProductViewCount,
+        setAdminProductViewCount,
+        getProductRealStats,
+        productViews,
+        activeLiveViewers,
         products,
         addProduct,
         updateProduct,
@@ -11752,6 +11930,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         loginWholesaler,
         logoutWholesaler,
         updateWholesalerAccount,
+        updateActiveWholesalerProfile,
         deleteWholesalerAccount,
         bulkUpdateWholesalers,
         bulkDeleteWholesalers,
@@ -11778,6 +11957,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         loginAffiliate,
         logoutAffiliate,
         updateAffiliateAccount,
+        updateActiveAffiliateProfile,
         deleteAffiliateAccount,
         bulkUpdateAffiliates,
         bulkDeleteAffiliates,

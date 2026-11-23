@@ -1819,7 +1819,14 @@ app.get('/api/store/sync', (req, res) => {
   const isAdminSession = req.headers['x-admin-session'] === 'buyone-admin-verified';
   const shouldMask = data?.settings?.securitySettings?.maskPublicSecrets !== false;
   const responseData = !isAdminSession && shouldMask ? redactSensitiveSettingsForPublic(data) : data;
-  return res.json({ success: true, data: responseData });
+  return res.json({
+    success: true,
+    data: {
+      ...(responseData || {}),
+      productViews: data?.productViews || {},
+      activeClients: Math.max(1, activeWsClients.size)
+    }
+  });
 });
 
 app.post('/api/store/sync', (req, res) => {
@@ -2020,15 +2027,21 @@ app.post('/api/store/sync', (req, res) => {
       : current.aiTeamBriefings || [],
     users: preserveNonEmpty(users, current.users),
     mediaLibrary: preserveNonEmpty(mediaLibrary, current.mediaLibrary),
+    productViews: current.productViews || {},
     lastUpdated: new Date().toISOString()
   };
   saveStoreData(updated);
   const isAdminSession = req.headers['x-admin-session'] === 'buyone-admin-verified';
   const shouldMask = updated?.settings?.securitySettings?.maskPublicSecrets !== false;
+  const payloadOut = !isAdminSession && shouldMask ? redactSensitiveSettingsForPublic(updated) : updated;
   return res.json({
     success: true,
     message: 'Store synchronized',
-    data: !isAdminSession && shouldMask ? redactSensitiveSettingsForPublic(updated) : updated
+    data: {
+      ...payloadOut,
+      productViews: updated.productViews || {},
+      activeClients: Math.max(1, activeWsClients.size)
+    }
   });
 });
 
@@ -3052,7 +3065,54 @@ app.get('/api/analytics/visitors', (_req, res) => {
     ...v,
     path: v.path || v.urlPath || '/'
   }));
-  return res.json({ ok: true, success: true, visitors });
+  return res.json({ ok: true, success: true, visitors, activeClients: Math.max(1, activeWsClients.size) });
+});
+
+app.post('/api/analytics/product-view', (req, res) => {
+  try {
+    const productId = String(req.body?.productId || '').trim();
+    if (!productId) {
+      return res.status(400).json({ ok: false, error: 'productId is required' });
+    }
+    const saved = loadStoreData() || {};
+    const viewsMap: Record<string, number> = { ...(saved.productViews || {}) };
+    viewsMap[productId] = (Number(viewsMap[productId]) || 0) + 1;
+    saved.productViews = viewsMap;
+    saveStoreData(saved);
+    const activeClients = Math.max(1, activeWsClients.size);
+    broadcastWs({ type: 'views:sync', productViews: viewsMap, activeClients });
+    return res.json({
+      ok: true,
+      productId,
+      count: viewsMap[productId],
+      productViews: viewsMap,
+      activeClients
+    });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err?.message || 'Failed to record view' });
+  }
+});
+
+app.post('/api/analytics/product-view/set', (req, res) => {
+  try {
+    const { productId, count } = req.body || {};
+    const saved = loadStoreData() || {};
+    const viewsMap: Record<string, number> = { ...(saved.productViews || {}) };
+    if (productId === '__all__') {
+      Object.keys(viewsMap).forEach((k) => {
+        viewsMap[k] = Math.max(0, Number(count) || 0);
+      });
+    } else if (productId) {
+      viewsMap[String(productId)] = Math.max(0, Number(count) || 0);
+    }
+    saved.productViews = viewsMap;
+    saveStoreData(saved);
+    const activeClients = Math.max(1, activeWsClients.size);
+    broadcastWs({ type: 'views:sync', productViews: viewsMap, activeClients });
+    return res.json({ ok: true, productViews: viewsMap, activeClients });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err?.message || 'Failed to update views' });
+  }
 });
 
 // Fast Google & Search Engine Indexing via IndexNow Protocol
@@ -4507,7 +4567,7 @@ app.post('/api/inquiries', (req, res) => {
   const name = String(clean.name || '').trim();
   const countryCode = String(clean.countryCode || '+880').trim() || '+880';
   const phone = String(clean.phone || '').trim();
-  const queryText = String(clean.query || '').trim();
+  const queryText = String(clean.query || clean.message || '').trim();
 
   if (!name || !phone || !queryText) {
     return res.status(400).json({ success: false, error: 'Name, mobile number, and query are required.' });
@@ -4523,6 +4583,7 @@ app.post('/api/inquiries', (req, res) => {
     query: queryText,
     productId: clean.productId ? String(clean.productId) : undefined,
     productTitle: clean.productTitle ? String(clean.productTitle) : undefined,
+    productUrl: clean.productUrl ? String(clean.productUrl) : undefined,
     status: 'new',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -4611,8 +4672,16 @@ app.post('/api/ai/social-caption', async (req, res) => {
   }
 });
 
-// Dispatch a single social post to configured Webhook (or record live publish)
-async function dispatchSocialPostItem(post: any, channelCfg: any): Promise<{ ok: boolean; error?: string }> {
+// Dispatch a single social post to Webhook, Facebook Page Graph API, or Instagram Graph API
+async function dispatchSocialPostItem(
+  post: any,
+  channelCfg: any
+): Promise<{ ok: boolean; error?: string; externalPostId?: string; dispatchLog?: string }> {
+  const fullMessage = `${post.title ? `${post.title}\n\n` : ''}${post.caption || ''}${
+    Array.isArray(post.hashtags) && post.hashtags.length > 0 ? `\n\n${post.hashtags.join(' ')}` : ''
+  }${post.productUrl ? `\n\n🛒 অর্ডার লিংক / Order Now: ${post.productUrl}` : ''}`.trim();
+
+  // 1. Direct Webhook (Make / Zapier / n8n / Custom Server)
   if (channelCfg?.webhookUrl && /^https?:\/\//i.test(channelCfg.webhookUrl)) {
     try {
       const resp = await fetch(channelCfg.webhookUrl, {
@@ -4625,23 +4694,258 @@ async function dispatchSocialPostItem(post: any, channelCfg: any): Promise<{ ok:
           platform: post.platform,
           pageOrChannelId: channelCfg.pageOrChannelId || '',
           title: post.title,
-          caption: `${post.caption}\n\n${(post.hashtags || []).join(' ')}\n\nOrder Link: ${post.productUrl}`,
+          caption: fullMessage,
           imageUrl: post.imageUrl,
           productUrl: post.productUrl,
           hashtags: post.hashtags || [],
           publishedAt: new Date().toISOString()
         })
       });
+      const respText = await resp.text().catch(() => '');
       if (!resp.ok) {
-        return { ok: false, error: `Webhook returned HTTP ${resp.status}` };
+        return {
+          ok: false,
+          error: `Webhook HTTP ${resp.status}`,
+          dispatchLog: `Webhook HTTP ${resp.status}: ${respText.slice(0, 120)}`
+        };
       }
-      return { ok: true };
+      let extId = '';
+      try {
+        const parsed = JSON.parse(respText);
+        extId = String(parsed?.id || parsed?.post_id || '');
+      } catch {}
+      return {
+        ok: true,
+        externalPostId: extId || undefined,
+        dispatchLog: `Webhook HTTP ${resp.status} OK`
+      };
     } catch (err: any) {
-      return { ok: false, error: err?.message || 'Webhook dispatch failed' };
+      return {
+        ok: false,
+        error: err?.message || 'Webhook dispatch failed',
+        dispatchLog: err?.message || 'Webhook error'
+      };
     }
   }
-  return { ok: true };
+
+  // 2. Direct Facebook Page Graph API v21.0
+  if (post.platform === 'facebook' && channelCfg?.pageOrChannelId && channelCfg?.accessToken) {
+    try {
+      const pageId = encodeURIComponent(String(channelCfg.pageOrChannelId).trim());
+      const token = String(channelCfg.accessToken).trim();
+      const hasImage = Boolean(post.imageUrl && /^https?:\/\//i.test(post.imageUrl));
+      const endpoint = hasImage
+        ? `https://graph.facebook.com/v21.0/${pageId}/photos`
+        : `https://graph.facebook.com/v21.0/${pageId}/feed`;
+      const payload = hasImage
+        ? { url: post.imageUrl, caption: fullMessage, access_token: token }
+        : { message: fullMessage, link: post.productUrl || undefined, access_token: token };
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const json: any = await resp.json().catch(() => ({}));
+      if (!resp.ok || json?.error) {
+        const msg = json?.error?.message || `Facebook Graph HTTP ${resp.status}`;
+        return { ok: false, error: msg, dispatchLog: `FB Graph Error: ${msg}` };
+      }
+      return {
+        ok: true,
+        externalPostId: String(json?.post_id || json?.id || ''),
+        dispatchLog: `Published directly to Facebook Page (${json?.post_id || json?.id || 'OK'})`
+      };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'FB Graph error', dispatchLog: err?.message || 'FB Graph error' };
+    }
+  }
+
+  // 3. Direct Instagram Graph API v21.0 (requires IG Business ID + public HTTPS imageUrl)
+  if (post.platform === 'instagram' && channelCfg?.pageOrChannelId && channelCfg?.accessToken) {
+    try {
+      const igId = encodeURIComponent(String(channelCfg.pageOrChannelId).trim());
+      const token = String(channelCfg.accessToken).trim();
+      if (!post.imageUrl || !/^https?:\/\//i.test(post.imageUrl)) {
+        return { ok: false, error: 'Instagram Graph API requires a public HTTPS image URL.', dispatchLog: 'Missing HTTPS imageUrl' };
+      }
+      const createRes = await fetch(`https://graph.facebook.com/v21.0/${igId}/media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_url: post.imageUrl, caption: fullMessage, access_token: token })
+      });
+      const createJson: any = await createRes.json().catch(() => ({}));
+      if (!createRes.ok || !createJson?.id) {
+        const msg = createJson?.error?.message || `IG Media HTTP ${createRes.status}`;
+        return { ok: false, error: msg, dispatchLog: `IG Create Error: ${msg}` };
+      }
+      const pubRes = await fetch(`https://graph.facebook.com/v21.0/${igId}/media_publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creation_id: createJson.id, access_token: token })
+      });
+      const pubJson: any = await pubRes.json().catch(() => ({}));
+      if (!pubRes.ok || pubJson?.error) {
+        const msg = pubJson?.error?.message || `IG Publish HTTP ${pubRes.status}`;
+        return { ok: false, error: msg, dispatchLog: `IG Publish Error: ${msg}` };
+      }
+      return {
+        ok: true,
+        externalPostId: String(pubJson?.id || createJson.id),
+        dispatchLog: `Published to Instagram (${pubJson?.id || 'OK'})`
+      };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'IG Graph error', dispatchLog: err?.message || 'IG Graph error' };
+    }
+  }
+
+  // 4. Local Queue Publication (Ready for 1-click browser share or Make/Zapier trigger)
+  return {
+    ok: true,
+    dispatchLog: 'Published to Local Feed Queue (Connect Webhook URL or Graph API Token for external API auto-push)'
+  };
 }
+
+app.post('/api/social/test-channel', async (req, res) => {
+  try {
+    const { platform = 'facebook', config = {} } = req.body || {};
+    if (config.webhookUrl && /^https?:\/\//i.test(config.webhookUrl)) {
+      const resp = await fetch(config.webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(config.accessToken ? { Authorization: `Bearer ${config.accessToken}` } : {})
+        },
+        body: JSON.stringify({
+          type: 'buyonebd_social_ping',
+          platform,
+          pageOrChannelId: config.pageOrChannelId || '',
+          timestamp: new Date().toISOString()
+        })
+      });
+      return res.json({
+        success: resp.ok,
+        status: resp.status,
+        message: resp.ok
+          ? `Webhook endpoint responded HTTP ${resp.status} OK`
+          : `Webhook endpoint returned HTTP ${resp.status}`
+      });
+    }
+    if ((platform === 'facebook' || platform === 'instagram') && config.pageOrChannelId && config.accessToken) {
+      const fields = platform === 'facebook' ? 'id,name' : 'id,username';
+      const resp = await fetch(
+        `https://graph.facebook.com/v21.0/${encodeURIComponent(String(config.pageOrChannelId).trim())}?fields=${fields}&access_token=${encodeURIComponent(String(config.accessToken).trim())}`
+      );
+      const json: any = await resp.json().catch(() => ({}));
+      if (!resp.ok || json?.error) {
+        return res.json({
+          success: false,
+          message: json?.error?.message || `Graph API HTTP ${resp.status}`
+        });
+      }
+      return res.json({
+        success: true,
+        message: `Connected to ${json.name || json.username || json.id}`
+      });
+    }
+    return res.json({
+      success: false,
+      message: 'Please enter a Make/Zapier Webhook URL or Page/IG ID + Graph API Token first.'
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err?.message || 'Test request failed' });
+  }
+});
+
+app.post('/api/social/run-cycle-now', async (req, res) => {
+  try {
+    const saved = loadStoreData() || {};
+    const channels = saved.settings?.socialAutoConfig || {};
+    const posts: any[] = Array.isArray(saved.socialPosts) ? [...saved.socialPosts] : [];
+    const nowMs = Date.now();
+    let dispatchedCount = 0;
+
+    for (let i = 0; i < posts.length; i++) {
+      if (posts[i]?.status === 'scheduled' && new Date(posts[i].scheduledAt).getTime() <= nowMs) {
+        const resDisp = await dispatchSocialPostItem(posts[i], channels[posts[i].platform]);
+        posts[i] = {
+          ...posts[i],
+          status: resDisp.ok ? 'published' : 'failed',
+          publishedAt: resDisp.ok ? new Date().toISOString() : posts[i].publishedAt,
+          errorNote: resDisp.error || '',
+          externalPostId: resDisp.externalPostId || posts[i].externalPostId,
+          dispatchLog: resDisp.dispatchLog || posts[i].dispatchLog
+        };
+        dispatchedCount++;
+      }
+    }
+
+    const catalog: any[] = Array.isArray(saved.products) ? saved.products.filter((p: any) => (p.stock ?? 0) > 0) : [];
+    const platformParam = req.body?.platform;
+    const platformsToRun = platformParam
+      ? [platformParam]
+      : ['facebook', 'instagram', 'tiktok', 'youtube'].filter((pl) => channels[pl]?.enabled && channels[pl]?.autoPostEnabled);
+
+    if (catalog.length > 0 && platformsToRun.length > 0) {
+      for (const pl of platformsToRun) {
+        const ch = channels[pl] || {};
+        const pick = catalog[Math.floor(Math.random() * catalog.length)];
+        const slug = pick.seo?.slug || pick.id;
+        const baseOrigin = (saved.settings?.seoSettings?.canonicalUrl || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+        const productUrl = `${baseOrigin}/product/${slug}`;
+        let gen = {
+          title: pick.titleBn || pick.title,
+          caption: `🔥 ${pick.titleBn || pick.title}\n💰 স্পেশাল দাম: মাত্র ৳${pick.price}!\n🚚 সারা বাংলাদেশের ৬৪ জেলায় ক্যাশ অন ডেলিভারি।\n👉 অর্ডার লিংক: ${productUrl}`,
+          hashtags: ['#BuyOneBD', '#BangladeshShopping', '#CashOnDelivery', `#${pl}`],
+          productUrl
+        };
+        if (process.env.GEMINI_API_KEY) {
+          try {
+            gen = await generateSocialCaptionWithGemini(
+              pick,
+              pl,
+              'bn',
+              saved.settings?.storeName || 'BuyOne BD',
+              baseOrigin
+            );
+          } catch {}
+        }
+        const newPost: any = {
+          id: `soc-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
+          platform: pl,
+          productId: pick.id,
+          productTitle: pick.title,
+          title: gen.title,
+          caption: gen.caption,
+          hashtags: gen.hashtags,
+          productUrl: gen.productUrl,
+          imageUrl: pick.images?.[0] || '',
+          scheduledAt: new Date().toISOString(),
+          status: 'scheduled',
+          autoGenerated: true,
+          createdAt: new Date().toISOString()
+        };
+        const disp = await dispatchSocialPostItem(newPost, ch);
+        newPost.status = disp.ok ? 'published' : 'failed';
+        newPost.publishedAt = disp.ok ? new Date().toISOString() : undefined;
+        newPost.errorNote = disp.error || '';
+        newPost.externalPostId = disp.externalPostId || '';
+        newPost.dispatchLog = disp.dispatchLog || '';
+        posts.unshift(newPost);
+        if (saved.settings?.socialAutoConfig?.[pl]) {
+          saved.settings.socialAutoConfig[pl].lastAutoPostedAt = new Date().toISOString();
+        }
+        dispatchedCount++;
+      }
+    }
+
+    saved.socialPosts = posts.slice(0, 300);
+    saveStoreData(saved);
+    broadcastWs({ type: 'social:sync', socialPosts: saved.socialPosts });
+    return res.json({ success: true, dispatchedCount, socialPosts: saved.socialPosts });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Auto-poster cycle failed' });
+  }
+});
 
 app.post('/api/social/dispatch-now', async (req, res) => {
   const { postId, post: incomingPost } = req.body || {};
@@ -4663,13 +4967,15 @@ app.post('/api/social/dispatch-now', async (req, res) => {
           ...p,
           status: result.ok ? 'published' : 'failed',
           publishedAt: result.ok ? nowIso : p.publishedAt,
-          errorNote: result.error || ''
+          errorNote: result.error || '',
+          externalPostId: result.externalPostId || p.externalPostId,
+          dispatchLog: result.dispatchLog || p.dispatchLog
         }
       : p
   );
   saveStoreData(saved);
   broadcastWs({ type: 'social:sync', socialPosts: saved.socialPosts });
-  return res.json({ success: result.ok, error: result.error, socialPosts: saved.socialPosts });
+  return res.json({ success: result.ok, error: result.error, dispatchLog: result.dispatchLog, socialPosts: saved.socialPosts });
 });
 
 // Autonomous AI Company Team Briefing (/api/ai/team-run) using Gemini 4 Hydrogen
@@ -4891,9 +5197,16 @@ async function startServer() {
           whatsappMessages: initialSaved.whatsappMessages || [],
           aiReviewQueue: initialSaved.aiReviewQueue || [],
           chatInquiries: initialSaved.chatInquiries || [],
-          socialPosts: initialSaved.socialPosts || []
+          socialPosts: initialSaved.socialPosts || [],
+          productViews: initialSaved.productViews || {},
+          activeClients: Math.max(1, activeWsClients.size)
         })
       );
+      broadcastWs({
+        type: 'views:sync',
+        productViews: initialSaved.productViews || {},
+        activeClients: Math.max(1, activeWsClients.size)
+      });
     } catch {}
 
     ws.on('message', (rawData) => {

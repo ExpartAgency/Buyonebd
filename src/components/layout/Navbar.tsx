@@ -69,16 +69,58 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
       className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs border-b border-slate-200/80 dark:border-slate-800 w-full max-w-full"
       style={{ backgroundColor: settings.themeColors?.headerBg || undefined }}
     >
-      {/* Top Announcement Bar */}
-      {settings?.announcementBar?.enabled && (
-        <div className="bg-slate-900 text-white text-[10px] sm:text-[11px] font-medium py-1.5 px-3 text-center overflow-hidden border-b border-slate-800">
-          <div className="max-w-7xl mx-auto truncate">
-            {lang === 'bn'
-              ? settings.announcementBar.textBn || 'সারা বাংলাদেশে দ্রুততম হোম ডেলিভারি ও ক্যাশ অন ডেলিভারি সুবিধা | হেল্পলাইন: +8801917942662'
-              : settings.announcementBar.textEn || 'Whole Bangladesh Fast Home Delivery with Cash on Delivery | Helpline: +8801917942662'}
+      {/* Top Announcement Bar (100% Editable from Admin Dashboard) */}
+      {settings?.announcementBar?.enabled && (() => {
+        const ann = settings.announcementBar;
+        const mainText =
+          lang === 'bn'
+            ? ann.textBn || 'সারা বাংলাদেশে দ্রুততম হোম ডেলিভারি ও ক্যাশ অন ডেলিভারি সুবিধা'
+            : ann.textEn || 'Nationwide Fast Home Delivery with Cash on Delivery';
+        const helpline = ann.helpline?.trim();
+        const showHelpline = helpline && !mainText.includes(helpline);
+        const linkHref = ann.linkUrl?.trim();
+
+        return (
+          <div
+            style={{
+              backgroundColor: ann.bgColor || '#0f172a',
+              color: ann.textColor || '#ffffff'
+            }}
+            className="text-[10px] sm:text-[11px] font-medium py-1.5 px-3 text-center overflow-hidden border-b border-black/15"
+          >
+            <div className="max-w-7xl mx-auto flex items-center justify-center gap-2 truncate">
+              {linkHref ? (
+                <a
+                  href={linkHref}
+                  onClick={(e) => {
+                    if (linkHref.startsWith('/')) {
+                      e.preventDefault();
+                      window.history.pushState({}, '', linkHref);
+                      window.dispatchEvent(new PopStateEvent('popstate'));
+                    }
+                  }}
+                  className="hover:underline truncate"
+                >
+                  {mainText}
+                </a>
+              ) : (
+                <span className="truncate">{mainText}</span>
+              )}
+              {showHelpline && (
+                <>
+                  <span aria-hidden="true" className="opacity-50">|</span>
+                  <a
+                    href={`tel:${helpline}`}
+                    className="font-mono font-bold hover:underline shrink-0"
+                  >
+                    {t('হেল্পলাইন:', 'Helpline:')} {helpline}
+                  </a>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Main Header Bar */}
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 min-w-0">

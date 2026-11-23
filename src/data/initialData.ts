@@ -824,8 +824,12 @@ export const INITIAL_SETTINGS: StoreSettings = {
   },
   announcementBar: {
     enabled: true,
-    textBn: '🚚 সমগ্র বাংলাদেশে (৬৪ জেলায়) দ্রুততম হোম ডেলিভারি ও ক্যাশ অন ডেলিভারি সুবিধা | হেল্পলাইন: +8801917942662',
-    textEn: '🚚 Fast Home Delivery Across Whole Bangladesh (All 64 Districts) with Cash on Delivery | Helpline: +8801917942662'
+    textBn: '🚚 সারা বাংলাদেশে দ্রুততম হোম ডেলিভারি ও ক্যাশ অন ডেলিভারি সুবিধা | হেল্পলাইন: +8801917942662',
+    textEn: 'Nationwide Fast Home Delivery with Cash on Delivery | Helpline: +8801917942662',
+    helpline: '+8801917942662',
+    bgColor: '#0f172a',
+    textColor: '#ffffff',
+    linkUrl: ''
   },
   theme: 'gadgets',
   themeColors: {
@@ -1370,10 +1374,11 @@ export const INITIAL_SETTINGS: StoreSettings = {
   },
   viewerCounter: {
     enabled: true,
-    baseCount: 76439,
+    baseCount: 0,
     labelBn: 'জন এই পণ্যটি দেখেছেন',
     labelEn: 'people viewed this',
     autoIncrement: true,
+    useRealViews: true,
     showOnSingleProduct: true,
     showOnCards: false
   },

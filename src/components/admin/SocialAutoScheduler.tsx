@@ -17,7 +17,11 @@ import {
   Save,
   Plus,
   Link2,
-  Globe
+  Globe,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+  ExternalLink
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { SocialPlatform, SocialScheduledPost, SocialChannelConfig } from '../../types';
@@ -54,6 +58,7 @@ export const SocialAutoScheduler: React.FC = () => {
     deleteSocialPost,
     bulkDeleteSocialPosts,
     dispatchSocialPostNow,
+    syncStoreFromServer,
     getProductCanonicalUrl,
     addToast,
     adminLang
@@ -108,10 +113,70 @@ export const SocialAutoScheduler: React.FC = () => {
   const [selectedQueueIds, setSelectedQueueIds] = useState<string[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [dispatchingId, setDispatchingId] = useState<string | null>(null);
+  const [testingPlatform, setTestingPlatform] = useState<SocialPlatform | null>(null);
+  const [channelTestStatus, setChannelTestStatus] = useState<Partial<Record<SocialPlatform, { ok: boolean; msg: string }>>>({});
+  const [isRunningCycleNow, setIsRunningCycleNow] = useState(false);
+  const [scheduleAllFour, setScheduleAllFour] = useState(false);
+  const [utmCampaignTag, setUtmCampaignTag] = useState('auto_social');
 
   const filteredPosts = useMemo(() => {
     return socialPosts.filter((p) => (platformFilter === 'all' ? true : p.platform === platformFilter));
   }, [socialPosts, platformFilter]);
+
+  const applyPrimeTimePreset = (hour24: number, minute: number) => {
+    const base = new Date();
+    if (base.getHours() > hour24 || (base.getHours() === hour24 && base.getMinutes() >= minute)) {
+      base.setDate(base.getDate() + 1);
+    }
+    base.setHours(hour24, minute, 0, 0);
+    const localStr = new Date(base.getTime() - base.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setScheduleDatetime(localStr);
+    setDraftScheduledAt(localStr);
+  };
+
+  const handleTestChannelConnection = async (pl: SocialPlatform) => {
+    setTestingPlatform(pl);
+    try {
+      const res = await fetch('/api/social/test-channel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: pl, config: socialCfg[pl] })
+      });
+      const data = await res.json().catch(() => ({}));
+      const ok = Boolean(data?.success);
+      const msg = data?.message || (ok ? 'Verified' : 'Configuration needed');
+      setChannelTestStatus((prev) => ({ ...prev, [pl]: { ok, msg } }));
+      addToast(ok ? 'success' : 'warning', `${pl.toUpperCase()} Test`, msg);
+    } catch {
+      setChannelTestStatus((prev) => ({ ...prev, [pl]: { ok: false, msg: 'Network error' } }));
+    } finally {
+      setTestingPlatform(null);
+    }
+  };
+
+  const handleRunCycleNow = async () => {
+    setIsRunningCycleNow(true);
+    try {
+      const res = await fetch('/api/social/run-cycle-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = await res.json().catch(() => ({}));
+      await syncStoreFromServer();
+      addToast(
+        res.ok ? 'success' : 'error',
+        at('অটো-পোস্টার সাইকেল সম্পন্ন', 'Auto-Poster Cycle Completed'),
+        data?.dispatchedCount !== undefined
+          ? `${data.dispatchedCount} dispatched · ${data.createdCount || 0} auto-generated`
+          : data?.message || ''
+      );
+    } catch {
+      addToast('error', at('সাইকেল রান ব্যর্থ', 'Cycle Run Failed'), '');
+    } finally {
+      setIsRunningCycleNow(false);
+    }
+  };
 
   const handleToggleProductSelection = (pid: string) => {
     setSelectedProductIds((prev) => (prev.includes(pid) ? prev.filter((x) => x !== pid) : [...prev, pid]));
@@ -127,73 +192,86 @@ export const SocialAutoScheduler: React.FC = () => {
     setIsGenerating(true);
     try {
       const baseMs = new Date(scheduleDatetime).getTime() || Date.now() + 15 * 60 * 1000;
+      const targetPlatforms: SocialPlatform[] =
+        !publishSingleIntoEditor && scheduleAllFour
+          ? ['facebook', 'instagram', 'tiktok', 'youtube']
+          : [selectedPlatform];
       let createdCount = 0;
 
       for (let i = 0; i < targets.length; i++) {
         const prod = targets[i];
-        const prodUrl = getProductCanonicalUrl(prod);
-        const res = await fetch('/api/ai/social-caption', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            platform: selectedPlatform,
-            product: {
-              title: prod.title,
-              titleBn: prod.titleBn,
-              price: prod.price,
-              originalPrice: prod.originalPrice,
-              category: prod.category,
-              description: prod.description || prod.descriptionBn
-            },
+        const rawUrl = getProductCanonicalUrl(prod);
+        for (let pIdx = 0; pIdx < targetPlatforms.length; pIdx++) {
+          const plat = targetPlatforms[pIdx];
+          const prodUrl = utmCampaignTag.trim()
+            ? `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}utm_source=${plat}&utm_medium=social_auto&utm_campaign=${encodeURIComponent(utmCampaignTag.trim())}`
+            : rawUrl;
+          const res = await fetch('/api/ai/social-caption', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              platform: plat,
+              product: {
+                title: prod.title,
+                titleBn: prod.titleBn,
+                price: prod.price,
+                originalPrice: prod.originalPrice,
+                category: prod.category,
+                description: prod.description || prod.descriptionBn
+              },
+              productUrl: prodUrl,
+              lang: adminLang
+            })
+          });
+          const json = await res.json().catch(() => null);
+          const aiPost = json?.post || json;
+
+          const genTitle = aiPost?.title || prod.title;
+          const genCaption =
+            aiPost?.caption ||
+            `${prod.titleBn || prod.title}\nঅফার মূল্য: ৳${prod.price}\nঅর্ডার লিংক: ${prodUrl}`;
+          const genTags: string[] = Array.isArray(aiPost?.hashtags)
+            ? aiPost.hashtags
+            : ['#BuyOneBD', '#BangladeshShopping', '#CashOnDelivery'];
+
+          if (publishSingleIntoEditor && i === 0 && pIdx === 0) {
+            setEditingPostId(null);
+            setDraftPlatform(plat);
+            setDraftTitle(genTitle);
+            setDraftCaption(genCaption);
+            setDraftHashtags(genTags.join(' '));
+            setDraftMediaUrl(prod.images?.[0] || '');
+            setDraftProductUrl(prodUrl);
+            addToast('success', at('AI পোস্ট ড্রাফট তৈরি!', 'AI Draft Ready!'), genTitle);
+            break;
+          }
+
+          const schedIso = new Date(
+            baseMs + (i * Math.max(1, staggerHours) + pIdx * 0.5) * 3600 * 1000
+          ).toISOString();
+          addSocialPost({
+            platform: plat,
+            productId: prod.id,
+            productTitle: prod.title,
             productUrl: prodUrl,
-            lang: adminLang
-          })
-        });
-        const json = await res.json().catch(() => null);
-        const aiPost = json?.post || json;
-
-        const genTitle = aiPost?.title || prod.title;
-        const genCaption =
-          aiPost?.caption ||
-          `${prod.titleBn || prod.title}\nঅফার মূল্য: ৳${prod.price}\nঅর্ডার লিংক: ${prodUrl}`;
-        const genTags: string[] = Array.isArray(aiPost?.hashtags)
-          ? aiPost.hashtags
-          : ['#BuyOneBD', '#BangladeshShopping', '#CashOnDelivery'];
-
-        if (publishSingleIntoEditor && i === 0) {
-          setEditingPostId(null);
-          setDraftPlatform(selectedPlatform);
-          setDraftTitle(genTitle);
-          setDraftCaption(genCaption);
-          setDraftHashtags(genTags.join(' '));
-          setDraftMediaUrl(prod.images?.[0] || '');
-          setDraftProductUrl(prodUrl);
-          addToast('success', at('AI পোস্ট ড্রাফট তৈরি!', 'AI Draft Ready!'), genTitle);
-          break;
+            title: genTitle,
+            caption: genCaption,
+            hashtags: genTags,
+            imageUrl: prod.images?.[0] || '',
+            scheduledAt: schedIso,
+            status: 'scheduled',
+            autoGenerated: true
+          });
+          createdCount++;
         }
-
-        const schedIso = new Date(baseMs + i * Math.max(1, staggerHours) * 3600 * 1000).toISOString();
-        addSocialPost({
-          platform: selectedPlatform,
-          productId: prod.id,
-          productTitle: prod.title,
-          productUrl: prodUrl,
-          title: genTitle,
-          caption: genCaption,
-          hashtags: genTags,
-          imageUrl: prod.images?.[0] || '',
-          scheduledAt: schedIso,
-          status: 'scheduled',
-          autoGenerated: true
-        });
-        createdCount++;
+        if (publishSingleIntoEditor && i === 0) break;
       }
 
       if (!publishSingleIntoEditor && createdCount > 0) {
         addToast(
           'success',
           at(`${createdCount}টি অটো পোস্ট শিডিউল সম্পন্ন!`, `Scheduled ${createdCount} AI Social Posts!`),
-          selectedPlatform.toUpperCase()
+          scheduleAllFour ? 'ALL 4 PLATFORMS' : selectedPlatform.toUpperCase()
         );
       }
     } catch {
@@ -291,14 +369,25 @@ export const SocialAutoScheduler: React.FC = () => {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => saveSettingsChanges(at('সংরক্ষিত!', 'Saved!'), at('সোশ্যাল অটো-পোস্ট সেটিংস সেভ হয়েছে।', 'Social channel settings saved.'))}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
-        >
-          <Save className="w-4 h-4" />
-          <span>{at('চ্যানেল সেটিংস সেভ করুন', 'Save Channel Config')}</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={isRunningCycleNow}
+            onClick={handleRunCycleNow}
+            className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-60 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRunningCycleNow ? 'animate-spin' : ''}`} />
+            <span>{isRunningCycleNow ? at('পোস্ট হচ্ছে...', 'Running Cycle...') : at('এখনই অটো সাইকেল চালান', 'Run Auto-Poster Cycle Now')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => saveSettingsChanges(at('সংরক্ষিত!', 'Saved!'), at('সোশ্যাল অটো-পোস্ট সেটিংস সেভ হয়েছে।', 'Social channel settings saved.'))}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+          >
+            <Save className="w-4 h-4" />
+            <span>{at('চ্যানেল সেটিংস সেভ করুন', 'Save Channel Config')}</span>
+          </button>
+        </div>
       </div>
 
       {/* 1. 4-Platform Connection & Auto-Pilot Cadence Cards */}
@@ -358,28 +447,47 @@ export const SocialAutoScheduler: React.FC = () => {
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
-                <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-bold text-emerald-300">
-                  <input
-                    type="checkbox"
-                    checked={cfg.autoPostEnabled}
-                    onChange={(e) => updateChannelCfg(pl.id, { autoPostEnabled: e.target.checked })}
-                    className="w-3.5 h-3.5 accent-emerald-500 rounded"
-                  />
-                  <span>{at('অটো-পোস্ট চালু', 'Auto-Post')}</span>
-                </label>
-                <div className="flex items-center gap-1 text-[11px] text-slate-400">
-                  <span>{at('প্রতি', 'Every')}</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={72}
-                    value={cfg.intervalHours}
-                    onChange={(e) => updateChannelCfg(pl.id, { intervalHours: Math.max(1, Number(e.target.value) || 6) })}
-                    className="w-12 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-white font-mono text-center"
-                  />
-                  <span>h</span>
+              <div className="pt-2 border-t border-slate-800 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-bold text-emerald-300">
+                    <input
+                      type="checkbox"
+                      checked={cfg.autoPostEnabled}
+                      onChange={(e) => updateChannelCfg(pl.id, { autoPostEnabled: e.target.checked })}
+                      className="w-3.5 h-3.5 accent-emerald-500 rounded"
+                    />
+                    <span>{at('অটো-পোস্ট চালু', 'Auto-Post')}</span>
+                  </label>
+                  <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                    <span>{at('প্রতি', 'Every')}</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={72}
+                      value={cfg.intervalHours}
+                      onChange={(e) => updateChannelCfg(pl.id, { intervalHours: Math.max(1, Number(e.target.value) || 6) })}
+                      className="w-12 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-white font-mono text-center"
+                    />
+                    <span>h</span>
+                  </div>
                 </div>
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    disabled={testingPlatform === pl.id}
+                    onClick={() => handleTestChannelConnection(pl.id)}
+                    className="w-full py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {testingPlatform === pl.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                    <span>{testingPlatform === pl.id ? 'Testing...' : at('কানেকশন টেস্ট', 'Test Connection')}</span>
+                  </button>
+                </div>
+                {channelTestStatus[pl.id] && (
+                  <p className={`text-[10px] font-semibold flex items-center gap-1 ${channelTestStatus[pl.id]?.ok ? 'text-emerald-400' : 'text-amber-300'}`}>
+                    {channelTestStatus[pl.id]?.ok ? <CheckCircle2 className="w-3 h-3 shrink-0" /> : <AlertCircle className="w-3 h-3 shrink-0" />}
+                    <span className="truncate">{channelTestStatus[pl.id]?.msg}</span>
+                  </p>
+                )}
               </div>
             </div>
           );
@@ -402,22 +510,36 @@ export const SocialAutoScheduler: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {PLATFORMS.map((pl) => (
-              <button
-                key={pl.id}
-                type="button"
-                onClick={() => setSelectedPlatform(pl.id)}
-                className={`py-2 px-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 border cursor-pointer transition-colors ${
-                  selectedPlatform === pl.id
-                    ? 'bg-emerald-600 border-emerald-500 text-white'
-                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                }`}
-              >
-                {renderPlatformIcon(pl.id, 'w-3.5 h-3.5')}
-                <span>{pl.id.toUpperCase()}</span>
-              </button>
-            ))}
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {PLATFORMS.map((pl) => (
+                <button
+                  key={pl.id}
+                  type="button"
+                  onClick={() => {
+                    setScheduleAllFour(false);
+                    setSelectedPlatform(pl.id);
+                  }}
+                  className={`py-2 px-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 border cursor-pointer transition-colors ${
+                    !scheduleAllFour && selectedPlatform === pl.id
+                      ? 'bg-emerald-600 border-emerald-500 text-white'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {renderPlatformIcon(pl.id, 'w-3.5 h-3.5')}
+                  <span>{pl.id.toUpperCase()}</span>
+                </button>
+              ))}
+            </div>
+            <label className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer text-[11px] font-bold text-amber-300">
+              <input
+                type="checkbox"
+                checked={scheduleAllFour}
+                onChange={(e) => setScheduleAllFour(e.target.checked)}
+                className="w-4 h-4 accent-emerald-500 rounded"
+              />
+              <span>{at('একসাথে ৪টি প্ল্যাটফর্মেই শিডিউল করুন (FB + IG + TikTok + YouTube)', 'Auto-Schedule Across All 4 Platforms Together (FB + IG + TikTok + YT)')}</span>
+            </label>
           </div>
 
           <div className="space-y-1.5">
@@ -474,7 +596,7 @@ export const SocialAutoScheduler: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <div>
               <label className="block text-[10px] text-slate-400 mb-1">{at('প্রথম পোস্টের সময়', 'First Post Time')}</label>
               <input
@@ -485,7 +607,7 @@ export const SocialAutoScheduler: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-[10px] text-slate-400 mb-1">{at('বাল্ক পোস্ট বিরতি (ঘন্টা)', 'Stagger Interval (Hours)')}</label>
+              <label className="block text-[10px] text-slate-400 mb-1">{at('বিরতি (ঘন্টা)', 'Stagger (Hours)')}</label>
               <input
                 type="number"
                 min={1}
@@ -495,6 +617,35 @@ export const SocialAutoScheduler: React.FC = () => {
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono"
               />
             </div>
+            <div>
+              <label className="block text-[10px] text-slate-400 mb-1">{at('UTM ক্যাম্পেইন ট্যাগ', 'UTM Campaign Tag')}</label>
+              <input
+                type="text"
+                value={utmCampaignTag}
+                onChange={(e) => setUtmCampaignTag(e.target.value)}
+                placeholder="auto_social"
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-emerald-400 font-mono"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+            <span className="text-slate-400 font-bold">{at('BD প্রাইম-টাইম প্রিসেট:', 'BD Prime Time:')}</span>
+            {[
+              { label: '10:00 AM', h: 10, m: 0 },
+              { label: '02:00 PM', h: 14, m: 0 },
+              { label: '08:00 PM Prime', h: 20, m: 0 },
+              { label: '10:30 PM Late', h: 22, m: 30 }
+            ].map((pr) => (
+              <button
+                key={pr.label}
+                type="button"
+                onClick={() => applyPrimeTimePreset(pr.h, pr.m)}
+                className="px-2 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-sky-300 font-bold cursor-pointer"
+              >
+                {pr.label}
+              </button>
+            ))}
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -769,6 +920,25 @@ export const SocialAutoScheduler: React.FC = () => {
                           </span>
                         )}
                       </div>
+                      {(post.dispatchLog || post.externalPostId || post.errorNote) && (
+                        <div className="flex flex-wrap items-center gap-2 pt-0.5 text-[10px] font-mono">
+                          {post.externalPostId && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                              Post ID: {post.externalPostId}
+                            </span>
+                          )}
+                          {post.dispatchLog && (
+                            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                              {post.dispatchLog}
+                            </span>
+                          )}
+                          {post.errorNote && (
+                            <span className="px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                              {post.errorNote}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -782,6 +952,17 @@ export const SocialAutoScheduler: React.FC = () => {
                       <Send className="w-3 h-3" />
                       <span>{dispatchingId === post.id ? '...' : at('এখনই পোস্ট', 'Publish Now')}</span>
                     </button>
+                    {post.productUrl && (
+                      <a
+                        href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(post.productUrl)}&quote=${encodeURIComponent(`${post.title}\n\n${post.caption}`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 rounded-lg bg-sky-950/70 hover:bg-sky-800 border border-sky-700 text-sky-300"
+                        title="Share Direct on Facebook"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
                     <button
                       type="button"
                       onClick={() =>

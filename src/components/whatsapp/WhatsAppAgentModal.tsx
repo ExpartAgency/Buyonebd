@@ -82,6 +82,10 @@ export const WhatsAppAgentModal: React.FC = () => {
   const [leadQuery, setLeadQuery] = useState('');
   const [isSubmittingLead, setIsSubmittingLead] = useState(false);
   const [leadSubmittedOk, setLeadSubmittedOk] = useState(false);
+  const [leadError, setLeadError] = useState('');
+  const leadNameRef = useRef<HTMLInputElement>(null);
+  const leadPhoneRef = useRef<HTMLInputElement>(null);
+  const leadQueryRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -100,7 +104,22 @@ export const WhatsAppAgentModal: React.FC = () => {
   const handleLeadInquirySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmittingLead) return;
-    if (!leadName.trim() || !leadPhone.trim() || !leadQuery.trim()) return;
+    setLeadError('');
+    if (!leadName.trim()) {
+      setLeadError(t('অনুগ্রহ করে আপনার নাম লিখুন।', 'Please enter your name.'));
+      leadNameRef.current?.focus();
+      return;
+    }
+    if (leadPhone.replace(/[^\d]/g, '').length < 6) {
+      setLeadError(t('অনুগ্রহ করে সঠিক মোবাইল নম্বর লিখুন।', 'Please enter a valid mobile number.'));
+      leadPhoneRef.current?.focus();
+      return;
+    }
+    if (!leadQuery.trim()) {
+      setLeadError(t('অনুগ্রহ করে আপনার প্রশ্নটি লিখুন।', 'Please write your question or query.'));
+      leadQueryRef.current?.focus();
+      return;
+    }
     setIsSubmittingLead(true);
     try {
       const attachedProduct = whatsappProductDraft?.product;
@@ -108,7 +127,7 @@ export const WhatsAppAgentModal: React.FC = () => {
         name: leadName.trim(),
         countryCode: leadCountryCode,
         phone: leadPhone.trim(),
-        message: leadQuery.trim(),
+        query: leadQuery.trim(),
         productId: attachedProduct?.id,
         productTitle: attachedProduct ? (lang === 'bn' ? attachedProduct.titleBn || attachedProduct.title : attachedProduct.title) : undefined,
         productUrl: whatsappProductDraft?.productUrl
@@ -117,8 +136,12 @@ export const WhatsAppAgentModal: React.FC = () => {
         setLeadSubmittedOk(true);
         setWaName(leadName.trim());
         setWaPhone(`${leadCountryCode}${leadPhone.trim().replace(/^0+/, '')}`);
-        await sendCustomerChatMessage(`[Inquiry from ${leadName.trim()} (${leadCountryCode} ${leadPhone.trim()})]: ${leadQuery.trim()}`);
+        sendCustomerChatMessage(`[Inquiry from ${leadName.trim()} (${leadCountryCode} ${leadPhone.trim()})]: ${leadQuery.trim()}`).catch(() => {});
+      } else {
+        setLeadError(res.error || t('বার্তা পাঠানো যায়নি, আবার চেষ্টা করুন।', 'Could not send inquiry. Please try again.'));
       }
+    } catch {
+      setLeadError(t('সার্ভারে সংযোগ ব্যর্থ হয়েছে।', 'Connection failed. Please try again.'));
     } finally {
       setIsSubmittingLead(false);
     }
@@ -485,19 +508,28 @@ export const WhatsAppAgentModal: React.FC = () => {
               {showInquiryForm ? (
                 <div className="flex-1 overflow-y-auto p-5 bg-white dark:bg-slate-900 flex flex-col justify-between">
                   {!leadSubmittedOk ? (
-                    <form onSubmit={handleLeadInquirySubmit} className="space-y-4">
+                    <form onSubmit={handleLeadInquirySubmit} noValidate className="space-y-3.5">
                       <h3 className="text-center font-extrabold text-base sm:text-lg text-slate-900 dark:text-white leading-snug px-2">
                         {t('আমরা আপনাকে কীভাবে সাহায্য করতে পারি?', 'Let us know if we can help you with anything at all.')}
                       </h3>
 
+                      {leadError && (
+                        <div className="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-xs font-semibold text-rose-700 dark:text-rose-300">
+                          {leadError}
+                        </div>
+                      )}
+
                       <div className="space-y-3">
                         <input
+                          ref={leadNameRef}
                           type="text"
-                          required
                           value={leadName}
-                          onChange={(e) => setLeadName(e.target.value)}
+                          onChange={(e) => {
+                            setLeadName(e.target.value);
+                            if (leadError) setLeadError('');
+                          }}
                           placeholder={t('আপনার নাম লিখুন', 'Enter your name')}
-                          className="w-full px-3.5 py-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#4CAF50] focus:ring-1 focus:ring-[#4CAF50]"
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#4CAF50] focus:ring-1 focus:ring-[#4CAF50]"
                         />
 
                         <div className="flex items-stretch gap-2">
@@ -505,7 +537,7 @@ export const WhatsAppAgentModal: React.FC = () => {
                             value={leadCountryCode}
                             onChange={(e) => setLeadCountryCode(e.target.value)}
                             aria-label="Country code"
-                            className="w-24 px-2 py-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#4CAF50]"
+                            className="w-24 px-2 py-2.5 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#4CAF50]"
                           >
                             <option value="+880">+880</option>
                             <option value="+91">+91</option>
@@ -516,34 +548,59 @@ export const WhatsAppAgentModal: React.FC = () => {
                             <option value="+60">+60</option>
                           </select>
                           <input
+                            ref={leadPhoneRef}
                             type="tel"
-                            required
                             value={leadPhone}
-                            onChange={(e) => setLeadPhone(e.target.value)}
+                            onChange={(e) => {
+                              setLeadPhone(e.target.value);
+                              if (leadError) setLeadError('');
+                            }}
                             placeholder={t('আপনার মোবাইল নম্বর লিখুন', 'Enter your mobile number')}
-                            className="flex-1 px-3.5 py-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#4CAF50] focus:ring-1 focus:ring-[#4CAF50]"
+                            className="flex-1 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#4CAF50] focus:ring-1 focus:ring-[#4CAF50]"
                           />
                         </div>
 
-                        <div className="relative pb-6">
+                        <div className="space-y-2">
                           <textarea
-                            rows={4}
-                            required
+                            ref={leadQueryRef}
+                            rows={3}
                             value={leadQuery}
-                            onChange={(e) => setLeadQuery(e.target.value)}
+                            onChange={(e) => {
+                              setLeadQuery(e.target.value);
+                              if (leadError) setLeadError('');
+                            }}
                             placeholder={t('আপনার প্রশ্নটি এখানে লিখুন', 'Write your query here')}
-                            className="w-full px-3.5 py-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#4CAF50] focus:ring-1 focus:ring-[#4CAF50] resize-none"
+                            className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#4CAF50] focus:ring-1 focus:ring-[#4CAF50] resize-none"
                           />
 
-                          <button
-                            type="submit"
-                            disabled={isSubmittingLead || !leadName.trim() || !leadPhone.trim() || !leadQuery.trim()}
-                            title={t('পাঠান', 'Send Query')}
-                            aria-label="Send Inquiry"
-                            className="absolute right-2 bottom-0 w-12 h-12 rounded-full bg-[#4CAF50] hover:bg-[#43A047] disabled:opacity-50 text-white shadow-lg flex items-center justify-center cursor-pointer transition-transform active:scale-95"
-                          >
-                            <Send className="w-5 h-5" />
-                          </button>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {[
+                                t('দাম ও ডিসকাউন্ট?', 'Price & Discount?'),
+                                t('ডেলিভারি সময়?', 'Delivery time?'),
+                                t('অর্ডার স্ট্যাটাস', 'Order status')
+                              ].map((chip) => (
+                                <button
+                                  key={chip}
+                                  type="button"
+                                  onClick={() => setLeadQuery((prev) => (prev.trim() ? `${prev.trim()} — ${chip}` : chip))}
+                                  className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-[11px] font-semibold text-slate-600 dark:text-slate-300 cursor-pointer"
+                                >
+                                  + {chip}
+                                </button>
+                              ))}
+                            </div>
+
+                            <button
+                              type="submit"
+                              disabled={isSubmittingLead}
+                              title={t('পাঠান', 'Send Query')}
+                              aria-label="Send Inquiry"
+                              className="w-11 h-11 rounded-full bg-[#4CAF50] hover:bg-[#43A047] disabled:opacity-60 text-white shadow-md flex items-center justify-center cursor-pointer transition-transform active:scale-95 shrink-0"
+                            >
+                              <Send className="w-5 h-5" />
+                            </button>
+                          </div>
                         </div>
                       </div>
 
