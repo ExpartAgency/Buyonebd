@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ShoppingBag, User, Menu, Globe, ChevronDown, ChevronRight, Layers, Sparkles, Search, X } from 'lucide-react';
+import { ShoppingBag, User, Menu, Globe, ChevronDown, ChevronRight, Layers, Sparkles, Search, X, ThumbsUp } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 
 interface NavbarProps {
@@ -20,6 +20,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
     selectCategoryFilter,
     searchQuery,
     setSearchQuery,
+    storeSortBy,
+    selectDiscoveryTab,
     storeSubView,
     activeView,
     setActiveView,
@@ -430,6 +432,76 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
           </button>
         </form>
       </div>
+
+      {/* Discovery Quick-Filter Sub-Header (Best-Selling Items | 5-Star Rated | New In | Categories) */}
+      {activeView === 'store' && (
+        <div className="border-t border-slate-100 dark:border-slate-800/80 bg-white dark:bg-slate-900">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 flex items-center gap-5 sm:gap-7 overflow-x-auto scrollbar-none">
+            <button
+              type="button"
+              onClick={() => selectDiscoveryTab('best_selling')}
+              className={`inline-flex items-center gap-1.5 text-xs sm:text-[13px] font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                storeSortBy === 'best_selling'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-slate-900 dark:text-slate-100 hover:text-emerald-600 dark:hover:text-emerald-400'
+              }`}
+            >
+              <ThumbsUp className="w-4 h-4 fill-current shrink-0" />
+              <span>{t('সর্বোচ্চ বিক্রিত', 'Best-Selling Items')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => selectDiscoveryTab('rating')}
+              className={`inline-flex items-center gap-1.5 text-xs sm:text-[13px] font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                storeSortBy === 'rating'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-slate-900 dark:text-slate-100 hover:text-emerald-600 dark:hover:text-emerald-400'
+              }`}
+            >
+              <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="none" aria-hidden="true">
+                <path
+                  d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"
+                  fill="currentColor"
+                />
+                <path
+                  d="m12 7.2 1.32 2.68 2.96.43-2.14 2.09.51 2.95L12 13.95l-2.65 1.4.51-2.95-2.14-2.09 2.96-.43L12 7.2Z"
+                  fill="#ffffff"
+                />
+              </svg>
+              <span>{t('৫-স্টার রেটেড', '5-Star Rated')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => selectDiscoveryTab('new_in')}
+              className={`inline-flex items-center gap-1 text-xs sm:text-[13px] font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                storeSortBy === 'new_in'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-slate-900 dark:text-slate-100 hover:text-emerald-600 dark:hover:text-emerald-400'
+              }`}
+            >
+              <span>{t('নতুন কালেকশন', 'New In')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.innerWidth < 1024 && onOpenMobileCategories) {
+                  onOpenMobileCategories();
+                } else {
+                  setIsCategoryDropdownOpen((prev) => !prev);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+              }}
+              className="inline-flex items-center gap-1 text-xs sm:text-[13px] font-bold text-slate-900 dark:text-slate-100 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <span>{t('ক্যাটাগরি', 'Categories')}</span>
+              <ChevronDown className="w-4 h-4 shrink-0" />
+            </button>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

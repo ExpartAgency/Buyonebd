@@ -52,6 +52,9 @@ export const GlobalMarketingHub: React.FC = () => {
     dispatchBulkSmsCampaign,
     updateBulkSmsLog,
     deleteBulkSmsLog,
+    autoMarketingLogs,
+    isRunningAutoMarketingSuite,
+    runAutoMarketingSuiteNow,
     addToast,
     adminLang
   } = useStore();
@@ -743,6 +746,194 @@ export const GlobalMarketingHub: React.FC = () => {
           <span>{at('মার্কেটিং সেটিংস সেভ করুন', 'Save Marketing Config')}</span>
         </button>
       </div>
+
+      {/* 0. Zero-Time 100% Automatic AI Marketing Autopilot Suite (Set & Forget) */}
+      {(() => {
+        const suiteCfg = settings.autoMarketingSuite || {
+          enabled: true,
+          autoSocialDailyPoster: true,
+          autoNewProductLaunchBlitz: true,
+          autoAbandonedCartWinback: true,
+          autoPriceDropAndRestockAlerts: true,
+          autoSeoProductEnricher: true,
+          autoWeeklyBlogPublisher: true,
+          autoReviewSocialProofPromo: true,
+          cycleIntervalHours: 6
+        };
+        const patchSuite = (patch: Partial<typeof suiteCfg>) => {
+          updateSettings(
+            {
+              autoMarketingSuite: {
+                ...suiteCfg,
+                ...patch
+              }
+            },
+            { commit: true }
+          );
+        };
+        const suiteToggles: { key: keyof typeof suiteCfg; labelBn: string; labelEn: string; subBn: string; subEn: string }[] = [
+          {
+            key: 'autoSocialDailyPoster',
+            labelBn: 'অটো ডেইলি ৪-প্ল্যাটফর্ম সোশ্যাল পোস্টার',
+            labelEn: 'Auto Daily FB, IG, TikTok & YouTube Poster',
+            subBn: 'নিজস্ব স্টক পণ্য থেকে অটো ক্যাপশন ও হ্যাশট্যাগ তৈরি করে শিডিউল/পোস্ট করে',
+            subEn: 'Auto-creates localized promo posts for your in-stock own products'
+          },
+          {
+            key: 'autoNewProductLaunchBlitz',
+            labelBn: 'নতুন পণ্য যোগ করলেই অটো লঞ্চ ব্লিটজ',
+            labelEn: 'Instant New-Product Launch Social Blitz',
+            subBn: 'স্টোরে নতুন পণ্য অ্যাড করার সাথে সাথেই ৪টি প্ল্যাটফর্মে লঞ্চ পোস্ট শিডিউল হয়',
+            subEn: 'Automatically queues 4-channel promo posts whenever you add a product'
+          },
+          {
+            key: 'autoAbandonedCartWinback',
+            labelBn: 'অসম্পূর্ণ অর্ডার AI রিকভারি মেসেজ',
+            labelEn: 'Auto Abandoned-Cart AI Win-Back Scripts',
+            subBn: 'চেকআউট অসম্পূর্ণ থাকা ক্রেতাদের জন্য অটো বাংলা WhatsApp অফার তৈরি রাখে',
+            subEn: 'Auto-prepares personalized Bangla recovery offers for uncompleted orders'
+          },
+          {
+            key: 'autoPriceDropAndRestockAlerts',
+            labelBn: 'দাম কমলে ও রিস্টক হলে অটো ক্রেতা অ্যালার্ট',
+            labelEn: 'Auto Price-Drop & Back-in-Stock Alerts',
+            subBn: 'দাম কমালে বা স্টক দিলে ওয়েটলিস্ট কাস্টমারদের অটো নোটিফাই করা হয়',
+            subEn: 'Matches price-alert & waitlist leads instantly on price/stock updates'
+          },
+          {
+            key: 'autoSeoProductEnricher',
+            labelBn: 'অটো গুগল SEO টাইটেল ও মেটা অপ্টিমাইজার',
+            labelEn: 'Auto Product Google SEO Optimizer',
+            subBn: 'ফাঁকা থাকা SEO টাইটেল, ডেসক্রিপশন ও স্লাগ AI দিয়ে স্বয়ংক্রিয়ভাবে পূরণ করে',
+            subEn: 'Auto-fills missing SEO titles, meta descriptions & keywords on products'
+          },
+          {
+            key: 'autoWeeklyBlogPublisher',
+            labelBn: 'অটো অর্গানিক SEO বায়িং-গাইড ব্লগ',
+            labelEn: 'Auto SEO Buying-Guide Blog Publisher',
+            subBn: 'ফ্রি গুগল ট্রাফিক আনতে নিজস্ব পণ্যের ওপর বাংলা-ইংরেজি ব্লগ পোস্ট পাবলিশ করে',
+            subEn: 'Publishes helpful bilingual buying guides linking your own products'
+          },
+          {
+            key: 'autoReviewSocialProofPromo',
+            labelBn: '৫-স্টার রিভিউ থেকে অটো সোশ্যাল প্রুফ পোস্ট',
+            labelEn: 'Auto 4★/5★ Review -> Social Proof Post',
+            subBn: 'নতুন রিভিউ অনুমোদন করলেই সোশ্যাল মিডিয়ার জন্য প্রোমো পোস্ট তৈরি হয়',
+            subEn: 'Turns approved 4-5 star buyer reviews into scheduled social proof posts'
+          }
+        ];
+
+        return (
+          <div className="p-5 rounded-2xl bg-slate-900 border border-emerald-500/40 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <h4 className="text-base font-black text-white flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-emerald-400" />
+                  <span>
+                    {at(
+                      '১০০% স্বয়ংক্রিয় AI মার্কেটিং অটোপাইলট (সময় ছাড়াই অটো চলবে)',
+                      'Zero-Time Automatic AI Marketing Engine (Set & Forget)'
+                    )}
+                  </span>
+                </h4>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {at(
+                    'একবার অন করে রাখলেই ব্যাকগ্রাউন্ডে অটো সোশ্যাল পোস্ট, SEO অপ্টিমাইজেশন, অসম্পূর্ণ অর্ডার রিকভারি, রিস্টক অ্যালার্ট এবং ব্লগ পাবলিশ হতে থাকবে।',
+                    'Runs hands-free in the background across social channels, Google SEO, abandoned checkouts, waitlist alerts, and organic blogs.'
+                  )}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <label className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs font-bold text-white cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(suiteCfg.enabled)}
+                    onChange={(e) => patchSuite({ enabled: e.target.checked })}
+                    className="accent-emerald-500"
+                  />
+                  <span>{suiteCfg.enabled ? at('অটোপাইলট চালু', 'Autopilot ON') : at('বন্ধ', 'Paused')}</span>
+                </label>
+
+                <select
+                  value={suiteCfg.cycleIntervalHours || 6}
+                  onChange={(e) => patchSuite({ cycleIntervalHours: Number(e.target.value) })}
+                  className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs font-bold text-slate-200"
+                >
+                  <option value={4}>{at('প্রতি ৪ ঘণ্টায়', 'Every 4 Hours')}</option>
+                  <option value={6}>{at('প্রতি ৬ ঘণ্টায়', 'Every 6 Hours')}</option>
+                  <option value={12}>{at('প্রতি ১২ ঘণ্টায়', 'Every 12 Hours')}</option>
+                  <option value={24}>{at('প্রতিদিন (২৪ ঘণ্টা)', 'Daily (24h)')}</option>
+                </select>
+
+                <button
+                  type="button"
+                  disabled={isRunningAutoMarketingSuite}
+                  onClick={() => runAutoMarketingSuiteNow({ includeBlog: true })}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-200" />
+                  <span>
+                    {isRunningAutoMarketingSuite
+                      ? at('অটো মার্কেটিং চলছে...', 'Running Auto-Marketing...')
+                      : at('এখনই অটো-মার্কেটিং রান করুন', 'Run Auto-Marketing Now')}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2.5 text-xs">
+              {suiteToggles.map((item) => {
+                const isChecked = suiteCfg[item.key] !== false;
+                return (
+                  <label
+                    key={String(item.key)}
+                    className={`p-3 rounded-xl border transition-colors cursor-pointer flex items-start gap-2.5 ${
+                      isChecked
+                        ? 'bg-emerald-950/25 border-emerald-500/35 text-white'
+                        : 'bg-slate-950 border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(e) => patchSuite({ [item.key]: e.target.checked } as any)}
+                      className="mt-0.5 accent-emerald-500 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="font-bold leading-snug">{at(item.labelBn, item.labelEn)}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">{at(item.subBn, item.subEn)}</p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            {autoMarketingLogs.length > 0 && (
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-300">
+                  <span>{at('সাম্প্রতিক স্বয়ংক্রিয় AI মার্কেটিং কার্যক্রম', 'Recent Automatic AI Marketing Actions')}</span>
+                  {suiteCfg.lastAutoSweepAt && (
+                    <span className="text-[10px] font-mono text-emerald-400">
+                      Last Run: {new Date(suiteCfg.lastAutoSweepAt).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+                <div className="max-h-32 overflow-y-auto divide-y divide-slate-800/70">
+                  {autoMarketingLogs.slice(0, 6).map((log) => (
+                    <div key={log.id} className="py-1.5 flex items-center justify-between gap-2 text-[11px]">
+                      <span className="text-slate-200 truncate">{log.summary}</span>
+                      <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                        {new Date(log.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* 1. Live Google Merchant & Meta Catalog Feeds + UTM Builder */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">

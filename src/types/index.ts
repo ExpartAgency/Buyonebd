@@ -252,6 +252,8 @@ export interface AbandonedCart {
   recovered: boolean;
   recoveredAt?: string;
   whatsappSent: boolean;
+  aiRecoveryMessage?: string;
+  aiRecoveryPreparedAt?: string;
 }
 
 export interface UserStaff {
@@ -608,6 +610,30 @@ export interface StoreSettings {
   urgencySettings?: UrgencySettings;
   socialAutoConfig?: Record<SocialPlatform, SocialChannelConfig>;
   onlyShowMyProducts?: boolean;
+  autoMarketingSuite?: AutoMarketingSuiteSettings;
+}
+
+export interface AutoMarketingSuiteSettings {
+  enabled: boolean;
+  autoSocialDailyPoster: boolean;
+  autoNewProductLaunchBlitz: boolean;
+  autoAbandonedCartWinback: boolean;
+  autoPriceDropAndRestockAlerts: boolean;
+  autoSeoProductEnricher: boolean;
+  autoWeeklyBlogPublisher: boolean;
+  autoReviewSocialProofPromo: boolean;
+  cycleIntervalHours: number;
+  lastAutoSweepAt?: string;
+  lastBlogAutoAt?: string;
+}
+
+export interface AutoMarketingLogEntry {
+  id: string;
+  trigger: 'background_daemon' | 'manual_sweep' | 'product_launch' | 'restock_alert' | 'review_approved';
+  summary: string;
+  details: string[];
+  actionsCount: number;
+  timestamp: string;
 }
 
 export interface ViewerCounterSettings {

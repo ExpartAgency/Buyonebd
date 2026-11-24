@@ -1447,6 +1447,17 @@ export const INITIAL_SETTINGS: StoreSettings = {
       intervalHours: 24
     }
   },
+  autoMarketingSuite: {
+    enabled: true,
+    autoSocialDailyPoster: true,
+    autoNewProductLaunchBlitz: true,
+    autoAbandonedCartWinback: true,
+    autoPriceDropAndRestockAlerts: true,
+    autoSeoProductEnricher: true,
+    autoWeeklyBlogPublisher: true,
+    autoReviewSocialProofPromo: true,
+    cycleIntervalHours: 6
+  },
   affiliateSettings: {
     enabled: true,
     autoApprove: false,

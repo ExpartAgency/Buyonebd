@@ -2049,6 +2049,9 @@ app.post('/api/store/sync', (req, res) => {
     aiTeamBriefings: Array.isArray(req.body?.aiTeamBriefings)
       ? unionMergeById(req.body.aiTeamBriefings, current.aiTeamBriefings)
       : current.aiTeamBriefings || [],
+    autoMarketingLogs: Array.isArray(req.body?.autoMarketingLogs)
+      ? unionMergeById(req.body.autoMarketingLogs, current.autoMarketingLogs)
+      : current.autoMarketingLogs || [],
     users: preserveNonEmpty(users, current.users),
     mediaLibrary: preserveNonEmpty(mediaLibrary, current.mediaLibrary),
     productViews: current.productViews || {},
@@ -5298,102 +5301,413 @@ ${JSON.stringify(metricsSummary)}`,
   }
 });
 
+// Autonomous Zero-Time AI Marketing Sweep Engine (Social, Abandoned Cart Winback, SEO Enricher, Auto Blog)
+let isAutoMarketingSweepRunning = false;
+async function runAutonomousMarketingSweep(
+  saved: any,
+  options: { trigger?: 'background_daemon' | 'manual_sweep'; forceAll?: boolean; includeBlog?: boolean; lang?: 'bn' | 'en' } = {}
+): Promise<{
+  changed: boolean;
+  actionsTaken: string[];
+  dispatchedSocialCount: number;
+  createdSocialCount: number;
+  enrichedSeoCount: number;
+  preparedCartsCount: number;
+  createdBlogCount: number;
+  logEntry?: any;
+}> {
+  if (isAutoMarketingSweepRunning) {
+    return {
+      changed: false,
+      actionsTaken: [],
+      dispatchedSocialCount: 0,
+      createdSocialCount: 0,
+      enrichedSeoCount: 0,
+      preparedCartsCount: 0,
+      createdBlogCount: 0
+    };
+  }
+  isAutoMarketingSweepRunning = true;
+  const actionsTaken: string[] = [];
+  let changed = false;
+  let dispatchedSocialCount = 0;
+  let createdSocialCount = 0;
+  let enrichedSeoCount = 0;
+  let preparedCartsCount = 0;
+  let createdBlogCount = 0;
+
+  try {
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+    saved.settings = saved.settings || {};
+    const suiteCfg = {
+      enabled: true,
+      autoSocialDailyPoster: true,
+      autoNewProductLaunchBlitz: true,
+      autoAbandonedCartWinback: true,
+      autoPriceDropAndRestockAlerts: true,
+      autoSeoProductEnricher: true,
+      autoWeeklyBlogPublisher: true,
+      autoReviewSocialProofPromo: true,
+      cycleIntervalHours: 6,
+      ...(saved.settings.autoMarketingSuite || {})
+    };
+    const channels = saved.settings?.socialAutoConfig || {};
+    const baseOrigin = (saved.settings?.seoSettings?.canonicalUrl || 'https://buyonebd.com').replace(/\/+$/, '');
+    const storeName = saved.settings?.storeName || 'BuyOne BD';
+    const lang = options.lang === 'en' ? 'en' : 'bn';
+
+    // 1. Always dispatch overdue scheduled social posts
+    const posts: any[] = Array.isArray(saved.socialPosts) ? [...saved.socialPosts] : [];
+    for (let i = 0; i < posts.length; i++) {
+      const post = posts[i];
+      if (post?.status === 'scheduled' && new Date(post.scheduledAt).getTime() <= nowMs) {
+        const resDisp = await dispatchSocialPostItem(post, channels[post.platform]);
+        posts[i] = {
+          ...post,
+          status: resDisp.ok ? 'published' : 'failed',
+          publishedAt: resDisp.ok ? nowIso : post.publishedAt,
+          errorNote: resDisp.error || '',
+          externalPostId: resDisp.externalPostId || post.externalPostId,
+          dispatchLog: resDisp.dispatchLog || post.dispatchLog
+        };
+        dispatchedSocialCount++;
+        changed = true;
+      }
+    }
+    if (dispatchedSocialCount > 0) {
+      actionsTaken.push(`Dispatched ${dispatchedSocialCount} due social posts`);
+    }
+
+    const suiteActive = Boolean(suiteCfg.enabled) || Boolean(options.forceAll);
+    const catalog: any[] = getVisibleCatalogProducts(saved).filter((p: any) => Number(p.stock ?? 0) > 0);
+
+    // 2. Recurring or Master Auto Daily 4-Platform Social Poster (own products only)
+    if (catalog.length > 0 && (suiteActive || saved.settings?.socialAutoConfig)) {
+      const sweepIntervalMs = Math.max(1, Number(suiteCfg.cycleIntervalHours) || 6) * 3600 * 1000;
+      const lastSuiteSocialMs = suiteCfg.lastAutoSweepAt ? new Date(suiteCfg.lastAutoSweepAt).getTime() : 0;
+      const isSuiteSocialDue =
+        Boolean(options.forceAll) || (suiteActive && suiteCfg.autoSocialDailyPoster && nowMs - lastSuiteSocialMs >= sweepIntervalMs);
+
+      for (const platform of ['facebook', 'instagram', 'tiktok', 'youtube']) {
+        const ch = channels[platform] || { enabled: true };
+        const chIntervalMs = Math.max(1, Number(ch.intervalHours) || 6) * 3600 * 1000;
+        const chLastMs = ch.lastAutoPostedAt ? new Date(ch.lastAutoPostedAt).getTime() : 0;
+        const perChannelDue = Boolean(ch.enabled && ch.autoPostEnabled && nowMs - chLastMs >= chIntervalMs);
+        if (!isSuiteSocialDue && !perChannelDue) continue;
+        if (options.forceAll && ch.enabled === false) continue;
+
+        // Prioritize products not recently posted on this platform
+        const recentProductIds = new Set(
+          posts.filter((p) => p.platform === platform).slice(0, Math.min(4, Math.max(0, catalog.length - 1))).map((p) => p.productId)
+        );
+        const candidates = catalog.filter((p) => !recentProductIds.has(p.id));
+        const pool = candidates.length > 0 ? candidates : catalog;
+        const pick = pool[Math.floor(Math.random() * pool.length)];
+        const slug = pick.seo?.slug || pick.id;
+        const productUrl = `${baseOrigin}/?product=${encodeURIComponent(slug)}&utm_source=${platform}&utm_medium=auto_ai`;
+
+        let gen = {
+          title: pick.titleBn || pick.title,
+          caption: `🔥 ${pick.titleBn || pick.title}\n💰 স্পেশাল দাম: মাত্র ৳${pick.price}!\n🚚 সারা বাংলাদেশের ৬৪ জেলায় ক্যাশ অন ডেলিভারি।\n👉 অর্ডার লিংক: ${productUrl}`,
+          hashtags: ['#BuyOneBD', '#BangladeshShopping', '#CashOnDelivery', `#${platform}`],
+          productUrl
+        };
+        if (process.env.GEMINI_API_KEY) {
+          try {
+            gen = await generateSocialCaptionWithGemini(pick, platform, lang, storeName, baseOrigin);
+          } catch {}
+        }
+
+        const newPost: any = {
+          id: `soc-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
+          platform,
+          productId: pick.id,
+          productTitle: pick.title,
+          title: gen.title,
+          caption: gen.caption,
+          hashtags: gen.hashtags,
+          productUrl: gen.productUrl,
+          imageUrl: pick.images?.[0] || '',
+          scheduledAt: nowIso,
+          status: 'scheduled',
+          autoGenerated: true,
+          createdAt: nowIso
+        };
+        const disp = await dispatchSocialPostItem(newPost, ch);
+        newPost.status = disp.ok ? 'published' : 'failed';
+        newPost.publishedAt = disp.ok ? nowIso : undefined;
+        newPost.errorNote = disp.error || '';
+        newPost.externalPostId = disp.externalPostId || '';
+        newPost.dispatchLog = disp.dispatchLog || '';
+        posts.unshift(newPost);
+        saved.settings.socialAutoConfig = saved.settings.socialAutoConfig || {};
+        saved.settings.socialAutoConfig[platform] = {
+          ...(saved.settings.socialAutoConfig[platform] || { enabled: true }),
+          lastAutoPostedAt: nowIso
+        };
+        createdSocialCount++;
+        changed = true;
+      }
+      if (createdSocialCount > 0) {
+        actionsTaken.push(`Auto-created & posted ${createdSocialCount} promo posts`);
+      }
+    }
+    saved.socialPosts = posts.slice(0, 300);
+
+    // 3. Autonomous Abandoned Cart AI Recovery Message Preparation
+    if (suiteActive && suiteCfg.autoAbandonedCartWinback && Array.isArray(saved.abandonedCarts)) {
+      const carts: any[] = [...saved.abandonedCarts];
+      for (let i = 0; i < carts.length && preparedCartsCount < 3; i++) {
+        const cart = carts[i];
+        if (!cart || cart.recovered || cart.aiRecoveryMessage) continue;
+        const ageMs = nowMs - new Date(cart.createdAt || nowMs).getTime();
+        if (!options.forceAll && ageMs < 15 * 60 * 1000) continue;
+
+        const firstItemTitle = cart.items?.[0]?.product?.titleBn || cart.items?.[0]?.product?.title || 'আপনার পছন্দের পণ্য';
+        let recoveryText = `আসসালামু আলাইকুম ${cart.customerName || 'স্যার/ম্যাম'}, ${storeName}-এ "${firstItemTitle}" অর্ডারটি অসম্পূর্ণ রয়েছে। এখনই অর্ডার করলে কোড WELCOME100 দিয়ে ৳১০০ ছাড় + সারাদেশে ক্যাশ অন ডেলিভারি পাবেন!`;
+        if (process.env.GEMINI_API_KEY) {
+          try {
+            const aiResp = await ai.models.generateContent({
+              model: 'gemini-4-hydrogen',
+              contents: `Write a friendly 2-sentence Bengali WhatsApp checkout recovery message for customer "${cart.customerName || 'Valued Buyer'}" who left "${firstItemTitle}" (Total: ৳${cart.total || 0}) in cart at ${storeName}. Include coupon WELCOME100 and Cash on Delivery across 64 districts. Return plain text only.`
+            });
+            if (aiResp.text?.trim()) recoveryText = aiResp.text.trim();
+          } catch {}
+        }
+        carts[i] = {
+          ...cart,
+          aiRecoveryMessage: recoveryText,
+          aiRecoveryPreparedAt: nowIso
+        };
+        preparedCartsCount++;
+        changed = true;
+      }
+      if (preparedCartsCount > 0) {
+        saved.abandonedCarts = carts;
+        actionsTaken.push(`Prepared AI win-back copy for ${preparedCartsCount} abandoned checkouts`);
+      }
+    }
+
+    // 4. Autonomous Product SEO Enricher (fills missing metaTitle / metaDescription without modifying price/stock)
+    if (suiteActive && suiteCfg.autoSeoProductEnricher && Array.isArray(saved.products) && process.env.GEMINI_API_KEY) {
+      const missingSeo = catalog.filter(
+        (p) => !p?.seo?.metaTitle?.trim() || !p?.seo?.metaDescription?.trim()
+      ).slice(0, 2);
+      for (const prod of missingSeo) {
+        try {
+          const aiResp = await ai.models.generateContent({
+            model: 'gemini-4-hydrogen',
+            contents: `Generate high-CTR Google SEO metadata for Bangladesh e-commerce store "${storeName}":
+Product: ${prod.title} (${prod.titleBn || ''})
+Price: ৳${prod.price}
+Category: ${prod.category}
+Description: ${String(prod.description || prod.descriptionBn || '').slice(0, 300)}`,
+            config: {
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  metaTitle: { type: Type.STRING },
+                  metaDescription: { type: Type.STRING },
+                  keywords: { type: Type.STRING }
+                },
+                required: ['metaTitle', 'metaDescription', 'keywords']
+              }
+            }
+          });
+          const seoObj = JSON.parse(aiResp.text || '{}');
+          if (seoObj.metaTitle) {
+            const slugBase = String(prod.seo?.slug || prod.title || prod.id)
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/(^-|-$)/g, '') || prod.id;
+            saved.products = saved.products.map((item: any) =>
+              item.id === prod.id
+                ? {
+                    ...item,
+                    seo: {
+                      ...(item.seo || {}),
+                      slug: item.seo?.slug || slugBase,
+                      metaTitle: String(seoObj.metaTitle).slice(0, 75),
+                      metaDescription: String(seoObj.metaDescription || '').slice(0, 165),
+                      keywords: String(seoObj.keywords || '')
+                    }
+                  }
+                : item
+            );
+            enrichedSeoCount++;
+            changed = true;
+          }
+        } catch {}
+      }
+      if (enrichedSeoCount > 0) {
+        actionsTaken.push(`Optimized Google SEO tags for ${enrichedSeoCount} products`);
+      }
+    }
+
+    // 5. Autonomous SEO Buying-Guide Blog Publisher (drives free organic search traffic)
+    if (suiteActive && suiteCfg.autoWeeklyBlogPublisher && catalog.length > 0 && process.env.GEMINI_API_KEY) {
+      const lastBlogMs = suiteCfg.lastBlogAutoAt ? new Date(suiteCfg.lastBlogAutoAt).getTime() : 0;
+      const blogIntervalMs = 72 * 3600 * 1000;
+      const shouldRunBlog =
+        (nowMs - lastBlogMs >= blogIntervalMs) ||
+        (Boolean(options.forceAll) && options.includeBlog !== false && nowMs - lastBlogMs >= 12 * 3600 * 1000);
+      if (shouldRunBlog) {
+        try {
+          const featured = catalog[Math.floor(Math.random() * catalog.length)];
+          const aiResp = await ai.models.generateContent({
+            model: 'gemini-4-hydrogen',
+            contents: `Write a helpful SEO e-commerce buying guide article for ${storeName} in Bangladesh featuring "${featured.titleBn || featured.title}" (Price ৳${featured.price}, Category: ${featured.category}). Provide bilingual English and Bengali fields so customers find us on Google Search.`,
+            config: {
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  titleBn: { type: Type.STRING },
+                  excerpt: { type: Type.STRING },
+                  excerptBn: { type: Type.STRING },
+                  content: { type: Type.STRING },
+                  contentBn: { type: Type.STRING },
+                  seoDescription: { type: Type.STRING }
+                },
+                required: ['title', 'titleBn', 'excerpt', 'excerptBn', 'content', 'contentBn']
+              }
+            }
+          });
+          const b = JSON.parse(aiResp.text || '{}');
+          if (b.title && b.content) {
+            const slug = `${String(b.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 48)}-${Date.now().toString().slice(-4)}`;
+            const newBlog = {
+              id: `blog-${Date.now()}`,
+              title: b.title,
+              titleBn: b.titleBn || b.title,
+              slug,
+              excerpt: b.excerpt || '',
+              excerptBn: b.excerptBn || b.excerpt || '',
+              content: b.content,
+              contentBn: b.contentBn || b.content,
+              category: featured.category || 'Shopping Guide',
+              categoryBn: featured.categoryBn || 'শপিং গাইড',
+              coverImage: featured.images?.[0] || '',
+              author: `${storeName} AI Editorial`,
+              tags: ['BuyOneBD', 'Bangladesh', featured.category || 'Guide'],
+              seoTitle: b.title,
+              seoDescription: b.seoDescription || b.excerpt || '',
+              readTimeMinutes: 3,
+              viewsCount: 1,
+              isPublished: true,
+              publishedAt: nowIso,
+              createdAt: nowIso,
+              updatedAt: nowIso
+            };
+            saved.blogs = [newBlog, ...(Array.isArray(saved.blogs) ? saved.blogs : [])].slice(0, 120);
+            suiteCfg.lastBlogAutoAt = nowIso;
+            createdBlogCount++;
+            changed = true;
+            actionsTaken.push(`Published organic SEO buying guide: "${newBlog.title}"`);
+          }
+        } catch {}
+      }
+    }
+
+    let logEntry: any = null;
+    if (changed || options.forceAll) {
+      suiteCfg.lastAutoSweepAt = nowIso;
+      saved.settings.autoMarketingSuite = suiteCfg;
+      const totalActions =
+        dispatchedSocialCount + createdSocialCount + enrichedSeoCount + preparedCartsCount + createdBlogCount;
+      logEntry = {
+        id: `amlog-${Date.now()}-${Math.floor(10 + Math.random() * 89)}`,
+        trigger: options.trigger || 'background_daemon',
+        summary:
+          actionsTaken.length > 0
+            ? actionsTaken.join(' · ')
+            : 'Checked all auto-marketing channels — all queues up to date.',
+        details: actionsTaken,
+        actionsCount: totalActions,
+        timestamp: nowIso
+      };
+      saved.autoMarketingLogs = [logEntry, ...(Array.isArray(saved.autoMarketingLogs) ? saved.autoMarketingLogs : [])].slice(0, 60);
+      saveStoreData(saved);
+      broadcastWs({
+        type: 'automarketing:sync',
+        autoMarketingLogs: saved.autoMarketingLogs,
+        socialPosts: saved.socialPosts,
+        blogs: saved.blogs,
+        settings: saved.settings
+      });
+      if (dispatchedSocialCount > 0 || createdSocialCount > 0) {
+        broadcastWs({ type: 'social:sync', socialPosts: saved.socialPosts });
+      }
+    }
+
+    return {
+      changed,
+      actionsTaken,
+      dispatchedSocialCount,
+      createdSocialCount,
+      enrichedSeoCount,
+      preparedCartsCount,
+      createdBlogCount,
+      logEntry
+    };
+  } finally {
+    isAutoMarketingSweepRunning = false;
+  }
+}
+
+app.get('/api/ai/auto-marketing/logs', (_req, res) => {
+  const saved = loadStoreData() || {};
+  return res.json({ success: true, logs: saved.autoMarketingLogs || [] });
+});
+
+app.post('/api/ai/auto-marketing/run-now', async (req, res) => {
+  try {
+    const saved = loadStoreData() || {};
+    if (req.body?.suiteSettingsOverride && typeof req.body.suiteSettingsOverride === 'object') {
+      saved.settings = {
+        ...(saved.settings || {}),
+        autoMarketingSuite: {
+          ...(saved.settings?.autoMarketingSuite || {}),
+          ...req.body.suiteSettingsOverride
+        }
+      };
+    }
+    const result = await runAutonomousMarketingSweep(saved, {
+      trigger: 'manual_sweep',
+      forceAll: true,
+      includeBlog: req.body?.includeBlog !== false,
+      lang: req.body?.lang === 'en' ? 'en' : 'bn'
+    });
+    const latest = loadStoreData() || saved;
+    return res.json({
+      success: true,
+      ...result,
+      autoMarketingLogs: latest.autoMarketingLogs || [],
+      socialPosts: latest.socialPosts || [],
+      blogs: latest.blogs || [],
+      products: latest.products || [],
+      abandonedCarts: latest.abandonedCarts || [],
+      settings: latest.settings || {}
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Autonomous marketing sweep failed' });
+  }
+});
+
 // Mount Vite or serve static files + Attach WebSocket Server (/ws)
 async function startServer() {
   const httpServer = http.createServer(app);
   const wss = new WebSocketServer({ noServer: true });
 
-  // Background 30-second Social Auto-Scheduler & Recurring Auto-Poster
+  // Background 30-second Autonomous AI Marketing & Social Auto-Scheduler Daemon
   setInterval(async () => {
     try {
       const saved = loadStoreData();
       if (!saved) return;
-      let changed = false;
-      const nowMs = Date.now();
-
-      // 1. Dispatch any due scheduled posts
-      const posts: any[] = Array.isArray(saved.socialPosts) ? saved.socialPosts : [];
-      const channels = saved.settings?.socialAutoConfig || {};
-      const nextPosts = [...posts];
-      for (let i = 0; i < nextPosts.length; i++) {
-        const post = nextPosts[i];
-        if (post?.status === 'scheduled' && new Date(post.scheduledAt).getTime() <= nowMs) {
-          const ch = channels[post.platform];
-          const res = await dispatchSocialPostItem(post, ch);
-          nextPosts[i] = {
-            ...post,
-            status: res.ok ? 'published' : 'failed',
-            publishedAt: res.ok ? new Date().toISOString() : undefined,
-            errorNote: res.error || '',
-            externalPostId: res.externalPostId || post.externalPostId,
-            dispatchLog: res.dispatchLog || post.dispatchLog
-          };
-          changed = true;
-        }
-      }
-      if (changed) {
-        saved.socialPosts = nextPosts;
-        saveStoreData(saved);
-        broadcastWs({ type: 'social:sync', socialPosts: saved.socialPosts });
-      }
-
-      // 2. Check recurring autoPostEnabled channels to queue fresh product posts automatically (only visible owner products)
-      const catalog: any[] = getVisibleCatalogProducts(saved).filter((p: any) => (p.stock ?? 0) > 0);
-      if (catalog.length > 0 && saved.settings?.socialAutoConfig) {
-        for (const platform of ['facebook', 'instagram', 'tiktok', 'youtube']) {
-          const ch = saved.settings.socialAutoConfig[platform];
-          if (!ch?.enabled || !ch?.autoPostEnabled) continue;
-          const intervalMs = Math.max(1, Number(ch.intervalHours) || 6) * 3600 * 1000;
-          const lastMs = ch.lastAutoPostedAt ? new Date(ch.lastAutoPostedAt).getTime() : 0;
-          if (nowMs - lastMs >= intervalMs) {
-            const pick = catalog[Math.floor(Math.random() * catalog.length)];
-            const slug = pick.seo?.slug || pick.id;
-            const productUrl = `${saved.settings?.seoSettings?.canonicalUrl || 'https://buyonebd.com'}/?product=${encodeURIComponent(slug)}&utm_source=${platform}&utm_medium=social_auto`;
-            let gen = {
-              title: pick.titleBn || pick.title,
-              caption: `🔥 ${pick.titleBn || pick.title}\n💰 স্পেশাল দাম: মাত্র ৳${pick.price}!\n🚚 সারা বাংলাদেশের ৬৪ জেলায় ক্যাশ অন ডেলিভারি।\n👉 অর্ডার লিংক: ${productUrl}`,
-              hashtags: ['#BuyOneBD', '#BangladeshShopping', '#CashOnDelivery', `#${platform}`],
-              productUrl
-            };
-            if (process.env.GEMINI_API_KEY) {
-              try {
-                gen = await generateSocialCaptionWithGemini(
-                  pick,
-                  platform,
-                  'bn',
-                  saved.settings?.storeName || 'BuyOne BD',
-                  saved.settings?.seoSettings?.canonicalUrl || 'https://buyonebd.com'
-                );
-              } catch {}
-            }
-            const newPost: any = {
-              id: `soc-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
-              platform,
-              productId: pick.id,
-              productTitle: pick.title,
-              title: gen.title,
-              caption: gen.caption,
-              hashtags: gen.hashtags,
-              productUrl: gen.productUrl,
-              imageUrl: pick.images?.[0] || '',
-              scheduledAt: new Date().toISOString(),
-              status: 'published',
-              autoGenerated: true,
-              publishedAt: new Date().toISOString(),
-              createdAt: new Date().toISOString()
-            };
-            const disp = await dispatchSocialPostItem(newPost, ch);
-            newPost.status = disp.ok ? 'published' : 'failed';
-            newPost.errorNote = disp.error || '';
-            newPost.externalPostId = disp.externalPostId || '';
-            newPost.dispatchLog = disp.dispatchLog || '';
-            saved.socialPosts = [newPost, ...(saved.socialPosts || [])].slice(0, 200);
-            saved.settings.socialAutoConfig[platform].lastAutoPostedAt = new Date().toISOString();
-            saveStoreData(saved);
-            broadcastWs({ type: 'social:sync', socialPosts: saved.socialPosts });
-          }
-        }
-      }
+      await runAutonomousMarketingSweep(saved, { trigger: 'background_daemon', forceAll: false });
     } catch {}
   }, 30 * 1000);
 
@@ -5419,6 +5733,7 @@ async function startServer() {
           aiReviewQueue: initialSaved.aiReviewQueue || [],
           chatInquiries: initialSaved.chatInquiries || [],
           socialPosts: initialSaved.socialPosts || [],
+          autoMarketingLogs: initialSaved.autoMarketingLogs || [],
           productViews: initialSaved.productViews || {},
           activeClients: Math.max(1, activeWsClients.size)
         })

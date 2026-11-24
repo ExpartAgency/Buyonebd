@@ -71,10 +71,13 @@ function StoreMainContent() {
     logoutReseller,
     logoutWholesaler,
     openPartnerPortal,
+    storeSortBy: sortBy,
+    setStoreSortBy: setSortBy,
+    getProductRealStats,
+    productViews,
     addToast
   } = useStore();
 
-  const [sortBy, setSortBy] = useState<'default' | 'price_asc' | 'price_desc' | 'rating' | 'discount'>('default');
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [waitlistProduct, setWaitlistProduct] = useState<Product | null>(null);
 
@@ -324,19 +327,45 @@ function StoreMainContent() {
       return matchesSearch && matchesCat && matchesSub;
     });
 
-    if (sortBy === 'price_asc') {
+    if (sortBy === 'best_selling') {
+      return [...list].sort((a, b) => {
+        const sa = getProductRealStats(a.id);
+        const sb = getProductRealStats(b.id);
+        if (sb.soldCount !== sa.soldCount) return sb.soldCount - sa.soldCount;
+        const va = productViews[a.id] || 0;
+        const vb = productViews[b.id] || 0;
+        if (vb !== va) return vb - va;
+        return (sb.averageRating || b.rating || 0) - (sa.averageRating || a.rating || 0);
+      });
+    } else if (sortBy === 'new_in') {
+      const getProdRecency = (p: Product, idx: number) => {
+        const m = String(p.id || '').match(/(\d{4,})$/);
+        return m ? Number(m[1]) : idx;
+      };
+      const idxMap = new Map(list.map((p, i) => [p.id, i]));
+      return [...list].sort(
+        (a, b) => getProdRecency(b, idxMap.get(b.id) || 0) - getProdRecency(a, idxMap.get(a.id) || 0)
+      );
+    } else if (sortBy === 'price_asc') {
       return [...list].sort((a, b) => a.price - b.price);
     } else if (sortBy === 'price_desc') {
       return [...list].sort((a, b) => b.price - a.price);
     } else if (sortBy === 'rating') {
-      return [...list].sort((a, b) => b.rating - a.rating);
+      return [...list].sort((a, b) => {
+        const sa = getProductRealStats(a.id);
+        const sb = getProductRealStats(b.id);
+        const ra = sa.reviewsCount > 0 ? sa.averageRating : a.rating || 0;
+        const rb = sb.reviewsCount > 0 ? sb.averageRating : b.rating || 0;
+        if (rb !== ra) return rb - ra;
+        return sb.reviewsCount - sa.reviewsCount;
+      });
     } else if (sortBy === 'discount') {
       return [...list].sort(
         (a, b) => b.originalPrice - b.price - (a.originalPrice - a.price)
       );
     }
     return list;
-  }, [products, searchQuery, selectedCategory, selectedSubcategory, sortBy]);
+  }, [products, searchQuery, selectedCategory, selectedSubcategory, sortBy, productViews, orders]);
 
   // Last 5 clicked products tracked in localStorage
   const recentlyViewedProducts = useMemo(
@@ -819,7 +848,13 @@ function StoreMainContent() {
           <div>
             <h2 className="font-display text-lg sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
               {selectedCategory === 'all'
-                ? storeSubView === 'products'
+                ? sortBy === 'best_selling'
+                  ? t('সর্বোচ্চ বিক্রিত পণ্যসমূহ', 'Best-Selling Items')
+                  : sortBy === 'rating'
+                  ? t('৫-স্টার রেটেড ও রিভিউড পণ্য', '5-Star Rated Products')
+                  : sortBy === 'new_in'
+                  ? t('নতুন কালেকশন (New In)', 'New In Arrivals')
+                  : storeSubView === 'products'
                   ? t('সকল পণ্য ক্যাটালগ', 'Complete Product Catalog')
                   : t(
                       settings.cmsTexts?.trendingTitleBn || 'হট ও ট্রেন্ডিং কালেকশন',
@@ -863,9 +898,11 @@ function StoreMainContent() {
               className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold px-3 py-2 rounded-xl shadow-xs cursor-pointer hover:border-slate-300 focus:outline-none"
             >
               <option value="default">{t('সাজান: ডিফল্ট', 'Sort: Default')}</option>
+              <option value="best_selling">{t('সর্বোচ্চ বিক্রিত (Best-Selling)', 'Best-Selling Items')}</option>
+              <option value="rating">{t('৫-স্টার রেটিং ও রিভিউ', '5-Star Rated & Reviews')}</option>
+              <option value="new_in">{t('নতুন কালেকশন (New In)', 'New In Arrivals')}</option>
               <option value="price_asc">{t('দাম: কম থেকে বেশি', 'Price: Low to High')}</option>
               <option value="price_desc">{t('দাম: বেশি থেকে কম', 'Price: High to Low')}</option>
-              <option value="rating">{t('সেরা রেটিং ও রিভিউ', 'Top Rated & Reviews')}</option>
               <option value="discount">{t('সর্বোচ্চ ডিসকাউন্ট %', 'Biggest Discount')}</option>
             </select>
           </div>
