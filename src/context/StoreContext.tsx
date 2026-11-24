@@ -1737,6 +1737,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     saveStorefrontSettingsToFirestore(settingsRef.current, categoriesRef.current, nextSliders).catch(() => {});
   };
 
+  const REMOVED_TEST_PRODUCT_IDS = new Set(['prod-39414', 'prod-92667']);
+  const isRemovedTestProduct = (p?: Partial<Product> | null): boolean => {
+    if (!p) return false;
+    if (p.id && REMOVED_TEST_PRODUCT_IDS.has(String(p.id))) return true;
+    const t = String(p.title || '').trim();
+    const tb = String(p.titleBn || '').trim();
+    return /^test(\s*(product|#)?\s*\d*)?$/i.test(t) || /^test(\s*(product|#)?\s*\d*)?$/i.test(tb);
+  };
+  const deletedProductIdsRef = useRef<Set<string>>(new Set(REMOVED_TEST_PRODUCT_IDS));
+
   // Products (merge seo/subcategory defaults for legacy localStorage items)
   const [products, setProducts] = useState<Product[]>(() => {
     try {
@@ -1744,16 +1754,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (saved) {
         const parsed: Product[] = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((p) => {
-            const initMatch = INITIAL_PRODUCTS.find((ip) => ip.id === p.id);
-            if (!initMatch) return p;
-            return {
-              ...initMatch,
-              ...p,
-              subcategory: p.subcategory || initMatch.subcategory,
-              seo: p.seo || initMatch.seo
-            };
-          });
+          return parsed
+            .filter((p) => p && !isRemovedTestProduct(p))
+            .map((p) => {
+              const initMatch = INITIAL_PRODUCTS.find((ip) => ip.id === p.id);
+              if (!initMatch) return p;
+              return {
+                ...initMatch,
+                ...p,
+                subcategory: p.subcategory || initMatch.subcategory,
+                seo: p.seo || initMatch.seo
+              };
+            });
         }
       }
       return INITIAL_PRODUCTS;
@@ -1908,6 +1920,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const deleteProduct = (id: string) => {
     lastLocalMutationAtRef.current = Date.now();
+    deletedProductIdsRef.current.add(id);
     setProducts((prev) => prev.filter((p) => p.id !== id));
     deleteProductFromFirestore(id).catch(() => {});
     fetch('/api/store/delete-item', {
@@ -1937,6 +1950,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!ids.length) return;
     lastLocalMutationAtRef.current = Date.now();
     const idSet = new Set(ids);
+    ids.forEach((id) => deletedProductIdsRef.current.add(id));
     setProducts((prev) => prev.filter((p) => !idSet.has(p.id)));
     ids.forEach((id) => deleteProductFromFirestore(id).catch(() => {}));
     fetch('/api/store/delete-item', {
@@ -2487,7 +2501,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         fetchBlogPostsFromFirestore(false).catch(() => [])
       ]);
       if (fsProducts.length > 0) {
-        setProducts(fsProducts);
+        fsProducts.filter((p) => isRemovedTestProduct(p)).forEach((tp) => {
+          deletedProductIdsRef.current.add(tp.id);
+          if (auth.currentUser) deleteProductFromFirestore(tp.id).catch(() => {});
+        });
+        const cleanFs = fsProducts.filter((p) => !deletedProductIdsRef.current.has(p.id) && !isRemovedTestProduct(p));
+        if (cleanFs.length > 0) setProducts(cleanFs);
       }
       if (fsMedia.length > 0) {
         setMediaLibrary(fsMedia);
@@ -5648,8 +5667,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           const isRecentlyMutatedLocally = Date.now() - lastLocalMutationAtRef.current < 3000;
           if (!hasHydratedFromServerRef.current || !isRecentlyMutatedLocally) {
+            if (Array.isArray(data.deletedProductIds)) {
+              data.deletedProductIds.forEach((id: string) => {
+                if (id) deletedProductIdsRef.current.add(id);
+              });
+            }
             if (Array.isArray(data.products) && data.products.length > 0) {
-              setProducts(data.products);
+              setProducts(data.products.filter((p: Product) => p && !deletedProductIdsRef.current.has(p.id) && !isRemovedTestProduct(p)));
             }
             if (data.settings && !hasUnsavedSettingsRef.current) {
               const nextMerged = mergeSettings(data.settings);
@@ -5853,9 +5877,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       const fsProducts = await fetchProductsFromFirestore();
       if (fsProducts.length > 0 && Date.now() - lastLocalMutationAtRef.current >= 3000) {
+        fsProducts.filter((p) => isRemovedTestProduct(p)).forEach((tp) => {
+          deletedProductIdsRef.current.add(tp.id);
+          if (auth.currentUser) deleteProductFromFirestore(tp.id).catch(() => {});
+        });
         setProducts((prev) => {
-          const map = new Map(prev.map((p) => [p.id, p]));
-          fsProducts.forEach((p) => map.set(p.id, p));
+          const map = new Map(prev.filter((p) => !deletedProductIdsRef.current.has(p.id) && !isRemovedTestProduct(p)).map((p) => [p.id, p]));
+          fsProducts
+            .filter((p) => !deletedProductIdsRef.current.has(p.id) && !isRemovedTestProduct(p))
+            .forEach((p) => map.set(p.id, p));
           return Array.from(map.values());
         });
       }
@@ -5943,10 +5973,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           snap.docChanges().filter((c) => c.type === 'removed').map((c) => c.doc.id)
         );
         const remoteList = snap.docs.map((d) => ({ ...d.data(), id: d.id } as Product));
+        remoteList.filter((p) => isRemovedTestProduct(p)).forEach((tp) => {
+          deletedProductIdsRef.current.add(tp.id);
+          if (auth.currentUser) deleteProductFromFirestore(tp.id).catch(() => {});
+        });
         setProducts((prev) => {
-          const map = new Map(prev.map((p) => [p.id, p]));
+          const map = new Map(prev.filter((p) => !deletedProductIdsRef.current.has(p.id) && !isRemovedTestProduct(p)).map((p) => [p.id, p]));
           removedIds.forEach((id) => map.delete(id));
-          remoteList.forEach((p) => map.set(p.id, p));
+          remoteList
+            .filter((p) => !deletedProductIdsRef.current.has(p.id) && !isRemovedTestProduct(p))
+            .forEach((p) => map.set(p.id, p));
           return Array.from(map.values());
         });
       },

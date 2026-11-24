@@ -174,13 +174,24 @@ const STARTER_DEMO_PRODUCT_IDS = new Set([
   'prod-008'
 ]);
 
+const REMOVED_TEST_PRODUCT_IDS = new Set(['prod-39414', 'prod-92667']);
+function isLiteralTestProduct(p: any): boolean {
+  if (!p) return false;
+  if (REMOVED_TEST_PRODUCT_IDS.has(String(p.id || ''))) return true;
+  const t = String(p.title || '').trim();
+  const tb = String(p.titleBn || '').trim();
+  return /^test(\s*(product|#)?\s*\d*)?$/i.test(t) || /^test(\s*(product|#)?\s*\d*)?$/i.test(tb);
+}
+
 function getVisibleCatalogProducts(saved: any): any[] {
   const allProducts: any[] = Array.isArray(saved?.products) ? saved.products : [];
   const onlyOwn = saved?.settings?.onlyShowMyProducts !== false;
-  const hasOwnerAdded = allProducts.some((p: any) => p?.id && !STARTER_DEMO_PRODUCT_IDS.has(String(p.id)));
+  const hasOwnerAdded = allProducts.some(
+    (p: any) => p?.id && !STARTER_DEMO_PRODUCT_IDS.has(String(p.id)) && !isLiteralTestProduct(p)
+  );
   const hideStarters = onlyOwn && hasOwnerAdded;
   return allProducts.filter((p: any) => {
-    if (!p || p.isHiddenOnStorefront) return false;
+    if (!p || p.isHiddenOnStorefront || isLiteralTestProduct(p)) return false;
     if (hideStarters && STARTER_DEMO_PRODUCT_IDS.has(String(p.id)) && !p.forceShowOnStorefront) return false;
     return true;
   });
@@ -1991,9 +2002,21 @@ app.post('/api/store/sync', (req, res) => {
     return incoming;
   };
 
+  const deletedProductSet = new Set<string>([
+    ...REMOVED_TEST_PRODUCT_IDS,
+    ...(Array.isArray(current.deletedProductIds) ? current.deletedProductIds : []).map((x: any) => String(x || ''))
+  ]);
+  const sanitizedIncomingProducts = Array.isArray(products)
+    ? products.filter((p: any) => p && !deletedProductSet.has(String(p.id || '')) && !isLiteralTestProduct(p))
+    : products;
+  const sanitizedCurrentProducts = Array.isArray(current.products)
+    ? current.products.filter((p: any) => p && !deletedProductSet.has(String(p.id || '')) && !isLiteralTestProduct(p))
+    : current.products;
+
   const updated = {
     ...current,
-    products: preserveNonEmpty(products, current.products),
+    deletedProductIds: Array.from(deletedProductSet).slice(0, 200),
+    products: preserveNonEmpty(sanitizedIncomingProducts, sanitizedCurrentProducts),
     orders: mergedOrders,
     settings: mergedSettings,
     spinRewards: preserveNonEmpty(spinRewards, current.spinRewards),
@@ -2304,6 +2327,8 @@ app.post('/api/store/delete-item', (req, res) => {
   }
   if (type === 'product') {
     current.products = filterList(current.products);
+    const prevDeleted = Array.isArray(current.deletedProductIds) ? current.deletedProductIds : [];
+    current.deletedProductIds = Array.from(new Set([...prevDeleted, ...Array.from(idSet)])).slice(0, 200);
     saveStoreData(current);
     return res.json({ success: true });
   }
@@ -5105,6 +5130,84 @@ Generate copy in ${targetLang} tailored for each free channel (no paid ads).`;
     return res.json({ success: true, kit });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'AI Free Marketing generation failed' });
+  }
+});
+
+// Multi-Channel Zero-Ad-Spend Free Traffic Pack (/api/ai/free-channel-pack)
+app.post('/api/ai/free-channel-pack', async (req, res) => {
+  try {
+    const { product, storeName = 'BuyOne BD', productUrl = '', whatsapp = '+8801917942662', lang = 'bn' } = req.body || {};
+    if (!product?.title) {
+      return res.status(400).json({ success: false, error: 'Product details required.' });
+    }
+    const baseName = product.titleBn || product.title;
+    const priceStr = `৳${Number(product.price || 0).toLocaleString()}`;
+    const fallbackPack = {
+      bikroyAdTitle: `${baseName} - Brand New Original | ${priceStr} (COD All BD)`,
+      bikroyAdBody: `${baseName}\nPrice: ${priceStr}\nCondition: 100% Brand New & Authentic\nDelivery: 64 Districts Cash on Delivery (0 Advance).\nOrder Directly: ${productUrl}?utm_source=bikroy&utm_medium=free_listing\nWhatsApp: ${whatsapp}`,
+      whatsappChannelPost: `🔥 *আজকের ফ্ল্যাশ অফার — ${storeName}*\n✅ *${baseName}*\n💥 অফার মূল্য: *${priceStr}*\n🚚 ৬৪ জেলায় ক্যাশ অন ডেলিভারি (প্রোডাক্ট দেখে পেমেন্ট)\n👉 সরাসরি অর্ডার: ${productUrl}?utm_source=wa_channel&utm_medium=organic`,
+      telegramChannelPost: `⚡ **${baseName}**\n💰 Price: **${priceStr}**\n🛡 7-Day Replacement Warranty + All BD Home Delivery\n🛒 Order Now: ${productUrl}?utm_source=telegram&utm_medium=free_channel`,
+      fbGroupVariant1: `আসসালামু আলাইকুম, যাদের "${baseName}" প্রয়োজন, কোনো অগ্রিম টাকা ছাড়াই মাত্র ${priceStr}-এ হাতে পেয়ে চেক করে নিতে পারেন! ইনবক্স করুন অথবা সরাসরি দেখুন: ${productUrl}?utm_source=fb_group&utm_medium=organic`,
+      fbGroupVariant2: `ঢাকা সহ সারাদেশে হোম ডেলিভারিতে পাচ্ছেন অরিজিনাল ${baseName} মাত্র ${priceStr}! কমেন্টে "PRICE" বা "ORDER" লিখলেই লিংক ও ডেলিভারি ডিটেইলস দিয়ে দিচ্ছি।`,
+      googleBusinessUpdate: `${baseName} now available at ${storeName} for ${priceStr} with fast Cash on Delivery across Dhaka & all 64 districts of Bangladesh. Order online or via WhatsApp: ${productUrl}?utm_source=google_gbp&utm_medium=organic`,
+      commentToOrderReply: `ধন্যবাদ কমেন্টের জন্য! "${baseName}" এর অফার মূল্য মাত্র ${priceStr}। ৬৪ জেলায় ক্যাশ অন ডেলিভারি পেতে এই লিংকে ক্লিক করে ১ মিনিটে অর্ডার কনফার্ম করুন: ${productUrl}?utm_source=fb_comment&utm_medium=organic`,
+      quoraPinterestPinText: `Best ${product.title} Price in Bangladesh (${priceStr}) — Genuine quality reviewed & verified with 64-district Cash on Delivery at ${storeName}: ${productUrl}?utm_source=pinterest_seo&utm_medium=organic`
+    };
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({ success: true, pack: fallbackPack, source: 'template' });
+    }
+
+    const targetLang = lang === 'en' ? 'English' : 'Natural Bangladeshi Bengali mixed with crisp e-commerce terms';
+    const prompt = `You are a Zero-Budget Organic E-Commerce Growth Expert in Bangladesh for "${storeName}".
+Generate ready-to-post copy (spending ৳0 on ads) for this product across 6 free sales channels:
+Product: ${baseName} (${product.title})
+Price: ${priceStr} (Regular: ৳${product.originalPrice || product.price})
+URL: ${productUrl}
+WhatsApp: ${whatsapp}
+Terms: Cash on Delivery across 64 districts of Bangladesh, check product before paying, 7-day replacement warranty.
+Language: ${targetLang}. Make Facebook Group variants sound natural and non-spammy, and include UTM query tags (?utm_source=...) on URLs.`;
+
+    try {
+      const aiResp = await ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              bikroyAdTitle: { type: Type.STRING },
+              bikroyAdBody: { type: Type.STRING },
+              whatsappChannelPost: { type: Type.STRING },
+              telegramChannelPost: { type: Type.STRING },
+              fbGroupVariant1: { type: Type.STRING },
+              fbGroupVariant2: { type: Type.STRING },
+              googleBusinessUpdate: { type: Type.STRING },
+              commentToOrderReply: { type: Type.STRING },
+              quoraPinterestPinText: { type: Type.STRING }
+            },
+            required: [
+              'bikroyAdTitle',
+              'bikroyAdBody',
+              'whatsappChannelPost',
+              'telegramChannelPost',
+              'fbGroupVariant1',
+              'fbGroupVariant2',
+              'googleBusinessUpdate',
+              'commentToOrderReply',
+              'quoraPinterestPinText'
+            ]
+          }
+        }
+      });
+      const pack = JSON.parse(aiResp.text || '{}');
+      return res.json({ success: true, pack: { ...fallbackPack, ...pack }, source: 'ai' });
+    } catch {
+      return res.json({ success: true, pack: fallbackPack, source: 'fallback' });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Free channel generation failed' });
   }
 });
 

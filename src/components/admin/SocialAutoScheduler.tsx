@@ -28,6 +28,7 @@ import {
 import { useStore } from '../../context/StoreContext';
 import { SocialPlatform, SocialScheduledPost, SocialChannelConfig } from '../../types';
 import { BulkSectionShell, BulkCommandBar } from './BulkSectionShell';
+import { SocialSetupVideoPlayer } from './SocialSetupVideoPlayer';
 
 const PLATFORMS: {
   id: SocialPlatform;
@@ -100,6 +101,13 @@ export const SocialAutoScheduler: React.FC = () => {
     (visibleStoreProducts[0]?.id || products[0]?.id) ? [visibleStoreProducts[0]?.id || products[0].id] : []
   );
   const [showSetupGuide, setShowSetupGuide] = useState(true);
+  const [highlightedPlatform, setHighlightedPlatform] = useState<SocialPlatform | null>(null);
+  const handleFocusPlatformCard = (plat: SocialPlatform) => {
+    setHighlightedPlatform(plat);
+    const el = document.getElementById(`social-card-${plat}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => setHighlightedPlatform(null), 3200);
+  };
   const [copiedFeedUrl, setCopiedFeedUrl] = useState<string | null>(null);
   const [scheduleDatetime, setScheduleDatetime] = useState<string>(() => {
     const dt = new Date(Date.now() + 15 * 60 * 1000);
@@ -443,12 +451,17 @@ export const SocialAutoScheduler: React.FC = () => {
               </h4>
               <p className="text-[11px] text-slate-400 mt-0.5">
                 {at(
-                  'সার্ভার প্রতি ৩০ সেকেন্ডে আপনার সময়মতো কিউ করা পোস্ট চেক করে। নিচের যেকোনো ১টি মেথড ব্যবহার করে অটো-পাবলিশ চালু করুন:',
-                  'Our background scheduler checks queued posts every 30 seconds. Pick any of the 3 zero-cost methods below:'
+                  'সার্ভার প্রতি ৩০ সেকেন্ডে আপনার সময়মতো কিউ করা পোস্ট চেক করে। ভিডিও টিউটোরিয়াল দেখুন অথবা নিচের যেকোনো ১টি মেথড দিয়ে সেটআপ করুন:',
+                  'Our background scheduler checks queued posts every 30 seconds. Watch the full interactive video tutorial or follow any of the 3 zero-cost methods below:'
                 )}
               </p>
             </div>
           </div>
+
+          <SocialSetupVideoPlayer
+            adminLang={adminLang}
+            onFocusPlatform={handleFocusPlatformCard}
+          />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Method A: Direct Meta Graph API (FB + IG Free) */}
@@ -576,7 +589,15 @@ export const SocialAutoScheduler: React.FC = () => {
         {PLATFORMS.map((pl) => {
           const cfg = socialCfg[pl.id];
           return (
-            <div key={pl.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+            <div
+              key={pl.id}
+              id={`social-card-${pl.id}`}
+              className={`p-4 rounded-2xl bg-slate-900 border space-y-3 transition-all ${
+                highlightedPlatform === pl.id
+                  ? 'border-emerald-400 ring-2 ring-emerald-500/40'
+                  : 'border-slate-800'
+              }`}
+            >
               <div className="flex items-center justify-between gap-2">
                 <div className={`flex items-center gap-2 font-black text-sm ${pl.accentClass}`}>
                   {renderPlatformIcon(pl.id, 'w-4 h-4')}
