@@ -14,7 +14,9 @@ import {
   Edit,
   Trash2,
   Save,
-  DollarSign
+  DollarSign,
+  Share2,
+  Zap
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { AITeamDepartmentRole, ExpenseEntry } from '../../types';
@@ -61,9 +63,13 @@ export const AITeamWorkspace: React.FC = () => {
   const {
     orders,
     products,
+    visibleStoreProducts,
     abandonedCarts,
     chatInquiries,
+    updateChatInquiry,
     socialPosts,
+    addSocialPost,
+    getProductCanonicalUrl,
     expenses,
     addExpense,
     updateExpense,
@@ -73,13 +79,29 @@ export const AITeamWorkspace: React.FC = () => {
     isRunningAITeam,
     runAITeamBriefing,
     executeAITeamAction,
+    runFullZeroCostAutopilot,
+    addToast,
     adminLang
   } = useStore();
 
   const at = (bn: string, en: string) => (adminLang === 'en' ? en : bn);
+  const activeCatalog = useMemo(
+    () => (visibleStoreProducts.length > 0 ? visibleStoreProducts : products),
+    [visibleStoreProducts, products]
+  );
 
   const [focusPrompt, setFocusPrompt] = useState('');
   const [fullAutoExecute, setFullAutoExecute] = useState(false);
+  const [isRunningFullSweep, setIsRunningFullSweep] = useState(false);
+  const [teamZeroCostPlan, setTeamZeroCostPlan] = useState<{
+    executiveSummary: string;
+    inquiryReplies: { inquiryId: string; replyText: string }[];
+    featuredProductId: string;
+    promoTitle: string;
+    promoCaption: string;
+    promoHashtags: string[];
+    zeroCostActions: string[];
+  } | null>(null);
 
   // Expense Ledger Form
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
@@ -96,7 +118,7 @@ export const AITeamWorkspace: React.FC = () => {
     const netProfit = grossRevenue - totalExpenses;
     const pendingCount = orders.filter((o) => o.status === 'pending').length;
     const awaitingCourier = orders.filter((o) => (o.status === 'ai_confirmed' || o.status === 'processing') && !o.courier?.trackingCode).length;
-    const lowStock = products.filter((p) => (p.stock ?? 0) <= 8);
+    const lowStock = activeCatalog.filter((p) => (p.stock ?? 0) <= 8);
     const newInqCount = chatInquiries.filter((q) => q.status === 'new').length;
     const unrecoveredCarts = abandonedCarts.filter((c) => !c.recovered).length;
     return {
@@ -109,7 +131,7 @@ export const AITeamWorkspace: React.FC = () => {
       newInqCount,
       unrecoveredCarts
     };
-  }, [orders, expenses, products, chatInquiries, abandonedCarts]);
+  }, [orders, expenses, activeCatalog, chatInquiries, abandonedCarts]);
 
   const latestBriefing = aiTeamBriefings[0] || null;
 
@@ -224,7 +246,85 @@ export const AITeamWorkspace: React.FC = () => {
                 : at('AI ম্যানেজমেন্ট ব্রিফিং তৈরি করুন', 'Generate AI Team Briefing')}
             </span>
           </button>
+          <button
+            type="button"
+            disabled={isRunningFullSweep}
+            onClick={async () => {
+              setIsRunningFullSweep(true);
+              try {
+                const plan = await runFullZeroCostAutopilot();
+                if (plan) setTeamZeroCostPlan(plan);
+              } finally {
+                setIsRunningFullSweep(false);
+              }
+            }}
+            className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-black text-xs flex items-center gap-2 cursor-pointer"
+          >
+            <Zap className="w-4 h-4 text-amber-200" />
+            <span>{isRunningFullSweep ? at('সুইপ চলছে...', 'Sweeping...') : at('৳০ ফুল-স্টোর AI সুইপ', '৳0 Full-Store AI Sweep')}</span>
+          </button>
         </div>
+
+        {teamZeroCostPlan && (
+          <div className="p-4 rounded-xl bg-slate-950 border border-sky-500/40 space-y-3 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-black text-sky-300">{at('৳০ ফুল ওয়েবসাইট AI প্ল্যান তৈরি হয়েছে:', 'Zero-Cost Solo Founder AI Plan Ready:')}</p>
+              <div className="flex flex-wrap gap-2">
+                {teamZeroCostPlan.inquiryReplies?.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      let count = 0;
+                      for (const rep of teamZeroCostPlan.inquiryReplies) {
+                        const match = chatInquiries.find((q) => q.id === rep.inquiryId);
+                        if (match && rep.replyText?.trim()) {
+                          await updateChatInquiry(rep.inquiryId, { adminReply: rep.replyText.trim(), status: 'replied' });
+                          count++;
+                        }
+                      }
+                      addToast('success', at(`${count}টি ইনকোয়ারি উত্তর পাঠানো হয়েছে!`, `Replied to ${count} Inquiries!`), '');
+                    }}
+                    className="px-3 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold cursor-pointer"
+                  >
+                    {at(`ইনকোয়ারি উত্তর (${teamZeroCostPlan.inquiryReplies.length}) পাঠান`, `Apply ${teamZeroCostPlan.inquiryReplies.length} Chat Replies`)}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const feat = activeCatalog.find((p) => p.id === teamZeroCostPlan.featuredProductId) || activeCatalog[0];
+                    if (!feat) return;
+                    const baseUrl = getProductCanonicalUrl(feat);
+                    (['facebook', 'instagram', 'tiktok', 'youtube'] as const).forEach((plat, idx) => {
+                      addSocialPost(
+                        {
+                          platform: plat,
+                          productId: feat.id,
+                          productTitle: feat.title,
+                          productUrl: `${baseUrl}?utm_source=${plat}&utm_medium=ai_team`,
+                          title: teamZeroCostPlan.promoTitle || feat.title,
+                          caption: `${teamZeroCostPlan.promoCaption}\n\n👉 অর্ডার: ${baseUrl}?utm_source=${plat}&utm_medium=ai_team`,
+                          hashtags: (teamZeroCostPlan.promoHashtags || ['#BuyOneBD']).map((t) => (t.startsWith('#') ? t : `#${t}`)),
+                          imageUrl: feat.images?.[0] || '',
+                          scheduledAt: new Date(Date.now() + (15 + idx * 30) * 60 * 1000).toISOString(),
+                          status: 'scheduled',
+                          autoGenerated: true
+                        },
+                        { silent: true }
+                      );
+                    });
+                    addToast('success', at('৪ প্ল্যাটফর্মেই শিডিউল সম্পন্ন!', 'All 4 Channels Scheduled!'), feat.title);
+                  }}
+                  className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Share2 className="w-3 h-3" />
+                  <span>{at('৪টি সোশ্যাল চ্যানেলে শিডিউল', 'Schedule All 4 Social')}</span>
+                </button>
+              </div>
+            </div>
+            <p className="text-slate-200 leading-relaxed">{teamZeroCostPlan.executiveSummary}</p>
+          </div>
+        )}
       </div>
 
       {/* Latest AI Team Briefing & 1-Click Executable Actions */}

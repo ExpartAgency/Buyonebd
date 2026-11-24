@@ -108,6 +108,8 @@ export interface Product {
   wholesalePrice?: number;
   wholesaleMinQty?: number;
   wholesaleTiers?: WholesaleTier[];
+  isHiddenOnStorefront?: boolean;
+  forceShowOnStorefront?: boolean;
 }
 
 export interface OrderItem {
@@ -605,6 +607,7 @@ export interface StoreSettings {
   affiliateSettings?: AffiliateSettings;
   urgencySettings?: UrgencySettings;
   socialAutoConfig?: Record<SocialPlatform, SocialChannelConfig>;
+  onlyShowMyProducts?: boolean;
 }
 
 export interface ViewerCounterSettings {
@@ -1236,6 +1239,9 @@ export interface AIAutopilotSettings {
   autoPrepareWhatsapp: boolean;
   preferredCourier: CourierProvider;
   lastScanAt?: string;
+  autoSocialDailyEnabled?: boolean;
+  autoChatReplyEnabled?: boolean;
+  zeroAdSpendMode?: boolean;
 }
 
 export interface BlogPost {

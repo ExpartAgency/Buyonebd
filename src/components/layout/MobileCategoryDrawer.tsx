@@ -26,7 +26,7 @@ export const MobileCategoryDrawer: React.FC<MobileCategoryDrawerProps> = ({
 }) => {
   const {
     categories,
-    products,
+    visibleStoreProducts: products,
     settings,
     openProductPage,
     openOneClickCheckout,

@@ -75,7 +75,8 @@ const loadImageSafe = (src: string): Promise<HTMLImageElement | null> =>
   });
 
 export const CreativeMarketingStudio: React.FC<{ ta: (bn: string, en: string) => string }> = ({ ta }) => {
-  const { products, settings, mediaLibrary, registerMediaItem, addToast } = useStore();
+  const { visibleStoreProducts, products: allCatalogProducts, settings, mediaLibrary, registerMediaItem, addToast } = useStore();
+  const products = visibleStoreProducts.length > 0 ? visibleStoreProducts : allCatalogProducts;
   const [format, setFormat] = useState<CreativeFormat>('post');
   const [transitionStyle, setTransitionStyle] = useState<TransitionStyle>('ken_burns');
   const [selectedProductId, setSelectedProductId] = useState<string>(() => products[0]?.id || '');

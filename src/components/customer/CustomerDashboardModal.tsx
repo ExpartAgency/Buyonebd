@@ -53,6 +53,7 @@ export const CustomerDashboardModal: React.FC = () => {
     setIsSpinOpen,
     orders,
     products,
+    visibleStoreProducts,
     wishlist,
     priceAlerts,
     waitlistEntries,
@@ -122,10 +123,10 @@ export const CustomerDashboardModal: React.FC = () => {
   const deliveredCount = orders.filter((o) => o.status === 'delivered').length;
 
   const recentlyViewedProducts = (customerProfile.browsingHistory || [])
-    .map((id) => products.find((p) => p.id === id))
+    .map((id) => visibleStoreProducts.find((p) => p.id === id))
     .filter(Boolean);
 
-  const wishlistedProducts = products.filter((p) => wishlist.includes(p.id));
+  const wishlistedProducts = visibleStoreProducts.filter((p) => wishlist.includes(p.id));
   const savedCoupons = customerProfile.savedCoupons || [];
 
   const handleRedeemPoints = (points: number) => {

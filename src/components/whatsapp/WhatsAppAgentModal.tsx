@@ -30,7 +30,7 @@ export const WhatsAppAgentModal: React.FC = () => {
     setIsWhatsAppOpen,
     settings,
     orders,
-    products,
+    visibleStoreProducts: products,
     openOneClickCheckout,
     setTrackingSearchQuery,
     setActiveView,

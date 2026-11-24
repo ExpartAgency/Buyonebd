@@ -60,7 +60,8 @@ import {
   INITIAL_USERS,
   INITIAL_REVIEWS,
   INITIAL_BLOGS,
-  BUSINESS_THEME_PRESETS
+  BUSINESS_THEME_PRESETS,
+  STARTER_DEMO_PRODUCT_IDS
 } from '../data/initialData';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { onSnapshot, getDoc } from 'firebase/firestore';
@@ -268,8 +269,9 @@ interface StoreContextType {
   productViews: Record<string, number>;
   activeLiveViewers: number;
 
-  // Products
+  // Products (products = full DB with zero deletions; visibleStoreProducts = customer-facing catalog)
   products: Product[];
+  visibleStoreProducts: Product[];
   addProduct: (product: Omit<Product, 'id'>) => void;
   updateProduct: (id: string, updates: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
@@ -648,7 +650,10 @@ interface StoreContextType {
 
   // Social Auto-Scheduler (FB, IG, TikTok, YouTube)
   socialPosts: SocialScheduledPost[];
-  addSocialPost: (post: Omit<SocialScheduledPost, 'id' | 'createdAt' | 'updatedAt'>) => SocialScheduledPost;
+  addSocialPost: (
+    post: Omit<SocialScheduledPost, 'id' | 'createdAt' | 'updatedAt'>,
+    options?: { silent?: boolean }
+  ) => SocialScheduledPost;
   updateSocialPost: (id: string, updates: Partial<SocialScheduledPost>) => void;
   deleteSocialPost: (id: string) => void;
   bulkDeleteSocialPosts: (ids: string[]) => void;
@@ -665,6 +670,15 @@ interface StoreContextType {
   isRunningAITeam: boolean;
   runAITeamBriefing: (focusPrompt?: string, autoExecute?: boolean) => Promise<AITeamBriefing | null>;
   executeAITeamAction: (briefingId: string, actionId: string) => Promise<boolean>;
+  runFullZeroCostAutopilot: () => Promise<{
+    executiveSummary: string;
+    inquiryReplies: { inquiryId: string; replyText: string }[];
+    featuredProductId: string;
+    promoTitle: string;
+    promoCaption: string;
+    promoHashtags: string[];
+    zeroCostActions: string[];
+  } | null>;
 
   // Spin Rewards CRUD & Limit
   spinRewards: SpinReward[];
@@ -926,6 +940,7 @@ function mergeSettings(raw: any): StoreSettings {
   return {
     ...INITIAL_SETTINGS,
     ...raw,
+    onlyShowMyProducts: raw.onlyShowMyProducts !== false,
     hotline: migrateLegacyPhoneStr(raw.hotline ?? INITIAL_SETTINGS.hotline),
     whatsappNumber: migrateLegacyPhoneStr(raw.whatsappNumber ?? INITIAL_SETTINGS.whatsappNumber, true),
     deliveryFees: { ...INITIAL_SETTINGS.deliveryFees, ...(raw.deliveryFees || {}) },
@@ -1716,6 +1731,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
   const productsRef = useRef<Product[]>(products);
   productsRef.current = products;
+
+  const visibleStoreProducts = React.useMemo(() => {
+    const hasOwnerAddedProducts = products.some((p) => !STARTER_DEMO_PRODUCT_IDS.includes(p.id));
+    const hideStarterDemos = settings.onlyShowMyProducts !== false && hasOwnerAddedProducts;
+    return products.filter((p) => {
+      if (p.isHiddenOnStorefront) return false;
+      if (hideStarterDemos && STARTER_DEMO_PRODUCT_IDS.includes(p.id) && !p.forceShowOnStorefront) return false;
+      return true;
+    });
+  }, [products, settings.onlyShowMyProducts]);
+  const visibleStoreProductsRef = useRef<Product[]>(visibleStoreProducts);
+  visibleStoreProductsRef.current = visibleStoreProducts;
 
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_PRODUCTS, JSON.stringify(products));
@@ -11358,7 +11385,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // --- Social Auto-Scheduler CRUD & Immediate Dispatch ---
-  const addSocialPost = (postData: Omit<SocialScheduledPost, 'id' | 'createdAt' | 'updatedAt'>): SocialScheduledPost => {
+  const addSocialPost = (
+    postData: Omit<SocialScheduledPost, 'id' | 'createdAt' | 'updatedAt'>,
+    options?: { silent?: boolean }
+  ): SocialScheduledPost => {
     const nowIso = new Date().toISOString();
     const created: SocialScheduledPost = {
       ...postData,
@@ -11368,7 +11398,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
     lastLocalMutationAtRef.current = Date.now();
     setSocialPosts((prev) => [created, ...prev].slice(0, 300));
-    addToast('success', t('সোশ্যাল পোস্ট শিডিউল করা হয়েছে!', 'Social Post Scheduled!'), `${created.platform.toUpperCase()} · ${created.title}`);
+    if (!options?.silent) {
+      addToast('success', t('সোশ্যাল পোস্ট শিডিউল করা হয়েছে!', 'Social Post Scheduled!'), `${created.platform.toUpperCase()} · ${created.title}`);
+    }
     return created;
   };
 
@@ -11398,10 +11430,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const post = socialPostsRef.current.find((p) => p.id === postId);
     if (!post) return { success: false, error: 'Post not found' };
     try {
+      const channelConfig = settingsRef.current?.socialAutoConfig?.[post.platform];
       const res = await fetch('/api/social/dispatch-now', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, post })
+        body: JSON.stringify({ postId, post, channelConfig })
       });
       const json = await safeParseJson<any>(res);
       if (Array.isArray(json?.socialPosts)) {
@@ -11507,10 +11540,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return false;
       }
       case 'schedule_social_promo': {
+        const catalogPool = visibleStoreProductsRef.current.length > 0 ? visibleStoreProductsRef.current : productsRef.current;
         const topProd =
-          productsRef.current.find((pr) => pr.id === p.productId) ||
-          productsRef.current.find((pr) => pr.stock > 0) ||
-          productsRef.current[0];
+          catalogPool.find((pr) => pr.id === p.productId) ||
+          catalogPool.find((pr) => pr.stock > 0) ||
+          catalogPool[0];
         if (!topProd) return false;
         const plat = (p.platform || 'facebook') as SocialScheduledPost['platform'];
         const url = getProductCanonicalUrl(topProd);
@@ -11549,19 +11583,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         .filter((o) => o.status !== 'cancelled')
         .reduce((s, o) => s + (o.pricing?.total || 0), 0);
       const expenseTotal = expensesRef.current.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+      const activePool = visibleStoreProductsRef.current.length > 0 ? visibleStoreProductsRef.current : productsRef.current;
       const res = await fetch('/api/ai/team-run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           focusPrompt,
           lang: adminLang,
+          products: activePool,
           storeSummary: {
             revenueTotal,
             expenseTotal,
             netProfit: revenueTotal - expenseTotal,
             pendingOrders: ordersRef.current.filter((o) => o.status === 'pending').length,
             confirmedAwaitingCourier: ordersRef.current.filter((o) => o.status === 'ai_confirmed' && !o.courier?.trackingCode).length,
-            lowStockProducts: productsRef.current.filter((p) => (p.stock ?? 0) <= 5).map((p) => ({ id: p.id, title: p.title, stock: p.stock })),
+            lowStockProducts: activePool.filter((p) => (p.stock ?? 0) <= 5).map((p) => ({ id: p.id, title: p.title, stock: p.stock })),
             abandonedUnrecovered: abandonedCartsRef.current.filter((c) => !c.recovered).length,
             newInquiries: chatInquiriesRef.current.filter((q) => q.status === 'new').length,
             scheduledSocialCount: socialPostsRef.current.filter((s) => s.status === 'scheduled').length
@@ -11634,6 +11670,31 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return true;
   };
 
+  const runFullZeroCostAutopilot = async () => {
+    try {
+      const res = await fetch('/api/ai/full-autopilot-run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orders: ordersRef.current,
+          chatInquiries: chatInquiriesRef.current,
+          abandonedCarts: abandonedCartsRef.current,
+          lang: adminLang
+        })
+      });
+      const json = await safeParseJson<{ success?: boolean; plan?: any; error?: string }>(res);
+      if (!res.ok || !json?.plan) {
+        addToast('error', t('AI অটোপাইলট ত্রুটি', 'AI Autopilot Failed'), json?.error || 'Could not generate AI store plan');
+        return null;
+      }
+      addToast('success', t('সলো-ফাউন্ডার AI প্ল্যান তৈরি!', 'Full-Website AI Plan Ready!'), t('এক ক্লিকে সব কাজ কার্যকর করুন', 'Review & apply inquiries or social blitz below'));
+      return json.plan;
+    } catch (err: any) {
+      addToast('error', t('নেটওয়ার্ক ত্রুটি', 'Network Error'), err?.message || 'Failed to run Full AI Autopilot');
+      return null;
+    }
+  };
+
   const closeOneClickCheckout = () => {
     setIsOneClickOpen(false);
     setCheckoutProduct(null);
@@ -11678,6 +11739,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         productViews,
         activeLiveViewers,
         products,
+        visibleStoreProducts,
         addProduct,
         updateProduct,
         deleteProduct,
@@ -11860,6 +11922,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isRunningAITeam,
         runAITeamBriefing,
         executeAITeamAction,
+        runFullZeroCostAutopilot,
         firebaseAdminUserEmail,
         isFirebaseAdminConnected,
         cloudSyncError,

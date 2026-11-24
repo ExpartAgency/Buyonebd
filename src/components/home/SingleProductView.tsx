@@ -44,7 +44,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
     getProductViewCount,
     getProductRealStats,
     activeLiveViewers,
-    products,
+    visibleStoreProducts: products,
     reviews,
     addProductReview,
     settings,

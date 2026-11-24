@@ -287,6 +287,17 @@ export const INITIAL_SLIDERS: HomeSlide[] = [
   }
 ];
 
+export const STARTER_DEMO_PRODUCT_IDS: string[] = [
+  'prod-001',
+  'prod-002',
+  'prod-003',
+  'prod-004',
+  'prod-005',
+  'prod-006',
+  'prod-007',
+  'prod-008'
+];
+
 export const INITIAL_PRODUCTS: Product[] = [
   {
     id: 'prod-001',
@@ -798,6 +809,7 @@ export const INITIAL_SETTINGS: StoreSettings = {
   hotline: '+8801917942662',
   whatsappNumber: '8801917942662',
   supportEmail: 'buyonebd@gmail.com',
+  onlyShowMyProducts: true,
   address: 'লেভেল ৪, হাউস ১৮, রোড ১১, বনানী, ঢাকা-১২১৩, বাংলাদেশ',
   deliveryFees: {
     dhakaInside: 70,

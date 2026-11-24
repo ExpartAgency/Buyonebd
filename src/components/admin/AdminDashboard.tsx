@@ -22,6 +22,7 @@ import {
   ExternalLink,
   MessageCircle,
   Eye,
+  EyeOff,
   Gift,
   Grid,
   Users,
@@ -94,7 +95,7 @@ import {
   Briefcase
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
-import { BUSINESS_THEME_PRESETS } from '../../data/initialData';
+import { BUSINESS_THEME_PRESETS, STARTER_DEMO_PRODUCT_IDS } from '../../data/initialData';
 import {
   FIREBASE_PROJECT_ID,
   FIREBASE_DATABASE_ID,
@@ -150,6 +151,7 @@ const parseJsonSafe = async (res: Response): Promise<any> => {
 export const AdminDashboard: React.FC = () => {
   const {
     products,
+    visibleStoreProducts,
     addProduct,
     updateProduct,
     deleteProduct,
@@ -6842,11 +6844,47 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
+              {/* Only Show My Products Guard Card */}
+              <div className="p-4 rounded-2xl bg-slate-900 border border-emerald-500/35 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-black text-sm text-white">
+                      {at('শুধুমাত্র আমার নিজের পণ্য স্টোরফ্রন্টে দেখান (ডেমো পণ্য লুকানো থাকবে)', 'Only Show My Products on Storefront (Hide Starter Demo Items)')}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 font-mono font-bold text-[10px] tabular-nums">
+                      {visibleStoreProducts.length} LIVE · {products.length} IN DB
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    {at(
+                      'চালু থাকলে স্টোরের হোমপেজ, সার্চ, Google/Meta ফিড ও সোশ্যাল অটো-পোস্টে শুধুমাত্র আপনার নিজের যোগ করা পণ্য দেখাবে। কোনো ডেমো বা পুরানো ডেটা ডিলিট হবে না।',
+                      'When ON, starter template items are hidden from customer storefront, search, XML/CSV feeds & AI marketing—while 100% of your database records stay intact.'
+                    )}
+                  </p>
+                </div>
+
+                <label className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 cursor-pointer shrink-0 text-xs font-black text-emerald-300">
+                  <input
+                    type="checkbox"
+                    checked={settings.onlyShowMyProducts !== false}
+                    onChange={(e) => {
+                      updateSettings({ onlyShowMyProducts: e.target.checked }, { commit: true });
+                    }}
+                    className="w-4 h-4 accent-emerald-500 rounded"
+                  />
+                  <span>
+                    {settings.onlyShowMyProducts !== false
+                      ? at('আমার পণ্য মোড: চালু', 'Only My Products: ON')
+                      : at('সব পণ্য দেখান: চালু', 'Show All Catalog: ON')}
+                  </span>
+                </label>
+              </div>
+
               {/* Bulk Products Catalog Matrix */}
               <BulkSectionShell
                 indexCode="BULK // PRODUCTS"
                 title={at('বাল্ক প্রোডাক্ট ক্যাটালগ ম্যানেজার', 'Bulk Product Catalog Matrix')}
-                subtitle={at('পণ্য সিলেক্ট করে একসাথে ফ্ল্যাশ সেল চালু/বন্ধ বা ডিলিট করুন', 'Select catalog products for batch Flash Sale toggles or deletion')}
+                subtitle={at('পণ্য সিলেক্ট করে একসাথে স্টোরে দেখানো/লুকানো, ফ্ল্যাশ সেল চালু/বন্ধ বা ডিলিট করুন', 'Select catalog products for batch visibility, Flash Sale toggles or deletion')}
                 totalCount={products.length}
                 selectedCount={selectedProductIds.length}
                 accent="emerald"
@@ -6865,6 +6903,30 @@ export const AdminDashboard: React.FC = () => {
                   onClearSelection={() => setSelectedProductIds([])}
                   itemLabel="products"
                 >
+                  <button
+                    type="button"
+                    disabled={selectedProductIds.length === 0}
+                    onClick={() => {
+                      bulkUpdateProducts(selectedProductIds, { isHiddenOnStorefront: false, forceShowOnStorefront: true });
+                      setSelectedProductIds([]);
+                    }}
+                    className="px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>{at('স্টোরে দেখান', 'Show on Store')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={selectedProductIds.length === 0}
+                    onClick={() => {
+                      bulkUpdateProducts(selectedProductIds, { isHiddenOnStorefront: true, forceShowOnStorefront: false });
+                      setSelectedProductIds([]);
+                    }}
+                    className="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 border border-slate-700 text-slate-200 font-bold text-xs inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <EyeOff className="w-3.5 h-3.5" />
+                    <span>{at('স্টোর থেকে লুকান', 'Hide from Store')}</span>
+                  </button>
                   <button
                     type="button"
                     disabled={selectedProductIds.length === 0}
@@ -6905,11 +6967,20 @@ export const AdminDashboard: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {products.map((prod) => {
                     const isProdSelected = selectedProductIds.includes(prod.id);
+                    const isStarterDemo = STARTER_DEMO_PRODUCT_IDS.includes(prod.id);
+                    const hasOwnerItems = products.some((p) => !STARTER_DEMO_PRODUCT_IDS.includes(p.id));
+                    const isHiddenOnStore =
+                      Boolean(prod.isHiddenOnStorefront) ||
+                      (settings.onlyShowMyProducts !== false && hasOwnerItems && isStarterDemo && !prod.forceShowOnStorefront);
                     return (
                       <div
                         key={prod.id}
                         className={`p-4 rounded-xl border flex flex-col justify-between space-y-3 transition-colors ${
-                          isProdSelected ? 'bg-emerald-950/20 border-emerald-500/70' : 'bg-slate-900 border-slate-800'
+                          isProdSelected
+                            ? 'bg-emerald-950/20 border-emerald-500/70'
+                            : isHiddenOnStore
+                            ? 'bg-slate-900/60 border-slate-800/70 opacity-75'
+                            : 'bg-slate-900 border-slate-800'
                         }`}
                       >
                         <div className="flex items-start gap-3">
@@ -6932,6 +7003,20 @@ export const AdminDashboard: React.FC = () => {
                               {prod.subcategory && (
                                 <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">{prod.subcategory}</span>
                               )}
+                              {isStarterDemo && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                                  Demo Template
+                                </span>
+                              )}
+                              {isHiddenOnStore ? (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                                  {at('স্টোর থেকে লুকানো', 'Hidden')}
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                                  {at('লাইভ', 'Live')}
+                                </span>
+                              )}
                             </div>
                             <h4 className="font-bold text-sm text-white line-clamp-1">{at(prod.titleBn, prod.title)}</h4>
                             <div className="flex items-baseline gap-2 mt-1 tabular-nums">
@@ -6945,21 +7030,44 @@ export const AdminDashboard: React.FC = () => {
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
-                          {/* Direct 1-Click Flash Sale Toggle */}
-                          <button
-                            onClick={() => toggleProductFlashSale(prod.id)}
-                            className={`px-2.5 py-1 rounded-md text-[10px] font-bold cursor-pointer transition-all border ${
-                              prod.isFlashSale
-                                ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 hover:bg-rose-500/30'
-                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
-                            }`}
-                            title={at('ফ্ল্যাশ সেল অন/অফ করতে ক্লিক করুন', 'Click to toggle Flash Sale')}
-                          >
-                            {prod.isFlashSale ? at('ফ্ল্যাশ সেল সক্রিয়', 'Flash Sale Active') : at('+ ফ্ল্যাশ সেলে যোগ', '+ Add to Flash')}
-                          </button>
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* Direct 1-Click Flash Sale Toggle */}
+                            <button
+                              onClick={() => toggleProductFlashSale(prod.id)}
+                              className={`px-2.5 py-1 rounded-md text-[10px] font-bold cursor-pointer transition-all border ${
+                                prod.isFlashSale
+                                  ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 hover:bg-rose-500/30'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
+                              }`}
+                              title={at('ফ্ল্যাশ সেল অন/অফ করতে ক্লিক করুন', 'Click to toggle Flash Sale')}
+                            >
+                              {prod.isFlashSale ? at('ফ্ল্যাশ সেল সক্রিয়', 'Flash Sale Active') : at('+ ফ্ল্যাশ সেলে যোগ', '+ Add to Flash')}
+                            </button>
 
-                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateProduct(
+                                  prod.id,
+                                  isHiddenOnStore
+                                    ? { isHiddenOnStorefront: false, forceShowOnStorefront: true }
+                                    : { isHiddenOnStorefront: true, forceShowOnStorefront: false }
+                                )
+                              }
+                              className={`px-2 py-1 rounded-md text-[10px] font-bold cursor-pointer inline-flex items-center gap-1 border ${
+                                isHiddenOnStore
+                                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-emerald-600/20 hover:text-emerald-300'
+                                  : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-slate-800 hover:text-slate-300'
+                              }`}
+                              title={at('স্টোরফ্রন্টে দেখান বা লুকান (ডিলিট ছাড়াই)', 'Show or hide on storefront without deleting data')}
+                            >
+                              {isHiddenOnStore ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                              <span>{isHiddenOnStore ? at('দেখান', 'Show') : at('লুকান', 'Hide')}</span>
+                            </button>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
                             <button
                               onClick={() => openEditProductModal(prod)}
                               title={at('পণ্য এডিট করুন', 'Edit Product')}

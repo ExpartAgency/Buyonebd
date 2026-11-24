@@ -40,7 +40,7 @@ const LuckySpinModal = React.lazy(() =>
 
 function StoreMainContent() {
   const {
-    products,
+    visibleStoreProducts: products,
     orders,
     categories,
     activeView,
@@ -189,7 +189,7 @@ function StoreMainContent() {
     }
     const intervalMs = Math.max(8, Number(fomoCfg.intervalSeconds) || 18) * 1000;
     const showNext = () => {
-      const realPool = orders.filter((o) => o?.items?.[0]);
+      const realPool = orders.filter((o) => o?.items?.[0] && products.some((vp) => vp.id === o.items[0].productId));
       if (realPool.length > 0 && (fomoCfg.showRealOrdersOnly || Math.random() > 0.35)) {
         const pick = realPool[Math.floor(Math.random() * Math.min(realPool.length, 10))];
         const item = pick.items[0];
@@ -690,7 +690,7 @@ function StoreMainContent() {
         </div>
 
         {/* Curated Flash Sale Section on Home */}
-        {storeSubView === 'home' && searchQuery.trim() === '' && selectedCategory === 'all' && settings?.flashSale?.enabled !== false && (
+        {storeSubView === 'home' && searchQuery.trim() === '' && selectedCategory === 'all' && settings?.flashSale?.enabled !== false && products.some((p) => p.isFlashSale) && (
           <section className="p-4 sm:p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-lg space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">

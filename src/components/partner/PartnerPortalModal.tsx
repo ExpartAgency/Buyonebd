@@ -50,7 +50,7 @@ export const PartnerPortalModal: React.FC = () => {
     partnerPortalTab,
     openPartnerPortal,
     closePartnerPortal,
-    products,
+    visibleStoreProducts: products,
     categories,
     orders,
     settings,

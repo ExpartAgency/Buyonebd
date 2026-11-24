@@ -36,6 +36,9 @@ export const GlobalMarketingHub: React.FC = () => {
     updateSettings,
     saveSettingsChanges,
     products,
+    visibleStoreProducts,
+    addSocialPost,
+    getProductCanonicalUrl,
     orders,
     users,
     customerAccounts,
@@ -53,6 +56,11 @@ export const GlobalMarketingHub: React.FC = () => {
     adminLang
   } = useStore();
 
+  const activeOwnProducts = useMemo(
+    () => (visibleStoreProducts.length > 0 ? visibleStoreProducts : products),
+    [visibleStoreProducts, products]
+  );
+
   const [editingSmsLogId, setEditingSmsLogId] = useState<string | null>(null);
   const [editSmsLogTitle, setEditSmsLogTitle] = useState('');
   const [editSmsLogMsg, setEditSmsLogMsg] = useState('');
@@ -65,19 +73,34 @@ export const GlobalMarketingHub: React.FC = () => {
   const [qrSvgMarkup, setQrSvgMarkup] = useState<string>('');
 
   // Zero-Ad-Spend Bangladesh Free Marketing Studio State
-  const [freeProdId, setFreeProdId] = useState<string>(products[0]?.id || '');
+  const [freeProdId, setFreeProdId] = useState<string>(activeOwnProducts[0]?.id || products[0]?.id || '');
   const [freeArea, setFreeArea] = useState<string>('Dhaka City (Mirpur, Uttara, Dhanmondi & Nationwide COD)');
   const [flyerTheme, setFlyerTheme] = useState<'emerald' | 'midnight' | 'festive'>('emerald');
   const [flyerTag, setFlyerTag] = useState<string>('64-DISTRICT CASH ON DELIVERY');
   const [flyerOfferNote, setFlyerOfferNote] = useState<string>('সীমিত স্টক — আজই অর্ডার করলে ফাস্ট হোম ডেলিভারি!');
   const flyerCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const [isGeneratingBlitz, setIsGeneratingBlitz] = useState(false);
+  const [viralBlitzKit, setViralBlitzKit] = useState<{
+    facebookPost: string;
+    messengerClosingScript: string;
+    instagramCaption: string;
+    instagramHashtags: string[];
+    tiktokVideoHook: string;
+    tiktokSpokenScript: string;
+    youtubeShortsTitle: string;
+    youtubeShortsDescription: string;
+    youtubePinnedComment: string;
+    fbMarketplaceTitle: string;
+    fbMarketplaceDescription: string;
+    whatsappTeaserMsg: string;
+  } | null>(null);
 
   const at = (bn: string, en: string) => (adminLang === 'en' ? en : bn);
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://buyonebd.com';
 
   const freeProduct = useMemo(
-    () => products.find((p) => p.id === freeProdId) || products[0] || null,
-    [products, freeProdId]
+    () => activeOwnProducts.find((p) => p.id === freeProdId) || activeOwnProducts[0] || null,
+    [activeOwnProducts, freeProdId]
   );
 
   React.useEffect(() => {
@@ -310,7 +333,7 @@ export const GlobalMarketingHub: React.FC = () => {
   } | null>(null);
 
   // Global AI Ad & Reel Copy Studio
-  const [selectedProdId, setSelectedProdId] = useState(products[0]?.id || '');
+  const [selectedProdId, setSelectedProdId] = useState(activeOwnProducts[0]?.id || products[0]?.id || '');
   const [targetRegion, setTargetRegion] = useState('UK/USA Probashi Gift Buyers (Deliver in Bangladesh)');
   const [targetCurrency, setTargetCurrency] = useState<'BDT' | 'USD' | 'GBP' | 'EUR' | 'AED' | 'SAR' | 'MYR'>('USD');
   const [adFormat, setAdFormat] = useState<'facebook' | 'tiktok' | 'whatsapp' | 'seo'>('facebook');
@@ -408,8 +431,104 @@ export const GlobalMarketingHub: React.FC = () => {
     }
   };
 
+  const handleRunFreeSocialBlitz = async () => {
+    if (!freeProduct) return;
+    setIsGeneratingBlitz(true);
+    try {
+      const prodUrl = getProductCanonicalUrl(freeProduct);
+      const res = await fetch('/api/ai/free-social-blitz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product: freeProduct,
+          storeName: settings.storeName || 'BuyOne BD',
+          productUrl: prodUrl,
+          lang: adminLang
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.kit) {
+        addToast('error', at('AI জেনারেট ব্যর্থ', 'AI Blitz Failed'), data?.error || 'Could not generate free social kit.');
+        return;
+      }
+      setViralBlitzKit(data.kit);
+      addToast('success', at('৪-প্ল্যাটফর্ম ৳০ ভাইরাল কিট তৈরি!', '4-Platform Zero-Spend Kit Ready!'), freeProduct.title);
+    } catch (err: any) {
+      addToast('error', 'Network Error', err?.message || 'Failed to reach /api/ai/free-social-blitz');
+    } finally {
+      setIsGeneratingBlitz(false);
+    }
+  };
+
+  const handleScheduleAllBlitzPlatforms = () => {
+    if (!viralBlitzKit || !freeProduct) return;
+    const baseMs = Date.now() + 10 * 60 * 1000;
+    const baseUrl = getProductCanonicalUrl(freeProduct);
+    const items: {
+      platform: 'facebook' | 'instagram' | 'tiktok' | 'youtube';
+      title: string;
+      caption: string;
+      hashtags: string[];
+      offsetMin: number;
+    }[] = [
+      {
+        platform: 'facebook',
+        title: freeProduct.titleBn || freeProduct.title,
+        caption: `${viralBlitzKit.facebookPost}\n\n👉 অর্ডার লিংক: ${baseUrl}?utm_source=facebook&utm_medium=free_organic`,
+        hashtags: ['#BuyOneBD', '#BangladeshShopping', '#CashOnDelivery'],
+        offsetMin: 10
+      },
+      {
+        platform: 'instagram',
+        title: freeProduct.title,
+        caption: `${viralBlitzKit.instagramCaption}\n\nShop: ${baseUrl}?utm_source=instagram&utm_medium=free_organic`,
+        hashtags: Array.isArray(viralBlitzKit.instagramHashtags) && viralBlitzKit.instagramHashtags.length > 0
+          ? viralBlitzKit.instagramHashtags.map((t) => (t.startsWith('#') ? t : `#${t}`))
+          : ['#BuyOneBD', '#BDStyle'],
+        offsetMin: 35
+      },
+      {
+        platform: 'tiktok',
+        title: viralBlitzKit.tiktokVideoHook,
+        caption: `${viralBlitzKit.tiktokSpokenScript}\n\nOrder Link in Bio: ${baseUrl}?utm_source=tiktok&utm_medium=free_organic`,
+        hashtags: ['#BuyOneBD', '#TikTokBD', '#ViralBD'],
+        offsetMin: 60
+      },
+      {
+        platform: 'youtube',
+        title: viralBlitzKit.youtubeShortsTitle,
+        caption: `${viralBlitzKit.youtubeShortsDescription}\n\nPinned Comment:\n${viralBlitzKit.youtubePinnedComment}\n\nOrder Now: ${baseUrl}?utm_source=youtube&utm_medium=free_shorts`,
+        hashtags: ['#Shorts', '#BuyOneBD', '#Bangladesh'],
+        offsetMin: 90
+      }
+    ];
+    items.forEach((it) => {
+      addSocialPost(
+        {
+          platform: it.platform,
+          productId: freeProduct.id,
+          productTitle: freeProduct.title,
+          productUrl: `${baseUrl}?utm_source=${it.platform}&utm_medium=free_ai`,
+          title: it.title,
+          caption: it.caption,
+          hashtags: it.hashtags,
+          imageUrl: freeProduct.images?.[0] || '',
+          scheduledAt: new Date(baseMs + it.offsetMin * 60 * 1000).toISOString(),
+          status: 'scheduled',
+          autoGenerated: true
+        },
+        { silent: true }
+      );
+    });
+    addToast(
+      'success',
+      at('৪টি সোশ্যাল চ্যানেলেই শিডিউল সম্পন্ন!', 'All 4 Platforms Scheduled!'),
+      'Facebook, Instagram, TikTok & YouTube Shorts queued in Social Auto-Scheduler'
+    );
+  };
+
   const handleGenerateGlobalAd = async () => {
-    const prod = products.find((p) => p.id === selectedProdId) || products[0];
+    const prod = activeOwnProducts.find((p) => p.id === selectedProdId) || activeOwnProducts[0];
     if (!prod) return;
     setIsGeneratingCopy(true);
     try {
@@ -944,7 +1063,7 @@ export const GlobalMarketingHub: React.FC = () => {
               onChange={(e) => setSelectedProdId(e.target.value)}
               className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
             >
-              {products.map((p) => (
+              {activeOwnProducts.map((p) => (
                 <option key={p.id} value={p.id}>{p.title}</option>
               ))}
             </select>
@@ -1471,7 +1590,7 @@ export const GlobalMarketingHub: React.FC = () => {
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white"
               >
                 <option value="store_home">{at('হোম স্টোরফ্রন্ট (/home)', 'Main Storefront Home')}</option>
-                {products.map((p) => (
+                {activeOwnProducts.map((p) => (
                   <option key={p.id} value={p.id}>
                     {at(p.titleBn || p.title, p.title)} (৳{p.price})
                   </option>
@@ -1576,7 +1695,7 @@ export const GlobalMarketingHub: React.FC = () => {
                   onChange={(e) => setFreeProdId(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white"
                 >
-                  {products.map((p) => (
+                  {activeOwnProducts.map((p) => (
                     <option key={p.id} value={p.id}>
                       {at(p.titleBn || p.title, p.title)} (৳{p.price})
                     </option>
@@ -1759,6 +1878,161 @@ export const GlobalMarketingHub: React.FC = () => {
               <li>• Daily TikTok/Reels + YouTube Shorts Pin Link (Auto-Scheduler Tab)</li>
               <li>• Parcel Inside Thank-You QR Repeat Coupon Card (Section 7 Above)</li>
             </ul>
+          </div>
+        </div>
+
+        {/* 8D. ৳0 AI 4-Platform Viral Blitz Studio (FB + IG + TikTok + YT + Messenger + WhatsApp) */}
+        <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/35 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h5 className="font-black text-white text-sm flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>
+                  {at(
+                    '৫. ১-ক্লিক ৳০ AI সোশ্যাল ভাইরাল কিট (FB + IG + TikTok + YouTube Shorts + Messenger)',
+                    '5. 1-Click ৳0 AI 4-Platform Viral Kit (FB + IG + TikTok + YouTube + Messenger)'
+                  )}
+                </span>
+              </h5>
+              <p className="text-[11px] text-slate-400">
+                {at(
+                  'কোনো অ্যাড খরচ ছাড়া বাছাই করা নিজের পণ্যের জন্য ৪টি সোশ্যাল মিডিয়ার পূর্ণাঙ্গ বাংলা স্ক্রিপ্ট, হুক, ক্যাপশন ও মার্কেটপ্লেস টাইটেল তৈরি করে সরাসরি অটো-শিডিউলারে পাঠান।',
+                  'Generate tailored zero-spend organic viral posts for your selected own product across all 4 platforms + Messenger closing & schedule them in 1 click.'
+                )}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={isGeneratingBlitz || !freeProduct}
+                onClick={handleRunFreeSocialBlitz}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black flex items-center gap-1.5 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4 text-amber-200" />
+                <span>{isGeneratingBlitz ? at('AI তৈরি করছে...', 'Generating Kit...') : at('৳০ AI ভাইরাল কিট তৈরি করুন', 'Generate ৳0 AI Social Blitz')}</span>
+              </button>
+              {viralBlitzKit && (
+                <button
+                  type="button"
+                  onClick={handleScheduleAllBlitzPlatforms}
+                  className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span>{at('৪টি প্ল্যাটফর্মেই অটো-শিডিউল', 'Schedule All 4 Platforms')}</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {viralBlitzKit && (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-[11px]">
+              {[
+                {
+                  key: 'blitz-fb',
+                  label: 'Facebook Organic Post & Group Drop',
+                  text: viralBlitzKit.facebookPost
+                },
+                {
+                  key: 'blitz-msg',
+                  label: 'Messenger Inbox Closer Script',
+                  text: viralBlitzKit.messengerClosingScript
+                },
+                {
+                  key: 'blitz-ig',
+                  label: 'Instagram Reel / Carousel + Hashtags',
+                  text: `${viralBlitzKit.instagramCaption}\n\n${(viralBlitzKit.instagramHashtags || []).join(' ')}`
+                },
+                {
+                  key: 'blitz-tiktok',
+                  label: `TikTok Hook & Spoken Script`,
+                  text: `HOOK: ${viralBlitzKit.tiktokVideoHook}\n\n${viralBlitzKit.tiktokSpokenScript}`
+                },
+                {
+                  key: 'blitz-yt',
+                  label: `YouTube Shorts Title & Pinned Comment`,
+                  text: `TITLE: ${viralBlitzKit.youtubeShortsTitle}\n\n${viralBlitzKit.youtubeShortsDescription}\n\nPINNED COMMENT: ${viralBlitzKit.youtubePinnedComment}`
+                },
+                {
+                  key: 'blitz-wa',
+                  label: 'WhatsApp Channel / Marketplace Listing',
+                  text: `${viralBlitzKit.fbMarketplaceTitle}\n\n${viralBlitzKit.fbMarketplaceDescription}\n\nWA Status: ${viralBlitzKit.whatsappTeaserMsg}`
+                }
+              ].map((card) => (
+                <div key={card.key} className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2 flex flex-col justify-between">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-emerald-300">{card.label}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(card.key, card.text)}
+                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        {copiedFeed === card.key ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        <span>Copy</span>
+                      </button>
+                    </div>
+                    <p className="text-slate-300 whitespace-pre-line leading-relaxed max-h-36 overflow-y-auto">{card.text}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Extra BD Zero-Spend Growth Playbooks (FB Live + Group Funnel + WhatsApp Broadcast) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
+            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-sky-300 text-xs">
+                  {at('৬. ফ্রি Facebook Live সেলস ফর্মুলা (০৳ বুস্ট)', '6. Free Facebook Live Demo & Comment-Order Script')}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCopy(
+                      'fb-live-script',
+                      `🎥 লাইভ ডেমো স্ক্রিপ্ট (${freeProduct?.titleBn || settings.storeName}):\n১) প্রথম ১৫ সেকেন্ডে পণ্যটি হাতে নিয়ে আসল কোয়ালিটি দেখান।\n২) বলুন: "১ টাকাও অগ্রিম ছাড়া ৬৪ জেলায় ক্যাশ অন ডেলিভারি — পছন্দ না হলে রিটার্ন!"\n৩) পিন্ড কমেন্ট লিংক: ${freeProduct ? getProductCanonicalUrl(freeProduct) : origin}\n৪) লাইভ চলাকালীন অর্ডারকারীদের নাম পড়ে শোনান।`
+                    )
+                  }
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                >
+                  {copiedFeed === 'fb-live-script' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>Copy Live Script</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                {at(
+                  'প্রতিদিন রাত ৮:৩০ টায় ১৫ মিনিট নিজের ফেসবুক পেজ/প্রোফাইলে লাইভ আনবক্সিং করুন — কোনো বুস্ট ছাড়াই অর্গানিক রিচ ৩x বাড়ে।',
+                  'Run a 15-minute live unboxing at 8:30 PM BD Prime Time pinning your direct product URL for free organic conversions.'
+                )}
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-emerald-300 text-xs">
+                  {at('৭. ফ্রি WhatsApp Channel & BD গ্রুপ ড্রপ টেমপ্লেট', '7. Free WhatsApp Channel & BD Community Drop Template')}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCopy(
+                      'wa-channel-drop',
+                      `🔥 আজকের অর্গানিক ফ্ল্যাশ ড্রপ (${settings.storeName})!\n✅ পণ্য: ${freeProduct?.titleBn || 'Featured Item'}\n💥 অফার দাম: ৳${freeProduct?.price || 999}\n🚚 ডেলিভারি: ৬৪ জেলা হোম ডেলিভারি (হাতে পেয়ে পেমেন্ট)\n👉 সরাসরি অর্ডার: ${freeProduct ? getProductCanonicalUrl(freeProduct) : origin}`
+                    )
+                  }
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                >
+                  {copiedFeed === 'wa-channel-drop' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>Copy WA Drop</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                {at(
+                  'প্রতিটি অর্ডার কনফার্মের পর কাস্টমারকে আপনার ফ্রি WhatsApp Channel ও FB Group-এ ইনভাইট দিন যেন পরের সব নতুন প্রোডাক্ট ৳০ খরচে দেখতে পারেন।',
+                  'Invite every verified COD buyer to join your free WhatsApp Channel & Facebook Buyers Club for zero-cost repeat orders.'
+                )}
+              </p>
+            </div>
           </div>
         </div>
       </div>
