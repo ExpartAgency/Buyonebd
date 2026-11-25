@@ -56,6 +56,7 @@ export const GlobalMarketingHub: React.FC = () => {
     autoMarketingLogs,
     isRunningAutoMarketingSuite,
     runAutoMarketingSuiteNow,
+    syncStoreFromServer,
     publishedNotifications,
     publishPromotionalNotification,
     deletePublishedNotification,
@@ -103,16 +104,25 @@ export const GlobalMarketingHub: React.FC = () => {
   } | null>(null);
 
   const [isGeneratingChannelPack, setIsGeneratingChannelPack] = useState(false);
+  const [isAutoPostingAllBd, setIsAutoPostingAllBd] = useState(false);
   const [freeChannelPack, setFreeChannelPack] = useState<{
     bikroyAdTitle: string;
     bikroyAdBody: string;
+    facebookMarketplaceListing: string;
+    facebookReelsHook: string;
+    instagramReelsCaption: string;
+    tiktokViralHookScript: string;
+    youtubeShortsPost: string;
     whatsappChannelPost: string;
     telegramChannelPost: string;
     fbGroupVariant1: string;
     fbGroupVariant2: string;
+    messengerCloserScript: string;
     googleBusinessUpdate: string;
     commentToOrderReply: string;
+    seoBlogGuideSnippet: string;
     quoraPinterestPinText: string;
+    microCreatorBarterDm: string;
   } | null>(null);
 
   // In-App Customer Notification Center Broadcaster State
@@ -680,7 +690,7 @@ export const GlobalMarketingHub: React.FC = () => {
       const json = await res.json().catch(() => null);
       if (json?.success && json.pack) {
         setFreeChannelPack(json.pack);
-        addToast('success', at('ফ্রি সেলস চ্যানেল প্যাক তৈরি!', 'Free Sales Channel Pack Ready!'), freeProduct.title);
+        addToast('success', at('সব বিডি ফ্রি চ্যানেল প্যাক তৈরি!', '12-Channel Free BD Sales Pack Ready!'), freeProduct.title);
       } else {
         addToast('error', at('চ্যানেল প্যাক ব্যর্থ', 'Generation Failed'), json?.error || '');
       }
@@ -688,6 +698,38 @@ export const GlobalMarketingHub: React.FC = () => {
       addToast('error', at('নেটওয়ার্ক ত্রুটি', 'Network Error'), '');
     } finally {
       setIsGeneratingChannelPack(false);
+    }
+  };
+
+  const handleAutoPostAllBdFreeChannels = async () => {
+    if (!freeProduct) return;
+    setIsAutoPostingAllBd(true);
+    try {
+      const res = await fetch('/api/ai/bd-free-channels-autopost', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: freeProduct.id,
+          dispatchImmediately: true,
+          broadcastInAppNotif: true,
+          lang: adminLang
+        })
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        addToast('error', at('অটো-পোস্ট ব্যর্থ', 'Auto-Post Failed'), json?.error || '');
+        return;
+      }
+      await syncStoreFromServer();
+      addToast(
+        'success',
+        at(`${json.createdCount || 5}টি চ্যানেলে AI অটো-পোস্ট সম্পন্ন!`, `Auto-Posted to ${json.createdCount || 5} Channels + Customer App!`),
+        json.productTitle || freeProduct.title
+      );
+    } catch {
+      addToast('error', at('নেটওয়ার্ক ত্রুটি', 'Network Error'), '');
+    } finally {
+      setIsAutoPostingAllBd(false);
     }
   };
 
@@ -836,7 +878,7 @@ export const GlobalMarketingHub: React.FC = () => {
         </button>
       </div>
 
-      {/* 0. Zero-Time 100% Automatic AI Marketing Autopilot Suite (Set & Forget) */}
+      {/* 0. Zero-Employee Autonomous AI Marketing Autopilot Suite (No Staff Needed) */}
       {(() => {
         const suiteCfg = settings.autoMarketingSuite || {
           enabled: true,
@@ -847,6 +889,8 @@ export const GlobalMarketingHub: React.FC = () => {
           autoSeoProductEnricher: true,
           autoWeeklyBlogPublisher: true,
           autoReviewSocialProofPromo: true,
+          autoInquiryResponder: true,
+          autoPromoNotificationBroadcaster: true,
           cycleIntervalHours: 6
         };
         const patchSuite = (patch: Partial<typeof suiteCfg>) => {
@@ -863,17 +907,31 @@ export const GlobalMarketingHub: React.FC = () => {
         const suiteToggles: { key: keyof typeof suiteCfg; labelBn: string; labelEn: string; subBn: string; subEn: string }[] = [
           {
             key: 'autoSocialDailyPoster',
-            labelBn: 'অটো ডেইলি ৪-প্ল্যাটফর্ম সোশ্যাল পোস্টার',
-            labelEn: 'Auto Daily FB, IG, TikTok & YouTube Poster',
+            labelBn: 'অটো ডেইলি ৫-চ্যানেল সোশ্যাল পোস্টার',
+            labelEn: 'Auto Daily FB, IG, TikTok, YT & Telegram',
             subBn: 'নিজস্ব স্টক পণ্য থেকে অটো ক্যাপশন ও হ্যাশট্যাগ তৈরি করে শিডিউল/পোস্ট করে',
-            subEn: 'Auto-creates localized promo posts for your in-stock own products'
+            subEn: 'Auto-creates localized promo posts across all 5 social channels'
           },
           {
             key: 'autoNewProductLaunchBlitz',
             labelBn: 'নতুন পণ্য যোগ করলেই অটো লঞ্চ ব্লিটজ',
             labelEn: 'Instant New-Product Launch Social Blitz',
-            subBn: 'স্টোরে নতুন পণ্য অ্যাড করার সাথে সাথেই ৪টি প্ল্যাটফর্মে লঞ্চ পোস্ট শিডিউল হয়',
-            subEn: 'Automatically queues 4-channel promo posts whenever you add a product'
+            subBn: 'স্টোরে নতুন পণ্য অ্যাড করার সাথে সাথেই ৫টি চ্যানেলে লঞ্চ পোস্ট শিডিউল হয়',
+            subEn: 'Automatically queues 5-channel promo posts whenever you add a product'
+          },
+          {
+            key: 'autoInquiryResponder',
+            labelBn: 'কর্মী ছাড়াই অটো কাস্টমার চ্যাট/ইনকোয়ারি রিপ্লাই',
+            labelEn: 'Zero-Employee AI Inquiry Auto-Responder',
+            subBn: 'নতুন কাস্টমার প্রশ্ন এলেই AI দাম, COD ও লিংক দিয়ে অটো উত্তর দেয়',
+            subEn: 'Instantly drafts & sends polite BD COD replies to open inquiries'
+          },
+          {
+            key: 'autoPromoNotificationBroadcaster',
+            labelBn: 'অটো কাস্টমার অ্যাপ ফ্ল্যাশ-ডিল নোটিফিকেশন',
+            labelEn: 'Auto Customer App Deal Broadcaster',
+            subBn: 'ফিরে আসা ক্রেতাদের বেল নোটিফিকেশনে ডিসকাউন্ট ও ফ্ল্যাশ-ডিল অ্যালার্ট পাঠায়',
+            subEn: 'Rotates flash deal & price-drop alerts inside Customer Notification Center'
           },
           {
             key: 'autoAbandonedCartWinback',
@@ -902,13 +960,6 @@ export const GlobalMarketingHub: React.FC = () => {
             labelEn: 'Auto SEO Buying-Guide Blog Publisher',
             subBn: 'ফ্রি গুগল ট্রাফিক আনতে নিজস্ব পণ্যের ওপর বাংলা-ইংরেজি ব্লগ পোস্ট পাবলিশ করে',
             subEn: 'Publishes helpful bilingual buying guides linking your own products'
-          },
-          {
-            key: 'autoReviewSocialProofPromo',
-            labelBn: '৫-স্টার রিভিউ থেকে অটো সোশ্যাল প্রুফ পোস্ট',
-            labelEn: 'Auto 4★/5★ Review -> Social Proof Post',
-            subBn: 'নতুন রিভিউ অনুমোদন করলেই সোশ্যাল মিডিয়ার জন্য প্রোমো পোস্ট তৈরি হয়',
-            subEn: 'Turns approved 4-5 star buyer reviews into scheduled social proof posts'
           }
         ];
 
@@ -920,15 +971,15 @@ export const GlobalMarketingHub: React.FC = () => {
                   <Zap className="w-5 h-5 text-emerald-400" />
                   <span>
                     {at(
-                      '১০০% স্বয়ংক্রিয় AI মার্কেটিং অটোপাইলট (সময় ছাড়াই অটো চলবে)',
-                      'Zero-Time Automatic AI Marketing Engine (Set & Forget)'
+                      'জিরো-কর্মী ১০০% স্বয়ংক্রিয় AI মার্কেটিং ও সেলস অটোপাইলট (কোনো কর্মচারী লাগবে না)',
+                      'Zero-Employee Automatic AI Marketing Engine (No Staff Needed)'
                     )}
                   </span>
                 </h4>
                 <p className="text-xs text-slate-400 mt-0.5">
                   {at(
-                    'একবার অন করে রাখলেই ব্যাকগ্রাউন্ডে অটো সোশ্যাল পোস্ট, SEO অপ্টিমাইজেশন, অসম্পূর্ণ অর্ডার রিকভারি, রিস্টক অ্যালার্ট এবং ব্লগ পাবলিশ হতে থাকবে।',
-                    'Runs hands-free in the background across social channels, Google SEO, abandoned checkouts, waitlist alerts, and organic blogs.'
+                    'একাই পুরো স্টোর চালান: AI টিম সারাক্ষণ অটো সোশ্যাল পোস্ট, কাস্টমার ইনকোয়ারি রিপ্লাই, অসম্পূর্ণ অর্ডার রিকভারি, SEO ও ব্লগ পাবলিশ করে।',
+                    'Run your entire e-commerce operation solo: AI replaces social managers, support agents, copywriters & retention staff 24/7.'
                   )}
                 </p>
               </div>
@@ -2317,7 +2368,7 @@ export const GlobalMarketingHub: React.FC = () => {
         </div>
       </div>
 
-      {/* 9. ALL FREE ORGANIC MARKETING CHANNELS TO GET MORE SALES (৳0 SPEND) */}
+      {/* 9. BANGLADESH ALL FREE MARKETING CHANNELS + 1-CLICK AI AUTO-POST SYSTEM */}
       <div className="p-5 rounded-2xl bg-slate-900 border border-sky-500/35 space-y-4 text-xs">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -2325,67 +2376,112 @@ export const GlobalMarketingHub: React.FC = () => {
               <Globe2 className="w-5 h-5 text-sky-400" />
               <span>
                 {at(
-                  '৯. সব ফ্রি মার্কেটিং চ্যানেল (৳০ বিজ্ঞাপনে আরও বেশি সেল পাওয়ার সিস্টেম)',
-                  '9. Free Organic Sales Channels Hub (Get More Orders at ৳0 Ad Spend)'
+                  '৯. বাংলাদেশের সব ১২টি ফ্রি মার্কেটিং চ্যানেল ও ১-ক্লিক AI অটো-পোস্ট সিস্টেম (৳০ খরচ)',
+                  '9. All 12 Bangladesh Free Marketing Channels & AI Auto-Post System (৳0 Spend)'
                 )}
               </span>
             </h4>
             <p className="text-[11px] text-slate-400 mt-0.5">
               {at(
-                'Bikroy.com, WhatsApp Channel, Telegram Deals, Facebook Group Anti-Spam Rotator, Google Business Profile ও Comment-to-Order লিংক।',
-                'Generate instant organic copy & share directly to Bikroy.com, Telegram, WhatsApp Channel, FB Groups, Google Maps/Business & Google Free Listings.'
+                'FB Page/Reels/Marketplace/Groups, Instagram, TikTok, YouTube Shorts, Bikroy.com, Telegram Bot, WhatsApp Channel, Google Business, Google Free Listings & Barter Creators।',
+                'Instant AI auto-post & organic copy for all 12 zero-cost Bangladesh traffic sources — no ad budget or employees needed.'
               )}
             </p>
           </div>
-          <button
-            type="button"
-            disabled={isGeneratingChannelPack || !freeProduct}
-            onClick={handleGenerateFreeChannelPack}
-            className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-black flex items-center gap-1.5 cursor-pointer"
-          >
-            <Sparkles className="w-4 h-4 text-amber-200" />
-            <span>
-              {isGeneratingChannelPack
-                ? at('তৈরি হচ্ছে...', 'Generating Pack...')
-                : at('৬টি ফ্রি চ্যানেলের পোস্ট তৈরি করুন', 'Generate 6-Channel Free Sales Pack')}
-            </span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={isAutoPostingAllBd || !freeProduct}
+              onClick={handleAutoPostAllBdFreeChannels}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black flex items-center gap-1.5 cursor-pointer"
+            >
+              <Zap className="w-4 h-4 text-amber-200" />
+              <span>
+                {isAutoPostingAllBd
+                  ? at('সব চ্যানেলে অটো-পোস্ট হচ্ছে...', 'Auto-Posting All Channels...')
+                  : at('১-ক্লিক সব ফ্রি চ্যানেলে AI অটো-পোস্ট', '1-Click AI Auto-Post All Channels')}
+              </span>
+            </button>
+            <button
+              type="button"
+              disabled={isGeneratingChannelPack || !freeProduct}
+              onClick={handleGenerateFreeChannelPack}
+              className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-black flex items-center gap-1.5 cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4 text-amber-200" />
+              <span>
+                {isGeneratingChannelPack
+                  ? at('তৈরি হচ্ছে...', 'Generating 12 Channels...')
+                  : at('১২টি ফ্রি চ্যানেলের কপি তৈরি', 'Generate 12-Channel Free Copy')}
+              </span>
+            </button>
+          </div>
         </div>
 
-        {/* Direct Quick-Launch Free Sales Portals */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+        {/* All Bangladesh Free Organic Portals Directory */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             {
-              title: 'Bikroy.com Free Shop & Ads',
-              descBn: 'বিক্রয় ডট কমে ফ্রি বিজ্ঞাপন পোস্ট করে ঢাকা ও সারাদেশের অর্গানিক ক্রেতা পান।',
+              title: '1. Bikroy.com Free Shop & Ads',
+              descBn: 'বিক্রয় ডট কমে ফ্রি বিজ্ঞাপন পোস্ট করে ঢাকা ও ৬৪ জেলার অর্গানিক ক্রেতা পান।',
               descEn: 'Post free classified listings for your products with COD nationwide.',
               url: 'https://bikroy.com/en/post-ad',
               btn: 'Post Free Ad on Bikroy'
             },
             {
-              title: 'Google Business Profile & Maps',
-              descBn: 'গুগল ম্যাপে BuyOne BD ও আপনার পণ্যের দাম ফ্রি লিস্টিং করে লোকাল কাস্টমার পান।',
-              descEn: 'List your store & product offers free on Google Search & Dhaka Maps.',
-              url: 'https://business.google.com/',
-              btn: 'Open Google Business'
+              title: '2. Facebook Marketplace & BD Groups',
+              descBn: 'লোকেশন-টার্গেটেড ফ্রি মার্কেটপ্লেস ও বাই-সেল গ্রুপে পোস্ট করে ডাইরেক্ট ইনবক্স অর্ডার পান।',
+              descEn: 'Zero-ad local Marketplace & BD Buy/Sell Group buyer discovery.',
+              url: 'https://www.facebook.com/marketplace/create/item',
+              btn: 'Create Marketplace Item'
             },
             {
-              title: 'Google Merchant Free Listings',
-              descBn: 'আমাদের অটো XML ফিড যুক্ত করলে গুগল শপিং রেজাল্টে ফ্রিতে পণ্য দেখাবে।',
-              descEn: 'Submit /api/feeds/google-merchant.xml for free Google Shopping traffic.',
-              url: 'https://merchants.google.com/',
-              btn: 'Open Merchant Center'
-            },
-            {
-              title: 'Telegram & WhatsApp Channels',
-              descBn: 'ফ্ল্যাশ সেল ব্রডকাস্ট চ্যানেল খুলে ১-ক্লিকে প্রতিদিন ফ্রি অর্ডার জেনারেট করুন।',
-              descEn: 'Broadcast daily flash deals directly to subscribers for ৳0 fee.',
+              title: '3. Telegram Channel Free Bot Auto-Post',
+              descBn: 'BotFather টোকেন যুক্ত করলে প্রাইজ+ছবি+অর্ডার বাটন সরাসরি Telegram চ্যানেলে অটো-পোস্ট হবে।',
+              descEn: 'Connect free @BotFather token in Social Scheduler for instant Telegram auto-posts.',
               url: freeProduct
                 ? `https://t.me/share/url?url=${encodeURIComponent(getProductCanonicalUrl(freeProduct))}&text=${encodeURIComponent(
                     `${freeProduct.titleBn || freeProduct.title} - Only ৳${freeProduct.price} (64-District COD)`
                   )}`
                 : 'https://web.telegram.org/',
-              btn: 'Share Free Deal on Telegram'
+              btn: 'Share / Launch Telegram'
+            },
+            {
+              title: '4. WhatsApp Channel & Status Drops',
+              descBn: 'ফ্রি WhatsApp চ্যানেল ও ১০৮০×১৯২০ স্ট্যাটাস পোস্টারে ডেইলি ডিল ব্রডকাস্ট করুন।',
+              descEn: 'Daily WhatsApp Channel broadcasts & 1080x1920 Status flyers at ৳0 cost.',
+              url: `https://wa.me/?text=${encodeURIComponent(
+                `${freeProduct?.titleBn || freeProduct?.title || settings.storeName} — মাত্র ৳${freeProduct?.price || 0}! ৬৪ জেলায় ক্যাশ অন ডেলিভারি। অর্ডার: ${freeProduct ? getProductCanonicalUrl(freeProduct) : origin}`
+              )}`,
+              btn: 'Share to WhatsApp'
+            },
+            {
+              title: '5. Google Business Profile & Maps',
+              descBn: 'গুগল ম্যাপে BuyOne BD ও আপনার পণ্যের দাম ফ্রি লিস্টিং করে লোকাল ক্রেতা পান।',
+              descEn: 'List store & daily COD offers free on Google Search & Dhaka Maps.',
+              url: 'https://business.google.com/',
+              btn: 'Open Google Business'
+            },
+            {
+              title: '6. Google Merchant Free Listings',
+              descBn: 'আমাদের লাইভ XML ফিড যুক্ত করলে গুগল শপিং রেজাল্টে ফ্রিতে পণ্য দেখাবে।',
+              descEn: 'Submit /api/feeds/google-merchant.xml for free Google Shopping traffic.',
+              url: 'https://merchants.google.com/',
+              btn: 'Open Merchant Center'
+            },
+            {
+              title: '7. TikTok BD & YouTube Shorts Studio',
+              descBn: 'অটো-জেনারেটেড বাংলা হুক স্ক্রিপ্ট ও পিন্ড অর্ডার লিংকসহ শর্ট ভিডিও আপলোড করুন।',
+              descEn: 'Upload short demos with AI Bengali spoken hooks & pinned checkout links.',
+              url: 'https://www.tiktok.com/creator-center/upload',
+              btn: 'Open TikTok Upload'
+            },
+            {
+              title: '8. Pinterest BD & Organic Search Pins',
+              descBn: '"Price in Bangladesh" কিওয়ার্ডে গুগল ও পিন্টারেস্ট ইমেজ ট্রাফিক আনুন ফ্রিতে।',
+              descEn: 'Drive evergreen Google Image & Pinterest organic product clicks.',
+              url: 'https://www.pinterest.com/pin-creation-tool/',
+              btn: 'Create Free Product Pin'
             }
           ].map((ch) => (
             <div key={ch.title} className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between gap-2.5">
@@ -2406,7 +2502,7 @@ export const GlobalMarketingHub: React.FC = () => {
           ))}
         </div>
 
-        {/* Ready-to-Copy Generated 6-Channel Output Cards */}
+        {/* Ready-to-Copy Generated 12-Channel Output Cards */}
         {freeChannelPack && (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {[
@@ -2416,14 +2512,14 @@ export const GlobalMarketingHub: React.FC = () => {
                 content: `TITLE: ${freeChannelPack.bikroyAdTitle}\n\n${freeChannelPack.bikroyAdBody}`
               },
               {
-                key: 'fc-wa-chan',
-                title: '2. WhatsApp Channel / Broadcast Post',
-                content: freeChannelPack.whatsappChannelPost
+                key: 'fc-fbmp',
+                title: '2. Facebook Marketplace Listing',
+                content: freeChannelPack.facebookMarketplaceListing
               },
               {
-                key: 'fc-tg-chan',
-                title: '3. Telegram Flash Deal Channel',
-                content: freeChannelPack.telegramChannelPost
+                key: 'fc-fbreels',
+                title: '3. Facebook Page Reels Hook & Caption',
+                content: freeChannelPack.facebookReelsHook
               },
               {
                 key: 'fc-fb-grp',
@@ -2431,14 +2527,44 @@ export const GlobalMarketingHub: React.FC = () => {
                 content: `[Variant 1]:\n${freeChannelPack.fbGroupVariant1}\n\n[Variant 2 — Comment Trigger]:\n${freeChannelPack.fbGroupVariant2}`
               },
               {
-                key: 'fc-gbp',
-                title: '5. Google Business & Pinterest Organic Post',
-                content: `${freeChannelPack.googleBusinessUpdate}\n\nPinterest/Quora SEO:\n${freeChannelPack.quoraPinterestPinText}`
+                key: 'fc-comment',
+                title: '5. "Comment PRICE" & Messenger Closer',
+                content: `[Comment Reply]:\n${freeChannelPack.commentToOrderReply}\n\n[Messenger Closer]:\n${freeChannelPack.messengerCloserScript}`
               },
               {
-                key: 'fc-comment',
-                title: '6. "Comment PRICE" Auto-Closer Reply',
-                content: freeChannelPack.commentToOrderReply
+                key: 'fc-igreels',
+                title: '6. Instagram Reels & Shopping Tags',
+                content: freeChannelPack.instagramReelsCaption
+              },
+              {
+                key: 'fc-tiktok',
+                title: '7. TikTok BD Viral Hook & Spoken Script',
+                content: freeChannelPack.tiktokViralHookScript
+              },
+              {
+                key: 'fc-yt',
+                title: '8. YouTube Shorts SEO & Pinned Comment',
+                content: freeChannelPack.youtubeShortsPost
+              },
+              {
+                key: 'fc-wa-chan',
+                title: '9. WhatsApp Channel / Broadcast Post',
+                content: freeChannelPack.whatsappChannelPost
+              },
+              {
+                key: 'fc-tg-chan',
+                title: '10. Telegram Flash Deal Channel',
+                content: freeChannelPack.telegramChannelPost
+              },
+              {
+                key: 'fc-gbp',
+                title: '11. Google Business, Search SEO & Pinterest',
+                content: `[Google Business]:\n${freeChannelPack.googleBusinessUpdate}\n\n[Google Search BD SEO]:\n${freeChannelPack.seoBlogGuideSnippet}\n\n[Pinterest/Quora]:\n${freeChannelPack.quoraPinterestPinText}`
+              },
+              {
+                key: 'fc-barter',
+                title: '12. Nano-Creator Barter & Affiliate DM',
+                content: freeChannelPack.microCreatorBarterDm
               }
             ].map((item) => (
               <div key={item.key} className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2 flex flex-col justify-between">

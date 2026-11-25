@@ -46,6 +46,7 @@ import {
   AffiliatePayoutRequest,
   ChatInquiry,
   SocialScheduledPost,
+  SocialPlatform,
   ExpenseEntry,
   AITeamBriefing,
   AutoMarketingLogEntry,
@@ -1189,6 +1190,10 @@ function mergeSettings(raw: any): StoreSettings {
       youtube: {
         ...INITIAL_SETTINGS.socialAutoConfig!.youtube,
         ...(raw.socialAutoConfig?.youtube || {})
+      },
+      telegram: {
+        ...INITIAL_SETTINGS.socialAutoConfig!.telegram,
+        ...(raw.socialAutoConfig?.telegram || {})
       }
     },
     autoMarketingSuite: {
@@ -1845,11 +1850,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           ? window.location.origin
           : settingsRef.current.seoSettings?.canonicalUrl || 'https://buyonebd.com';
       const baseUrl = `${originUrl}/?product=${encodeURIComponent(slug)}`;
-      const platforms: ('facebook' | 'instagram' | 'tiktok' | 'youtube')[] = [
+      const platforms: SocialPlatform[] = [
         'facebook',
         'instagram',
         'tiktok',
-        'youtube'
+        'youtube',
+        'telegram'
       ];
       const nowMs = Date.now();
       const autoLaunchPosts: SocialScheduledPost[] = platforms.map((plat, idx) => ({
@@ -2182,7 +2188,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         createdAt: nowIso
       };
       setAbandonedCarts((prev) => prev.map((c) => (c.id === existing.id ? updated : c)));
-      saveAbandonedCartToFirestore(updated).catch(() => {});
+      if (isFirebaseAdminConnectedRef.current) {
+        saveAbandonedCartToFirestore(updated).catch(() => {});
+      }
       return;
     }
 
@@ -9036,7 +9044,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         prev.map((c) => {
           if (!c.recovered && String(c.customerPhone || '').replace(/[^0-9]/g, '').slice(-11) === leadPhoneDigits) {
             const recoveredLead = { ...c, recovered: true, recoveredAt: nowIso };
-            saveAbandonedCartToFirestore(recoveredLead).catch(() => {});
+            if (isFirebaseAdminConnectedRef.current) {
+              saveAbandonedCartToFirestore(recoveredLead).catch(() => {});
+            }
             return recoveredLead;
           }
           return c;
@@ -12448,6 +12458,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (Array.isArray(json.blogs) && json.blogs.length > 0) setBlogs(json.blogs);
       if (Array.isArray(json.products) && json.products.length > 0) setProducts(json.products);
       if (Array.isArray(json.abandonedCarts)) setAbandonedCarts(json.abandonedCarts);
+      if (Array.isArray(json.chatInquiries)) setChatInquiries(json.chatInquiries);
+      if (Array.isArray(json.userNotifications)) setPublishedNotifications(json.userNotifications);
       if (json.settings) {
         const merged = mergeSettings(json.settings);
         setSettings(merged);
@@ -12459,7 +12471,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         (Number(json.createdSocialCount) || 0) +
         (Number(json.enrichedSeoCount) || 0) +
         (Number(json.preparedCartsCount) || 0) +
-        (Number(json.createdBlogCount) || 0);
+        (Number(json.createdBlogCount) || 0) +
+        (Number(json.repliedInquiriesCount) || 0) +
+        (Number(json.promoNotifCount) || 0);
       addToast(
         'success',
         t('অটো AI মার্কেটিং সম্পন্ন!', 'Auto AI Marketing Complete!'),

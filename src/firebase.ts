@@ -952,13 +952,41 @@ function sanitizeAbandonedCartBase(cart: AbandonedCart) {
   });
 }
 
+const guestCreatedAbandonedCartIds = new Set<string>();
+
+async function canCurrentUserAdministerFirestore(): Promise<boolean> {
+  const user = auth.currentUser;
+  if (!user) return false;
+  if (user.email?.toLowerCase() === 'buyonebd@gmail.com' && user.emailVerified) {
+    return true;
+  }
+  try {
+    const admSnap = await getDoc(doc(db, 'admins', user.uid));
+    return admSnap.exists();
+  } catch {
+    return false;
+  }
+}
+
 export async function saveAbandonedCartToFirestore(cart: AbandonedCart): Promise<void> {
   const base = sanitizeAbandonedCartBase(cart);
   const path = `abandoned_carts/${base.id}`;
   try {
     const ref = doc(db, 'abandoned_carts', base.id);
-    if (!auth.currentUser) {
-      await setDoc(ref, { ...base, createdAt: serverTimestamp() });
+    const isAdminAuth = await canCurrentUserAdministerFirestore();
+    if (!isAdminAuth) {
+      // Guest / non-admin browsers only have Firestore `create` permission; skip repeat overwrites
+      if (guestCreatedAbandonedCartIds.has(base.id)) return;
+      guestCreatedAbandonedCartIds.add(base.id);
+      try {
+        await setDoc(ref, { ...base, createdAt: serverTimestamp() });
+      } catch (guestErr: any) {
+        const msg = String(guestErr?.message || guestErr?.code || '').toLowerCase();
+        if (msg.includes('permission') || msg.includes('insufficient')) {
+          return;
+        }
+        throw guestErr;
+      }
       return;
     }
     const existingSnap = await getDoc(ref);

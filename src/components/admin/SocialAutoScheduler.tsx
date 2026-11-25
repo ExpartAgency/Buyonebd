@@ -39,13 +39,15 @@ const PLATFORMS: {
   { id: 'facebook', label: 'Facebook Page', labelBn: 'ফেসবুক পেজ', accentClass: 'text-sky-400' },
   { id: 'instagram', label: 'Instagram', labelBn: 'ইনস্টাগ্রাম', accentClass: 'text-pink-400' },
   { id: 'tiktok', label: 'TikTok Shop', labelBn: 'টিকটক শপ', accentClass: 'text-cyan-300' },
-  { id: 'youtube', label: 'YouTube Shorts', labelBn: 'ইউটিউব শর্টস', accentClass: 'text-rose-400' }
+  { id: 'youtube', label: 'YouTube Shorts', labelBn: 'ইউটিউব শর্টস', accentClass: 'text-rose-400' },
+  { id: 'telegram', label: 'Telegram (Free Bot)', labelBn: 'টেলিগ্রাম চ্যানেল (৳০)', accentClass: 'text-sky-300' }
 ];
 
 const renderPlatformIcon = (plat: SocialPlatform, className = 'w-4 h-4') => {
   if (plat === 'facebook') return <Facebook className={className} />;
   if (plat === 'instagram') return <Instagram className={className} />;
   if (plat === 'youtube') return <Youtube className={className} />;
+  if (plat === 'telegram') return <Send className={className} />;
   return <Video className={className} />;
 };
 
@@ -70,11 +72,17 @@ export const SocialAutoScheduler: React.FC = () => {
 
   const at = (bn: string, en: string) => (adminLang === 'en' ? en : bn);
 
-  const socialCfg: Record<SocialPlatform, SocialChannelConfig> = settings.socialAutoConfig || {
+  const defaultSocialCfg: Record<SocialPlatform, SocialChannelConfig> = {
     facebook: { enabled: true, accountName: 'BuyOne BD Page', pageOrChannelId: '', accessToken: '', webhookUrl: '', autoPostEnabled: true, intervalHours: 6, defaultHashtags: '#BuyOneBD #BangladeshShopping' },
     instagram: { enabled: true, accountName: '@buyonebd.official', pageOrChannelId: '', accessToken: '', webhookUrl: '', autoPostEnabled: true, intervalHours: 8, defaultHashtags: '#BuyOneBD #BDStyle' },
     tiktok: { enabled: true, accountName: '@buyonebd', pageOrChannelId: '', accessToken: '', webhookUrl: '', autoPostEnabled: true, intervalHours: 8, defaultHashtags: '#BuyOneBD #TikTokBD' },
-    youtube: { enabled: true, accountName: 'BuyOne BD Shorts', pageOrChannelId: '', accessToken: '', webhookUrl: '', autoPostEnabled: false, intervalHours: 12, defaultHashtags: '#BuyOneBD #ShortsBD' }
+    youtube: { enabled: true, accountName: 'BuyOne BD Shorts', pageOrChannelId: '', accessToken: '', webhookUrl: '', autoPostEnabled: false, intervalHours: 12, defaultHashtags: '#BuyOneBD #ShortsBD' },
+    telegram: { enabled: true, accountName: '@BuyOneBDDeals', pageOrChannelId: '', accessToken: '', webhookUrl: '', autoPostEnabled: true, intervalHours: 6, defaultHashtags: '#BuyOneBD #DealsBD #CashOnDelivery' }
+  };
+
+  const socialCfg: Record<SocialPlatform, SocialChannelConfig> = {
+    ...defaultSocialCfg,
+    ...(settings.socialAutoConfig || {})
   };
 
   const updateChannelCfg = (platform: SocialPlatform, patch: Partial<SocialChannelConfig>) => {
@@ -82,7 +90,8 @@ export const SocialAutoScheduler: React.FC = () => {
       socialAutoConfig: {
         ...socialCfg,
         [platform]: {
-          ...socialCfg[platform],
+          ...defaultSocialCfg[platform],
+          ...(socialCfg[platform] || {}),
           ...patch
         }
       }
@@ -227,7 +236,7 @@ export const SocialAutoScheduler: React.FC = () => {
       const baseMs = new Date(scheduleDatetime).getTime() || Date.now() + 15 * 60 * 1000;
       const targetPlatforms: SocialPlatform[] =
         !publishSingleIntoEditor && scheduleAllFour
-          ? ['facebook', 'instagram', 'tiktok', 'youtube']
+          ? ['facebook', 'instagram', 'tiktok', 'youtube', 'telegram']
           : [selectedPlatform];
       let createdCount = 0;
 
@@ -584,10 +593,10 @@ export const SocialAutoScheduler: React.FC = () => {
         </div>
       )}
 
-      {/* 1. 4-Platform Connection & Auto-Pilot Cadence Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 text-xs">
+      {/* 1. 5-Platform Connection & Auto-Pilot Cadence Cards (FB, IG, TikTok, YouTube & Free Telegram Bot) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3.5 text-xs">
         {PLATFORMS.map((pl) => {
-          const cfg = socialCfg[pl.id];
+          const cfg = socialCfg[pl.id] || defaultSocialCfg[pl.id];
           return (
             <div
               key={pl.id}
@@ -617,13 +626,13 @@ export const SocialAutoScheduler: React.FC = () => {
               <div className="space-y-2">
                 <div>
                   <label className="block text-[10px] text-slate-400 mb-1">
-                    {pl.id === 'youtube' ? 'Channel ID' : 'Page / Account ID'}
+                    {pl.id === 'youtube' ? 'Channel ID' : pl.id === 'telegram' ? '@Channel Username or ID' : 'Page / Account ID'}
                   </label>
                   <input
                     type="text"
                     value={cfg.pageOrChannelId}
                     onChange={(e) => updateChannelCfg(pl.id, { pageOrChannelId: e.target.value })}
-                    placeholder={`@buyonebd_${pl.id}`}
+                    placeholder={pl.id === 'telegram' ? '@BuyOneBDDeals' : `@buyonebd_${pl.id}`}
                     className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-white font-mono text-[11px]"
                   />
                 </div>
@@ -638,12 +647,14 @@ export const SocialAutoScheduler: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-slate-400 mb-1">Graph / API Token (Optional)</label>
+                  <label className="block text-[10px] text-slate-400 mb-1">
+                    {pl.id === 'telegram' ? 'BotFather Token (Free API)' : 'Graph / API Token (Optional)'}
+                  </label>
                   <input
                     type="password"
                     value={cfg.accessToken}
                     onChange={(e) => updateChannelCfg(pl.id, { accessToken: e.target.value })}
-                    placeholder="••••••••••••"
+                    placeholder={pl.id === 'telegram' ? '123456:ABC-DEF...' : '••••••••••••'}
                     className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 font-mono text-[11px]"
                   />
                 </div>
@@ -713,7 +724,7 @@ export const SocialAutoScheduler: React.FC = () => {
           </div>
 
           <div className="space-y-2">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               {PLATFORMS.map((pl) => (
                 <button
                   key={pl.id}
@@ -722,7 +733,7 @@ export const SocialAutoScheduler: React.FC = () => {
                     setScheduleAllFour(false);
                     setSelectedPlatform(pl.id);
                   }}
-                  className={`py-2 px-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 border cursor-pointer transition-colors ${
+                  className={`py-2 px-2 rounded-xl font-bold flex items-center justify-center gap-1.5 border cursor-pointer transition-colors ${
                     !scheduleAllFour && selectedPlatform === pl.id
                       ? 'bg-emerald-600 border-emerald-500 text-white'
                       : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
@@ -740,7 +751,7 @@ export const SocialAutoScheduler: React.FC = () => {
                 onChange={(e) => setScheduleAllFour(e.target.checked)}
                 className="w-4 h-4 accent-emerald-500 rounded"
               />
-              <span>{at('একসাথে ৪টি প্ল্যাটফর্মেই শিডিউল করুন (FB + IG + TikTok + YouTube)', 'Auto-Schedule Across All 4 Platforms Together (FB + IG + TikTok + YT)')}</span>
+              <span>{at('একসাথে ৫টি প্ল্যাটফর্মেই শিডিউল করুন (FB + IG + TikTok + YouTube + Telegram)', 'Auto-Schedule Across All 5 Channels Together (FB + IG + TikTok + YT + Telegram)')}</span>
             </label>
           </div>
 
@@ -922,6 +933,7 @@ export const SocialAutoScheduler: React.FC = () => {
                 <option value="instagram">Instagram</option>
                 <option value="tiktok">TikTok</option>
                 <option value="youtube">YouTube Shorts</option>
+                <option value="telegram">Telegram Channel (Free Bot)</option>
               </select>
             </div>
             <div>
@@ -1016,7 +1028,7 @@ export const SocialAutoScheduler: React.FC = () => {
         accent="cyan"
         headerActions={
           <div className="flex flex-wrap items-center gap-1.5">
-            {(['all', 'facebook', 'instagram', 'tiktok', 'youtube'] as const).map((f) => (
+            {(['all', 'facebook', 'instagram', 'tiktok', 'youtube', 'telegram'] as const).map((f) => (
               <button
                 key={f}
                 type="button"

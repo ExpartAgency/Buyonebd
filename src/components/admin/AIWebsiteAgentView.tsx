@@ -224,7 +224,7 @@ export const AIWebsiteAgentView: React.FC<AIWebsiteAgentViewProps> = ({ onNaviga
     const featProd = pool.find((p) => p.id === fullAutopilotPlan.featuredProductId) || pool[0];
     if (!featProd) return;
     const baseUrl = getProductCanonicalUrl(featProd);
-    const platforms: ('facebook' | 'instagram' | 'tiktok' | 'youtube')[] = ['facebook', 'instagram', 'tiktok', 'youtube'];
+    const platforms: ('facebook' | 'instagram' | 'tiktok' | 'youtube' | 'telegram')[] = ['facebook', 'instagram', 'tiktok', 'youtube', 'telegram'];
     platforms.forEach((plat, idx) => {
       addSocialPost(
         {
@@ -249,7 +249,7 @@ export const AIWebsiteAgentView: React.FC<AIWebsiteAgentViewProps> = ({ onNaviga
     setScheduledAutopilotPromo(true);
     addToast(
       'success',
-      at('৪টি প্ল্যাটফর্মেই প্রোমো শিডিউল সম্পন্ন!', 'Scheduled Promo Across All 4 Channels!'),
+      at('৫টি প্ল্যাটফর্মেই প্রোমো শিডিউল সম্পন্ন!', 'Scheduled Promo Across All 5 Channels!'),
       featProd.title
     );
   };

@@ -1445,6 +1445,16 @@ export const INITIAL_SETTINGS: StoreSettings = {
       accessToken: '',
       autoPostEnabled: false,
       intervalHours: 24
+    },
+    telegram: {
+      enabled: true,
+      accountName: '@BuyOneBDDeals',
+      pageOrChannelId: '',
+      webhookUrl: '',
+      accessToken: '',
+      autoPostEnabled: true,
+      intervalHours: 6,
+      defaultHashtags: '#BuyOneBD #DealsBD #CashOnDelivery'
     }
   },
   autoMarketingSuite: {
@@ -1456,6 +1466,8 @@ export const INITIAL_SETTINGS: StoreSettings = {
     autoSeoProductEnricher: true,
     autoWeeklyBlogPublisher: true,
     autoReviewSocialProofPromo: true,
+    autoInquiryResponder: true,
+    autoPromoNotificationBroadcaster: true,
     cycleIntervalHours: 6
   },
   affiliateSettings: {

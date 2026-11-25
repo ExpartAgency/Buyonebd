@@ -4971,10 +4971,49 @@ async function dispatchSocialPostItem(
     }
   }
 
-  // 4. Local Queue Publication (Ready for 1-click browser share or Make/Zapier trigger)
+  // 4. Direct Telegram Bot API (100% Free Instant Auto-Post in Bangladesh)
+  if (post.platform === 'telegram' && channelCfg?.pageOrChannelId && channelCfg?.accessToken) {
+    try {
+      const botToken = String(channelCfg.accessToken).trim();
+      const chatId = String(channelCfg.pageOrChannelId).trim();
+      const hasImage = Boolean(post.imageUrl && /^https?:\/\//i.test(post.imageUrl));
+      const tgText = fullMessage.slice(0, hasImage ? 1000 : 4000);
+      const replyMarkup =
+        post.productUrl && /^https?:\/\//i.test(post.productUrl)
+          ? { inline_keyboard: [[{ text: '🛒 Order Now (64-District COD)', url: post.productUrl }]] }
+          : undefined;
+      const endpoint = hasImage
+        ? `https://api.telegram.org/bot${encodeURIComponent(botToken)}/sendPhoto`
+        : `https://api.telegram.org/bot${encodeURIComponent(botToken)}/sendMessage`;
+      const payload = hasImage
+        ? { chat_id: chatId, photo: post.imageUrl, caption: tgText, reply_markup: replyMarkup }
+        : { chat_id: chatId, text: tgText, reply_markup: replyMarkup };
+
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const json: any = await resp.json().catch(() => ({}));
+      if (!resp.ok || !json?.ok) {
+        const msg = json?.description || `Telegram Bot HTTP ${resp.status}`;
+        return { ok: false, error: msg, dispatchLog: `Telegram Error: ${msg}` };
+      }
+      const msgId = json?.result?.message_id ? `tg-${json.result.message_id}` : '';
+      return {
+        ok: true,
+        externalPostId: msgId || undefined,
+        dispatchLog: `Published directly to Telegram Channel ${chatId}`
+      };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Telegram Bot error', dispatchLog: err?.message || 'Telegram Bot error' };
+    }
+  }
+
+  // 5. Local Queue Publication (Ready for 1-click browser share or Make/Zapier trigger)
   return {
     ok: true,
-    dispatchLog: 'Published to Local Feed Queue (Connect Webhook URL or Graph API Token for external API auto-push)'
+    dispatchLog: 'Published to Local Feed Queue (Connect Webhook URL, Telegram Bot, or Graph API Token for external API auto-push)'
   };
 }
 
@@ -5020,9 +5059,35 @@ app.post('/api/social/test-channel', async (req, res) => {
         message: `Connected to ${json.name || json.username || json.id}`
       });
     }
+    if (platform === 'telegram' && config.pageOrChannelId && config.accessToken) {
+      const botToken = String(config.accessToken).trim();
+      const chatId = String(config.pageOrChannelId).trim();
+      const meResp = await fetch(`https://api.telegram.org/bot${encodeURIComponent(botToken)}/getMe`);
+      const meJson: any = await meResp.json().catch(() => ({}));
+      if (!meResp.ok || !meJson?.ok) {
+        return res.json({
+          success: false,
+          message: meJson?.description || `Invalid Telegram Bot Token (HTTP ${meResp.status})`
+        });
+      }
+      const chatResp = await fetch(
+        `https://api.telegram.org/bot${encodeURIComponent(botToken)}/getChat?chat_id=${encodeURIComponent(chatId)}`
+      );
+      const chatJson: any = await chatResp.json().catch(() => ({}));
+      if (!chatResp.ok || !chatJson?.ok) {
+        return res.json({
+          success: false,
+          message: chatJson?.description || `Bot @${meJson.result?.username} could not access ${chatId}. Add bot as Admin in your channel.`
+        });
+      }
+      return res.json({
+        success: true,
+        message: `Bot @${meJson.result?.username} connected to ${chatJson.result?.title || chatId}`
+      });
+    }
     return res.json({
       success: false,
-      message: 'Please enter a Make/Zapier Webhook URL or Page/IG ID + Graph API Token first.'
+      message: 'Please enter a Make/Zapier Webhook URL, Telegram Bot Token + @Channel, or Page/IG ID + Graph Token.'
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, message: err?.message || 'Test request failed' });
@@ -5031,6 +5096,10 @@ app.post('/api/social/test-channel', async (req, res) => {
 
 app.post('/api/social/run-cycle-now', async (req, res) => {
   try {
+    const platformParam =
+      typeof req.body?.platform === 'string' && req.body.platform.trim()
+        ? req.body.platform.trim().toLowerCase()
+        : '';
     const saved = loadStoreData() || {};
     if (req.body?.channelsOverride && typeof req.body.channelsOverride === 'object') {
       saved.settings = {
@@ -5063,10 +5132,9 @@ app.post('/api/social/run-cycle-now', async (req, res) => {
     }
 
     const catalog: any[] = getVisibleCatalogProducts(saved).filter((p: any) => (p.stock ?? 0) > 0);
-    const platformParam = req.body?.platform;
     const platformsToRun = platformParam
       ? [platformParam]
-      : ['facebook', 'instagram', 'tiktok', 'youtube'].filter((pl) => channels[pl]?.enabled && channels[pl]?.autoPostEnabled);
+      : ['facebook', 'instagram', 'tiktok', 'youtube', 'telegram'].filter((pl) => channels[pl]?.enabled && channels[pl]?.autoPostEnabled);
 
     if (catalog.length > 0 && platformsToRun.length > 0) {
       for (const pl of platformsToRun) {
@@ -5229,25 +5297,49 @@ Generate copy in ${targetLang} tailored for each free channel (no paid ads).`;
   }
 });
 
-// Multi-Channel Zero-Ad-Spend Free Traffic Pack (/api/ai/free-channel-pack)
+// Multi-Channel Zero-Ad-Spend All-Bangladesh Free Traffic Pack (/api/ai/free-channel-pack)
 app.post('/api/ai/free-channel-pack', async (req, res) => {
   try {
-    const { product, storeName = 'BuyOne BD', productUrl = '', whatsapp = '+8801917942662', lang = 'bn' } = req.body || {};
+    const {
+      product: rawProduct,
+      productId,
+      storeName: bodyStoreName,
+      productUrl = '',
+      whatsapp: bodyWhatsapp,
+      lang = 'bn'
+    } = req.body || {};
+    const saved = loadStoreData() || {};
+    const product =
+      rawProduct?.title
+        ? rawProduct
+        : getVisibleCatalogProducts(saved).find((p: any) => p.id === productId) ||
+          (Array.isArray(saved.products) ? saved.products.find((p: any) => p.id === productId) : null);
+    const storeName = bodyStoreName || saved.settings?.storeName || 'BuyOne BD';
+    const whatsapp = bodyWhatsapp || saved.settings?.whatsappNumber || '+8801917942662';
     if (!product?.title) {
       return res.status(400).json({ success: false, error: 'Product details required.' });
     }
     const baseName = product.titleBn || product.title;
     const priceStr = `৳${Number(product.price || 0).toLocaleString()}`;
+    const cleanUrl = productUrl || 'https://buyonebd.com';
     const fallbackPack = {
       bikroyAdTitle: `${baseName} - Brand New Original | ${priceStr} (COD All BD)`,
-      bikroyAdBody: `${baseName}\nPrice: ${priceStr}\nCondition: 100% Brand New & Authentic\nDelivery: 64 Districts Cash on Delivery (0 Advance).\nOrder Directly: ${productUrl}?utm_source=bikroy&utm_medium=free_listing\nWhatsApp: ${whatsapp}`,
-      whatsappChannelPost: `🔥 *আজকের ফ্ল্যাশ অফার — ${storeName}*\n✅ *${baseName}*\n💥 অফার মূল্য: *${priceStr}*\n🚚 ৬৪ জেলায় ক্যাশ অন ডেলিভারি (প্রোডাক্ট দেখে পেমেন্ট)\n👉 সরাসরি অর্ডার: ${productUrl}?utm_source=wa_channel&utm_medium=organic`,
-      telegramChannelPost: `⚡ **${baseName}**\n💰 Price: **${priceStr}**\n🛡 7-Day Replacement Warranty + All BD Home Delivery\n🛒 Order Now: ${productUrl}?utm_source=telegram&utm_medium=free_channel`,
-      fbGroupVariant1: `আসসালামু আলাইকুম, যাদের "${baseName}" প্রয়োজন, কোনো অগ্রিম টাকা ছাড়াই মাত্র ${priceStr}-এ হাতে পেয়ে চেক করে নিতে পারেন! ইনবক্স করুন অথবা সরাসরি দেখুন: ${productUrl}?utm_source=fb_group&utm_medium=organic`,
+      bikroyAdBody: `${baseName}\nPrice: ${priceStr}\nCondition: 100% Brand New & Authentic\nDelivery: 64 Districts Cash on Delivery (0 Advance).\nOrder Directly: ${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}utm_source=bikroy&utm_medium=free_listing\nWhatsApp: ${whatsapp}`,
+      facebookMarketplaceListing: `🔥 ${baseName} — মাত্র ${priceStr}\n📍 Dhaka & All 64 Districts Home Delivery (Cash on Delivery)\n✅ ১ টাকাও অগ্রিম ছাড়া প্রোডাক্ট হাতে পেয়ে চেক করে পেমেন্ট\n👉 সরাসরি অর্ডার: ${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}utm_source=fb_marketplace&utm_medium=organic\n📞 WhatsApp: ${whatsapp}`,
+      facebookReelsHook: `১ টাকাও অগ্রিম না দিয়ে হাতে পেয়ে চেক করে নিন ${baseName} মাত্র ${priceStr}-এ! আজই অর্ডার করুন: ${cleanUrl}`,
+      instagramReelsCaption: `✨ ${baseName} এখন ${storeName}-এ!\n💰 স্পেশাল দাম: ${priceStr}\n🚚 ৬৪ জেলায় ক্যাশ অন ডেলিভারি\n👉 অর্ডার লিংক বায়োতে: ${cleanUrl}\n#BuyOneBD #BangladeshShopping #DhakaDeals #CashOnDelivery`,
+      tiktokViralHookScript: `[0-3s HOOK]: "ঢাকা বা সারাদেশে কেউ কি অগ্রিম টাকা ছাড়া এই ${baseName} খুঁজছেন?"\n[4-15s BODY]: দেখুন একদম অরিজিনাল কোয়ালিটি মাত্র ${priceStr} টাকায়, ৭ দিনের রিপ্লেসমেন্ট গ্যারান্টিসহ!\n[CTA]: অর্ডার করতে বায়োর লিংকে ক্লিক করুন অথবা WhatsApp করুন: ${whatsapp}`,
+      youtubeShortsPost: `TITLE: ${baseName} Price in Bangladesh (${priceStr}) | 64-District COD #Shorts\nDESCRIPTION: Order ${baseName} online at ${storeName} for ${priceStr}. Check before paying!\nPINNED COMMENT: 🛒 Order Link: ${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}utm_source=youtube_shorts&utm_medium=organic`,
+      whatsappChannelPost: `🔥 *আজকের ফ্ল্যাশ অফার — ${storeName}*\n✅ *${baseName}*\n💥 অফার মূল্য: *${priceStr}*\n🚚 ৬৪ জেলায় ক্যাশ অন ডেলিভারি (প্রোডাক্ট দেখে পেমেন্ট)\n👉 সরাসরি অর্ডার: ${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}utm_source=wa_channel&utm_medium=organic`,
+      telegramChannelPost: `⚡ **${baseName}**\n💰 Price: **${priceStr}**\n🛡 7-Day Replacement Warranty + All BD Home Delivery\n🛒 Order Now: ${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}utm_source=telegram&utm_medium=free_channel`,
+      fbGroupVariant1: `আসসালামু আলাইকুম, যাদের "${baseName}" প্রয়োজন, কোনো অগ্রিম টাকা ছাড়াই মাত্র ${priceStr}-এ হাতে পেয়ে চেক করে নিতে পারেন! ইনবক্স করুন অথবা সরাসরি দেখুন: ${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}utm_source=fb_group&utm_medium=organic`,
       fbGroupVariant2: `ঢাকা সহ সারাদেশে হোম ডেলিভারিতে পাচ্ছেন অরিজিনাল ${baseName} মাত্র ${priceStr}! কমেন্টে "PRICE" বা "ORDER" লিখলেই লিংক ও ডেলিভারি ডিটেইলস দিয়ে দিচ্ছি।`,
-      googleBusinessUpdate: `${baseName} now available at ${storeName} for ${priceStr} with fast Cash on Delivery across Dhaka & all 64 districts of Bangladesh. Order online or via WhatsApp: ${productUrl}?utm_source=google_gbp&utm_medium=organic`,
-      commentToOrderReply: `ধন্যবাদ কমেন্টের জন্য! "${baseName}" এর অফার মূল্য মাত্র ${priceStr}। ৬৪ জেলায় ক্যাশ অন ডেলিভারি পেতে এই লিংকে ক্লিক করে ১ মিনিটে অর্ডার কনফার্ম করুন: ${productUrl}?utm_source=fb_comment&utm_medium=organic`,
-      quoraPinterestPinText: `Best ${product.title} Price in Bangladesh (${priceStr}) — Genuine quality reviewed & verified with 64-district Cash on Delivery at ${storeName}: ${productUrl}?utm_source=pinterest_seo&utm_medium=organic`
+      messengerCloserScript: `আসসালামু আলাইকুম! "${baseName}" এখন স্টকে আছে — অফার মূল্য মাত্র ${priceStr}। ডেলিভারির জন্য আপনার নাম, সম্পূর্ণ ঠিকানা ও মোবাইল নম্বরটি দিলে আজই পার্সেল পাঠিয়ে দিচ্ছি (হাতে পেয়ে টাকা দেবেন)। অথবা ১ মিনিটে অর্ডার করুন: ${cleanUrl}`,
+      googleBusinessUpdate: `${baseName} now available at ${storeName} for ${priceStr} with fast Cash on Delivery across Dhaka & all 64 districts of Bangladesh. Order online or via WhatsApp: ${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}utm_source=google_gbp&utm_medium=organic`,
+      commentToOrderReply: `ধন্যবাদ কমেন্টের জন্য! "${baseName}" এর অফার মূল্য মাত্র ${priceStr}। ৬৪ জেলায় ক্যাশ অন ডেলিভারি পেতে এই লিংকে ক্লিক করে ১ মিনিটে অর্ডার কনফার্ম করুন: ${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}utm_source=fb_comment&utm_medium=organic`,
+      seoBlogGuideSnippet: `${product.title} Price in Bangladesh (${priceStr}) — Buy original ${product.title} in Dhaka, Chattogram, Sylhet & all 64 districts with zero advance Cash on Delivery at ${storeName}.`,
+      quoraPinterestPinText: `Best ${product.title} Price in Bangladesh (${priceStr}) — Genuine quality reviewed & verified with 64-district Cash on Delivery at ${storeName}: ${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}utm_source=pinterest_seo&utm_medium=organic`,
+      microCreatorBarterDm: `হ্যালো! আপনার কন্টেন্ট আমাদের খুব ভালো লেগেছে। ${storeName} থেকে আমাদের সেরা "${baseName}" আপনাকে সম্পূর্ণ ফ্রি গিফট পাঠাতে চাই একটি ছোট আনবক্সিং Reel/TikTok রিভিউর বিনিময়ে + আপনার কোডে প্রতিটি অর্ডারে লাইফটাইম কমিশন! আগ্রহী হলে জানাবেন।`
     };
 
     if (!process.env.GEMINI_API_KEY) {
@@ -5256,13 +5348,13 @@ app.post('/api/ai/free-channel-pack', async (req, res) => {
 
     const targetLang = lang === 'en' ? 'English' : 'Natural Bangladeshi Bengali mixed with crisp e-commerce terms';
     const prompt = `You are a Zero-Budget Organic E-Commerce Growth Expert in Bangladesh for "${storeName}".
-Generate ready-to-post copy (spending ৳0 on ads) for this product across 6 free sales channels:
+Generate ready-to-post copy (spending ৳0 on ads) covering ALL free Bangladesh sales channels for this product:
 Product: ${baseName} (${product.title})
 Price: ${priceStr} (Regular: ৳${product.originalPrice || product.price})
-URL: ${productUrl}
+URL: ${cleanUrl}
 WhatsApp: ${whatsapp}
 Terms: Cash on Delivery across 64 districts of Bangladesh, check product before paying, 7-day replacement warranty.
-Language: ${targetLang}. Make Facebook Group variants sound natural and non-spammy, and include UTM query tags (?utm_source=...) on URLs.`;
+Language: ${targetLang}. Make Facebook Group variants natural & non-spammy, TikTok script punchy, and preserve the product link with UTM query tags (?utm_source=...).`;
 
     try {
       const aiResp = await ai.models.generateContent({
@@ -5275,24 +5367,40 @@ Language: ${targetLang}. Make Facebook Group variants sound natural and non-spam
             properties: {
               bikroyAdTitle: { type: Type.STRING },
               bikroyAdBody: { type: Type.STRING },
+              facebookMarketplaceListing: { type: Type.STRING },
+              facebookReelsHook: { type: Type.STRING },
+              instagramReelsCaption: { type: Type.STRING },
+              tiktokViralHookScript: { type: Type.STRING },
+              youtubeShortsPost: { type: Type.STRING },
               whatsappChannelPost: { type: Type.STRING },
               telegramChannelPost: { type: Type.STRING },
               fbGroupVariant1: { type: Type.STRING },
               fbGroupVariant2: { type: Type.STRING },
+              messengerCloserScript: { type: Type.STRING },
               googleBusinessUpdate: { type: Type.STRING },
               commentToOrderReply: { type: Type.STRING },
-              quoraPinterestPinText: { type: Type.STRING }
+              seoBlogGuideSnippet: { type: Type.STRING },
+              quoraPinterestPinText: { type: Type.STRING },
+              microCreatorBarterDm: { type: Type.STRING }
             },
             required: [
               'bikroyAdTitle',
               'bikroyAdBody',
+              'facebookMarketplaceListing',
+              'facebookReelsHook',
+              'instagramReelsCaption',
+              'tiktokViralHookScript',
+              'youtubeShortsPost',
               'whatsappChannelPost',
               'telegramChannelPost',
               'fbGroupVariant1',
               'fbGroupVariant2',
+              'messengerCloserScript',
               'googleBusinessUpdate',
               'commentToOrderReply',
-              'quoraPinterestPinText'
+              'seoBlogGuideSnippet',
+              'quoraPinterestPinText',
+              'microCreatorBarterDm'
             ]
           }
         }
@@ -5304,6 +5412,147 @@ Language: ${targetLang}. Make Facebook Group variants sound natural and non-spam
     }
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Free channel generation failed' });
+  }
+});
+
+// 1-Click All-Bangladesh Free Channels AI Auto-Poster (/api/ai/bd-free-channels-autopost)
+app.post('/api/ai/bd-free-channels-autopost', async (req, res) => {
+  try {
+    const saved = loadStoreData() || {};
+    const visibleProducts = getVisibleCatalogProducts(saved).filter((p: any) => Number(p.stock ?? 0) > 0);
+    const {
+      productId,
+      dispatchImmediately = true,
+      broadcastInAppNotif = true,
+      lang = 'bn'
+    } = req.body || {};
+
+    const product =
+      visibleProducts.find((p: any) => p.id === productId) ||
+      visibleProducts[0] ||
+      (Array.isArray(saved.products) ? saved.products[0] : null);
+    if (!product) {
+      return res.status(400).json({ success: false, error: 'No in-stock own product available to auto-post.' });
+    }
+
+    const baseOrigin = (saved.settings?.seoSettings?.canonicalUrl || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+    const storeName = saved.settings?.storeName || 'BuyOne BD';
+    const slug = product.seo?.slug || product.id;
+    const baseProductUrl = `${baseOrigin}/?product=${encodeURIComponent(slug)}`;
+    const channels = saved.settings?.socialAutoConfig || {};
+    const posts: any[] = Array.isArray(saved.socialPosts) ? [...saved.socialPosts] : [];
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+    const targetPlatforms = ['facebook', 'instagram', 'tiktok', 'youtube', 'telegram'];
+    const createdPosts: any[] = [];
+
+    for (let idx = 0; idx < targetPlatforms.length; idx++) {
+      const pl = targetPlatforms[idx];
+      const chCfg = channels[pl] || { enabled: true };
+      if (chCfg.enabled === false) continue;
+
+      const utmUrl = `${baseProductUrl}&utm_source=${pl}&utm_medium=bd_free_autopost`;
+      let gen = {
+        title: `${product.titleBn || product.title} — ৳${product.price}`,
+        caption: `🔥 ${product.titleBn || product.title}\n💰 অফার মূল্য: মাত্র ৳${product.price}!\n🚚 ৬৪ জেলায় ক্যাশ অন ডেলিভারি (প্রোডাক্ট দেখে পেমেন্ট)।\n👉 অর্ডার: ${utmUrl}`,
+        hashtags: ['#BuyOneBD', '#BangladeshShopping', '#CashOnDelivery', `#${pl}`],
+        productUrl: utmUrl
+      };
+      if (process.env.GEMINI_API_KEY) {
+        try {
+          gen = await generateSocialCaptionWithGemini(product, pl, lang === 'en' ? 'en' : 'bn', storeName, baseOrigin);
+          gen.productUrl = utmUrl;
+        } catch {}
+      }
+
+      const postObj: any = {
+        id: `soc-bd-${nowMs}-${idx}-${Math.floor(10 + Math.random() * 89)}`,
+        platform: pl,
+        productId: product.id,
+        productTitle: product.title,
+        title: gen.title,
+        caption: gen.caption,
+        hashtags: gen.hashtags,
+        productUrl: gen.productUrl,
+        imageUrl: product.images?.[0] || '',
+        scheduledAt: dispatchImmediately ? nowIso : new Date(nowMs + idx * 30 * 60 * 1000).toISOString(),
+        status: 'scheduled',
+        autoGenerated: true,
+        createdAt: nowIso
+      };
+
+      if (dispatchImmediately) {
+        const disp = await dispatchSocialPostItem(postObj, chCfg);
+        postObj.status = disp.ok ? 'published' : 'failed';
+        postObj.publishedAt = disp.ok ? nowIso : undefined;
+        postObj.errorNote = disp.error || '';
+        postObj.externalPostId = disp.externalPostId || '';
+        postObj.dispatchLog = disp.dispatchLog || '';
+      }
+
+      posts.unshift(postObj);
+      createdPosts.push(postObj);
+      saved.settings = saved.settings || {};
+      saved.settings.socialAutoConfig = saved.settings.socialAutoConfig || {};
+      saved.settings.socialAutoConfig[pl] = {
+        ...(saved.settings.socialAutoConfig[pl] || { enabled: true }),
+        lastAutoPostedAt: nowIso
+      };
+    }
+
+    saved.socialPosts = posts.slice(0, 300);
+
+    // Optional Free In-App Notification Center Push
+    let pushedNotif: any = null;
+    if (broadcastInAppNotif) {
+      pushedNotif = {
+        id: `notif-autofree-${nowMs}`,
+        category: product.originalPrice && product.originalPrice > product.price ? 'price_drop' : 'promo',
+        title: `Flash Deal: ${product.title} — Only ৳${Number(product.price || 0).toLocaleString()}`,
+        titleBn: `ফ্ল্যাশ অফার: ${product.titleBn || product.title} — মাত্র ৳${Number(product.price || 0).toLocaleString()}`,
+        message: `Order now with 64-district Cash on Delivery & 7-day replacement warranty!`,
+        messageBn: `কোনো অগ্রিম ছাড়াই ৬৪ জেলায় ক্যাশ অন ডেলিভারিতে অর্ডার করুন!`,
+        createdAt: nowIso,
+        actionType: 'view_product',
+        productId: product.id,
+        oldPrice: product.originalPrice,
+        newPrice: product.price,
+        badgeText: 'FREE COD DEAL'
+      };
+      saved.userNotifications = [pushedNotif, ...(Array.isArray(saved.userNotifications) ? saved.userNotifications : [])].slice(0, 80);
+    }
+
+    const logEntry = {
+      id: `amlog-bdfree-${nowMs}`,
+      trigger: 'manual_sweep',
+      summary: `AI Auto-Posted "${product.title}" across ${createdPosts.length} channels (${targetPlatforms.join(', ')}) + In-App Alert`,
+      details: createdPosts.map((p) => `${p.platform.toUpperCase()}: ${p.status}`),
+      actionsCount: createdPosts.length + (pushedNotif ? 1 : 0),
+      timestamp: nowIso
+    };
+    saved.autoMarketingLogs = [logEntry, ...(Array.isArray(saved.autoMarketingLogs) ? saved.autoMarketingLogs : [])].slice(0, 60);
+    saveStoreData(saved);
+    broadcastWs({ type: 'social:sync', socialPosts: saved.socialPosts });
+    if (pushedNotif) {
+      broadcastWs({ type: 'notifications:sync', userNotifications: saved.userNotifications });
+    }
+    broadcastWs({
+      type: 'automarketing:sync',
+      autoMarketingLogs: saved.autoMarketingLogs,
+      socialPosts: saved.socialPosts,
+      settings: saved.settings
+    });
+
+    return res.json({
+      success: true,
+      createdCount: createdPosts.length,
+      productTitle: product.title,
+      socialPosts: saved.socialPosts,
+      userNotifications: saved.userNotifications,
+      autoMarketingLogs: saved.autoMarketingLogs
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'All-BD free auto-post failed' });
   }
 });
 
@@ -5500,7 +5749,7 @@ ${JSON.stringify(metricsSummary)}`,
   }
 });
 
-// Autonomous Zero-Time AI Marketing Sweep Engine (Social, Abandoned Cart Winback, SEO Enricher, Auto Blog)
+// Autonomous Zero-Employee AI Marketing & Support Sweep Engine
 let isAutoMarketingSweepRunning = false;
 async function runAutonomousMarketingSweep(
   saved: any,
@@ -5513,6 +5762,8 @@ async function runAutonomousMarketingSweep(
   enrichedSeoCount: number;
   preparedCartsCount: number;
   createdBlogCount: number;
+  repliedInquiriesCount: number;
+  promoNotifCount: number;
   logEntry?: any;
 }> {
   if (isAutoMarketingSweepRunning) {
@@ -5523,7 +5774,9 @@ async function runAutonomousMarketingSweep(
       createdSocialCount: 0,
       enrichedSeoCount: 0,
       preparedCartsCount: 0,
-      createdBlogCount: 0
+      createdBlogCount: 0,
+      repliedInquiriesCount: 0,
+      promoNotifCount: 0
     };
   }
   isAutoMarketingSweepRunning = true;
@@ -5534,6 +5787,8 @@ async function runAutonomousMarketingSweep(
   let enrichedSeoCount = 0;
   let preparedCartsCount = 0;
   let createdBlogCount = 0;
+  let repliedInquiriesCount = 0;
+  let promoNotifCount = 0;
 
   try {
     const nowMs = Date.now();
@@ -5548,6 +5803,8 @@ async function runAutonomousMarketingSweep(
       autoSeoProductEnricher: true,
       autoWeeklyBlogPublisher: true,
       autoReviewSocialProofPromo: true,
+      autoInquiryResponder: true,
+      autoPromoNotificationBroadcaster: true,
       cycleIntervalHours: 6,
       ...(saved.settings.autoMarketingSuite || {})
     };
@@ -5581,14 +5838,14 @@ async function runAutonomousMarketingSweep(
     const suiteActive = Boolean(suiteCfg.enabled) || Boolean(options.forceAll);
     const catalog: any[] = getVisibleCatalogProducts(saved).filter((p: any) => Number(p.stock ?? 0) > 0);
 
-    // 2. Recurring or Master Auto Daily 4-Platform Social Poster (own products only)
+    // 2. Recurring or Master Auto Daily 5-Platform Social Poster (FB, IG, TikTok, YT, Telegram)
     if (catalog.length > 0 && (suiteActive || saved.settings?.socialAutoConfig)) {
       const sweepIntervalMs = Math.max(1, Number(suiteCfg.cycleIntervalHours) || 6) * 3600 * 1000;
       const lastSuiteSocialMs = suiteCfg.lastAutoSweepAt ? new Date(suiteCfg.lastAutoSweepAt).getTime() : 0;
       const isSuiteSocialDue =
         Boolean(options.forceAll) || (suiteActive && suiteCfg.autoSocialDailyPoster && nowMs - lastSuiteSocialMs >= sweepIntervalMs);
 
-      for (const platform of ['facebook', 'instagram', 'tiktok', 'youtube']) {
+      for (const platform of ['facebook', 'instagram', 'tiktok', 'youtube', 'telegram']) {
         const ch = channels[platform] || { enabled: true };
         const chIntervalMs = Math.max(1, Number(ch.intervalHours) || 6) * 3600 * 1000;
         const chLastMs = ch.lastAutoPostedAt ? new Date(ch.lastAutoPostedAt).getTime() : 0;
@@ -5811,19 +6068,96 @@ Description: ${String(prod.description || prod.descriptionBn || '').slice(0, 300
       }
     }
 
+    // 6. Zero-Employee AI Customer Inquiry Auto-Responder (handles chatInquiries automatically without staff)
+    if (suiteActive && suiteCfg.autoInquiryResponder !== false && Array.isArray(saved.chatInquiries)) {
+      const inquiries: any[] = [...saved.chatInquiries];
+      for (let i = 0; i < inquiries.length && repliedInquiriesCount < 3; i++) {
+        const q = inquiries[i];
+        if (!q || q.status !== 'new' || (q.adminReply && String(q.adminReply).trim())) continue;
+        const prodMatch = q.productId ? catalog.find((p) => p.id === q.productId) : catalog[0];
+        const prodLink = prodMatch ? `${baseOrigin}/?product=${encodeURIComponent(prodMatch.seo?.slug || prodMatch.id)}` : baseOrigin;
+        let autoReply = `আসসালামু আলাইকুম ${q.name || 'স্যার/ম্যাম'}, আপনার প্রশ্নের জন্য ধন্যবাদ! ${prodMatch ? `"${prodMatch.titleBn || prodMatch.title}" এর অফার মূল্য মাত্র ৳${prodMatch.price}। ` : ''}সারা বাংলাদেশের ৬৪ জেলায় ক্যাশ অন ডেলিভারিতে অর্ডার করতে পারেন। বিস্তারিত ও অর্ডার লিংক: ${prodLink}`;
+        if (process.env.GEMINI_API_KEY) {
+          try {
+            const aiResp = await ai.models.generateContent({
+              model: 'gemini-4-hydrogen',
+              contents: `You are an autonomous customer care & sales closer at "${storeName}" in Bangladesh (no human team needed).
+Reply politely in 2-3 clear sentences in ${lang === 'en' ? 'English' : 'Bangladeshi Bengali'} to customer "${q.name || 'Buyer'}".
+Customer Query: "${String(q.query || '').slice(0, 350)}"
+${prodMatch ? `Relevant Product: ${prodMatch.titleBn || prodMatch.title} (Price: ৳${prodMatch.price}, Link: ${prodLink})` : `Store URL: ${baseOrigin}`}
+Mention 64-district Cash on Delivery & 7-day replacement warranty. Return plain text only.`
+            });
+            if (aiResp.text?.trim()) autoReply = aiResp.text.trim();
+          } catch {}
+        }
+        inquiries[i] = {
+          ...q,
+          adminReply: autoReply,
+          status: 'replied',
+          repliedAt: nowIso,
+          updatedAt: nowIso,
+          aiAutoReplied: true
+        };
+        repliedInquiriesCount++;
+        changed = true;
+      }
+      if (repliedInquiriesCount > 0) {
+        saved.chatInquiries = inquiries;
+        actionsTaken.push(`Auto-replied to ${repliedInquiriesCount} customer inquiries (zero staff)`);
+        broadcastWs({ type: 'inquiries:sync', chatInquiries: saved.chatInquiries });
+      }
+    }
+
+    // 7. Zero-Employee Automatic Customer Notification Center Promo Broadcaster
+    if (suiteActive && suiteCfg.autoPromoNotificationBroadcaster !== false && catalog.length > 0) {
+      const lastNotifMs = suiteCfg.lastAutoNotifAt ? new Date(suiteCfg.lastAutoNotifAt).getTime() : 0;
+      const notifIntervalMs = 18 * 3600 * 1000;
+      const notifDue = nowMs - lastNotifMs >= notifIntervalMs || (Boolean(options.forceAll) && nowMs - lastNotifMs >= 4 * 3600 * 1000);
+      if (notifDue) {
+        const discounted = catalog.filter((p) => p.originalPrice && p.originalPrice > p.price);
+        const pick = (discounted.length > 0 ? discounted : catalog)[Math.floor(Math.random() * (discounted.length > 0 ? discounted.length : catalog.length))];
+        const newNotif = {
+          id: `notif-auto-${nowMs}`,
+          category: pick.originalPrice && pick.originalPrice > pick.price ? 'price_drop' : 'promo',
+          title: `Today's AI Deal: ${pick.title} — ৳${Number(pick.price || 0).toLocaleString()}`,
+          titleBn: `আজকের ফ্ল্যাশ অফার: ${pick.titleBn || pick.title} — মাত্র ৳${Number(pick.price || 0).toLocaleString()}`,
+          message: `64-District Cash on Delivery available with zero advance. Tap to order now!`,
+          messageBn: `অগ্রিম পেমেন্ট ছাড়াই ৬৪ জেলায় হোম ডেলিভারি। এখনই অর্ডার করুন!`,
+          createdAt: nowIso,
+          actionType: 'view_product',
+          productId: pick.id,
+          oldPrice: pick.originalPrice,
+          newPrice: pick.price,
+          badgeText: 'AUTO DEAL'
+        };
+        saved.userNotifications = [newNotif, ...(Array.isArray(saved.userNotifications) ? saved.userNotifications : [])].slice(0, 80);
+        suiteCfg.lastAutoNotifAt = nowIso;
+        promoNotifCount++;
+        changed = true;
+        actionsTaken.push(`Broadcasted in-app deal alert for "${pick.title}"`);
+        broadcastWs({ type: 'notifications:sync', userNotifications: saved.userNotifications });
+      }
+    }
+
     let logEntry: any = null;
     if (changed || options.forceAll) {
       suiteCfg.lastAutoSweepAt = nowIso;
       saved.settings.autoMarketingSuite = suiteCfg;
       const totalActions =
-        dispatchedSocialCount + createdSocialCount + enrichedSeoCount + preparedCartsCount + createdBlogCount;
+        dispatchedSocialCount +
+        createdSocialCount +
+        enrichedSeoCount +
+        preparedCartsCount +
+        createdBlogCount +
+        repliedInquiriesCount +
+        promoNotifCount;
       logEntry = {
         id: `amlog-${Date.now()}-${Math.floor(10 + Math.random() * 89)}`,
         trigger: options.trigger || 'background_daemon',
         summary:
           actionsTaken.length > 0
             ? actionsTaken.join(' · ')
-            : 'Checked all auto-marketing channels — all queues up to date.',
+            : 'Checked all auto-marketing & support queues — everything up to date.',
         details: actionsTaken,
         actionsCount: totalActions,
         timestamp: nowIso
@@ -5850,6 +6184,8 @@ Description: ${String(prod.description || prod.descriptionBn || '').slice(0, 300
       enrichedSeoCount,
       preparedCartsCount,
       createdBlogCount,
+      repliedInquiriesCount,
+      promoNotifCount,
       logEntry
     };
   } finally {
@@ -5889,6 +6225,8 @@ app.post('/api/ai/auto-marketing/run-now', async (req, res) => {
       blogs: latest.blogs || [],
       products: latest.products || [],
       abandonedCarts: latest.abandonedCarts || [],
+      chatInquiries: latest.chatInquiries || [],
+      userNotifications: latest.userNotifications || [],
       settings: latest.settings || {}
     });
   } catch (err: any) {

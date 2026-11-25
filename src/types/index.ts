@@ -622,9 +622,12 @@ export interface AutoMarketingSuiteSettings {
   autoSeoProductEnricher: boolean;
   autoWeeklyBlogPublisher: boolean;
   autoReviewSocialProofPromo: boolean;
+  autoInquiryResponder?: boolean;
+  autoPromoNotificationBroadcaster?: boolean;
   cycleIntervalHours: number;
   lastAutoSweepAt?: string;
   lastBlogAutoAt?: string;
+  lastAutoNotifAt?: string;
 }
 
 export interface AutoMarketingLogEntry {
@@ -1399,7 +1402,7 @@ export interface ChatInquiry {
   updatedAt?: string;
 }
 
-export type SocialPlatform = 'facebook' | 'instagram' | 'tiktok' | 'youtube';
+export type SocialPlatform = 'facebook' | 'instagram' | 'tiktok' | 'youtube' | 'telegram';
 
 export interface SocialChannelConfig {
   enabled: boolean;
