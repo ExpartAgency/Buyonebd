@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { WebSocketServer, WebSocket } from 'ws';
 import { GoogleGenAI, Type } from '@google/genai';
 import nodemailer from 'nodemailer';
@@ -13,11 +15,17 @@ import mysql from 'mysql2/promise';
 
 dotenv.config();
 
+const execFileAsync = promisify(execFile);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const GENERATED_MEDIA_DIR = path.join(__dirname, 'data', 'generated-media');
+if (!fs.existsSync(GENERATED_MEDIA_DIR)) {
+  fs.mkdirSync(GENERATED_MEDIA_DIR, { recursive: true });
+}
 
 const app = express();
 app.disable('x-powered-by');
+app.use('/generated-media', express.static(GENERATED_MEDIA_DIR, { maxAge: '7d' }));
 const port = parseInt(process.env.PORT || '3000', 10);
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -84,8 +92,11 @@ function createRateLimiter(bucketName: string, maxRequests: number, windowMs: nu
   };
 }
 
-// IP Firewall Middleware (blocks explicitly blacklisted abusive IPs on API mutations)
+// Strict no-store cache headers + IP Firewall Middleware for all /api routes
 app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   if (req.method === 'GET' && !req.path.startsWith('/admin')) return next();
   try {
     if (fs.existsSync(path.join(__dirname, 'data', 'store.json'))) {
@@ -1859,6 +1870,7 @@ app.get('/api/store/sync', (req, res) => {
     data: {
       ...(responseData || {}),
       productViews: data?.productViews || {},
+      storeDataVersion: data?.storeDataVersion || Date.now(),
       activeClients: Math.max(1, activeWsClients.size)
     }
   });
@@ -2083,9 +2095,15 @@ app.post('/api/store/sync', (req, res) => {
     users: preserveNonEmpty(users, current.users),
     mediaLibrary: preserveNonEmpty(mediaLibrary, current.mediaLibrary),
     productViews: current.productViews || {},
+    storeDataVersion: Date.now(),
     lastUpdated: new Date().toISOString()
   };
   saveStoreData(updated);
+  broadcastWs({
+    type: 'cache:purge',
+    dataVersion: updated.storeDataVersion,
+    reason: 'store_sync'
+  });
   const isAdminSession = req.headers['x-admin-session'] === 'buyone-admin-verified';
   const shouldMask = updated?.settings?.securitySettings?.maskPublicSecrets !== false;
   const payloadOut = !isAdminSession && shouldMask ? redactSensitiveSettingsForPublic(updated) : updated;
@@ -2095,6 +2113,7 @@ app.post('/api/store/sync', (req, res) => {
     data: {
       ...payloadOut,
       productViews: updated.productViews || {},
+      storeDataVersion: updated.storeDataVersion,
       activeClients: Math.max(1, activeWsClients.size)
     }
   });
@@ -2563,21 +2582,39 @@ app.delete('/api/orders/:id', (req, res) => {
   return res.json({ success: true });
 });
 
-// Non-Destructive Cache Clear Endpoint (Preserves all products, orders, settings, customers, media)
+// Non-Destructive Cache Clear & Global Storefront Auto-Refresh Endpoint (Preserves all products, orders, settings, customers, media)
 app.post('/api/cache/clear', (_req, res) => {
   const clearedAudioEntries = audioCache.size;
   audioCache.clear();
-  const current = loadStoreData();
-  if (current) {
-    current.pixelEvents = [];
-    current.browsingHistory = [];
-    saveStoreData(current);
-  }
+  const current = loadStoreData() || {};
+  current.pixelEvents = [];
+  current.browsingHistory = [];
+  current.storeDataVersion = Date.now();
+  saveStoreData(current);
+  broadcastWs({
+    type: 'cache:purge',
+    dataVersion: current.storeDataVersion,
+    reason: 'manual_or_auto_purge'
+  });
   return res.json({
     success: true,
     clearedAudioEntries,
+    dataVersion: current.storeDataVersion,
     message: 'Temporary server caches cleared without altering products, orders, customers, or settings.'
   });
+});
+
+app.post('/api/cache/purge', (_req, res) => {
+  audioCache.clear();
+  const current = loadStoreData() || {};
+  current.storeDataVersion = Date.now();
+  saveStoreData(current);
+  broadcastWs({
+    type: 'cache:purge',
+    dataVersion: current.storeDataVersion,
+    reason: 'price_rating_sales_update'
+  });
+  return res.json({ success: true, dataVersion: current.storeDataVersion });
 });
 
 // Real Steadfast Portal API v1 Proxy (https://portal.steadfast.com.bd/api/v1)
@@ -3407,25 +3444,41 @@ app.get('/api/feeds/meta-catalog.csv', (req, res) => {
   return res.status(200).send([headers.join(','), ...rows].join('\n'));
 });
 
-// Zero-Cost Social Posts JSON Feed for Make.com / Zapier / IFTTT / Buffer RSS-style Polling
+// Zero-Cost Social Posts JSON Feed for n8n / Make.com / Zapier / IFTTT Polling
 app.get('/api/feeds/social-queue.json', (req, res) => {
   const saved = loadStoreData() || {};
   const posts: any[] = Array.isArray(saved.socialPosts) ? saved.socialPosts : [];
   const platformFilter = String(req.query?.platform || '').trim().toLowerCase();
-  const filtered = platformFilter ? posts.filter((p) => String(p.platform).toLowerCase() === platformFilter) : posts;
+  const statusFilter = String(req.query?.status || '').trim().toLowerCase();
+  const filtered = posts.filter((p) => {
+    if (platformFilter && String(p.platform).toLowerCase() !== platformFilter) return false;
+    if (statusFilter && String(p.status).toLowerCase() !== statusFilter) return false;
+    return true;
+  });
+  const originUrl = resolvePublicOrigin(req, saved);
   return res.json({
     store: saved?.settings?.storeName || 'BuyOne BD',
+    callbackUrl: `${originUrl}/api/n8n/callback`,
     updatedAt: new Date().toISOString(),
     count: filtered.length,
     items: filtered.slice(0, 50).map((p) => ({
       id: p.id,
       platform: p.platform,
       status: p.status,
+      productId: p.productId || '',
+      productTitle: p.productTitle || p.title,
       title: p.title,
+      viralHook: p.viralHook || '',
       caption: p.caption,
       hashtags: p.hashtags || [],
+      hashtagsString: Array.isArray(p.hashtags) ? p.hashtags.join(' ') : '',
       productUrl: p.productUrl || '',
-      imageUrl: p.imageUrl || '',
+      imageUrl: p.bannerUrl || p.imageUrl || '',
+      rawImageUrl: p.imageUrl || '',
+      bannerUrl: p.bannerUrl || p.imageUrl || '',
+      verticalBannerUrl: p.verticalBannerUrl || p.bannerUrl || p.imageUrl || '',
+      videoUrl: p.videoUrl || '',
+      mediaType: p.mediaType || (p.videoUrl ? 'video' : p.bannerUrl ? 'banner' : 'image'),
       scheduledAt: p.scheduledAt,
       publishedAt: p.publishedAt || null
     }))
@@ -3634,6 +3687,7 @@ function mergeSupportChatSessions(existingList: any[], incomingList: any[]): any
     map.set(s.id, {
       ...prev,
       ...newer,
+      visitorSessionId: newer.visitorSessionId || prev.visitorSessionId,
       messages: Array.from(msgMap.values())
     });
   }
@@ -3666,6 +3720,8 @@ function mergeBrowserCallSessions(existingList: any[], incomingList: any[]): any
     map.set(c.id, {
       ...prev,
       ...c,
+      visitorSessionId: c.visitorSessionId || prev.visitorSessionId,
+      targetVisitorSessionId: c.targetVisitorSessionId || prev.targetVisitorSessionId,
       status: chosenStatus,
       answeredBy: c.answeredBy || prev.answeredBy,
       endedAt: c.endedAt || prev.endedAt,
@@ -4748,8 +4804,10 @@ app.post('/api/inquiries', (req, res) => {
 
   const saved = loadStoreData() || {};
   const list: any[] = Array.isArray(saved.chatInquiries) ? saved.chatInquiries : [];
+  const fullPhone = phone.startsWith('+') ? phone : `${countryCode}${phone.replace(/^0+/, '')}`;
   const item = {
     id: clean.id || `inq-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
+    visitorSessionId: clean.visitorSessionId ? String(clean.visitorSessionId) : undefined,
     name,
     countryCode,
     phone,
@@ -4763,9 +4821,55 @@ app.post('/api/inquiries', (req, res) => {
   };
 
   saved.chatInquiries = [item, ...list].slice(0, 500);
+
+  // Also mirror every inquiry into live supportChats so Admin Inbox & Call Desk immediately displays it
+  const targetSessionId =
+    (clean.visitorSessionId ? `chat-${clean.visitorSessionId}` : '') ||
+    `chat-phone-${String(fullPhone).replace(/[^0-9]/g, '').slice(-11)}`;
+  const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const mirroredMsg = {
+    id: `inq-msg-${item.id}`,
+    sender: 'customer',
+    text: item.productTitle ? `[Inquiry · ${item.productTitle}]\n${queryText}` : `[Inquiry Form] ${queryText}`,
+    textBn: item.productTitle ? `[ইনকোয়ারি · ${item.productTitle}]\n${queryText}` : `[ইনকোয়ারি] ${queryText}`,
+    time: nowTime
+  };
+  const existingChats: any[] = Array.isArray(saved.supportChats) ? saved.supportChats : [];
+  const prevSess = existingChats.find((s) => s.id === targetSessionId);
+  const nextSess = prevSess
+    ? {
+        ...prevSess,
+        visitorSessionId: clean.visitorSessionId || prevSess.visitorSessionId,
+        customerName: name || prevSess.customerName,
+        customerPhone: fullPhone || prevSess.customerPhone,
+        status: 'open',
+        manualMode: true,
+        unreadByAdmin: (prevSess.unreadByAdmin || 0) + 1,
+        lastUpdated: new Date().toISOString(),
+        messages: [...(prevSess.messages || []), mirroredMsg]
+      }
+    : {
+        id: targetSessionId,
+        visitorSessionId: clean.visitorSessionId ? String(clean.visitorSessionId) : undefined,
+        customerName: name,
+        customerPhone: fullPhone,
+        status: 'open',
+        manualMode: true,
+        lastUpdated: new Date().toISOString(),
+        unreadByAdmin: 1,
+        messages: [mirroredMsg]
+      };
+  saved.supportChats = mergeSupportChatSessions(existingChats, [nextSess]);
+
   saveStoreData(saved);
-  broadcastWs({ type: 'inquiries:sync', chatInquiries: saved.chatInquiries });
-  return res.json({ success: true, inquiry: item, inquiries: saved.chatInquiries });
+  broadcastWs({ type: 'inquiries:sync', chatInquiries: saved.chatInquiries, latestInquiry: item });
+  broadcastWs({
+    type: 'chat:sync',
+    supportChats: saved.supportChats,
+    latestSessionId: targetSessionId,
+    latestSender: 'customer'
+  });
+  return res.json({ success: true, inquiry: item, inquiries: saved.chatInquiries, supportChats: saved.supportChats });
 });
 
 app.patch('/api/inquiries/:id', (req, res) => {
@@ -4792,69 +4896,557 @@ app.delete('/api/inquiries/:id', (req, res) => {
   return res.json({ success: true, inquiries: saved.chatInquiries });
 });
 
-// Helper to build structured caption via Gemini 4 Hydrogen for Social Auto-Scheduler
+function resolvePublicOrigin(req?: any, saved?: any): string {
+  if (req) {
+    const fwdHost = String(req.headers?.['x-forwarded-host'] || '').split(',')[0].trim();
+    const host = fwdHost || (typeof req.get === 'function' ? req.get('host') : '');
+    const fwdProto = String(req.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
+    const proto = fwdProto || req.protocol || 'https';
+    if (host) return `${proto}://${host}`.replace(/\/+$/, '');
+  }
+  const canonical = String(saved?.settings?.seoSettings?.canonicalUrl || process.env.APP_URL || '').trim();
+  if (canonical && /^https?:\/\//i.test(canonical)) return canonical.replace(/\/+$/, '');
+  return `http://localhost:${port}`;
+}
+
+function sanitizeAsciiBannerText(input: string, maxLen = 42): string {
+  const ascii = String(input || '')
+    .replace(/[^\x20-\x7E]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return (ascii || 'BUYONE BD FLASH OFFER').slice(0, maxLen);
+}
+
+async function generateViralMediaAssetsForProduct(
+  product: any,
+  storeName: string,
+  originUrl: string,
+  options: { generateBanner?: boolean; generateVideo?: boolean; hookHeadline?: string } = {}
+): Promise<{
+  squareBannerUrl: string;
+  verticalBannerUrl: string;
+  videoUrl: string;
+  rawImageUrl: string;
+  generatedFiles: string[];
+}> {
+  const rawImageUrl = String(product?.images?.[0] || '').trim();
+  const wantBanner = options.generateBanner !== false;
+  const wantVideo = options.generateVideo !== false;
+  let squareBannerUrl = rawImageUrl;
+  let verticalBannerUrl = rawImageUrl;
+  let videoUrl = '';
+  const generatedFiles: string[] = [];
+
+  if (!wantBanner && !wantVideo) {
+    return { squareBannerUrl, verticalBannerUrl, videoUrl, rawImageUrl, generatedFiles };
+  }
+
+  const ts = Date.now();
+  const safeSlug = String(product?.id || 'prod')
+    .replace(/[^a-zA-Z0-9_-]/g, '')
+    .slice(0, 24) || 'prod';
+  const tempSrcPath = path.join(GENERATED_MEDIA_DIR, `tmp-${safeSlug}-${ts}.jpg`);
+  const sqName = `banner-sq-${safeSlug}-${ts}.png`;
+  const sqPath = path.join(GENERATED_MEDIA_DIR, sqName);
+  const reelBannerName = `banner-reel-${safeSlug}-${ts}.png`;
+  const reelBannerPath = path.join(GENERATED_MEDIA_DIR, reelBannerName);
+  const videoName = `viral-reel-${safeSlug}-${ts}.mp4`;
+  const videoPath = path.join(GENERATED_MEDIA_DIR, videoName);
+
+  try {
+    // Keep generated-media directory bounded (~150 newest files) without ever touching store data
+    try {
+      const existing = fs
+        .readdirSync(GENERATED_MEDIA_DIR)
+        .filter((f) => !f.startsWith('tmp-'))
+        .map((f) => ({ name: f, mtime: fs.statSync(path.join(GENERATED_MEDIA_DIR, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime);
+      if (existing.length > 150) {
+        for (const old of existing.slice(150)) {
+          fs.unlink(path.join(GENERATED_MEDIA_DIR, old.name), () => {});
+        }
+      }
+    } catch {}
+
+    // Fetch real product photo locally so ImageMagick & FFmpeg composite without network stalls
+    let hasLocalProductImg = false;
+    if (rawImageUrl) {
+      if (rawImageUrl.startsWith('data:image/')) {
+        const b64 = rawImageUrl.split(',')[1];
+        if (b64) {
+          fs.writeFileSync(tempSrcPath, Buffer.from(b64, 'base64'));
+          hasLocalProductImg = true;
+        }
+      } else if (/^https?:\/\//i.test(rawImageUrl)) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 8000);
+        try {
+          const imgRes = await fetch(rawImageUrl, { signal: ctrl.signal });
+          if (imgRes.ok) {
+            const arrBuf = await imgRes.arrayBuffer();
+            if (arrBuf.byteLength > 256) {
+              fs.writeFileSync(tempSrcPath, Buffer.from(arrBuf));
+              hasLocalProductImg = true;
+            }
+          }
+        } finally {
+          clearTimeout(timer);
+        }
+      } else if (rawImageUrl.startsWith('/')) {
+        const localPublic = path.join(__dirname, 'public', rawImageUrl.replace(/^\/+/, ''));
+        if (fs.existsSync(localPublic)) {
+          fs.copyFileSync(localPublic, tempSrcPath);
+          hasLocalProductImg = true;
+        }
+      }
+    }
+
+    if (!hasLocalProductImg) {
+      await execFileAsync('convert', [
+        '-size',
+        '760x620',
+        'xc:#0f172a',
+        '-fill',
+        '#10b981',
+        '-font',
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+        '-pointsize',
+        '42',
+        '-gravity',
+        'center',
+        '-annotate',
+        '+0+0',
+        sanitizeAsciiBannerText(storeName, 24),
+        tempSrcPath
+      ]);
+      hasLocalProductImg = fs.existsSync(tempSrcPath);
+    }
+
+    const price = Number(product?.price || 0);
+    const orig = Number(product?.originalPrice || price);
+    const discountPct = orig > price ? Math.round(((orig - price) / orig) * 100) : 0;
+    const brandText = sanitizeAsciiBannerText(storeName || 'BUYONE BD', 24).toUpperCase();
+    const titleLine = sanitizeAsciiBannerText(product?.title || 'Trending BD Deal', 34);
+    const hookText = sanitizeAsciiBannerText(
+      options.hookHeadline || (discountPct >= 10 ? `FLASH DEAL • ${discountPct}% OFF` : 'VIRAL BEST SELLER • ORDER NOW'),
+      36
+    ).toUpperCase();
+    const priceLabel = `ONLY BDT ${price.toLocaleString()}${discountPct > 0 ? `  (SAVE ${discountPct}%)` : ''}`;
+    const fontPath = '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf';
+
+    // 1. 1080x1080 Square Promotional Banner PNG (Facebook, Instagram, Telegram)
+    await execFileAsync('convert', [
+      '-size',
+      '1080x1080',
+      'gradient:#062c22-#040d1a',
+      // Top gold viral header pill
+      '-fill',
+      '#f59e0b',
+      '-draw',
+      'roundrectangle 48,42 1032,124 22,22',
+      '-fill',
+      '#090d16',
+      '-font',
+      fontPath,
+      '-pointsize',
+      '34',
+      '-gravity',
+      'north',
+      '-annotate',
+      '+0+62',
+      hookText,
+      // Center white card frame
+      '-fill',
+      '#ffffff',
+      '-draw',
+      'roundrectangle 84,154 996,812 28,28',
+      // Composite product photo inside center card
+      '(',
+      tempSrcPath,
+      '-auto-orient',
+      '-resize',
+      '860x600>',
+      ')',
+      '-gravity',
+      'center',
+      '-geometry',
+      '+0-58',
+      '-composite',
+      // Discount corner badge if discounted
+      ...(discountPct > 0
+        ? [
+            '-fill',
+            '#e11d48',
+            '-draw',
+            'roundrectangle 750,176 972,248 18,18',
+            '-fill',
+            '#ffffff',
+            '-font',
+            fontPath,
+            '-pointsize',
+            '30',
+            '-gravity',
+            'northeast',
+            '-annotate',
+            '+132+194',
+            `-${discountPct}% OFF`
+          ]
+        : []),
+      // Bottom Title + Price + COD Bar
+      '-fill',
+      '#e2e8f0',
+      '-font',
+      fontPath,
+      '-pointsize',
+      '32',
+      '-gravity',
+      'south',
+      '-annotate',
+      '+0+200',
+      titleLine,
+      '-fill',
+      '#10b981',
+      '-draw',
+      'roundrectangle 64,904 1016,994 20,20',
+      '-fill',
+      '#ffffff',
+      '-font',
+      fontPath,
+      '-pointsize',
+      '40',
+      '-gravity',
+      'south',
+      '-annotate',
+      '+0+104',
+      priceLabel,
+      '-fill',
+      '#94a3b8',
+      '-font',
+      fontPath,
+      '-pointsize',
+      '22',
+      '-gravity',
+      'south',
+      '-annotate',
+      '+0+44',
+      `${brandText}  •  64-DISTRICT CASH ON DELIVERY (0 ADVANCE)`,
+      sqPath
+    ]);
+
+    if (fs.existsSync(sqPath)) {
+      squareBannerUrl = `${originUrl}/generated-media/${sqName}`;
+      generatedFiles.push(sqPath);
+    }
+
+    // 2. 1080x1920 Vertical TikTok / IG Reels / YT Shorts Cover Banner PNG
+    await execFileAsync('convert', [
+      '-size',
+      '1080x1920',
+      'gradient:#042f2e-#020617',
+      // Top Viral Banner Strip
+      '-fill',
+      '#10b981',
+      '-draw',
+      'roundrectangle 56,88 1024,186 24,24',
+      '-fill',
+      '#020617',
+      '-font',
+      fontPath,
+      '-pointsize',
+      '36',
+      '-gravity',
+      'north',
+      '-annotate',
+      '+0+114',
+      brandText,
+      '-fill',
+      '#fbbf24',
+      '-font',
+      fontPath,
+      '-pointsize',
+      '42',
+      '-gravity',
+      'north',
+      '-annotate',
+      '+0+236',
+      hookText,
+      // Center Product Frame
+      '-fill',
+      '#ffffff',
+      '-draw',
+      'roundrectangle 74,350 1006,1330 34,34',
+      '(',
+      tempSrcPath,
+      '-auto-orient',
+      '-resize',
+      '880x920>',
+      ')',
+      '-gravity',
+      'center',
+      '-geometry',
+      '+0-120',
+      '-composite',
+      ...(discountPct > 0
+        ? [
+            '-fill',
+            '#e11d48',
+            '-draw',
+            'roundrectangle 720,382 976,472 20,20',
+            '-fill',
+            '#ffffff',
+            '-font',
+            fontPath,
+            '-pointsize',
+            '34',
+            '-gravity',
+            'northeast',
+            '-annotate',
+            '+132+406',
+            `-${discountPct}% OFF`
+          ]
+        : []),
+      '-fill',
+      '#f8fafc',
+      '-font',
+      fontPath,
+      '-pointsize',
+      '38',
+      '-gravity',
+      'south',
+      '-annotate',
+      '+0+465',
+      titleLine,
+      '-fill',
+      '#f59e0b',
+      '-draw',
+      'roundrectangle 74,1510 1006,1640 28,28',
+      '-fill',
+      '#020617',
+      '-font',
+      fontPath,
+      '-pointsize',
+      '46',
+      '-gravity',
+      'south',
+      '-annotate',
+      '+0+312',
+      priceLabel,
+      '-fill',
+      '#10b981',
+      '-draw',
+      'roundrectangle 110,1688 970,1796 28,28',
+      '-fill',
+      '#ffffff',
+      '-font',
+      fontPath,
+      '-pointsize',
+      '32',
+      '-gravity',
+      'south',
+      '-annotate',
+      '+0+156',
+      'ORDER NOW • 64 DISTRICTS COD',
+      reelBannerPath
+    ]);
+
+    if (fs.existsSync(reelBannerPath)) {
+      verticalBannerUrl = `${originUrl}/generated-media/${reelBannerName}`;
+      generatedFiles.push(reelBannerPath);
+    }
+
+    // 3. Real 6-Second 720x1280 H.264 MP4 Promo Reel Video (TikTok, IG Reels, YT Shorts, FB Reels, Telegram)
+    if (wantVideo && fs.existsSync(reelBannerPath)) {
+      await execFileAsync(
+        'ffmpeg',
+        [
+          '-y',
+          '-loop',
+          '1',
+          '-i',
+          reelBannerPath,
+          '-f',
+          'lavfi',
+          '-i',
+          'anullsrc=r=44100:cl=stereo',
+          '-vf',
+          "scale=720:1280,zoompan=z='min(zoom+0.0012,1.10)':d=144:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=720x1280:fps=24",
+          '-t',
+          '6',
+          '-c:v',
+          'libx264',
+          '-preset',
+          'ultrafast',
+          '-pix_fmt',
+          'yuv420p',
+          '-c:a',
+          'aac',
+          '-shortest',
+          '-movflags',
+          '+faststart',
+          videoPath
+        ],
+        { timeout: 35000 }
+      );
+      if (fs.existsSync(videoPath)) {
+        videoUrl = `${originUrl}/generated-media/${videoName}`;
+        generatedFiles.push(videoPath);
+      }
+    }
+  } catch (err: any) {
+    console.warn('Creative asset render warning:', err?.message || err);
+  } finally {
+    if (fs.existsSync(tempSrcPath)) {
+      fs.unlink(tempSrcPath, () => {});
+    }
+  }
+
+  return {
+    squareBannerUrl,
+    verticalBannerUrl,
+    videoUrl,
+    rawImageUrl,
+    generatedFiles
+  };
+}
+
+// Helper to build structured viral caption + hashtags via Gemini 4 Hydrogen
 async function generateSocialCaptionWithGemini(product: any, platform: string, lang: 'bn' | 'en', storeName: string, originUrl: string) {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY is not configured on the server.');
   }
   const slug = product?.seo?.slug || product?.id || '';
-  const productUrl = `${originUrl}/product/${slug}`;
+  const productUrl = `${originUrl}/?product=${encodeURIComponent(slug)}&utm_source=${encodeURIComponent(platform)}&utm_medium=ai_viral_auto`;
   const title = lang === 'bn' ? (product.titleBn || product.title) : (product.title || product.titleBn);
   const price = product.price || 0;
   const orig = product.originalPrice || price;
 
   const response = await ai.models.generateContent({
     model: 'gemini-4-hydrogen',
-    contents: `Write a high-converting ${platform.toUpperCase()} social media post in ${lang === 'bn' ? 'Bengali' : 'English'} for Bangladesh e-commerce store "${storeName}".
+    contents: `Write an ultra-viral, scroll-stopping ${platform.toUpperCase()} post in ${lang === 'bn' ? 'Natural Bangladeshi Bengali' : 'English'} for "${storeName}" designed for maximum organic shares & orders without paid ads.
 Product: ${title}
 Price: ৳${price}${orig > price ? ` (Regular ৳${orig})` : ''}
 Category: ${product.category || 'general'}
-Description: ${String(product.descriptionBn || product.description || '').slice(0, 300)}
+Description: ${String(product.descriptionBn || product.description || '').slice(0, 320)}
 Product URL: ${productUrl}
-Include clear Cash on Delivery (সারাদেশে ৬৪ জেলায় ক্যাশ অন ডেলিভারি) CTA and viral platform-appropriate hashtags.`,
+Requirements:
+- viralHook: Short punchy 1-line curiosity/FOMO hook in uppercase or bold style (under 70 chars)
+- title: Catchy post headline with emoji
+- caption: Persuasive social post copy with bullet highlights, 64-district Cash on Delivery (১ টাকাও অগ্রিম ছাড়া প্রোডাক্ট হাতে পেয়ে চেক করে পেমেন্ট), and clear CTA link
+- hashtags: 8 to 10 high-reach viral Bangladesh hashtags tailored to this product & ${platform} (each starting with #).`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
         properties: {
+          viralHook: { type: Type.STRING },
           title: { type: Type.STRING },
           caption: { type: Type.STRING },
           hashtags: { type: Type.ARRAY, items: { type: Type.STRING } }
         },
-        required: ['title', 'caption', 'hashtags']
+        required: ['viralHook', 'title', 'caption', 'hashtags']
       }
     }
   });
   const parsed = JSON.parse(response.text || '{}');
   return {
+    viralHook: String(parsed.viralHook || (orig > price ? `FLASH OFFER — SAVE ৳${orig - price}!` : `VIRAL TRENDING BD DEAL`)),
     title: String(parsed.title || title),
     caption: String(parsed.caption || `${title} — Only ৳${price}! Order now: ${productUrl}`),
-    hashtags: Array.isArray(parsed.hashtags) ? parsed.hashtags.map((h: any) => String(h).replace(/^#*/, '#')) : ['#BuyOneBD', '#CashOnDelivery', '#Bangladesh'],
+    hashtags: Array.isArray(parsed.hashtags) && parsed.hashtags.length > 0
+      ? parsed.hashtags.map((h: any) => String(h).replace(/^#*/, '#'))
+      : ['#BuyOneBD', '#ViralBD', '#CashOnDeliveryBD', '#BangladeshShopping', `#${platform}BD`, '#DhakaDeals'],
     productUrl
   };
 }
 
 app.post('/api/ai/social-caption', async (req, res) => {
   try {
-    const { product, platform = 'facebook', lang = 'bn', storeName = 'BuyOne BD', originUrl = 'https://buyonebd.com' } = req.body || {};
+    const { product, platform = 'facebook', lang = 'bn', storeName = 'BuyOne BD', originUrl } = req.body || {};
     if (!product) return res.status(400).json({ success: false, error: 'Product is required' });
-    const generated = await generateSocialCaptionWithGemini(product, platform, lang === 'en' ? 'en' : 'bn', storeName, originUrl);
+    const resolvedOrigin = originUrl || resolvePublicOrigin(req);
+    const generated = await generateSocialCaptionWithGemini(product, platform, lang === 'en' ? 'en' : 'bn', storeName, resolvedOrigin);
     return res.json({ success: true, ...generated });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Social caption generation failed' });
   }
 });
 
-// Dispatch a single social post to Webhook, Facebook Page Graph API, or Instagram Graph API
+// Helper to push a single post OR multi-platform batch to n8n Master Automation Webhook
+async function pushBatchToN8nWebhook(
+  posts: any[],
+  n8nCfg: any,
+  originUrl: string,
+  storeName: string,
+  channelsCfg?: any
+): Promise<{ ok: boolean; status?: number; message: string }> {
+  const url = String(n8nCfg?.masterWebhookUrl || '').trim();
+  if (!url || !/^https?:\/\//i.test(url)) {
+    return { ok: false, message: 'No n8n Master Webhook URL configured.' };
+  }
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(n8nCfg?.webhookSecret ? { 'x-buyonebd-secret': String(n8nCfg.webhookSecret) } : {})
+      },
+      body: JSON.stringify({
+        event: 'buyonebd_viral_social_autopilot',
+        storeName,
+        originUrl,
+        callbackUrl: `${originUrl}/api/n8n/callback`,
+        secret: n8nCfg?.webhookSecret || '',
+        triggeredAt: new Date().toISOString(),
+        channelTargets: channelsCfg || {},
+        count: posts.length,
+        posts: posts.map((p) => ({
+          postId: p.id,
+          platform: p.platform,
+          productId: p.productId || '',
+          productTitle: p.productTitle || p.title,
+          title: p.title,
+          viralHook: p.viralHook || '',
+          caption: p.caption,
+          hashtags: p.hashtags || [],
+          hashtagsString: Array.isArray(p.hashtags) ? p.hashtags.join(' ') : '',
+          fullMessage: `${p.title ? `${p.title}\n\n` : ''}${p.caption || ''}${
+            Array.isArray(p.hashtags) && p.hashtags.length > 0 ? `\n\n${p.hashtags.join(' ')}` : ''
+          }${p.productUrl ? `\n\n🛒 অর্ডার লিংক / Order Now: ${p.productUrl}` : ''}`.trim(),
+          productUrl: p.productUrl || '',
+          imageUrl: p.bannerUrl || p.imageUrl || '',
+          rawImageUrl: p.imageUrl || '',
+          bannerUrl: p.bannerUrl || p.imageUrl || '',
+          verticalBannerUrl: p.verticalBannerUrl || p.bannerUrl || p.imageUrl || '',
+          videoUrl: p.videoUrl || '',
+          mediaType: p.mediaType || (p.videoUrl ? 'video' : p.bannerUrl ? 'banner' : 'image'),
+          scheduledAt: p.scheduledAt
+        }))
+      })
+    });
+    const txt = await resp.text().catch(() => '');
+    if (!resp.ok) {
+      return { ok: false, status: resp.status, message: `n8n HTTP ${resp.status}: ${txt.slice(0, 120)}` };
+    }
+    return { ok: true, status: resp.status, message: `n8n HTTP ${resp.status} OK (${posts.length} posts pushed)` };
+  } catch (err: any) {
+    return { ok: false, message: err?.message || 'Failed to reach n8n Webhook URL' };
+  }
+}
+
+// Dispatch a single social post to Webhook, n8n, Facebook Graph API, Instagram Graph API, or Telegram Bot API
 async function dispatchSocialPostItem(
   post: any,
-  channelCfg: any
+  channelCfg: any,
+  n8nCfg?: any,
+  originUrl = 'https://buyonebd.com',
+  storeName = 'BuyOne BD'
 ): Promise<{ ok: boolean; error?: string; externalPostId?: string; dispatchLog?: string }> {
+  const preferredImage = post.bannerUrl || post.imageUrl || '';
   const fullMessage = `${post.title ? `${post.title}\n\n` : ''}${post.caption || ''}${
     Array.isArray(post.hashtags) && post.hashtags.length > 0 ? `\n\n${post.hashtags.join(' ')}` : ''
   }${post.productUrl ? `\n\n🛒 অর্ডার লিংক / Order Now: ${post.productUrl}` : ''}`.trim();
 
-  // 1. Direct Webhook (Make / Zapier / n8n / Custom Server)
+  // 1. Channel-specific Webhook (Make / Zapier / n8n / Custom Server)
   if (channelCfg?.webhookUrl && /^https?:\/\//i.test(channelCfg.webhookUrl)) {
     try {
       const resp = await fetch(channelCfg.webhookUrl, {
@@ -4864,13 +5456,21 @@ async function dispatchSocialPostItem(
           ...(channelCfg.accessToken ? { Authorization: `Bearer ${channelCfg.accessToken}` } : {})
         },
         body: JSON.stringify({
+          postId: post.id,
           platform: post.platform,
           pageOrChannelId: channelCfg.pageOrChannelId || '',
           title: post.title,
+          viralHook: post.viralHook || '',
           caption: fullMessage,
-          imageUrl: post.imageUrl,
+          imageUrl: preferredImage,
+          rawImageUrl: post.imageUrl || '',
+          bannerUrl: post.bannerUrl || preferredImage,
+          verticalBannerUrl: post.verticalBannerUrl || preferredImage,
+          videoUrl: post.videoUrl || '',
+          mediaType: post.mediaType || (post.videoUrl ? 'video' : post.bannerUrl ? 'banner' : 'image'),
           productUrl: post.productUrl,
           hashtags: post.hashtags || [],
+          callbackUrl: `${originUrl}/api/n8n/callback`,
           publishedAt: new Date().toISOString()
         })
       });
@@ -4901,17 +5501,22 @@ async function dispatchSocialPostItem(
     }
   }
 
-  // 2. Direct Facebook Page Graph API v21.0
+  // 2. Direct Facebook Page Graph API v21.0 (Supports AI Video Reel OR Promo Banner PNG/Photo)
   if (post.platform === 'facebook' && channelCfg?.pageOrChannelId && channelCfg?.accessToken) {
     try {
       const pageId = encodeURIComponent(String(channelCfg.pageOrChannelId).trim());
       const token = String(channelCfg.accessToken).trim();
-      const hasImage = Boolean(post.imageUrl && /^https?:\/\//i.test(post.imageUrl));
-      const endpoint = hasImage
+      const hasVideo = Boolean(post.videoUrl && /^https?:\/\//i.test(post.videoUrl) && !post.videoUrl.includes('localhost'));
+      const hasImage = Boolean(preferredImage && /^https?:\/\//i.test(preferredImage) && !preferredImage.includes('localhost'));
+      const endpoint = hasVideo
+        ? `https://graph.facebook.com/v21.0/${pageId}/videos`
+        : hasImage
         ? `https://graph.facebook.com/v21.0/${pageId}/photos`
         : `https://graph.facebook.com/v21.0/${pageId}/feed`;
-      const payload = hasImage
-        ? { url: post.imageUrl, caption: fullMessage, access_token: token }
+      const payload = hasVideo
+        ? { file_url: post.videoUrl, description: fullMessage, title: post.title, access_token: token }
+        : hasImage
+        ? { url: preferredImage, caption: fullMessage, access_token: token }
         : { message: fullMessage, link: post.productUrl || undefined, access_token: token };
       const resp = await fetch(endpoint, {
         method: 'POST',
@@ -4933,18 +5538,23 @@ async function dispatchSocialPostItem(
     }
   }
 
-  // 3. Direct Instagram Graph API v21.0 (requires IG Business ID + public HTTPS imageUrl)
+  // 3. Direct Instagram Graph API v21.0 (Supports Reels MP4 Video OR Promo Banner PNG)
   if (post.platform === 'instagram' && channelCfg?.pageOrChannelId && channelCfg?.accessToken) {
     try {
       const igId = encodeURIComponent(String(channelCfg.pageOrChannelId).trim());
       const token = String(channelCfg.accessToken).trim();
-      if (!post.imageUrl || !/^https?:\/\//i.test(post.imageUrl)) {
-        return { ok: false, error: 'Instagram Graph API requires a public HTTPS image URL.', dispatchLog: 'Missing HTTPS imageUrl' };
+      const hasPublicVideo = Boolean(post.videoUrl && /^https:\/\//i.test(post.videoUrl));
+      const hasPublicImage = Boolean(preferredImage && /^https:\/\//i.test(preferredImage));
+      if (!hasPublicVideo && !hasPublicImage) {
+        return { ok: false, error: 'Instagram Graph API requires a public HTTPS image or video URL.', dispatchLog: 'Missing HTTPS media URL' };
       }
+      const mediaPayload = hasPublicVideo
+        ? { media_type: 'REELS', video_url: post.videoUrl, caption: fullMessage, access_token: token }
+        : { image_url: preferredImage, caption: fullMessage, access_token: token };
       const createRes = await fetch(`https://graph.facebook.com/v21.0/${igId}/media`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_url: post.imageUrl, caption: fullMessage, access_token: token })
+        body: JSON.stringify(mediaPayload)
       });
       const createJson: any = await createRes.json().catch(() => ({}));
       if (!createRes.ok || !createJson?.id) {
@@ -4971,22 +5581,27 @@ async function dispatchSocialPostItem(
     }
   }
 
-  // 4. Direct Telegram Bot API (100% Free Instant Auto-Post in Bangladesh)
+  // 4. Direct Telegram Bot API (Supports Promo Video Reel sendVideo OR Promo Banner sendPhoto)
   if (post.platform === 'telegram' && channelCfg?.pageOrChannelId && channelCfg?.accessToken) {
     try {
       const botToken = String(channelCfg.accessToken).trim();
       const chatId = String(channelCfg.pageOrChannelId).trim();
-      const hasImage = Boolean(post.imageUrl && /^https?:\/\//i.test(post.imageUrl));
-      const tgText = fullMessage.slice(0, hasImage ? 1000 : 4000);
+      const hasVideo = Boolean(post.videoUrl && /^https?:\/\//i.test(post.videoUrl) && !post.videoUrl.includes('localhost'));
+      const hasImage = Boolean(preferredImage && /^https?:\/\//i.test(preferredImage) && !preferredImage.includes('localhost'));
+      const tgText = fullMessage.slice(0, hasVideo || hasImage ? 1000 : 4000);
       const replyMarkup =
         post.productUrl && /^https?:\/\//i.test(post.productUrl)
           ? { inline_keyboard: [[{ text: '🛒 Order Now (64-District COD)', url: post.productUrl }]] }
           : undefined;
-      const endpoint = hasImage
+      const endpoint = hasVideo
+        ? `https://api.telegram.org/bot${encodeURIComponent(botToken)}/sendVideo`
+        : hasImage
         ? `https://api.telegram.org/bot${encodeURIComponent(botToken)}/sendPhoto`
         : `https://api.telegram.org/bot${encodeURIComponent(botToken)}/sendMessage`;
-      const payload = hasImage
-        ? { chat_id: chatId, photo: post.imageUrl, caption: tgText, reply_markup: replyMarkup }
+      const payload = hasVideo
+        ? { chat_id: chatId, video: post.videoUrl, caption: tgText, reply_markup: replyMarkup }
+        : hasImage
+        ? { chat_id: chatId, photo: preferredImage, caption: tgText, reply_markup: replyMarkup }
         : { chat_id: chatId, text: tgText, reply_markup: replyMarkup };
 
       const resp = await fetch(endpoint, {
@@ -5003,17 +5618,33 @@ async function dispatchSocialPostItem(
       return {
         ok: true,
         externalPostId: msgId || undefined,
-        dispatchLog: `Published directly to Telegram Channel ${chatId}`
+        dispatchLog: `Published ${hasVideo ? 'Reel Video' : 'Promo Banner'} to Telegram ${chatId}`
       };
     } catch (err: any) {
       return { ok: false, error: err?.message || 'Telegram Bot error', dispatchLog: err?.message || 'Telegram Bot error' };
     }
   }
 
-  // 5. Local Queue Publication (Ready for 1-click browser share or Make/Zapier trigger)
+  // 5. Fallback to Master n8n Webhook when configured (routes FB / IG / TikTok / YouTube / Telegram via n8n)
+  if (n8nCfg?.enabled && n8nCfg?.masterWebhookUrl && /^https?:\/\//i.test(n8nCfg.masterWebhookUrl)) {
+    const n8nRes = await pushBatchToN8nWebhook([post], n8nCfg, originUrl, storeName);
+    if (n8nRes.ok) {
+      return {
+        ok: true,
+        dispatchLog: `Dispatched to n8n Workflow (${n8nRes.message})`
+      };
+    }
+    return {
+      ok: false,
+      error: n8nRes.message,
+      dispatchLog: `n8n Error: ${n8nRes.message}`
+    };
+  }
+
+  // 6. Local Queue Publication (Ready in JSON Feed & for 1-click browser share / download)
   return {
     ok: true,
-    dispatchLog: 'Published to Local Feed Queue (Connect Webhook URL, Telegram Bot, or Graph API Token for external API auto-push)'
+    dispatchLog: 'Published to Local Feed Queue (Connect n8n Webhook, Telegram Bot, or Graph API Token for external auto-push)'
   };
 }
 
@@ -5211,7 +5842,10 @@ app.post('/api/social/dispatch-now', async (req, res) => {
   if (!target) return res.status(404).json({ success: false, error: 'Scheduled post not found' });
 
   const chCfg = channelConfig || saved?.settings?.socialAutoConfig?.[target.platform];
-  const result = await dispatchSocialPostItem(target, chCfg);
+  const n8nCfg = saved?.settings?.n8nAutomation;
+  const originUrl = resolvePublicOrigin(req, saved);
+  const storeName = saved?.settings?.storeName || 'BuyOne BD';
+  const result = await dispatchSocialPostItem(target, chCfg, n8nCfg, originUrl, storeName);
   const nowIso = new Date().toISOString();
   saved.socialPosts = posts.map((p) =>
     p.id === postId
@@ -5228,6 +5862,507 @@ app.post('/api/social/dispatch-now', async (req, res) => {
   saveStoreData(saved);
   broadcastWs({ type: 'social:sync', socialPosts: saved.socialPosts });
   return res.json({ success: result.ok, error: result.error, dispatchLog: result.dispatchLog, socialPosts: saved.socialPosts });
+});
+
+// Turnkey Importable n8n Workflow JSON Generator
+function buildN8nWorkflowTemplate(originUrl: string, storeName: string, n8nCfg: any) {
+  const secret = String(n8nCfg?.webhookSecret || 'buyonebd-n8n-secret');
+  const cronHours = Math.max(1, Number(n8nCfg?.autoPushCronHours || 4));
+  return {
+    name: `${storeName} - Full 5-Channel Viral Social Auto-Poster (FB, IG, TikTok, YT Shorts, Telegram)`,
+    nodes: [
+      {
+        parameters: {
+          httpMethod: 'POST',
+          path: 'buyonebd-social-autopost',
+          responseMode: 'onReceived',
+          options: {}
+        },
+        id: 'node-webhook-trigger',
+        name: '1a. Instant BuyOne BD Webhook',
+        type: 'n8n-nodes-base.webhook',
+        typeVersion: 2,
+        position: [180, 220]
+      },
+      {
+        parameters: {
+          rule: {
+            interval: [{ field: 'hours', hoursInterval: cronHours }]
+          }
+        },
+        id: 'node-schedule-trigger',
+        name: `1b. Auto-Poll Every ${cronHours}h`,
+        type: 'n8n-nodes-base.scheduleTrigger',
+        typeVersion: 1.2,
+        position: [180, 440]
+      },
+      {
+        parameters: {
+          url: `${originUrl}/api/feeds/social-queue.json?status=scheduled`,
+          options: {}
+        },
+        id: 'node-fetch-queue',
+        name: '2. Fetch Viral Queue + Banners + Videos',
+        type: 'n8n-nodes-base.httpRequest',
+        typeVersion: 4.2,
+        position: [440, 440]
+      },
+      {
+        parameters: {
+          jsCode: `const incoming = $input.all().map(i => i.json);\nconst out = [];\nfor (const item of incoming) {\n  const list = Array.isArray(item.body?.posts) ? item.body.posts : Array.isArray(item.posts) ? item.posts : Array.isArray(item.items) ? item.items : [item];\n  for (const p of list) {\n    if (p && (p.platform || p.title)) out.push({ json: p });\n  }\n}\nreturn out;`
+        },
+        id: 'node-split-posts',
+        name: '3. Normalize Multi-Channel Viral Posts',
+        type: 'n8n-nodes-base.code',
+        typeVersion: 2,
+        position: [700, 320]
+      },
+      {
+        parameters: {
+          rules: {
+            values: [
+              { conditions: { options: { caseSensitive: false }, conditions: [{ leftValue: '={{ $json.platform }}', rightValue: 'facebook', operator: { type: 'string', operation: 'equals' } }] }, renameOutput: true, outputKey: 'Facebook' },
+              { conditions: { options: { caseSensitive: false }, conditions: [{ leftValue: '={{ $json.platform }}', rightValue: 'instagram', operator: { type: 'string', operation: 'equals' } }] }, renameOutput: true, outputKey: 'Instagram' },
+              { conditions: { options: { caseSensitive: false }, conditions: [{ leftValue: '={{ $json.platform }}', rightValue: 'tiktok', operator: { type: 'string', operation: 'equals' } }] }, renameOutput: true, outputKey: 'TikTok' },
+              { conditions: { options: { caseSensitive: false }, conditions: [{ leftValue: '={{ $json.platform }}', rightValue: 'youtube', operator: { type: 'string', operation: 'equals' } }] }, renameOutput: true, outputKey: 'YouTube' },
+              { conditions: { options: { caseSensitive: false }, conditions: [{ leftValue: '={{ $json.platform }}', rightValue: 'telegram', operator: { type: 'string', operation: 'equals' } }] }, renameOutput: true, outputKey: 'Telegram' }
+            ]
+          }
+        },
+        id: 'node-switch-platform',
+        name: '4. Route Platform',
+        type: 'n8n-nodes-base.switch',
+        typeVersion: 3.2,
+        position: [960, 320]
+      },
+      {
+        parameters: {
+          method: 'POST',
+          url: '=https://graph.facebook.com/v21.0/YOUR_FB_PAGE_ID/{{ $json.videoUrl ? "videos" : "photos" }}',
+          sendBody: true,
+          specifyBody: 'json',
+          jsonBody: '={{ JSON.stringify({ url: $json.bannerUrl || $json.imageUrl, file_url: $json.videoUrl || undefined, caption: $json.fullMessage || ($json.title + "\\n\\n" + $json.caption + "\\n\\n" + $json.hashtagsString), description: $json.fullMessage, access_token: "YOUR_META_PAGE_TOKEN" }) }}',
+          options: {}
+        },
+        id: 'node-facebook-post',
+        name: '5a. Auto-Post Facebook Banner/Reel',
+        type: 'n8n-nodes-base.httpRequest',
+        typeVersion: 4.2,
+        position: [1260, 60]
+      },
+      {
+        parameters: {
+          method: 'POST',
+          url: 'https://graph.facebook.com/v21.0/YOUR_IG_BUSINESS_ID/media',
+          sendBody: true,
+          specifyBody: 'json',
+          jsonBody: '={{ JSON.stringify({ image_url: $json.videoUrl ? undefined : ($json.bannerUrl || $json.imageUrl), video_url: $json.videoUrl || undefined, media_type: $json.videoUrl ? "REELS" : undefined, caption: $json.fullMessage || ($json.title + "\\n\\n" + $json.caption + "\\n\\n" + $json.hashtagsString), access_token: "YOUR_META_PAGE_TOKEN" }) }}',
+          options: {}
+        },
+        id: 'node-instagram-post',
+        name: '5b. Auto-Post Instagram Reel/Banner',
+        type: 'n8n-nodes-base.httpRequest',
+        typeVersion: 4.2,
+        position: [1260, 210]
+      },
+      {
+        parameters: {
+          method: 'POST',
+          url: 'https://open.tiktokapis.com/v2/post/publish/video/init/',
+          sendHeaders: true,
+          headerParameters: {
+            parameters: [{ name: 'Authorization', value: 'Bearer YOUR_TIKTOK_ACCESS_TOKEN' }]
+          },
+          sendBody: true,
+          specifyBody: 'json',
+          jsonBody: '={{ JSON.stringify({ post_info: { title: ($json.title + " " + $json.hashtagsString).slice(0, 150), privacy_level: "PUBLIC_TO_EVERYONE" }, source_info: { source: "PULL_FROM_URL", video_url: $json.videoUrl } }) }}',
+          options: {}
+        },
+        id: 'node-tiktok-post',
+        name: '5c. Auto-Post TikTok Viral Video',
+        type: 'n8n-nodes-base.httpRequest',
+        typeVersion: 4.2,
+        position: [1260, 350]
+      },
+      {
+        parameters: {
+          method: 'POST',
+          url: 'https://hook.make.com/OPTIONAL_YOUTUBE_UPLOAD_OR_OAUTH_NODE',
+          sendBody: true,
+          specifyBody: 'json',
+          jsonBody: '={{ JSON.stringify({ title: $json.title, description: $json.fullMessage, hashtags: $json.hashtags, videoUrl: $json.videoUrl, coverUrl: $json.verticalBannerUrl, productUrl: $json.productUrl }) }}',
+          options: {}
+        },
+        id: 'node-youtube-post',
+        name: '5d. Auto-Post YouTube Shorts',
+        type: 'n8n-nodes-base.httpRequest',
+        typeVersion: 4.2,
+        position: [1260, 490]
+      },
+      {
+        parameters: {
+          method: 'POST',
+          url: '=https://api.telegram.org/botYOUR_TELEGRAM_BOT_TOKEN/{{ $json.videoUrl ? "sendVideo" : "sendPhoto" }}',
+          sendBody: true,
+          specifyBody: 'json',
+          jsonBody: '={{ JSON.stringify({ chat_id: "@YOUR_CHANNEL", video: $json.videoUrl || undefined, photo: $json.videoUrl ? undefined : ($json.bannerUrl || $json.imageUrl), caption: ($json.fullMessage || $json.caption).slice(0, 1000) }) }}',
+          options: {}
+        },
+        id: 'node-telegram-post',
+        name: '5e. Auto-Post Telegram Channel',
+        type: 'n8n-nodes-base.httpRequest',
+        typeVersion: 4.2,
+        position: [1260, 640]
+      },
+      {
+        parameters: {
+          method: 'POST',
+          url: `${originUrl}/api/n8n/callback`,
+          sendBody: true,
+          specifyBody: 'json',
+          jsonBody: `={{ JSON.stringify({ secret: "${secret}", postId: $json.postId || $json.id, platform: $json.platform, status: "published", externalPostId: $json.id || $json.post_id || "n8n-ok" }) }}`,
+          options: {}
+        },
+        id: 'node-callback-sync',
+        name: '6. Sync Status Back to BuyOne BD',
+        type: 'n8n-nodes-base.httpRequest',
+        typeVersion: 4.2,
+        position: [1580, 320]
+      }
+    ],
+    connections: {
+      '1a. Instant BuyOne BD Webhook': { main: [[{ node: '3. Normalize Multi-Channel Viral Posts', type: 'main', index: 0 }]] },
+      '1b. Auto-Poll Every 4h': { main: [[{ node: '2. Fetch Viral Queue + Banners + Videos', type: 'main', index: 0 }]] },
+      '2. Fetch Viral Queue + Banners + Videos': { main: [[{ node: '3. Normalize Multi-Channel Viral Posts', type: 'main', index: 0 }]] },
+      '3. Normalize Multi-Channel Viral Posts': { main: [[{ node: '4. Route Platform', type: 'main', index: 0 }]] },
+      '4. Route Platform': {
+        main: [
+          [{ node: '5a. Auto-Post Facebook Banner/Reel', type: 'main', index: 0 }],
+          [{ node: '5b. Auto-Post Instagram Reel/Banner', type: 'main', index: 0 }],
+          [{ node: '5c. Auto-Post TikTok Viral Video', type: 'main', index: 0 }],
+          [{ node: '5d. Auto-Post YouTube Shorts', type: 'main', index: 0 }],
+          [{ node: '5e. Auto-Post Telegram Channel', type: 'main', index: 0 }]
+        ]
+      },
+      '5a. Auto-Post Facebook Banner/Reel': { main: [[{ node: '6. Sync Status Back to BuyOne BD', type: 'main', index: 0 }]] },
+      '5b. Auto-Post Instagram Reel/Banner': { main: [[{ node: '6. Sync Status Back to BuyOne BD', type: 'main', index: 0 }]] },
+      '5c. Auto-Post TikTok Viral Video': { main: [[{ node: '6. Sync Status Back to BuyOne BD', type: 'main', index: 0 }]] },
+      '5d. Auto-Post YouTube Shorts': { main: [[{ node: '6. Sync Status Back to BuyOne BD', type: 'main', index: 0 }]] },
+      '5e. Auto-Post Telegram Channel': { main: [[{ node: '6. Sync Status Back to BuyOne BD', type: 'main', index: 0 }]] }
+    },
+    active: false,
+    settings: { executionOrder: 'v1' }
+  };
+}
+
+app.get('/api/n8n/workflow.json', (req, res) => {
+  const saved = loadStoreData() || {};
+  const originUrl = resolvePublicOrigin(req, saved);
+  const storeName = saved?.settings?.storeName || 'BuyOne BD';
+  const workflow = buildN8nWorkflowTemplate(originUrl, storeName, saved?.settings?.n8nAutomation || {});
+  if (req.query?.download === '1' || req.query?.download === 'true') {
+    res.setHeader('Content-Disposition', 'attachment; filename="buyonebd-n8n-social-autopilot.json"');
+  }
+  return res.json(workflow);
+});
+
+app.post('/api/n8n/test', async (req, res) => {
+  try {
+    const saved = loadStoreData() || {};
+    const originUrl = resolvePublicOrigin(req, saved);
+    const storeName = saved?.settings?.storeName || 'BuyOne BD';
+    const n8nCfg = { ...(saved?.settings?.n8nAutomation || {}), ...(req.body?.n8nAutomation || {}) };
+    if (!n8nCfg.masterWebhookUrl || !/^https?:\/\//i.test(n8nCfg.masterWebhookUrl)) {
+      return res.json({ success: false, message: 'Enter a valid n8n Webhook URL (https://.../webhook/...)' });
+    }
+    const sampleProd = getVisibleCatalogProducts(saved)[0] || (Array.isArray(saved.products) ? saved.products[0] : null);
+    const testResult = await pushBatchToN8nWebhook(
+      [
+        {
+          id: `n8n-test-${Date.now()}`,
+          platform: 'facebook',
+          productId: sampleProd?.id || 'test-prod',
+          productTitle: sampleProd?.title || 'BuyOne BD Viral Test',
+          title: `TEST PING: ${sampleProd?.titleBn || sampleProd?.title || storeName}`,
+          viralHook: 'LIVE N8N CONNECTION VERIFIED',
+          caption: `n8n Full Social Automation Ping from ${storeName} at ${new Date().toISOString()}`,
+          hashtags: ['#BuyOneBD', '#n8nAutomation', '#CashOnDeliveryBD'],
+          productUrl: `${originUrl}/`,
+          imageUrl: sampleProd?.images?.[0] || `${originUrl}/favicon.ico`,
+          bannerUrl: sampleProd?.images?.[0] || `${originUrl}/favicon.ico`,
+          verticalBannerUrl: sampleProd?.images?.[0] || `${originUrl}/favicon.ico`,
+          videoUrl: '',
+          mediaType: 'banner',
+          scheduledAt: new Date().toISOString()
+        }
+      ],
+      n8nCfg,
+      originUrl,
+      storeName,
+      saved?.settings?.socialAutoConfig
+    );
+    return res.json({ success: testResult.ok, message: testResult.message });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err?.message || 'n8n test failed' });
+  }
+});
+
+app.post('/api/n8n/callback', (req, res) => {
+  try {
+    const saved = loadStoreData() || {};
+    const configuredSecret = String(saved?.settings?.n8nAutomation?.webhookSecret || '').trim();
+    const providedSecret = String(req.headers['x-buyonebd-secret'] || req.body?.secret || '').trim();
+    if (configuredSecret && providedSecret && configuredSecret !== providedSecret) {
+      return res.status(403).json({ success: false, error: 'Invalid webhook secret.' });
+    }
+    const { postId, status = 'published', externalPostId = '', errorNote = '' } = req.body || {};
+    const nowIso = new Date().toISOString();
+    const posts: any[] = Array.isArray(saved.socialPosts) ? [...saved.socialPosts] : [];
+    let updated = false;
+    if (postId) {
+      saved.socialPosts = posts.map((p) => {
+        if (p.id !== postId) return p;
+        updated = true;
+        return {
+          ...p,
+          status: status === 'failed' ? 'failed' : 'published',
+          publishedAt: status === 'failed' ? p.publishedAt : nowIso,
+          externalPostId: externalPostId || p.externalPostId,
+          errorNote: errorNote || '',
+          n8nDispatchedAt: nowIso,
+          dispatchLog: `Synced from n8n (${externalPostId || status})`
+        };
+      });
+    }
+    saved.settings = saved.settings || {};
+    saved.settings.n8nAutomation = {
+      ...(saved.settings.n8nAutomation || {}),
+      lastCallbackAt: nowIso,
+      lastStatusMessage: postId ? `n8n callback synced post ${postId} (${status})` : `n8n callback received`
+    };
+    saveStoreData(saved);
+    if (updated) {
+      broadcastWs({ type: 'social:sync', socialPosts: saved.socialPosts });
+    }
+    broadcastWs({ type: 'settings:sync', settings: saved.settings });
+    return res.json({ success: true, updated, syncedAt: nowIso });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'n8n callback failed' });
+  }
+});
+
+// 1-Click Full AI Viral Auto-Post Studio (Generates Promo Banner PNG + Reel MP4 Video + Viral Hashtags + Pushes All Social & n8n)
+app.post('/api/ai/viral-autopilot-post', async (req, res) => {
+  try {
+    const saved = loadStoreData() || {};
+    const originUrl = resolvePublicOrigin(req, saved);
+    const storeName = saved?.settings?.storeName || 'BuyOne BD';
+    const catalog = getVisibleCatalogProducts(saved).filter((p: any) => Number(p.stock ?? 0) > 0);
+    const {
+      productIds,
+      productId,
+      platforms = ['facebook', 'instagram', 'tiktok', 'youtube', 'telegram'],
+      generateBanner = true,
+      generateVideo = true,
+      dispatchNow = true,
+      pushToN8n = true,
+      lang = 'bn',
+      n8nOverride
+    } = req.body || {};
+
+    const n8nCfg = { ...(saved?.settings?.n8nAutomation || {}), ...(n8nOverride || {}) };
+    const requestedIds: string[] = Array.isArray(productIds) && productIds.length > 0 ? productIds : productId ? [productId] : [];
+    const targets =
+      requestedIds.length > 0
+        ? catalog.filter((p: any) => requestedIds.includes(p.id))
+        : catalog.slice(0, 1);
+
+    if (targets.length === 0) {
+      const anyProd = Array.isArray(saved.products) && saved.products.length > 0 ? [saved.products[0]] : [];
+      if (anyProd.length === 0) {
+        return res.status(400).json({ success: false, error: 'No own product available to generate viral media.' });
+      }
+      targets.push(anyProd[0]);
+    }
+
+    const activePlatforms: string[] = Array.isArray(platforms) && platforms.length > 0
+      ? platforms
+      : ['facebook', 'instagram', 'tiktok', 'youtube', 'telegram'];
+    const channels = saved?.settings?.socialAutoConfig || {};
+    const posts: any[] = Array.isArray(saved.socialPosts) ? [...saved.socialPosts] : [];
+    const createdBatch: any[] = [];
+    const generatedMediaSummaries: any[] = [];
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+
+    for (let tIdx = 0; tIdx < targets.slice(0, 3).length; tIdx++) {
+      const prod = targets[tIdx];
+      let firstViralHook = '';
+      const perProductPosts: any[] = [];
+
+      // Pre-generate platform captions + viral hashtags first so hook feeds banner
+      const genPerPlatform: Record<string, any> = {};
+      for (const pl of activePlatforms) {
+        const slug = prod.seo?.slug || prod.id;
+        const utmUrl = `${originUrl}/?product=${encodeURIComponent(slug)}&utm_source=${encodeURIComponent(pl)}&utm_medium=ai_viral_auto`;
+        let gen = {
+          viralHook: prod.originalPrice && prod.originalPrice > prod.price
+            ? `FLASH OFFER • SAVE ৳${prod.originalPrice - prod.price}`
+            : `VIRAL TRENDING BD DEAL`,
+          title: `🔥 ${prod.titleBn || prod.title}`,
+          caption: `🔥 ${prod.titleBn || prod.title}\n💰 অফার মূল্য: মাত্র ৳${Number(prod.price || 0).toLocaleString()}\n🚚 সারাদেশের ৬৪ জেলায় ১ টাকাও অগ্রিম ছাড়া ক্যাশ অন ডেলিভারি।\n👉 অর্ডার লিংক: ${utmUrl}`,
+          hashtags: ['#BuyOneBD', '#ViralBD', '#TikTokMadeMeBuyItBD', '#CashOnDeliveryBD', '#BangladeshShopping', `#${pl}BD`, '#DhakaDeals', '#FlashSaleBD'],
+          productUrl: utmUrl
+        };
+        if (process.env.GEMINI_API_KEY) {
+          try {
+            gen = await generateSocialCaptionWithGemini(prod, pl, lang === 'en' ? 'en' : 'bn', storeName, originUrl);
+          } catch {}
+        }
+        if (!firstViralHook) firstViralHook = gen.viralHook;
+        genPerPlatform[pl] = gen;
+      }
+
+      // Render real PNG Square Promo Banner, PNG Vertical Reels Cover & 6s H.264 MP4 Promo Video
+      const media = await generateViralMediaAssetsForProduct(prod, storeName, originUrl, {
+        generateBanner: Boolean(generateBanner),
+        generateVideo: Boolean(generateVideo),
+        hookHeadline: firstViralHook
+      });
+      generatedMediaSummaries.push({
+        productId: prod.id,
+        productTitle: prod.title,
+        ...media
+      });
+
+      for (let pIdx = 0; pIdx < activePlatforms.length; pIdx++) {
+        const pl = activePlatforms[pIdx];
+        const gen = genPerPlatform[pl];
+        const newPost: any = {
+          id: `soc-viral-${nowMs}-${tIdx}-${pIdx}-${Math.floor(10 + Math.random() * 89)}`,
+          platform: pl,
+          productId: prod.id,
+          productTitle: prod.title,
+          viralHook: gen.viralHook,
+          title: gen.title,
+          caption: gen.caption,
+          hashtags: gen.hashtags,
+          productUrl: gen.productUrl,
+          imageUrl: media.rawImageUrl || prod.images?.[0] || '',
+          bannerUrl: media.squareBannerUrl,
+          verticalBannerUrl: media.verticalBannerUrl,
+          videoUrl: media.videoUrl || undefined,
+          mediaType: media.videoUrl ? 'video' : generateBanner ? 'banner' : 'image',
+          scheduledAt: nowIso,
+          status: 'scheduled',
+          autoGenerated: true,
+          createdAt: nowIso,
+          updatedAt: nowIso
+        };
+
+        if (dispatchNow) {
+          const disp = await dispatchSocialPostItem(newPost, channels[pl], undefined, originUrl, storeName);
+          newPost.status = disp.ok ? 'published' : 'failed';
+          newPost.publishedAt = disp.ok ? nowIso : undefined;
+          newPost.errorNote = disp.error || '';
+          newPost.externalPostId = disp.externalPostId || '';
+          newPost.dispatchLog = disp.dispatchLog || '';
+        }
+
+        posts.unshift(newPost);
+        createdBatch.push(newPost);
+        perProductPosts.push(newPost);
+      }
+    }
+
+    let n8nPushResult: { ok: boolean; message: string } | null = null;
+    if (pushToN8n && n8nCfg?.enabled && n8nCfg?.masterWebhookUrl) {
+      n8nPushResult = await pushBatchToN8nWebhook(createdBatch, n8nCfg, originUrl, storeName, channels);
+      if (n8nPushResult.ok) {
+        const pushedIds = new Set(createdBatch.map((b) => b.id));
+        for (const item of posts) {
+          if (pushedIds.has(item.id)) {
+            item.n8nDispatchedAt = nowIso;
+            item.dispatchLog = `${item.dispatchLog ? `${item.dispatchLog} · ` : ''}Pushed to n8n`;
+          }
+        }
+        saved.settings = saved.settings || {};
+        saved.settings.n8nAutomation = {
+          ...(saved.settings.n8nAutomation || {}),
+          ...n8nCfg,
+          lastPushedAt: nowIso,
+          lastStatusMessage: n8nPushResult.message
+        };
+      }
+    }
+
+    saved.socialPosts = posts.slice(0, 300);
+    saved.autoMarketingLogs = [
+      {
+        id: `amlog-viral-${nowMs}`,
+        trigger: 'manual_sweep',
+        summary: `AI Viral Studio generated ${generatedMediaSummaries.length} media kit(s) (Banner + Video) & scheduled ${createdBatch.length} posts${n8nPushResult?.ok ? ' + Pushed to n8n' : ''}`,
+        details: createdBatch.map((p) => `${p.platform.toUpperCase()}: ${p.title}`),
+        actionsCount: createdBatch.length + (n8nPushResult?.ok ? 1 : 0),
+        timestamp: nowIso
+      },
+      ...(Array.isArray(saved.autoMarketingLogs) ? saved.autoMarketingLogs : [])
+    ].slice(0, 60);
+
+    saveStoreData(saved);
+    broadcastWs({ type: 'social:sync', socialPosts: saved.socialPosts });
+    broadcastWs({ type: 'settings:sync', settings: saved.settings });
+    broadcastWs({
+      type: 'automarketing:sync',
+      autoMarketingLogs: saved.autoMarketingLogs,
+      socialPosts: saved.socialPosts,
+      settings: saved.settings
+    });
+
+    return res.json({
+      success: true,
+      createdCount: createdBatch.length,
+      createdPosts: createdBatch,
+      mediaKits: generatedMediaSummaries,
+      n8nPushResult,
+      socialPosts: saved.socialPosts,
+      settings: saved.settings
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Viral autopilot generation failed' });
+  }
+});
+
+app.post('/api/n8n/trigger-all', async (req, res) => {
+  try {
+    const saved = loadStoreData() || {};
+    const originUrl = resolvePublicOrigin(req, saved);
+    const storeName = saved?.settings?.storeName || 'BuyOne BD';
+    const n8nCfg = { ...(saved?.settings?.n8nAutomation || {}), ...(req.body?.n8nAutomation || {}) };
+    if (!n8nCfg.masterWebhookUrl || !/^https?:\/\//i.test(n8nCfg.masterWebhookUrl)) {
+      return res.status(400).json({ success: false, error: 'Please paste your n8n Master Webhook URL first.' });
+    }
+    let postsToPush: any[] = Array.isArray(saved.socialPosts)
+      ? saved.socialPosts.filter((p: any) => p.status === 'scheduled').slice(0, 10)
+      : [];
+    if (postsToPush.length === 0 && Array.isArray(saved.socialPosts) && saved.socialPosts.length > 0) {
+      postsToPush = saved.socialPosts.slice(0, 5);
+    }
+    const nowIso = new Date().toISOString();
+    const pushRes = await pushBatchToN8nWebhook(postsToPush, n8nCfg, originUrl, storeName, saved?.settings?.socialAutoConfig);
+    saved.settings = saved.settings || {};
+    saved.settings.n8nAutomation = {
+      ...(saved.settings.n8nAutomation || {}),
+      ...n8nCfg,
+      lastPushedAt: pushRes.ok ? nowIso : saved.settings?.n8nAutomation?.lastPushedAt,
+      lastStatusMessage: pushRes.message
+    };
+    saveStoreData(saved);
+    broadcastWs({ type: 'settings:sync', settings: saved.settings });
+    return res.json({ success: pushRes.ok, message: pushRes.message, pushedCount: postsToPush.length, settings: saved.settings });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'n8n trigger failed' });
+  }
 });
 
 // Zero-Cost AI 4-Platform Organic Viral Marketing Blitz (/api/ai/free-social-blitz)
@@ -5845,6 +6980,15 @@ async function runAutonomousMarketingSweep(
       const isSuiteSocialDue =
         Boolean(options.forceAll) || (suiteActive && suiteCfg.autoSocialDailyPoster && nowMs - lastSuiteSocialMs >= sweepIntervalMs);
 
+      const suiteCfgAll = {
+        autoGenerateViralMedia: true,
+        autoPushToN8n: true,
+        ...suiteCfg
+      };
+      const n8nCfg = saved.settings?.n8nAutomation;
+      const autoGeneratedBatch: any[] = [];
+      const cachedProductMedia: Record<string, { squareBannerUrl: string; verticalBannerUrl: string; videoUrl: string; rawImageUrl: string }> = {};
+
       for (const platform of ['facebook', 'instagram', 'tiktok', 'youtube', 'telegram']) {
         const ch = channels[platform] || { enabled: true };
         const chIntervalMs = Math.max(1, Number(ch.intervalHours) || 6) * 3600 * 1000;
@@ -5864,9 +7008,10 @@ async function runAutonomousMarketingSweep(
         const productUrl = `${baseOrigin}/?product=${encodeURIComponent(slug)}&utm_source=${platform}&utm_medium=auto_ai`;
 
         let gen = {
+          viralHook: pick.originalPrice && pick.originalPrice > pick.price ? `FLASH DEAL • SAVE ৳${pick.originalPrice - pick.price}` : 'VIRAL BEST SELLER',
           title: pick.titleBn || pick.title,
           caption: `🔥 ${pick.titleBn || pick.title}\n💰 স্পেশাল দাম: মাত্র ৳${pick.price}!\n🚚 সারা বাংলাদেশের ৬৪ জেলায় ক্যাশ অন ডেলিভারি।\n👉 অর্ডার লিংক: ${productUrl}`,
-          hashtags: ['#BuyOneBD', '#BangladeshShopping', '#CashOnDelivery', `#${platform}`],
+          hashtags: ['#BuyOneBD', '#ViralBD', '#BangladeshShopping', '#CashOnDelivery', `#${platform}`],
           productUrl
         };
         if (process.env.GEMINI_API_KEY) {
@@ -5875,28 +7020,43 @@ async function runAutonomousMarketingSweep(
           } catch {}
         }
 
+        if (suiteCfgAll.autoGenerateViralMedia !== false && !cachedProductMedia[pick.id]) {
+          cachedProductMedia[pick.id] = await generateViralMediaAssetsForProduct(pick, storeName, baseOrigin, {
+            generateBanner: true,
+            generateVideo: true,
+            hookHeadline: gen.viralHook
+          });
+        }
+        const renderedMedia = cachedProductMedia[pick.id];
+
         const newPost: any = {
           id: `soc-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
           platform,
           productId: pick.id,
           productTitle: pick.title,
+          viralHook: gen.viralHook,
           title: gen.title,
           caption: gen.caption,
           hashtags: gen.hashtags,
           productUrl: gen.productUrl,
           imageUrl: pick.images?.[0] || '',
+          bannerUrl: renderedMedia?.squareBannerUrl || pick.images?.[0] || '',
+          verticalBannerUrl: renderedMedia?.verticalBannerUrl || pick.images?.[0] || '',
+          videoUrl: renderedMedia?.videoUrl || undefined,
+          mediaType: renderedMedia?.videoUrl ? 'video' : renderedMedia?.squareBannerUrl ? 'banner' : 'image',
           scheduledAt: nowIso,
           status: 'scheduled',
           autoGenerated: true,
           createdAt: nowIso
         };
-        const disp = await dispatchSocialPostItem(newPost, ch);
+        const disp = await dispatchSocialPostItem(newPost, ch, n8nCfg, baseOrigin, storeName);
         newPost.status = disp.ok ? 'published' : 'failed';
         newPost.publishedAt = disp.ok ? nowIso : undefined;
         newPost.errorNote = disp.error || '';
         newPost.externalPostId = disp.externalPostId || '';
         newPost.dispatchLog = disp.dispatchLog || '';
         posts.unshift(newPost);
+        autoGeneratedBatch.push(newPost);
         saved.settings.socialAutoConfig = saved.settings.socialAutoConfig || {};
         saved.settings.socialAutoConfig[platform] = {
           ...(saved.settings.socialAutoConfig[platform] || { enabled: true }),
@@ -5905,8 +7065,24 @@ async function runAutonomousMarketingSweep(
         createdSocialCount++;
         changed = true;
       }
+      if (
+        autoGeneratedBatch.length > 0 &&
+        suiteCfgAll.autoPushToN8n !== false &&
+        n8nCfg?.enabled &&
+        n8nCfg?.masterWebhookUrl
+      ) {
+        const pushRes = await pushBatchToN8nWebhook(autoGeneratedBatch, n8nCfg, baseOrigin, storeName, channels);
+        if (pushRes.ok) {
+          saved.settings.n8nAutomation = {
+            ...(saved.settings.n8nAutomation || {}),
+            lastPushedAt: nowIso,
+            lastStatusMessage: pushRes.message
+          };
+          actionsTaken.push(`Synced ${autoGeneratedBatch.length} viral banner+video posts to n8n`);
+        }
+      }
       if (createdSocialCount > 0) {
-        actionsTaken.push(`Auto-created & posted ${createdSocialCount} promo posts`);
+        actionsTaken.push(`Auto-created & posted ${createdSocialCount} viral promo posts`);
       }
     }
     saved.socialPosts = posts.slice(0, 300);
@@ -6210,6 +7386,15 @@ app.post('/api/ai/auto-marketing/run-now', async (req, res) => {
         }
       };
     }
+    if (req.body?.n8nAutomationOverride && typeof req.body.n8nAutomationOverride === 'object') {
+      saved.settings = {
+        ...(saved.settings || {}),
+        n8nAutomation: {
+          ...(saved.settings?.n8nAutomation || {}),
+          ...req.body.n8nAutomationOverride
+        }
+      };
+    }
     const result = await runAutonomousMarketingSweep(saved, {
       trigger: 'manual_sweep',
       forceAll: true,
@@ -6247,6 +7432,202 @@ async function startServer() {
       await runAutonomousMarketingSweep(saved, { trigger: 'background_daemon', forceAll: false });
     } catch {}
   }, 30 * 1000);
+
+  // Storefront AI E-Commerce Advisor, Product Q&A, Cart Upsell & Admin Strategist (gemini-4-hydrogen only)
+  app.post('/api/ai/shopping-advisor', async (req, res) => {
+    try {
+      const { query = '', budgetMax, maxBudgetBdt, category = '', lang = 'bn' } = req.body || {};
+      const cleanQuery = String(query || '').trim();
+      const maxBdt = Number(budgetMax ?? maxBudgetBdt) > 0 ? Number(budgetMax ?? maxBudgetBdt) : 0;
+      if (!cleanQuery && !maxBdt) {
+        return res.status(400).json({ success: false, ok: false, error: 'Search query or budget is required.' });
+      }
+      const saved = loadStoreData() || {};
+      const catalog = getVisibleCatalogProducts(saved);
+      const qLower = cleanQuery.toLowerCase();
+      const scored = catalog
+        .filter((p: any) => (!maxBdt || Number(p.price) <= maxBdt) && (!category || category === 'all' || p.category === category))
+        .map((p: any) => {
+          const text = `${p.title} ${p.titleBn} ${p.category} ${p.categoryBn} ${p.description} ${(p.tags || []).join(' ')}`.toLowerCase();
+          const words = qLower.split(/\s+/).filter((w) => w.length > 1);
+          const hits = words.reduce((s, w) => s + (text.includes(w) ? 3 : 0), 0);
+          return { p, score: hits + (p.isFlashSale ? 1 : 0) + (Number(p.rating) || 4.8) };
+        })
+        .sort((a, b) => b.score - a.score);
+      const topMatches = (scored.length > 0 ? scored : catalog.map((p: any) => ({ p, score: 1 }))).slice(0, 4).map((x) => x.p);
+
+      let advice = lang === 'bn'
+        ? `আপনার চাহিদা${cleanQuery ? ` ("${cleanQuery}")` : ''}${maxBdt ? ` (বাজেট ৳${maxBdt})` : ''} অনুযায়ী আমাদের নিজস্ব স্টোরের সেরা ${topMatches.length}টি পণ্য নিচে দেওয়া হলো — সবগুলোতে ক্যাশ অন ডেলিভারি ও ৭-দিনের রিপ্লেসমেন্ট সুবিধা রয়েছে।`
+        : `Here are the top ${topMatches.length} matching items from our store catalog${cleanQuery ? ` for "${cleanQuery}"` : ''}${maxBdt ? ` under ৳${maxBdt}` : ''}, available with Cash on Delivery across 64 districts.`;
+
+      if (process.env.GEMINI_API_KEY && topMatches.length > 0) {
+        try {
+          const compact = catalog.slice(0, 15).map((p: any) => ({
+            id: p.id,
+            title: lang === 'bn' ? p.titleBn || p.title : p.title,
+            price: p.price,
+            rating: p.rating,
+            soldCount: p.soldCount,
+            category: lang === 'bn' ? p.categoryBn : p.category
+          }));
+          const aiResp = await ai.models.generateContent({
+            model: 'gemini-4-hydrogen',
+            contents: `You are a concise e-commerce shopping advisor for ${saved?.settings?.storeName || 'BuyOne BD'}. Recommend ONLY from these store products: ${JSON.stringify(compact)}. Customer query: "${cleanQuery || 'best value products'}"${maxBdt ? ` (max budget ৳${maxBdt})` : ''}. Reply in ${lang === 'bn' ? 'natural Bengali' : 'concise English'} in 2-3 helpful sentences mentioning exact matching product names and prices.`,
+          });
+          if (aiResp.text?.trim()) advice = sanitizeCustomerFacingReply(aiResp.text.trim());
+        } catch {}
+      }
+
+      return res.json({
+        success: true,
+        ok: true,
+        advice,
+        recommendedProductIds: topMatches.map((p: any) => p.id),
+        recommendedProducts: topMatches
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, ok: false, error: err?.message || 'Advisor error' });
+    }
+  });
+
+  app.post('/api/ai/product-qa', async (req, res) => {
+    try {
+      const { productId, question = '', mode, lang = 'bn' } = req.body || {};
+      const cleanQuestion = String(question || '').trim();
+      const effectiveMode = mode || (cleanQuestion ? 'qa' : 'summary');
+      const saved = loadStoreData() || {};
+      const catalog = getVisibleCatalogProducts(saved);
+      const product = catalog.find((p: any) => p.id === productId) || (saved.products || []).find((p: any) => p.id === productId);
+      if (!product) {
+        return res.status(404).json({ success: false, ok: false, error: 'Product not found' });
+      }
+      const prodReviews = (saved.reviews || []).filter((r: any) => r.productId === product.id);
+      const avgRating = Number(product.rating) || 4.8;
+      const revCount = Math.max(500, Number(product.reviewsCount) || 520);
+      const soldCount = Math.max(500, Number(product.soldCount) || 540);
+      const highlights = (lang === 'bn' ? product.featuresBn || product.features : product.features || product.featuresBn) || [];
+
+      let answer =
+        effectiveMode === 'summary'
+          ? lang === 'bn'
+            ? `★ ${avgRating}/5 (${revCount.toLocaleString()}+ রিভিউ, ${soldCount.toLocaleString()}+ বিক্রি): ক্রেতারা মূলত অরিজিনাল কোয়ালিটি, দ্রুত ডেলিভারি ও ${product.warrantyInfoBn || '৭ দিনের রিপ্লেসমেন্ট ওয়ারেন্টি'}-এর প্রশংসা করেছেন।`
+            : `★ ${avgRating}/5 across ${revCount.toLocaleString()}+ reviews (${soldCount.toLocaleString()}+ sold): Verified buyers highlight build quality, fast COD delivery, and ${product.warrantyInfo || '7-day easy replacement warranty'}.`
+          : lang === 'bn'
+          ? `${product.titleBn || product.title} মূল্য ৳${product.price} (স্টক: ${product.stock ?? 0} টি)। সারাদেশে ক্যাশ অন ডেলিভারি এবং ${product.warrantyInfoBn || '৭ দিনের রিপ্লেসমেন্ট গ্যারান্টি'} সহ পাবেন।`
+          : `${product.title} is priced at ৳${product.price} (${product.stock ?? 0} in stock) with nationwide Cash on Delivery and ${product.warrantyInfo || '7-day replacement guarantee'}.`;
+
+      if (process.env.GEMINI_API_KEY) {
+        try {
+          const prompt =
+            effectiveMode === 'summary'
+              ? `Summarize verified buyer sentiment and top 3 pros for this e-commerce product in 2 concise ${lang === 'bn' ? 'Bengali' : 'English'} sentences. Product: ${product.title}, Price: ৳${product.price}, Rating: ${avgRating} (${revCount} reviews, ${soldCount} sold), Features: ${(product.features || []).join(', ')}, Sample Reviews: ${prodReviews.slice(0, 5).map((r: any) => r.comment).join(' | ')}`
+              : `Answer this buyer question accurately in 2 concise ${lang === 'bn' ? 'Bengali' : 'English'} sentences using ONLY the product specs below.\nProduct: ${product.title} / ${product.titleBn}, Price: ৳${product.price}, Stock: ${product.stock}, Warranty: ${product.warrantyInfo || '7-day replacement'}, Description: ${product.description}\nQuestion: ${cleanQuestion.slice(0, 300)}`;
+          const aiResp = await ai.models.generateContent({
+            model: 'gemini-4-hydrogen',
+            contents: prompt
+          });
+          if (aiResp.text?.trim()) answer = sanitizeCustomerFacingReply(aiResp.text.trim());
+        } catch {}
+      }
+
+      return res.json({
+        success: true,
+        ok: true,
+        answer,
+        highlights: Array.isArray(highlights) ? highlights.slice(0, 3) : []
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, ok: false, error: err?.message || 'Product Q&A failed' });
+    }
+  });
+
+  app.post('/api/ai/cart-upsell', async (req, res) => {
+    try {
+      const { cartProductIds = [], cartTotal = 0, lang = 'bn' } = req.body || {};
+      const inCartSet = new Set((Array.isArray(cartProductIds) ? cartProductIds : []).map(String));
+      const saved = loadStoreData() || {};
+      const catalog = getVisibleCatalogProducts(saved);
+      const candidates = catalog
+        .filter((p: any) => !inCartSet.has(String(p.id)) && Number(p.stock || 0) > 0)
+        .sort((a: any, b: any) => (Number(b.soldCount) || 0) - (Number(a.soldCount) || 0))
+        .slice(0, 2);
+      const freeThreshold = Number(saved?.settings?.freeShippingThreshold || 2000);
+      const freeShippingGap = Math.max(0, freeThreshold - Number(cartTotal || 0));
+      if (candidates.length === 0) {
+        return res.json({ success: true, ok: true, reason: '', suggestedProductIds: [], recommendedProduct: null, freeShippingGap });
+      }
+      let reason =
+        lang === 'bn'
+          ? `আপনার কার্টের সাথে মানানসই বেস্ট-সেলিং পণ্য — একসাথে অর্ডার করলে বান্ডিল সেভিংস ও একই ডেলিভারি চার্জে পাবেন।`
+          : `Top complementary items from our store — bundle together in one parcel to save on delivery.`;
+      if (process.env.GEMINI_API_KEY) {
+        try {
+          const cartItems = catalog.filter((p: any) => inCartSet.has(String(p.id))).map((p: any) => p.title);
+          const suggNames = candidates.map((p: any) => `${p.title} (৳${p.price})`).join(', ');
+          const aiResp = await ai.models.generateContent({
+            model: 'gemini-4-hydrogen',
+            contents: `Write 1 short persuasive ${lang === 'bn' ? 'Bengali' : 'English'} sentence explaining why pairing ${suggNames} with cart items (${cartItems.join(', ')}) saves delivery cost or completes the setup.`
+          });
+          if (aiResp.text?.trim()) reason = sanitizeCustomerFacingReply(aiResp.text.trim());
+        } catch {}
+      }
+      return res.json({
+        success: true,
+        ok: true,
+        reason,
+        suggestedProductIds: candidates.map((p: any) => p.id),
+        recommendedProduct: candidates[0] || null,
+        freeShippingGap
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, ok: false, error: err?.message || 'Cart upsell failed' });
+    }
+  });
+
+  app.post('/api/ai/admin-insights', async (req, res) => {
+    try {
+      const { lang = 'bn' } = req.body || {};
+      const saved = loadStoreData() || {};
+      const catalog = getVisibleCatalogProducts(saved);
+      const ordersList: any[] = Array.isArray(saved.orders) ? saved.orders : [];
+      const lowStock = catalog.filter((p: any) => Number(p.stock || 0) <= 15);
+      const topSold = [...catalog].sort((a: any, b: any) => (Number(b.soldCount) || 0) - (Number(a.soldCount) || 0)).slice(0, 3);
+      const pendingOrders = ordersList.filter((o: any) => o.status === 'pending' || o.status === 'on_hold');
+
+      let summary =
+        lang === 'bn'
+          ? `স্টোর ইনভেন্টরি অ্যানালাইসিস: ${lowStock.length}টি পণ্যের স্টক কম (≤১৫), ${pendingOrders.length}টি পেন্ডিং অর্ডার ভেরিফিকেশনের অপেক্ষায়। টপ সেলার: ${topSold.map((p: any) => p.titleBn || p.title).join(', ')}।`
+          : `Inventory & Conversion Digest: ${lowStock.length} SKU(s) running low on stock (<=15 units), ${pendingOrders.length} pending order(s) awaiting confirmation. Top movers: ${topSold.map((p: any) => p.title).join(', ')}.`;
+
+      if (process.env.GEMINI_API_KEY) {
+        try {
+          const compact = catalog.slice(0, 12).map((p: any) => ({
+            title: p.title,
+            price: p.price,
+            stock: p.stock,
+            sold: p.soldCount,
+            rating: p.rating
+          }));
+          const aiResp = await ai.models.generateContent({
+            model: 'gemini-4-hydrogen',
+            contents: `You are an e-commerce merchandiser & operations analyst. Give 3 concise actionable bullet points in ${lang === 'bn' ? 'Bengali' : 'English'} covering restock priority, pricing/flash-sale opportunity, and COD order conversion based on: Catalog=${JSON.stringify(compact)}, OrdersCount=${ordersList.length}, PendingCount=${pendingOrders.length}.`
+          });
+          if (aiResp.text?.trim()) summary = aiResp.text.trim();
+        } catch {}
+      }
+
+      return res.json({
+        success: true,
+        ok: true,
+        summary,
+        lowStockCount: lowStock.length,
+        pendingOrdersCount: pendingOrders.length,
+        topProductIds: topSold.map((p: any) => p.id)
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, ok: false, error: err?.message || 'Admin insights failed' });
+    }
+  });
 
   httpServer.on('upgrade', (request, socket, head) => {
     const reqUrl = request.url || '';
@@ -6311,11 +7692,13 @@ async function startServer() {
               ? {
                   ...prevSess,
                   ...(sessionMeta || {}),
+                  visitorSessionId: sessionMeta?.visitorSessionId || prevSess.visitorSessionId,
                   lastUpdated: new Date().toISOString(),
                   messages: [...(prevSess.messages || []), message]
                 }
               : {
                   id: sessionId,
+                  visitorSessionId: sessionMeta?.visitorSessionId,
                   customerName: sessionMeta?.customerName || 'সম্মানিত গ্রাহক',
                   customerPhone: sessionMeta?.customerPhone || '',
                   status: 'open',
@@ -6326,7 +7709,12 @@ async function startServer() {
                 };
             saved.supportChats = mergeSupportChatSessions(existingList, [nextSess]);
             saveStoreData(saved);
-            broadcastWs({ type: 'chat:sync', supportChats: saved.supportChats });
+            broadcastWs({
+              type: 'chat:sync',
+              supportChats: saved.supportChats,
+              latestSessionId: sessionId,
+              latestSender: message.sender
+            });
           }
           break;
         }
@@ -6418,6 +7806,7 @@ async function startServer() {
           }
           break;
         }
+        case 'webrtc:ready':
         case 'webrtc:offer':
         case 'webrtc:answer':
         case 'webrtc:ice':
@@ -6456,7 +7845,15 @@ async function startServer() {
         const rawHtml = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf-8');
         const seoHtml = injectDynamicSeoIntoHtml(rawHtml);
         const transformed = await vite.transformIndexHtml(req.originalUrl, seoHtml);
-        res.status(200).set({ 'Content-Type': 'text/html' }).end(transformed);
+        res
+          .status(200)
+          .set({
+            'Content-Type': 'text/html',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            Pragma: 'no-cache',
+            Expires: '0'
+          })
+          .end(transformed);
       } catch (e) {
         next(e);
       }
@@ -6464,11 +7861,19 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     app.use('/assets', express.static(path.join(__dirname, 'dist', 'assets'), { maxAge: '7d', immutable: true }));
-    app.use(express.static(path.join(__dirname, 'dist'), { index: false, maxAge: '1h' }));
+    app.use(express.static(path.join(__dirname, 'dist'), { index: false, maxAge: '0' }));
     app.get('*', (_req, res) => {
       try {
         const rawHtml = fs.readFileSync(path.join(__dirname, 'dist', 'index.html'), 'utf-8');
-        res.status(200).set({ 'Content-Type': 'text/html' }).send(injectDynamicSeoIntoHtml(rawHtml));
+        res
+          .status(200)
+          .set({
+            'Content-Type': 'text/html',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            Pragma: 'no-cache',
+            Expires: '0'
+          })
+          .send(injectDynamicSeoIntoHtml(rawHtml));
       } catch {
         res.sendFile(path.join(__dirname, 'dist', 'index.html'));
       }

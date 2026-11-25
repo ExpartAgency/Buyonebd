@@ -23,7 +23,13 @@ import {
   AlertCircle,
   BookOpen,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Workflow,
+  Download,
+  Film,
+  Image as ImageIcon,
+  Zap,
+  ExternalLink
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { SocialPlatform, SocialScheduledPost, SocialChannelConfig } from '../../types';
@@ -146,8 +152,57 @@ export const SocialAutoScheduler: React.FC = () => {
   const [testingPlatform, setTestingPlatform] = useState<SocialPlatform | null>(null);
   const [channelTestStatus, setChannelTestStatus] = useState<Partial<Record<SocialPlatform, { ok: boolean; msg: string }>>>({});
   const [isRunningCycleNow, setIsRunningCycleNow] = useState(false);
-  const [scheduleAllFour, setScheduleAllFour] = useState(false);
+  const [scheduleAllFour, setScheduleAllFour] = useState(true);
   const [utmCampaignTag, setUtmCampaignTag] = useState('auto_social');
+
+  // Fully AI Viral Media Studio & n8n Full Automation State
+  const [viralGenBanner, setViralGenBanner] = useState(true);
+  const [viralGenVideo, setViralGenVideo] = useState(true);
+  const [viralPushN8n, setViralPushN8n] = useState(true);
+  const [viralDispatchNow, setViralDispatchNow] = useState(true);
+  const [isRunningViralStudio, setIsRunningViralStudio] = useState(false);
+  const [latestMediaKits, setLatestMediaKits] = useState<
+    {
+      productId: string;
+      productTitle: string;
+      squareBannerUrl: string;
+      verticalBannerUrl: string;
+      videoUrl: string;
+      rawImageUrl: string;
+    }[]
+  >([]);
+  const [isTestingN8n, setIsTestingN8n] = useState(false);
+  const [isTriggeringN8n, setIsTriggeringN8n] = useState(false);
+  const [n8nTestStatus, setN8nTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [showN8nGuide, setShowN8nGuide] = useState(true);
+
+  const defaultN8nCfg = {
+    enabled: true,
+    n8nInstanceUrl: '',
+    masterWebhookUrl: '',
+    webhookSecret: 'buyonebd-n8n-secret',
+    autoPushOnGenerate: true,
+    autoPushCronHours: 4,
+    includeSquareBanner: true,
+    includeVerticalBanner: true,
+    includePromoVideo: true,
+    autoCallbackSync: true
+  };
+  const n8nCfg = {
+    ...defaultN8nCfg,
+    ...(settings.n8nAutomation || {})
+  };
+  const updateN8nCfg = (patch: Partial<typeof defaultN8nCfg>) => {
+    updateSettings({
+      n8nAutomation: {
+        ...n8nCfg,
+        ...patch
+      }
+    });
+  };
+
+  const n8nCallbackUrl =
+    typeof window !== 'undefined' ? `${window.location.origin}/api/n8n/callback` : 'https://buyonebd.com/api/n8n/callback';
 
   const filteredPosts = useMemo(() => {
     return socialPosts.filter((p) => (platformFilter === 'all' ? true : p.platform === platformFilter));
@@ -217,6 +272,112 @@ export const SocialAutoScheduler: React.FC = () => {
       addToast('error', at('সাইকেল রান ব্যর্থ', 'Cycle Run Failed'), '');
     } finally {
       setIsRunningCycleNow(false);
+    }
+  };
+
+  const handleRunViralAutopilotPost = async () => {
+    const targetIds = selectedProductIds.length > 0 ? selectedProductIds.slice(0, 3) : catalogPickerProducts[0] ? [catalogPickerProducts[0].id] : [];
+    if (targetIds.length === 0) {
+      addToast('warning', at('পণ্য নির্বাচন করুন', 'Select Product'), at('কমপক্ষে ১টি পণ্য সিলেক্ট করুন।', 'Select at least one product.'));
+      return;
+    }
+    setIsRunningViralStudio(true);
+    try {
+      const targetPlatforms: SocialPlatform[] = scheduleAllFour
+        ? ['facebook', 'instagram', 'tiktok', 'youtube', 'telegram']
+        : [selectedPlatform];
+      const res = await fetch('/api/ai/viral-autopilot-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productIds: targetIds,
+          platforms: targetPlatforms,
+          generateBanner: viralGenBanner,
+          generateVideo: viralGenVideo,
+          dispatchNow: viralDispatchNow,
+          pushToN8n: viralPushN8n,
+          lang: adminLang,
+          n8nOverride: n8nCfg
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        addToast('error', at('ভাইরাল মিডিয়া জেনারেশন ব্যর্থ', 'Viral Studio Failed'), data?.error || 'Request failed');
+        return;
+      }
+      if (Array.isArray(data.mediaKits)) {
+        setLatestMediaKits(data.mediaKits);
+      }
+      await syncStoreFromServer();
+      addToast(
+        'success',
+        at(
+          `AI ব্যানার + ভিডিও + হ্যাশট্যাগসহ ${data.createdCount || 0}টি ভাইরাল পোস্ট সম্পন্ন!`,
+          `Created ${data.createdCount || 0} Viral AI Posts (Banners + Videos + Hashtags)!`
+        ),
+        data?.n8nPushResult?.ok ? 'Synced & Pushed to n8n Workflow!' : targetPlatforms.map((p) => p.toUpperCase()).join(', ')
+      );
+    } catch {
+      addToast('error', at('নেটওয়ার্ক ত্রুটি', 'Network Error'), '');
+    } finally {
+      setIsRunningViralStudio(false);
+    }
+  };
+
+  const handleTestN8nWebhook = async () => {
+    setIsTestingN8n(true);
+    try {
+      const res = await fetch('/api/n8n/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ n8nAutomation: n8nCfg })
+      });
+      const data = await res.json().catch(() => ({}));
+      const ok = Boolean(data?.success);
+      const msg = data?.message || (ok ? 'n8n Webhook Connected!' : 'Check n8n Webhook URL');
+      setN8nTestStatus({ ok, msg });
+      addToast(ok ? 'success' : 'warning', 'n8n Webhook Test', msg);
+    } catch {
+      setN8nTestStatus({ ok: false, msg: 'Network error testing n8n webhook' });
+    } finally {
+      setIsTestingN8n(false);
+    }
+  };
+
+  const handleTriggerN8nBatch = async () => {
+    setIsTriggeringN8n(true);
+    try {
+      const res = await fetch('/api/n8n/trigger-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ n8nAutomation: n8nCfg })
+      });
+      const data = await res.json().catch(() => ({}));
+      await syncStoreFromServer();
+      addToast(
+        res.ok && data?.success ? 'success' : 'warning',
+        at('n8n ব্যাচ পুশ', 'n8n Batch Push'),
+        data?.message || data?.error || ''
+      );
+    } catch {
+      addToast('error', at('n8n পুশ ব্যর্থ', 'n8n Push Failed'), '');
+    } finally {
+      setIsTriggeringN8n(false);
+    }
+  };
+
+  const handleCopyN8nWorkflowJson = async () => {
+    try {
+      const res = await fetch('/api/n8n/workflow.json');
+      const txt = await res.text();
+      await navigator.clipboard?.writeText(txt);
+      addToast(
+        'success',
+        at('n8n ওয়ার্কফ্লো JSON কপি হয়েছে!', 'n8n Workflow JSON Copied!'),
+        at('n8n এডিটরে পেস্ট / Import from File করুন।', 'Paste directly into your n8n canvas or import JSON.')
+      );
+    } catch {
+      addToast('error', at('কপি ব্যর্থ', 'Copy Failed'), '');
     }
   };
 
@@ -707,6 +868,210 @@ export const SocialAutoScheduler: React.FC = () => {
         })}
       </div>
 
+      {/* 1B. Full n8n Social Media Automation Hub (Downloadable Ready-to-Import Workflow + Master Webhook + Live Sync) */}
+      <div className="p-5 rounded-2xl bg-slate-900 border border-orange-500/40 space-y-4 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h4 className="font-black text-sm text-orange-300 flex items-center gap-2">
+              <Workflow className="w-4 h-4 text-orange-400" />
+              <span>
+                {at(
+                  'n8n ফুল সোশ্যাল মিডিয়া অটোমেশন সেটআপ (১-ক্লিক ওয়ার্কফ্লো + অটো ব্যানার/ভিডিও পুশ)',
+                  'n8n Full Social Media Automation Hub (5-Channel Router + Auto Banner & Video Sync)'
+                )}
+              </span>
+            </h4>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {at(
+                'নিচের রেডিমেড n8n Workflow JSON ডাউনলোড করে আপনার n8n-এ ইমপোর্ট করুন — FB, IG, TikTok, YouTube Shorts ও Telegram একসাথে ১০০% অটোমেটিক চলবে।',
+                'Import our pre-built n8n workflow JSON to automate Facebook, Instagram, TikTok, YouTube Shorts & Telegram with AI banners, videos & status callback sync.'
+              )}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 font-bold text-slate-200 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={n8nCfg.enabled}
+                onChange={(e) => updateN8nCfg({ enabled: e.target.checked })}
+                className="w-4 h-4 accent-orange-500 rounded"
+              />
+              <span>{n8nCfg.enabled ? 'n8n ON' : 'n8n OFF'}</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowN8nGuide((p) => !p)}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold cursor-pointer"
+            >
+              {showN8nGuide ? at('গাইড লুকান', 'Hide Setup Steps') : at('n8n সেটআপ গাইড', 'Setup Steps')}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-[10px] text-slate-400 mb-1">
+              {at('n8n মাস্টার Webhook URL (Webhook Trigger থেকে কপি করুন)', 'n8n Master Webhook URL (Production URL)')}
+            </label>
+            <input
+              type="url"
+              value={n8nCfg.masterWebhookUrl}
+              onChange={(e) => updateN8nCfg({ masterWebhookUrl: e.target.value })}
+              placeholder="https://your-n8n.app.n8n.cloud/webhook/buyonebd-social-autopost"
+              className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-orange-200 font-mono text-[11px]"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] text-slate-400 mb-1">
+              {at('আপনার n8n ড্যাশবোর্ড URL (ঐচ্ছিক)', 'Your n8n Workspace URL (Optional)')}
+            </label>
+            <div className="flex gap-1.5">
+              <input
+                type="url"
+                value={n8nCfg.n8nInstanceUrl}
+                onChange={(e) => updateN8nCfg({ n8nInstanceUrl: e.target.value })}
+                placeholder="https://your-n8n.app.n8n.cloud"
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 font-mono text-[11px]"
+              />
+              {n8nCfg.n8nInstanceUrl && /^https?:\/\//i.test(n8nCfg.n8nInstanceUrl) && (
+                <a
+                  href={n8nCfg.n8nInstanceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-orange-300 flex items-center"
+                  title="Open n8n"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              )}
+            </div>
+          </div>
+          <div>
+            <label className="block text-[10px] text-slate-400 mb-1">
+              {at('n8n সিক্রেট কী & সিঙ্ক ইন্টারভ্যাল', 'Webhook Secret & Poll Hours')}
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={n8nCfg.webhookSecret}
+                onChange={(e) => updateN8nCfg({ webhookSecret: e.target.value })}
+                placeholder="buyonebd-n8n-secret"
+                className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-emerald-300 font-mono text-[11px]"
+              />
+              <input
+                type="number"
+                min={1}
+                max={48}
+                value={n8nCfg.autoPushCronHours}
+                onChange={(e) => updateN8nCfg({ autoPushCronHours: Math.max(1, Number(e.target.value) || 4) })}
+                className="w-16 px-2 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-center"
+                title="Hours"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 text-[11px]">
+          {[
+            { key: 'autoPushOnGenerate' as const, label: at('AI পোস্ট তৈরি হলেই n8n-এ পাঠাবে', 'Auto-Push on AI Generation') },
+            { key: 'includeSquareBanner' as const, label: at('১০৮০×১০৮০ প্রোমো ব্যানার যুক্ত করবে', 'Include Square PNG Banner') },
+            { key: 'includeVerticalBanner' as const, label: at('রিলস/টিকটক কভার ব্যানার যুক্ত করবে', 'Include Vertical Reels Cover') },
+            { key: 'includePromoVideo' as const, label: at('AI প্রোমো ভিডিও (.mp4) যুক্ত করবে', 'Include Promo Reel Video (.mp4)') }
+          ].map((chk) => (
+            <label key={chk.key} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={Boolean(n8nCfg[chk.key])}
+                onChange={(e) => updateN8nCfg({ [chk.key]: e.target.checked })}
+                className="w-3.5 h-3.5 accent-orange-500 rounded"
+              />
+              <span>{chk.label}</span>
+            </label>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/api/n8n/workflow.json?download=1"
+            download="buyonebd-n8n-social-autopilot.json"
+            className="px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black flex items-center gap-1.5"
+          >
+            <Download className="w-4 h-4" />
+            <span>{at('n8n Workflow JSON ডাউনলোড করুন', 'Download Ready n8n Workflow (.json)')}</span>
+          </a>
+          <button
+            type="button"
+            onClick={handleCopyN8nWorkflowJson}
+            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-orange-200 font-bold flex items-center gap-1.5 cursor-pointer"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span>{at('Workflow JSON কপি', 'Copy Workflow JSON')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCopyHelper('n8n-callback', n8nCallbackUrl, 'n8n Callback URL')}
+            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-300 font-bold flex items-center gap-1.5 cursor-pointer"
+          >
+            <Link2 className="w-3.5 h-3.5" />
+            <span>{at('Callback URL কপি', 'Copy Callback Sync URL')}</span>
+          </button>
+          <button
+            type="button"
+            disabled={isTestingN8n}
+            onClick={handleTestN8nWebhook}
+            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-300 font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>{isTestingN8n ? 'Testing...' : at('n8n টেস্ট পিং', 'Test n8n Webhook')}</span>
+          </button>
+          <button
+            type="button"
+            disabled={isTriggeringN8n}
+            onClick={handleTriggerN8nBatch}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>{isTriggeringN8n ? 'Pushing...' : at('এখনই n8n-এ কিউ পুশ করুন', 'Push Queue Batch to n8n Now')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => saveSettingsChanges(at('n8n সেভ হয়েছে!', 'n8n Config Saved!'), at('n8n অটোমেশন সেটিংস সংরক্ষিত।', 'n8n automation config saved.'))}
+            className="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>{at('n8n সেটিংস সেভ', 'Save n8n Config')}</span>
+          </button>
+        </div>
+
+        {(n8nTestStatus || n8nCfg.lastStatusMessage) && (
+          <p className={`text-[11px] font-mono px-3 py-1.5 rounded-lg bg-slate-950 border ${n8nTestStatus?.ok === false ? 'border-amber-500/40 text-amber-300' : 'border-emerald-500/30 text-emerald-300'}`}>
+            {n8nTestStatus?.msg || n8nCfg.lastStatusMessage}
+            {n8nCfg.lastPushedAt ? ` · Last pushed: ${new Date(n8nCfg.lastPushedAt).toLocaleString()}` : ''}
+          </p>
+        )}
+
+        {showN8nGuide && (
+          <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 grid grid-cols-1 md:grid-cols-4 gap-3 text-[11px] text-slate-300">
+            <div>
+              <p className="font-black text-orange-300 mb-1">1. {at('Workflow ইমপোর্ট', 'Import Workflow')}</p>
+              <p>{at('উপরে "Download Ready n8n Workflow (.json)" ক্লিক করে আপনার n8n ড্যাশবোর্ডে Workflows → Import from File করুন।', 'Download our ready-made .json above and click Import from File inside your n8n workspace.')}</p>
+            </div>
+            <div>
+              <p className="font-black text-emerald-300 mb-1">2. {at('Webhook URL বসান', 'Connect Webhook')}</p>
+              <p>{at('n8n-এর "1a. Instant BuyOne BD Webhook" নোড থেকে Production URL কপি করে উপরের বক্সে পেস্ট ও Save করুন।', 'Open node "1a. Instant BuyOne BD Webhook" in n8n, copy its Production URL, paste above & Save.')}</p>
+            </div>
+            <div>
+              <p className="font-black text-sky-300 mb-1">3. {at('সোশ্যাল টোকেন দিন', 'Add Social Credentials')}</p>
+              <p>{at('n8n-এর FB, IG, TikTok, YouTube ও Telegram নোডে আপনার পেজ/বট টোকেন বসিয়ে Active করুন। ব্যানার ও ভিডিও URL অটো পাবে!', 'Add your FB, IG, TikTok, YT & Telegram tokens in nodes 5a-5e and toggle Active ON.')}</p>
+            </div>
+            <div>
+              <p className="font-black text-amber-300 mb-1">4. {at('অটোমেটিক ভাইরাস/ভাইরাল পোস্ট!', 'Zero-Manual Autopilot!')}</p>
+              <p>{at('এখন BuyOne BD অটোমেটিক প্রোডাক্ট ব্যানার, Reels ভিডিও, ভাইরাল হ্যাশট্যাগ বানিয়ে n8n-এ পাঠাবে এবং স্ট্যাটাস সিঙ্ক হবে।', 'BuyOne BD auto-generates promo banners, MP4 reels & viral hashtags, pushes to n8n & syncs status!')}</p>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* 2. Catalog-to-Social AI Generator + Manual Post Editor */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 text-xs">
         {/* Left 6: Select Products & Auto-Generate Bulk Scheduled Posts */}
@@ -869,6 +1234,126 @@ export const SocialAutoScheduler: React.FC = () => {
               </button>
             ))}
           </div>
+
+          <div className="p-3.5 rounded-xl bg-slate-950 border border-purple-500/40 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-black text-xs text-purple-300 flex items-center gap-1.5">
+                <Zap className="w-4 h-4 text-amber-400" />
+                <span>{at('১০০% AI ভাইরাল মিডিয়া ও অটো-পোস্ট (ইমেজ ব্যানার + Reels ভিডিও + হ্যাশট্যাগ)', 'Fully AI Viral Media Studio (Auto Banner PNG + Promo Reel MP4 + Viral Hashtags)')}</span>
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={viralGenBanner}
+                  onChange={(e) => setViralGenBanner(e.target.checked)}
+                  className="w-3.5 h-3.5 accent-purple-500 rounded"
+                />
+                <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{at('প্রোমো ব্যানার তৈরি (1080×1080 & Reels)', 'Auto Promo Banners (PNG)')}</span>
+              </label>
+              <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={viralGenVideo}
+                  onChange={(e) => setViralGenVideo(e.target.checked)}
+                  className="w-3.5 h-3.5 accent-purple-500 rounded"
+                />
+                <Film className="w-3.5 h-3.5 text-rose-400" />
+                <span>{at('ভাইরাল Reels ভিডিও (.mp4) তৈরি', 'Auto Viral Reel Video (.mp4)')}</span>
+              </label>
+              <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={viralPushN8n}
+                  onChange={(e) => setViralPushN8n(e.target.checked)}
+                  className="w-3.5 h-3.5 accent-orange-500 rounded"
+                />
+                <Workflow className="w-3.5 h-3.5 text-orange-400" />
+                <span>{at('n8n অটো-পুশ', 'Auto-Push to n8n')}</span>
+              </label>
+              <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={viralDispatchNow}
+                  onChange={(e) => setViralDispatchNow(e.target.checked)}
+                  className="w-3.5 h-3.5 accent-emerald-500 rounded"
+                />
+                <span>{at('এখনই পাবলিশ/ডিসপ্যাচ', 'Dispatch Immediately')}</span>
+              </label>
+            </div>
+            <button
+              type="button"
+              disabled={isRunningViralStudio}
+              onClick={handleRunViralAutopilotPost}
+              className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 hover:opacity-95 disabled:opacity-50 text-white font-black flex items-center justify-center gap-2 cursor-pointer shadow-lg"
+            >
+              <Sparkles className={`w-4 h-4 ${isRunningViralStudio ? 'animate-spin' : ''}`} />
+              <span>
+                {isRunningViralStudio
+                  ? at('AI ব্যানার, Reels ভিডিও ও ভাইরাল হ্যাশট্যাগ তৈরি হচ্ছে...', 'Generating Viral Banners, MP4 Reel Video & Auto-Posting...')
+                  : at(
+                      `১-ক্লিক ভাইরাল AI অটো-পোস্ট (ব্যানার + ভিডিও + হ্যাশট্যাগ — সব চ্যানেল)`,
+                      `1-Click Viral AI Autopilot (Generate Banners + MP4 Video + Hashtags & Post All)`
+                    )}
+              </span>
+            </button>
+          </div>
+
+          {latestMediaKits.length > 0 && (
+            <div className="p-3.5 rounded-xl bg-slate-950 border border-emerald-500/40 space-y-2.5">
+              <p className="font-bold text-emerald-300 text-xs flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>{at('সদ্য তৈরি AI ভাইরাল মিডিয়া প্রিভিউ (ব্যানার ও ভিডিও রেডি):', 'Freshly Rendered AI Viral Banners & Reel Video:')}</span>
+              </p>
+              {latestMediaKits.map((kit) => (
+                <div key={kit.productId} className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div className="p-2 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5">
+                    <p className="text-[10px] font-bold text-slate-300">1080×1080 Ad Banner (FB/IG/TG)</p>
+                    <img src={kit.squareBannerUrl} alt={kit.productTitle} className="w-full aspect-square object-cover rounded-lg border border-slate-700" />
+                    <a
+                      href={kit.squareBannerUrl}
+                      download
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-center py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 font-bold text-[10px]"
+                    >
+                      {at('ব্যানার ডাউনলোড', 'Download Square PNG')}
+                    </a>
+                  </div>
+                  <div className="p-2 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5">
+                    <p className="text-[10px] font-bold text-slate-300">1080×1920 Reels/TikTok Cover</p>
+                    <img src={kit.verticalBannerUrl} alt={kit.productTitle} className="w-full aspect-square object-contain bg-slate-950 rounded-lg border border-slate-700" />
+                    <a
+                      href={kit.verticalBannerUrl}
+                      download
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-center py-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 font-bold text-[10px]"
+                    >
+                      {at('কভার ডাউনলোড', 'Download Vertical PNG')}
+                    </a>
+                  </div>
+                  {kit.videoUrl ? (
+                    <div className="p-2 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5">
+                      <p className="text-[10px] font-bold text-rose-300">720×1280 Viral Reel Video (.mp4)</p>
+                      <video src={kit.videoUrl} controls muted loop playsInline className="w-full aspect-square object-contain bg-black rounded-lg border border-slate-700" />
+                      <a
+                        href={kit.videoUrl}
+                        download
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-center py-1 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px]"
+                      >
+                        {at('ভিডিও (.mp4) ডাউনলোড', 'Download Reel MP4')}
+                      </a>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -1100,8 +1585,8 @@ export const SocialAutoScheduler: React.FC = () => {
                       }}
                       className="mt-1 w-4 h-4 accent-emerald-500 cursor-pointer shrink-0"
                     />
-                    {post.imageUrl?.trim() ? (
-                      <img src={post.imageUrl} alt={post.title} referrerPolicy="no-referrer" className="w-14 h-14 rounded-xl object-cover border border-slate-800 shrink-0" />
+                    {(post.bannerUrl || post.imageUrl)?.trim() ? (
+                      <img src={post.bannerUrl || post.imageUrl} alt={post.title} referrerPolicy="no-referrer" className="w-14 h-14 rounded-xl object-cover border border-slate-800 shrink-0" />
                     ) : (
                       <div className="w-14 h-14 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 shrink-0">
                         <Globe className="w-5 h-5" />
@@ -1131,6 +1616,21 @@ export const SocialAutoScheduler: React.FC = () => {
                         <span className="font-mono text-slate-400 tabular-nums">
                           {new Date(post.scheduledAt).toLocaleString()}
                         </span>
+                        {post.bannerUrl && (
+                          <a href={post.bannerUrl} target="_blank" rel="noopener noreferrer" className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold text-[10px]">
+                            PNG BANNER
+                          </a>
+                        )}
+                        {post.videoUrl && (
+                          <a href={post.videoUrl} target="_blank" rel="noopener noreferrer" className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold text-[10px]">
+                            MP4 REEL
+                          </a>
+                        )}
+                        {post.n8nDispatchedAt && (
+                          <span className="px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300 font-bold text-[10px]">
+                            n8n PUSHED
+                          </span>
+                        )}
                       </div>
                       <h5 className="font-bold text-white text-sm truncate">{post.title}</h5>
                       <p className="text-slate-300 line-clamp-2 whitespace-pre-line">{post.caption}</p>

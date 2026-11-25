@@ -913,6 +913,20 @@ export const GlobalMarketingHub: React.FC = () => {
             subEn: 'Auto-creates localized promo posts across all 5 social channels'
           },
           {
+            key: 'autoGenerateViralMedia',
+            labelBn: 'অটো ভাইরাল ব্যানার (PNG) ও Reels ভিডিও (.mp4) তৈরি',
+            labelEn: 'Auto Viral Promo Banners & MP4 Reel Videos',
+            subBn: 'কোনো ম্যানুয়াল ডিজাইন ছাড়াই প্রতিটি পণ্যের প্রোমো ব্যানার ও Reels ভিডিও তৈরি করে',
+            subEn: 'Auto-renders 1080×1080 banners, Reels covers & H.264 MP4 videos at ৳0 cost'
+          },
+          {
+            key: 'autoPushToN8n',
+            labelBn: 'n8n ওয়ার্কফ্লো অটো-পুশ ও হ্যাশট্যাগ সিঙ্ক',
+            labelEn: 'Auto-Push Viral Media + Hashtags to n8n',
+            subBn: 'ব্যাকগ্রাউন্ড AI পোস্ট তৈরি হলেই ব্যানার ও ভিডিওসহ আপনার n8n-এ পাঠিয়ে দেয়',
+            subEn: 'Automatically pushes generated banners, MP4 reels & hashtags to n8n webhook'
+          },
+          {
             key: 'autoNewProductLaunchBlitz',
             labelBn: 'নতুন পণ্য যোগ করলেই অটো লঞ্চ ব্লিটজ',
             labelEn: 'Instant New-Product Launch Social Blitz',

@@ -245,7 +245,9 @@ export const OneClickCheckoutModal: React.FC = () => {
     const code = (codeToTest || couponCode).trim().toUpperCase();
     if (!code) return;
 
-    const reward = settings.spinSettings?.rewards.find((r) => r.code.toUpperCase() === code);
+    const reward = settings.spinSettings?.rewards.find(
+      (r) => r.code.toUpperCase() === code && r.enabled !== false && !r.isTryAgain && r.discountType !== 'try_again'
+    );
     const promoCoupon = (settings.promoCoupons || []).find((c) => c.code.toUpperCase() === code && c.active !== false);
     const organicPromoCode = settings.organicMarketing?.promoPopup?.couponCode?.toUpperCase();
     const organicShareCode = settings.organicMarketing?.socialShareDiscount?.couponCode?.toUpperCase();
@@ -273,21 +275,34 @@ export const OneClickCheckoutModal: React.FC = () => {
       setCouponCode(code);
       addToast('success', t('প্রোমো কুপন প্রয়োগ হয়েছে!', 'Promo Coupon Applied!'), `${code} (-৳${amount})`);
     } else if (reward) {
+      if (reward.minOrderBdt && subtotal < reward.minOrderBdt) {
+        addToast(
+          'warning',
+          t('মিনিমাম অর্ডার প্রয়োজন', 'Minimum Order Required'),
+          t(`${code} ব্যবহার করতে কমপক্ষে ৳${reward.minOrderBdt} এর অর্ডার করুন।`, `Spend at least ৳${reward.minOrderBdt} to apply ${code}.`)
+        );
+        return;
+      }
       let amount = 0;
       if (reward.discountType === 'fixed') amount = reward.value;
       else if (reward.discountType === 'free_shipping') amount = rawDeliveryFee;
-      else if (reward.discountType === 'percent') amount = Math.round(subtotal * (reward.value / 100));
+      else if (reward.discountType === 'percent') {
+        amount = Math.round(subtotal * (reward.value / 100));
+        if (reward.maxDiscountBdt && reward.maxDiscountBdt > 0) {
+          amount = Math.min(amount, reward.maxDiscountBdt);
+        }
+      }
 
       setAppliedCoupon({
         code,
-        label: lang === 'bn' ? reward.labelBn : reward.labelEn,
+        label: lang === 'bn' ? (reward.labelBn || reward.labelEn) : (reward.labelEn || reward.labelBn),
         amount
       });
       setCouponCode(code);
       addToast(
         'success',
         t('কুপন ডিসকাউন্ট যোগ হয়েছে!', 'Coupon Applied!'),
-        `${lang === 'bn' ? reward.labelBn : reward.labelEn} (${code})`
+        `${lang === 'bn' ? (reward.labelBn || reward.labelEn) : (reward.labelEn || reward.labelBn)} (${code})`
       );
     } else if (
       (organicPromoCode && code === organicPromoCode) ||

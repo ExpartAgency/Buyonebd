@@ -54,6 +54,8 @@ import {
   UserNotificationCategory
 } from '../types';
 import { speakClearText, stopAllVoicePlayback } from '../utils/voiceAudio';
+import { audioEngine } from '../utils/soundEffects';
+import { purgeStaleBrowserCaches, syncWithServerDataVersion } from '../utils/cacheBuster';
 import {
   safeStorageSetItem,
   safeSessionSetItem,
@@ -566,7 +568,13 @@ interface StoreContextType {
   toggleBrowserCallMicMute: () => void;
   initiateCustomerBrowserCall: (
     order?: Order | null,
-    callerInfo?: { name?: string; phone?: string; autoConnect?: boolean; direction?: 'customer_to_admin' | 'admin_to_customer' }
+    callerInfo?: {
+      name?: string;
+      phone?: string;
+      autoConnect?: boolean;
+      direction?: 'customer_to_admin' | 'admin_to_customer';
+      targetVisitorSessionId?: string;
+    }
   ) => string;
   answerBrowserCallFromBackend: (callId: string) => void;
   answerIncomingCustomerCall: (callId: string) => void;
@@ -1195,6 +1203,10 @@ function mergeSettings(raw: any): StoreSettings {
         ...INITIAL_SETTINGS.socialAutoConfig!.telegram,
         ...(raw.socialAutoConfig?.telegram || {})
       }
+    },
+    n8nAutomation: {
+      ...INITIAL_SETTINGS.n8nAutomation!,
+      ...(raw.n8nAutomation || {})
     },
     autoMarketingSuite: {
       ...INITIAL_SETTINGS.autoMarketingSuite!,
@@ -3114,56 +3126,56 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addSpinReward = (rewardData: Omit<SpinReward, 'id'>) => {
     const newReward: SpinReward = {
+      enabled: true,
+      expiryDays: 7,
+      probabilityWeight: 15,
       ...rewardData,
       id: `spin-${Date.now().toString().slice(-5)}`
     };
     const updatedRewards = [...spinRewards, newReward];
     lastLocalMutationAtRef.current = Date.now();
-    setSettings((prev) => {
-      const next: StoreSettings = {
-        ...prev,
-        spinSettings: {
-          ...prev.spinSettings,
-          rewards: updatedRewards
-        }
-      };
-      saveStorefrontSettingsToFirestore(next, categoriesRef.current, slidersRef.current).catch(() => {});
-      return next;
-    });
-    addToast('success', lang === 'bn' ? 'স্পিন অফার যোগ হয়েছে!' : 'Spin Offer Added!', `'${newReward.labelBn}'`);
+    const next: StoreSettings = {
+      ...settingsRef.current,
+      spinSettings: {
+        ...settingsRef.current.spinSettings,
+        rewards: updatedRewards
+      }
+    };
+    setSettings(next);
+    setCommittedSettings(next);
+    saveStorefrontSettingsToFirestore(next, categoriesRef.current, slidersRef.current).catch(() => {});
+    addToast('success', lang === 'bn' ? 'স্পিন অফার যোগ হয়েছে!' : 'Spin Offer Added!', `'${newReward.labelEn || newReward.labelBn}'`);
   };
 
   const updateSpinReward = (id: string, updates: Partial<SpinReward>) => {
     const updatedRewards = spinRewards.map((rew) => (rew.id === id ? { ...rew, ...updates } : rew));
     lastLocalMutationAtRef.current = Date.now();
-    setSettings((prev) => {
-      const next: StoreSettings = {
-        ...prev,
-        spinSettings: {
-          ...prev.spinSettings,
-          rewards: updatedRewards
-        }
-      };
-      saveStorefrontSettingsToFirestore(next, categoriesRef.current, slidersRef.current).catch(() => {});
-      return next;
-    });
-    addToast('success', lang === 'bn' ? 'স্পিন অফার আপডেট হয়েছে!' : 'Spin Offer Updated!', '');
+    const next: StoreSettings = {
+      ...settingsRef.current,
+      spinSettings: {
+        ...settingsRef.current.spinSettings,
+        rewards: updatedRewards
+      }
+    };
+    setSettings(next);
+    setCommittedSettings(next);
+    saveStorefrontSettingsToFirestore(next, categoriesRef.current, slidersRef.current).catch(() => {});
+    addToast('success', lang === 'bn' ? 'স্পিন অফার আপডেট হয়েছে!' : 'Spin Offer Updated!', updates.labelEn || updates.labelBn || '');
   };
 
   const deleteSpinReward = (id: string) => {
     const updatedRewards = spinRewards.filter((rew) => rew.id !== id);
     lastLocalMutationAtRef.current = Date.now();
-    setSettings((prev) => {
-      const next: StoreSettings = {
-        ...prev,
-        spinSettings: {
-          ...prev.spinSettings,
-          rewards: updatedRewards
-        }
-      };
-      saveStorefrontSettingsToFirestore(next, categoriesRef.current, slidersRef.current).catch(() => {});
-      return next;
-    });
+    const next: StoreSettings = {
+      ...settingsRef.current,
+      spinSettings: {
+        ...settingsRef.current.spinSettings,
+        rewards: updatedRewards
+      }
+    };
+    setSettings(next);
+    setCommittedSettings(next);
+    saveStorefrontSettingsToFirestore(next, categoriesRef.current, slidersRef.current).catch(() => {});
     addToast('info', lang === 'bn' ? 'স্পিন অফার মোছা হয়েছে' : 'Spin Offer Deleted', '');
   };
 
@@ -3521,14 +3533,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const saveSpinCoupon = (reward: SpinReward) => {
+    if (reward.isTryAgain || reward.discountType === 'try_again' || reward.enabled === false) return;
+    const validDays = Math.max(1, Number(reward.expiryDays) || 7);
     const newCoupon: CustomerCoupon = {
       id: `cpn-${Date.now()}`,
       code: reward.code,
       labelBn: reward.labelBn,
       labelEn: reward.labelEn,
       value: reward.value,
-      discountType: reward.discountType === 'try_again' ? 'fixed' : reward.discountType,
-      expiresAt: new Date(Date.now() + 7 * 86400000).toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US')
+      discountType: reward.discountType,
+      expiresAt: new Date(Date.now() + validDays * 86400000).toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US')
     };
     setCustomerProfile((prev) => {
       const existing = prev.savedCoupons || [];
@@ -3619,7 +3633,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const getProductRealStats = (productId: string) => {
     const nowMs = Date.now();
-    let soldCount = 0;
+    const productObj = productsRef.current.find((p) => p.id === productId);
+    let liveOrderSold = 0;
     let soldLast24h = 0;
     ordersRef.current.forEach((o) => {
       if (o.status === 'cancelled') return;
@@ -3628,17 +3643,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       (o.items || []).forEach((it) => {
         if (it.productId === productId) {
           const q = Math.max(1, Number(it.quantity) || 1);
-          soldCount += q;
+          liveOrderSold += q;
           if (isRecent) soldLast24h += q;
         }
       });
     });
-    const prodReviews = reviews.filter((r) => r.productId === productId && r.isApproved !== false);
-    const reviewsCount = prodReviews.length;
-    const averageRating =
-      reviewsCount > 0
-        ? Number((prodReviews.reduce((s, r) => s + (Number(r.rating) || 0), 0) / reviewsCount).toFixed(1))
-        : 0;
+
+    const baseSold = Math.max(0, Number(productObj?.soldCount) || 0);
+    const soldCount = Math.max(500, baseSold + liveOrderSold);
+
+    const approvedWritten = reviewsRef.current.filter((r) => r.productId === productId && r.isApproved !== false);
+    const newlySubmittedReviews = approvedWritten.filter((r) => !String(r.id || '').startsWith('rev-seed-'));
+    const baseReviews = Math.max(500, Number(productObj?.reviewsCount) || 0);
+    const reviewsCount = Math.max(approvedWritten.length, baseReviews + newlySubmittedReviews.length);
+
+    const baseRating = Number(productObj?.rating) > 0 ? Number(productObj!.rating) : 4.8;
+    const writtenAvg =
+      approvedWritten.length > 0
+        ? approvedWritten.reduce((s, r) => s + (Number(r.rating) || 0), 0) / approvedWritten.length
+        : baseRating;
+    const averageRating = Number(
+      (newlySubmittedReviews.length > 0 ? (baseRating * 4 + writtenAvg) / 5 : baseRating).toFixed(1)
+    );
+
     return { soldCount, soldLast24h, reviewsCount, averageRating };
   };
 
@@ -5392,39 +5419,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const saved = localStorage.getItem('buyonebd_support_chats_v3');
       if (saved) return sanitizeSupportChats(JSON.parse(saved));
     } catch {}
-    return [
-      {
-        id: 'chat-default-1',
-        customerName: 'সম্মানিত গ্রাহক',
-        customerPhone: '01917942662',
-        status: 'open',
-        manualMode: false,
-        lastUpdated: new Date().toISOString(),
-        unreadByAdmin: 0,
-        messages: [
-          {
-            id: 'welcome-1',
-            sender: 'bot',
-            text: 'Assalamu Alaikum! Welcome to BuyOne BD Support. How can I assist you today?',
-            textBn: 'আসসালামু আলাইকুম! BuyOne BD সাপোর্ট ডেস্কে স্বাগতম। কীভাবে সাহায্য করতে পারি?',
-            time: 'Just now',
-            quickActions: [
-              { label: '📦 অর্ডার ট্র্যাক', action: 'track' },
-              { label: '🔥 সেরা অফার', action: 'deals' },
-              { label: '🚚 ডেলিভারি চার্জ', action: 'delivery' },
-              { label: '💬 সরাসরি সাপোর্ট', action: 'request_specialist' }
-            ]
-          }
-        ]
-      }
-    ];
+    return [];
   });
+  const supportChatsRef = useRef<SupportChatSession[]>(supportChats);
+  supportChatsRef.current = supportChats;
+
   const [activeChatSessionId, setActiveChatSessionId] = useState<string>(() => {
+    const generated = `chat-${visitorSessionId}`;
     try {
       const savedId = localStorage.getItem('buyonebd_active_chat_id_v1');
-      if (savedId) return savedId;
+      if (savedId && savedId !== 'chat-default-1') return savedId;
     } catch {}
-    const generated = `chat-${visitorSessionId}`;
     try {
       safeStorageSetItem('buyonebd_active_chat_id_v1', generated);
     } catch {}
@@ -5439,6 +5444,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return [];
     }
   });
+  const browserCallsRef = useRef<BrowserCallSession[]>(browserCalls);
+  browserCallsRef.current = browserCalls;
+
   const [activeBrowserCallId, setActiveBrowserCallId] = useState<string | null>(null);
   const activeBrowserCall = browserCalls.find((c) => c.id === activeBrowserCallId) || null;
   const [isLiveSocketConnected, setIsLiveSocketConnected] = useState(false);
@@ -6057,6 +6065,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const data = json?.data;
 
         if (data && typeof data === 'object') {
+          if (data.storeDataVersion) {
+            syncWithServerDataVersion(data.storeDataVersion).catch(() => {});
+          }
           if (data.productViews && typeof data.productViews === 'object') {
             setProductViews(data.productViews);
             try {
@@ -7051,11 +7062,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return;
         }
 
+        if (msg.type === 'cache:purge') {
+          if (msg.dataVersion) {
+            syncWithServerDataVersion(msg.dataVersion).catch(() => {});
+          } else {
+            purgeStaleBrowserCaches({ clearTransientKeys: false, unregisterServiceWorkers: true }).catch(() => {});
+          }
+          fetchStoreSnapshotFromServer(false);
+          return;
+        }
+
         if (msg.type === 'inquiries:sync' && Array.isArray(msg.chatInquiries)) {
           setChatInquiries(msg.chatInquiries);
           try {
             safeStorageSetItem('buyonebd_chat_inquiries_v1', JSON.stringify(msg.chatInquiries));
           } catch {}
+          if (activeViewRef.current === 'admin' && msg.latestInquiry) {
+            audioEngine.playChatNotificationChime();
+            addToast(
+              'info',
+              t('নতুন ইনকোয়ারি এসেছে!', 'New Customer Inquiry!'),
+              `${msg.latestInquiry.name} (${msg.latestInquiry.phone})`
+            );
+          }
           return;
         }
 
@@ -7128,6 +7157,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           try {
             safeStorageSetItem('buyonebd_support_chats_v3', JSON.stringify(cleaned));
           } catch {}
+          if (activeViewRef.current === 'admin' && msg.latestSender === 'customer') {
+            audioEngine.playChatNotificationChime();
+            const targetSess = cleaned.find((s) => s.id === msg.latestSessionId);
+            if (targetSess) {
+              addToast(
+                'info',
+                t(`নতুন মেসেজ: ${targetSess.customerName}`, `Live Chat: ${targetSess.customerName}`),
+                targetSess.messages[targetSess.messages.length - 1]?.textBn ||
+                  targetSess.messages[targetSess.messages.length - 1]?.text ||
+                  ''
+              );
+            }
+          }
           return;
         }
 
@@ -7137,15 +7179,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             safeStorageSetItem('buyonebd_browser_calls_v3', JSON.stringify(msg.browserCalls));
           } catch {}
 
-          // If Admin placed a call to a customer, auto-ring the storefront modal on matching visitor or active storefront
+          // Strictly route Admin -> Customer outbound call ONLY to the matching customer session/phone (never ring unrelated visitors)
           if (activeViewRef.current !== 'admin' && !activeBrowserCallIdRef.current) {
             const incomingForCustomer = (msg.browserCalls as BrowserCallSession[]).find((c) => {
               if (c.status !== 'ringing_customer' || c.direction !== 'admin_to_customer') return false;
               const myPhone = String(customerPhoneRef.current || '').replace(/[^0-9]/g, '').slice(-11);
               const targetPhone = String(c.customerPhone || '').replace(/[^0-9]/g, '').slice(-11);
+              if (c.targetVisitorSessionId && c.targetVisitorSessionId === visitorSessionId) return true;
               if (c.visitorSessionId && c.visitorSessionId === visitorSessionId) return true;
               if (myPhone && targetPhone && myPhone === targetPhone) return true;
-              return !c.visitorSessionId;
+              return false;
             });
             if (incomingForCustomer) {
               setActiveBrowserCallId(incomingForCustomer.id);
@@ -7156,19 +7199,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return;
         }
 
-        if (msg.type === 'webrtc:offer' && msg.callId && msg.sdp) {
+        const isMyCallSignal = (callId?: string) => {
+          if (!callId) return false;
+          if (activeBrowserCallIdRef.current === callId) return true;
+          const activeAdminCall =
+            activeViewRef.current === 'admin' &&
+            browserCallsRef.current.some(
+              (c) => c.id === callId && (c.status === 'connected' || c.status === 'ringing_backend' || c.status === 'ringing_customer')
+            );
+          return activeAdminCall;
+        };
+
+        if (msg.type === 'webrtc:ready' && isMyCallSignal(msg.callId)) {
+          getOrCreateWebRtcSession().startAsCaller(msg.callId);
+          return;
+        }
+        if (msg.type === 'webrtc:offer' && msg.callId && msg.sdp && isMyCallSignal(msg.callId)) {
           getOrCreateWebRtcSession().handleIncomingOffer(msg.callId, msg.sdp);
           return;
         }
-        if (msg.type === 'webrtc:answer' && msg.callId && msg.sdp) {
+        if (msg.type === 'webrtc:answer' && msg.callId && msg.sdp && isMyCallSignal(msg.callId)) {
           getOrCreateWebRtcSession().handleIncomingAnswer(msg.callId, msg.sdp);
           return;
         }
-        if (msg.type === 'webrtc:ice' && msg.callId && msg.candidate) {
+        if (msg.type === 'webrtc:ice' && msg.callId && msg.candidate && isMyCallSignal(msg.callId)) {
           getOrCreateWebRtcSession().handleIncomingIce(msg.callId, msg.candidate);
           return;
         }
-        if (msg.type === 'webrtc:hangup') {
+        if (msg.type === 'webrtc:hangup' && (!msg.callId || isMyCallSignal(msg.callId))) {
           webrtcSessionRef.current?.close(false);
           setIsBrowserCallMicMuted(false);
         }
@@ -7228,21 +7286,35 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }).catch(() => {});
   };
 
+  // Play incoming phone ringtone on Admin Desk whenever a customer call is ringing_backend
+  const hasIncomingAdminCall = activeView === 'admin' && browserCalls.some((c) => c.status === 'ringing_backend');
+  useEffect(() => {
+    if (hasIncomingAdminCall) {
+      audioEngine.startPhoneRingtone();
+    } else if (activeView === 'admin') {
+      audioEngine.stopPhoneRingtone();
+    }
+    return () => {
+      if (activeView === 'admin') {
+        audioEngine.stopPhoneRingtone();
+      }
+    };
+  }, [hasIncomingAdminCall, activeView]);
+
   const toggleChatManualMode = (sessionId: string, manualMode: boolean) => {
-    setSupportChats((prev) => {
-      const next = prev.map((s) =>
-        s.id === sessionId
-          ? {
-              ...s,
-              manualMode,
-              assignedAgent: manualMode ? 'Live Admin Support' : undefined,
-              lastUpdated: new Date().toISOString()
-            }
-          : s
-      );
-      syncChatsToServer(next);
-      return next;
-    });
+    const next = supportChatsRef.current.map((s) =>
+      s.id === sessionId
+        ? {
+            ...s,
+            manualMode,
+            assignedAgent: manualMode ? 'Live Admin Support' : undefined,
+            lastUpdated: new Date().toISOString()
+          }
+        : s
+    );
+    supportChatsRef.current = next;
+    setSupportChats(next);
+    syncChatsToServer(next);
     sendWsEvent({
       type: 'chat:update_session',
       sessionId,
@@ -7272,43 +7344,46 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       time
     };
 
-    setSupportChats((prev) => {
-      const exists = prev.some((s) => s.id === targetId);
-      const next = exists
-        ? prev.map((s) =>
-            s.id === targetId
-              ? {
-                  ...s,
-                  manualMode: true,
-                  assignedAgent: 'Support Specialist',
-                  unreadByAdmin: (s.unreadByAdmin || 0) + 1,
-                  lastUpdated: new Date().toISOString(),
-                  messages: [...s.messages, noticeMsg]
-                }
-              : s
-          )
-        : [
-            {
-              id: targetId,
-              customerName: customerProfile.name || t('সম্মানিত গ্রাহক', 'Customer'),
-              customerPhone: customerProfile.phone || '',
-              status: 'open' as const,
-              manualMode: true,
-              assignedAgent: 'Support Specialist',
-              lastUpdated: new Date().toISOString(),
-              unreadByAdmin: 1,
-              messages: [noticeMsg]
-            },
-            ...prev
-          ];
-      syncChatsToServer(next);
-      return next;
-    });
+    const prev = supportChatsRef.current;
+    const exists = prev.some((s) => s.id === targetId);
+    const next: SupportChatSession[] = exists
+      ? prev.map((s) =>
+          s.id === targetId
+            ? {
+                ...s,
+                visitorSessionId: s.visitorSessionId || visitorSessionId,
+                manualMode: true,
+                assignedAgent: 'Support Specialist',
+                unreadByAdmin: (s.unreadByAdmin || 0) + 1,
+                lastUpdated: new Date().toISOString(),
+                messages: [...s.messages, noticeMsg]
+              }
+            : s
+        )
+      : [
+          {
+            id: targetId,
+            visitorSessionId,
+            customerName: customerProfile.name || t('সম্মানিত গ্রাহক', 'Customer'),
+            customerPhone: customerProfile.phone || '',
+            status: 'open' as const,
+            manualMode: true,
+            assignedAgent: 'Support Specialist',
+            lastUpdated: new Date().toISOString(),
+            unreadByAdmin: 1,
+            messages: [noticeMsg]
+          },
+          ...prev
+        ];
+    supportChatsRef.current = next;
+    setSupportChats(next);
+    syncChatsToServer(next);
     sendWsEvent({
       type: 'chat:append_message',
       sessionId: targetId,
       message: noticeMsg,
       sessionMeta: {
+        visitorSessionId,
         customerName: customerProfile.name || 'Customer',
         customerPhone: customerProfile.phone || '',
         manualMode: true,
@@ -7319,20 +7394,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const resolveSupportChatSession = (sessionId: string, status: 'open' | 'resolved') => {
-    setSupportChats((prev) => {
-      const next = prev.map((s) => (s.id === sessionId ? { ...s, status, lastUpdated: new Date().toISOString() } : s));
-      syncChatsToServer(next);
-      return next;
-    });
+    const next = supportChatsRef.current.map((s) =>
+      s.id === sessionId ? { ...s, status, lastUpdated: new Date().toISOString() } : s
+    );
+    supportChatsRef.current = next;
+    setSupportChats(next);
+    syncChatsToServer(next);
     sendWsEvent({ type: 'chat:update_session', sessionId, patch: { status, lastUpdated: new Date().toISOString() } });
   };
 
   const deleteSupportChatSession = (sessionId: string) => {
-    setSupportChats((prev) => {
-      const next = prev.filter((s) => s.id !== sessionId);
-      syncChatsToServer(next);
-      return next;
-    });
+    const next = supportChatsRef.current.filter((s) => s.id !== sessionId);
+    supportChatsRef.current = next;
+    setSupportChats(next);
+    syncChatsToServer(next);
     sendWsEvent({ type: 'chat:delete_session', sessionId });
     addToast('info', t('চ্যাট থ্রেড মুছে ফেলা হয়েছে', 'Chat Thread Deleted'), sessionId);
   };
@@ -7343,7 +7418,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!query) return;
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const customerMsg: SupportChatMessage = {
-      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      id: `msg-${Date.now()}`,
       sender: 'customer',
       text: query,
       textBn: query,
@@ -7351,49 +7426,52 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     const sessId = activeChatSessionId || `chat-${visitorSessionId}`;
-    const currentSessSnapshot = supportChats.find((s) => s.id === sessId);
+    const prev = supportChatsRef.current;
+    const currentSessSnapshot = prev.find((s) => s.id === sessId);
     const isManualThread = Boolean(currentSessSnapshot?.manualMode);
-    let sessionHistory: SupportChatMessage[] = [];
+    let sessionHistory: SupportChatMessage[] = currentSessSnapshot
+      ? [...currentSessSnapshot.messages, customerMsg]
+      : [customerMsg];
 
-    setSupportChats((prev) => {
-      const exists = prev.some((s) => s.id === sessId);
-      const next = exists
-        ? prev.map((s) => {
-            if (s.id === sessId) {
-              sessionHistory = [...s.messages, customerMsg];
-              return {
+    const exists = Boolean(currentSessSnapshot);
+    const next: SupportChatSession[] = exists
+      ? prev.map((s) =>
+          s.id === sessId
+            ? {
                 ...s,
+                visitorSessionId: s.visitorSessionId || visitorSessionId,
                 customerName: customerProfile.name || s.customerName,
                 customerPhone: customerProfile.phone || s.customerPhone,
                 lastUpdated: new Date().toISOString(),
                 unreadByAdmin: (s.unreadByAdmin || 0) + 1,
                 messages: sessionHistory
-              };
-            }
-            return s;
-          })
-        : [
-            {
-              id: sessId,
-              customerName: customerProfile.name || 'সম্মানিত গ্রাহক',
-              customerPhone: customerProfile.phone,
-              status: 'open' as const,
-              manualMode: false,
-              lastUpdated: new Date().toISOString(),
-              unreadByAdmin: 1,
-              messages: [customerMsg]
-            },
-            ...prev
-          ];
-      syncChatsToServer(next);
-      return next;
-    });
+              }
+            : s
+        )
+      : [
+          {
+            id: sessId,
+            visitorSessionId,
+            customerName: customerProfile.name || 'সম্মানিত গ্রাহক',
+            customerPhone: customerProfile.phone,
+            status: 'open' as const,
+            manualMode: false,
+            lastUpdated: new Date().toISOString(),
+            unreadByAdmin: 1,
+            messages: [customerMsg]
+          },
+          ...prev
+        ];
+    supportChatsRef.current = next;
+    setSupportChats(next);
+    syncChatsToServer(next);
 
     sendWsEvent({
       type: 'chat:append_message',
       sessionId: sessId,
       message: customerMsg,
       sessionMeta: {
+        visitorSessionId,
         customerName: customerProfile.name || currentSessSnapshot?.customerName || 'সম্মানিত গ্রাহক',
         customerPhone: customerProfile.phone || currentSessSnapshot?.customerPhone || '',
         unreadByAdmin: (currentSessSnapshot?.unreadByAdmin || 0) + 1
@@ -7413,15 +7491,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     const appendBotMsg = (replyMsg: SupportChatMessage) => {
-      setSupportChats((prev) => {
-        const next = prev.map((s) =>
-          s.id === sessId
-            ? { ...s, lastUpdated: new Date().toISOString(), messages: [...s.messages, replyMsg] }
-            : s
-        );
-        syncChatsToServer(next);
-        return next;
-      });
+      const next = supportChatsRef.current.map((s) =>
+        s.id === sessId
+          ? { ...s, lastUpdated: new Date().toISOString(), messages: [...s.messages, replyMsg] }
+          : s
+      );
+      supportChatsRef.current = next;
+      setSupportChats(next);
+      syncChatsToServer(next);
       sendWsEvent({
         type: 'chat:append_message',
         sessionId: sessId,
@@ -7611,22 +7688,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       textBn: clean,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
-    setSupportChats((prev) => {
-      const next = prev.map((s) =>
-        s.id === sessionId
-          ? {
-              ...s,
-              manualMode: true,
-              assignedAgent: 'Live Admin Support',
-              unreadByAdmin: 0,
-              lastUpdated: new Date().toISOString(),
-              messages: [...s.messages, replyMsg]
-            }
-          : s
-      );
-      syncChatsToServer(next);
-      return next;
-    });
+    const next = supportChatsRef.current.map((s) =>
+      s.id === sessionId
+        ? {
+            ...s,
+            manualMode: true,
+            assignedAgent: 'Live Admin Support',
+            unreadByAdmin: 0,
+            lastUpdated: new Date().toISOString(),
+            messages: [...s.messages, replyMsg]
+          }
+        : s
+    );
+    supportChatsRef.current = next;
+    setSupportChats(next);
+    syncChatsToServer(next);
     sendWsEvent({
       type: 'chat:append_message',
       sessionId,
@@ -7641,7 +7717,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const generateAgentAIReply = async (sessionId: string): Promise<string> => {
-    const session = supportChats.find((s) => s.id === sessionId);
+    const session = supportChatsRef.current.find((s) => s.id === sessionId);
     if (!session || session.messages.length === 0) return '';
     const lastCustomerMsg = [...session.messages].reverse().find((m) => m.sender === 'customer') || session.messages[session.messages.length - 1];
     try {
@@ -7665,7 +7741,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const openOrCreateCustomerChatSession = (name: string, phone: string): string => {
     const cleanPhone = (phone || '').replace(/[^0-9]/g, '').slice(-11);
-    const existing = supportChats.find((c) => {
+    const existing = supportChatsRef.current.find((c) => {
       const cPhone = (c.customerPhone || '').replace(/[^0-9]/g, '').slice(-11);
       if (cleanPhone && cPhone && cleanPhone === cPhone) return true;
       return c.customerName.trim().toLowerCase() === name.trim().toLowerCase();
@@ -7693,28 +7769,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       ]
     };
-    setSupportChats((prev) => {
-      const next = [newSession, ...prev];
-      syncChatsToServer(next);
-      return next;
-    });
+    const next = [newSession, ...supportChatsRef.current];
+    supportChatsRef.current = next;
+    setSupportChats(next);
+    syncChatsToServer(next);
     sendWsEvent({ type: 'chat:upsert_session', session: newSession });
     return newId;
   };
 
   const markChatRead = (sessionId: string) => {
-    setSupportChats((prev) => {
-      const next = prev.map((s) => (s.id === sessionId ? { ...s, unreadByAdmin: 0 } : s));
-      syncChatsToServer(next);
-      return next;
-    });
+    const next = supportChatsRef.current.map((s) => (s.id === sessionId ? { ...s, unreadByAdmin: 0 } : s));
+    supportChatsRef.current = next;
+    setSupportChats(next);
+    syncChatsToServer(next);
     sendWsEvent({ type: 'chat:update_session', sessionId, patch: { unreadByAdmin: 0 } });
   };
 
   // Bidirectional Real-Time Browser Call Engine (Customer <-> Backend Admin Desk with WebRTC Audio + Speech Fallback)
   const initiateCustomerBrowserCall = (
     order?: Order | null,
-    callerInfo?: { name?: string; phone?: string; autoConnect?: boolean; direction?: 'customer_to_admin' | 'admin_to_customer' }
+    callerInfo?: {
+      name?: string;
+      phone?: string;
+      autoConnect?: boolean;
+      direction?: 'customer_to_admin' | 'admin_to_customer';
+      targetVisitorSessionId?: string;
+    }
   ): string => {
     const callId = `CALL-${Math.floor(10000 + Math.random() * 90000)}`;
     const resolvedName =
@@ -7766,6 +7846,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     const isAdminOutbound = callerInfo?.direction === 'admin_to_customer' || Boolean(callerInfo?.autoConnect);
+    const cleanPhoneKey = resolvedPhone.replace(/[^0-9]/g, '').slice(-11);
+    const inferredTargetVisitorId =
+      callerInfo?.targetVisitorSessionId ||
+      supportChatsRef.current.find(
+        (s) => s.visitorSessionId && cleanPhoneKey && (s.customerPhone || '').replace(/[^0-9]/g, '').slice(-11) === cleanPhoneKey
+      )?.visitorSessionId;
+
     const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const session: BrowserCallSession = {
       id: callId,
@@ -7773,6 +7860,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       callType: order ? 'order_verification' : 'support',
       direction: isAdminOutbound ? 'admin_to_customer' : 'customer_to_admin',
       visitorSessionId: isAdminOutbound ? undefined : visitorSessionId,
+      targetVisitorSessionId: isAdminOutbound ? inferredTargetVisitorId : undefined,
       customerName: resolvedName,
       customerPhone: resolvedPhone,
       status: isAdminOutbound ? 'ringing_customer' : 'ringing_backend',
@@ -7794,11 +7882,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ]
     };
 
-    setBrowserCalls((prev) => {
-      const next = [session, ...prev];
-      syncCallsToServer(next);
-      return next;
-    });
+    const next = [session, ...browserCallsRef.current];
+    browserCallsRef.current = next;
+    setBrowserCalls(next);
+    syncCallsToServer(next);
     sendWsEvent({ type: 'call:start', call: session });
 
     if (!isAdminOutbound) {
@@ -7817,6 +7904,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const answerBrowserCallFromBackend = (callId: string) => {
+    audioEngine.stopPhoneRingtone();
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const greetBn = `আসসালামু আলাইকুম! ${settings.storeNameBn || settings.storeName} সাপোর্ট ডেস্ক থেকে আমি অ্যাসিস্ট্যান্ট বলছি। বলুন, কীভাবে সাহায্য করতে পারি?`;
     const greetEn = `Assalamu Alaikum! Support admin connected live. How can I help you today?`;
@@ -7828,20 +7916,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       time
     };
 
-    setBrowserCalls((prev) => {
-      const next = prev.map((c) =>
-        c.id === callId
-          ? {
-              ...c,
-              status: 'connected' as const,
-              answeredBy: 'backend_assistant' as const,
-              transcript: [...c.transcript, greetItem]
-            }
-          : c
-      );
-      syncCallsToServer(next);
-      return next;
-    });
+    const next: BrowserCallSession[] = browserCallsRef.current.map((c) =>
+      c.id === callId
+        ? {
+            ...c,
+            status: 'connected' as const,
+            answeredBy: 'backend_assistant' as const,
+            transcript: [...c.transcript, greetItem]
+          }
+        : c
+    );
+    browserCallsRef.current = next;
+    setBrowserCalls(next);
+    syncCallsToServer(next);
     sendWsEvent({
       type: 'call:answer',
       callId,
@@ -7849,8 +7936,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       transcriptItem: greetItem
     });
 
-    // Establish peer-to-peer WebRTC microphone + speaker audio stream cleanly
-    getOrCreateWebRtcSession().startAsCaller(callId);
+    // Notify caller that backend answered & microphone/WebRTC peer is ready to accept the offer
+    getOrCreateWebRtcSession().announceReady(callId);
 
     if (activeBrowserCallId === callId) {
       setIsCallRinging(false);
@@ -7860,6 +7947,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const answerIncomingCustomerCall = (callId: string) => {
+    audioEngine.stopPhoneRingtone();
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const ansItem: BrowserCallTranscriptItem = {
       id: `t-${Date.now()}`,
@@ -7868,27 +7956,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       textBn: 'গ্রাহক কলটি রিসিভ করেছেন।',
       time
     };
-    setBrowserCalls((prev) => {
-      const next = prev.map((c) =>
-        c.id === callId
-          ? {
-              ...c,
-              status: 'connected' as const,
-              answeredBy: 'customer' as const,
-              transcript: [...c.transcript, ansItem]
-            }
-          : c
-      );
-      syncCallsToServer(next);
-      return next;
-    });
+    const next: BrowserCallSession[] = browserCallsRef.current.map((c) =>
+      c.id === callId
+        ? {
+            ...c,
+            status: 'connected' as const,
+            answeredBy: 'customer' as const,
+            transcript: [...c.transcript, ansItem]
+          }
+        : c
+    );
+    browserCallsRef.current = next;
+    setBrowserCalls(next);
+    syncCallsToServer(next);
     sendWsEvent({
       type: 'call:answer',
       callId,
       answeredBy: 'customer',
       transcriptItem: ansItem
     });
-    getOrCreateWebRtcSession().startAsCaller(callId);
+    getOrCreateWebRtcSession().announceReady(callId);
     setIsCallRinging(false);
     setIsCallActive(true);
   };
@@ -7908,34 +7995,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       textBn: textBn || clean,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
-    setBrowserCalls((prev) => {
-      const next = prev.map((c) =>
-        c.id === callId ? { ...c, transcript: [...c.transcript, item] } : c
-      );
-      syncCallsToServer(next);
-      return next;
-    });
+    const next = browserCallsRef.current.map((c) =>
+      c.id === callId ? { ...c, transcript: [...c.transcript, item] } : c
+    );
+    browserCallsRef.current = next;
+    setBrowserCalls(next);
+    syncCallsToServer(next);
     sendWsEvent({ type: 'call:append_message', callId, item });
   };
 
   const endBrowserCallSession = (callId: string, confirmed?: boolean) => {
+    audioEngine.stopPhoneRingtone();
     webrtcSessionRef.current?.close(true);
     setIsBrowserCallMicMuted(false);
 
-    setBrowserCalls((prev) => {
-      const next = prev.map((c) =>
-        c.id === callId
-          ? {
-              ...c,
-              status: 'ended' as const,
-              endedAt: new Date().toISOString(),
-              durationSeconds: Math.max(1, Math.round((Date.now() - new Date(c.startedAt).getTime()) / 1000))
-            }
-          : c
-      );
-      syncCallsToServer(next);
-      return next;
-    });
+    const next: BrowserCallSession[] = browserCallsRef.current.map((c) =>
+      c.id === callId
+        ? {
+            ...c,
+            status: 'ended' as const,
+            endedAt: new Date().toISOString(),
+            durationSeconds: Math.max(1, Math.round((Date.now() - new Date(c.startedAt).getTime()) / 1000))
+          }
+        : c
+    );
+    browserCallsRef.current = next;
+    setBrowserCalls(next);
+    syncCallsToServer(next);
     sendWsEvent({ type: 'call:end', callId });
 
     if (activeBrowserCallId === callId) {
@@ -11221,19 +11307,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     ]
   );
 
-  // Non-Destructive Clear Cache (Clears temporary logs/audio cache ONLY; preserves all products, orders, customers, settings)
+  // Non-Destructive Clear Cache (Clears temporary logs/CacheStorage/SW ONLY; preserves all products, orders, customers, settings)
   const clearAppCache = async () => {
-    const cacheKeys = [
-      'buyonebd_pixel_events_v3',
-      'buyonebd_browsing_logs_v3',
-      'buyonebd_wa_logs_v3',
-      'buyonebd_compare_v3'
-    ];
-    cacheKeys.forEach((k) => {
-      try {
-        localStorage.removeItem(k);
-      } catch {}
-    });
+    await purgeStaleBrowserCaches({ clearTransientKeys: true, unregisterServiceWorkers: true });
     setServerPixelEvents([]);
     setCustomerBrowsingLogs([]);
     setWhatsappLogs([]);
@@ -11241,15 +11317,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setSearchQuery('');
 
     try {
-      await fetch('/api/cache/clear', { method: 'POST' });
+      await fetch('/api/cache/clear', { method: 'POST', cache: 'no-store' });
+      await fetchStoreSnapshotFromServer(false);
     } catch {}
 
     addToast(
       'success',
-      t('ক্যাশ পরিষ্কার সম্পন্ন!', 'Cache Cleared!'),
+      t('সব ক্যাশ পরিষ্কার ও লাইভ ডাটা আপডেট হয়েছে!', 'All Cache Cleared & Live Data Synced!'),
       t(
-        'অস্থায়ী ক্যাশ ও লগ ক্লিয়ার করা হয়েছে — কোনো পণ্য, অর্ডার বা সেটিংস মুছে যায়নি।',
-        'Temporary caches cleared cleanly. Products, orders, customers & settings remain intact.'
+        'ব্রাউজার ক্যাশ ও অস্থায়ী লগ পরিষ্কার করা হয়েছে — কোনো পণ্য, অর্ডার বা সেটিংস মুছে যায়নি।',
+        'Browser cache cleared & latest pricing, ratings, sales loaded safely without deleting any data.'
       )
     );
   };
@@ -12048,11 +12125,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }): Promise<{ success: boolean; inquiry?: ChatInquiry; error?: string }> => {
     try {
       const normalizedQuery = String(payload.query || payload.message || '').trim();
+      const targetChatId = activeChatSessionId || `chat-${visitorSessionId}`;
       const res = await fetch('/api/inquiries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...payload,
+          visitorSessionId,
           query: normalizedQuery,
           message: normalizedQuery
         })
@@ -12063,6 +12142,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       lastLocalMutationAtRef.current = Date.now();
       setChatInquiries((prev) => [json.inquiry, ...prev.filter((q) => q.id !== json.inquiry.id)].slice(0, 300));
+      setActiveChatSessionId(targetChatId);
       addToast('success', t('আপনার বার্তা পাঠানো হয়েছে!', 'Inquiry Sent!'), t('আমাদের টিম শীঘ্রই উত্তর দেবে।', 'We received your inquiry and will reply shortly.'));
       return { success: true, inquiry: json.inquiry };
     } catch (err: any) {
@@ -12443,6 +12523,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           suiteSettingsOverride: settingsRef.current.autoMarketingSuite,
+          n8nAutomationOverride: settingsRef.current.n8nAutomation,
           includeBlog: options?.includeBlog !== false,
           lang: adminLang
         })
@@ -12473,7 +12554,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         (Number(json.preparedCartsCount) || 0) +
         (Number(json.createdBlogCount) || 0) +
         (Number(json.repliedInquiriesCount) || 0) +
-        (Number(json.promoNotifCount) || 0);
+        (Number(json.promoNotifCount) || 0) +
+        (Number(json.n8nPushedCount) || 0);
       addToast(
         'success',
         t('অটো AI মার্কেটিং সম্পন্ন!', 'Auto AI Marketing Complete!'),

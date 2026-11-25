@@ -136,7 +136,6 @@ export const WhatsAppAgentModal: React.FC = () => {
         setLeadSubmittedOk(true);
         setWaName(leadName.trim());
         setWaPhone(`${leadCountryCode}${leadPhone.trim().replace(/^0+/, '')}`);
-        sendCustomerChatMessage(`[Inquiry from ${leadName.trim()} (${leadCountryCode} ${leadPhone.trim()})]: ${leadQuery.trim()}`).catch(() => {});
       } else {
         setLeadError(res.error || t('বার্তা পাঠানো যায়নি, আবার চেষ্টা করুন।', 'Could not send inquiry. Please try again.'));
       }
@@ -164,7 +163,7 @@ export const WhatsAppAgentModal: React.FC = () => {
     }
   }, [isWhatsAppOpen, whatsappProductDraft, lang]);
 
-  const currentSession = supportChats.find((s) => s.id === activeChatSessionId) || supportChats[0];
+  const currentSession = supportChats.find((s) => s.id === activeChatSessionId) || null;
   const sessionMessages = currentSession?.messages || [];
 
   useEffect(() => {
@@ -679,6 +678,21 @@ export const WhatsAppAgentModal: React.FC = () => {
                 <>
 
               <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50/70 dark:bg-slate-950 text-xs">
+                {sessionMessages.length === 0 && !isSending && (
+                  <div className="flex flex-col items-start">
+                    <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1 px-0.5">
+                      {settings.storeName} {t('সাপোর্ট ডেস্ক', 'Support Desk')}
+                    </span>
+                    <div className="max-w-[88%] rounded-2xl rounded-bl-sm px-3.5 py-2.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-800 shadow-xs">
+                      <p className="leading-relaxed text-[12.5px]">
+                        {t(
+                          `আসসালামু আলাইকুম! ${settings.storeNameBn || settings.storeName} লাইভ সাপোর্টে স্বাগতম। পণ্য, ডেলিভারি চার্জ বা অর্ডার ট্র্যাকিং সম্পর্কে লিখুন — সরাসরি আমাদের সাপোর্ট টিম বা স্মার্ট অ্যাসিস্ট্যান্ট উত্তর দেবে।`,
+                          `Assalamu Alaikum! Welcome to ${settings.storeName} Live Support. Ask about any product, delivery fee, or Order ID — our team or assistant will respond immediately.`
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
                 {sessionMessages.map((msg, idx) => {
                   const isCust = msg.sender === 'customer';
                   const prevSender = idx > 0 ? sessionMessages[idx - 1].sender : null;

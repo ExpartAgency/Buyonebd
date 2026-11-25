@@ -86,6 +86,21 @@ export class WebRTCAudioSession {
     }
   }
 
+  async announceReady(callId: string) {
+    if (!callId) return;
+    this.callId = callId;
+    this.callbacks.onStatusChange?.('connecting');
+    await this.getMicStream();
+    this.callbacks.sendSignal({
+      type: 'webrtc:ready',
+      callId
+    });
+  }
+
+  getActiveCallId() {
+    return this.callId;
+  }
+
   async startAsCaller(callId: string) {
     if (!callId || typeof RTCPeerConnection === 'undefined') {
       this.callbacks.onStatusChange?.('text_fallback');
@@ -95,14 +110,11 @@ export class WebRTCAudioSession {
     this.pendingIceCandidates = [];
     this.callbacks.onStatusChange?.('connecting');
 
-    const stream = await this.getMicStream();
-    if (!stream) {
-      this.callbacks.onStatusChange?.('text_fallback');
-      return;
-    }
-
+    const stream = this.localStream || (await this.getMicStream());
     const pc = this.createPeerConnection(callId);
-    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+    if (stream) {
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+    }
 
     try {
       const offer = await pc.createOffer({ offerToReceiveAudio: true });
@@ -112,6 +124,9 @@ export class WebRTCAudioSession {
         callId,
         sdp: offer
       });
+      if (!stream) {
+        this.callbacks.onStatusChange?.('text_fallback');
+      }
     } catch {
       this.callbacks.onStatusChange?.('text_fallback');
     }
@@ -126,7 +141,7 @@ export class WebRTCAudioSession {
     this.callbacks.onStatusChange?.('connecting');
 
     const pc = this.createPeerConnection(callId);
-    const stream = await this.getMicStream();
+    const stream = this.localStream || (await this.getMicStream());
     if (stream) {
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
     }
@@ -144,11 +159,7 @@ export class WebRTCAudioSession {
         callId,
         sdp: answer
       });
-      if (stream) {
-        this.callbacks.onStatusChange?.('live_audio');
-      } else {
-        this.callbacks.onStatusChange?.('text_fallback');
-      }
+      this.callbacks.onStatusChange?.(stream ? 'live_audio' : 'text_fallback');
     } catch {
       this.callbacks.onStatusChange?.('text_fallback');
     }
@@ -157,19 +168,23 @@ export class WebRTCAudioSession {
   async handleIncomingAnswer(callId: string, sdp: RTCSessionDescriptionInit) {
     if (!this.pc || this.callId !== callId) return;
     try {
-      await this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      if (this.pc.signalingState === 'have-local-offer') {
+        await this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      }
       for (const cand of this.pendingIceCandidates) {
         await this.pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
       }
       this.pendingIceCandidates = [];
-      this.callbacks.onStatusChange?.('live_audio');
+      this.callbacks.onStatusChange?.(this.localStream ? 'live_audio' : 'text_fallback');
     } catch {
       this.callbacks.onStatusChange?.('text_fallback');
     }
   }
 
   async handleIncomingIce(callId: string, candidate: RTCIceCandidateInit) {
-    if (!candidate || this.callId !== callId) return;
+    if (!candidate) return;
+    if (this.callId && this.callId !== callId) return;
+    if (!this.callId) this.callId = callId;
     if (this.pc && this.pc.remoteDescription) {
       await this.pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
     } else {

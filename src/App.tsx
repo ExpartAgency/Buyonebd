@@ -38,6 +38,9 @@ const AIVoiceCallModal = React.lazy(() =>
 const LuckySpinModal = React.lazy(() =>
   import('./components/spin/LuckySpinModal').then((m) => ({ default: m.LuckySpinModal }))
 );
+const AIShoppingAdvisorModal = React.lazy(() =>
+  import('./components/ai/AIShoppingAdvisorModal').then((m) => ({ default: m.AIShoppingAdvisorModal }))
+);
 
 function StoreMainContent() {
   const {
@@ -81,6 +84,7 @@ function StoreMainContent() {
 
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [waitlistProduct, setWaitlistProduct] = useState<Product | null>(null);
+  const [isAIAdvisorOpen, setIsAIAdvisorOpen] = useState(false);
 
   const parseFlashDateMs = (raw?: string): number => {
     if (!raw) return NaN;
@@ -427,6 +431,7 @@ function StoreMainContent() {
         <Navbar
           onOpenMobileCategories={() => setIsMobileCategoryDrawerOpen(true)}
           onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
+          onOpenAIAdvisor={() => setIsAIAdvisorOpen(true)}
         />
         <main className="flex-1 w-full max-w-full overflow-x-clip">
           <OrderTrackerView />
@@ -438,6 +443,7 @@ function StoreMainContent() {
           <AIVoiceCallModal />
           <WhatsAppAgentModal />
           <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
+          <AIShoppingAdvisorModal isOpen={isAIAdvisorOpen} onClose={() => setIsAIAdvisorOpen(false)} />
           <CustomerDashboardModal />
         </Suspense>
         <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
@@ -463,6 +469,7 @@ function StoreMainContent() {
         <Navbar
           onOpenMobileCategories={() => setIsMobileCategoryDrawerOpen(true)}
           onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
+          onOpenAIAdvisor={() => setIsAIAdvisorOpen(true)}
         />
         <main className="flex-1 w-full max-w-full overflow-x-clip">
           <SingleProductView
@@ -477,6 +484,7 @@ function StoreMainContent() {
           <AIVoiceCallModal />
           <WhatsAppAgentModal />
           <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
+          <AIShoppingAdvisorModal isOpen={isAIAdvisorOpen} onClose={() => setIsAIAdvisorOpen(false)} />
           <CustomerDashboardModal />
         </Suspense>
         <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
@@ -502,6 +510,7 @@ function StoreMainContent() {
         <Navbar
           onOpenMobileCategories={() => setIsMobileCategoryDrawerOpen(true)}
           onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
+          onOpenAIAdvisor={() => setIsAIAdvisorOpen(true)}
         />
         <main className="flex-1 w-full max-w-full overflow-x-clip">
           <AboutView />
@@ -513,6 +522,7 @@ function StoreMainContent() {
           <AIVoiceCallModal />
           <WhatsAppAgentModal />
           <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
+          <AIShoppingAdvisorModal isOpen={isAIAdvisorOpen} onClose={() => setIsAIAdvisorOpen(false)} />
           <CustomerDashboardModal />
         </Suspense>
         <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
@@ -538,6 +548,7 @@ function StoreMainContent() {
         <Navbar
           onOpenMobileCategories={() => setIsMobileCategoryDrawerOpen(true)}
           onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
+          onOpenAIAdvisor={() => setIsAIAdvisorOpen(true)}
         />
         <main className="flex-1 w-full max-w-full overflow-x-clip">
           <BlogView />
@@ -549,6 +560,7 @@ function StoreMainContent() {
           <AIVoiceCallModal />
           <WhatsAppAgentModal />
           <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
+          <AIShoppingAdvisorModal isOpen={isAIAdvisorOpen} onClose={() => setIsAIAdvisorOpen(false)} />
           <CustomerDashboardModal />
         </Suspense>
         <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
@@ -573,6 +585,7 @@ function StoreMainContent() {
       <Navbar
         onOpenMobileCategories={() => setIsMobileCategoryDrawerOpen(true)}
         onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
+        onOpenAIAdvisor={() => setIsAIAdvisorOpen(true)}
       />
 
       <main className="flex-1 max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-6 sm:space-y-8 w-full overflow-x-clip">
@@ -962,6 +975,10 @@ function StoreMainContent() {
         <LuckySpinModal
           isOpen={isSpinOpen}
           onClose={() => setIsSpinOpen(false)}
+        />
+        <AIShoppingAdvisorModal
+          isOpen={isAIAdvisorOpen}
+          onClose={() => setIsAIAdvisorOpen(false)}
         />
       </Suspense>
       <MobileCategoryDrawer

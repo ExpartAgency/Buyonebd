@@ -23,7 +23,8 @@ import {
   MessageSquarePlus,
   Tag,
   MessageCircle,
-  Eye
+  Eye,
+  Sparkles
 } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
@@ -99,6 +100,44 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
   const [reviewerName, setReviewerName] = useState('');
   const [reviewerRating, setReviewerRating] = useState(5);
   const [reviewerComment, setReviewerComment] = useState('');
+
+  // AI Product Q&A & Review Summary
+  const [qaQuestion, setQaQuestion] = useState('');
+  const [qaAnswer, setQaAnswer] = useState('');
+  const [qaHighlights, setQaHighlights] = useState<string[]>([]);
+  const [qaLoading, setQaLoading] = useState(false);
+
+  useEffect(() => {
+    setQaQuestion('');
+    setQaAnswer('');
+    setQaHighlights([]);
+  }, [product.id]);
+
+  const askProductAI = async (customQ?: string) => {
+    if (qaLoading) return;
+    const questionText = (customQ !== undefined ? customQ : qaQuestion).trim();
+    setQaLoading(true);
+    try {
+      const res = await fetch('/api/ai/product-qa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: product.id,
+          question: questionText || undefined,
+          lang
+        })
+      });
+      const data = await res.json();
+      if (data?.ok) {
+        setQaAnswer(data.answer || '');
+        setQaHighlights(Array.isArray(data.highlights) ? data.highlights : []);
+      }
+    } catch {
+      addToast('error', t('সংযোগ সমস্যা', 'Connection error'), t('আবার চেষ্টা করুন', 'Please try again'));
+    } finally {
+      setQaLoading(false);
+    }
+  };
 
   // Interactive Zoom State
   const [isZoomed, setIsZoomed] = useState(false);
@@ -557,10 +596,10 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                         onClick={() => setActiveDetailTab('reviews')}
                         className="flex items-center gap-1 text-amber-500 font-bold cursor-pointer hover:underline"
                       >
-                        <Star className={`w-4 h-4 ${realStats.reviewsCount > 0 ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} />
-                        <span>{realStats.reviewsCount > 0 ? realStats.averageRating : '0.0'}</span>
-                        <span className="text-slate-400 font-normal">
-                          ({realStats.reviewsCount} {t('রিভিউ', 'reviews')})
+                        <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                        <span>{realStats.averageRating}</span>
+                        <span className="text-slate-500 dark:text-slate-400 font-normal">
+                          ({realStats.reviewsCount.toLocaleString()} {t('রিভিউ', 'reviews')})
                         </span>
                       </button>
                       <span className="text-slate-300 dark:text-slate-700">|</span>
@@ -571,7 +610,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                       </span>
                       {realStats.soldCount > 0 && (
                         <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                          · {realStats.soldCount} {t('বিক্রি', 'sold')}
+                          · {realStats.soldCount.toLocaleString()}+ {t('বিক্রি', 'sold')}
                         </span>
                       )}
                     </div>
@@ -1232,12 +1271,14 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
             </div>
           )}
 
-          {activeDetailTab === 'reviews' && (
+          {activeDetailTab === 'reviews' && (() => {
+            const realStats = getProductRealStats(product.id);
+            return (
             <div className="space-y-4 animate-fade-in">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 tabular-nums">
                   <span className="text-3xl font-black text-slate-900 dark:text-white font-mono">
-                    {product.rating}
+                    {realStats.averageRating}
                   </span>
                   <div>
                     <div className="flex items-center gap-0.5 text-amber-400">
@@ -1246,19 +1287,33 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                       ))}
                     </div>
                     <p className="text-[11px] text-slate-500">
-                      {t(`${productReviews.length} টি যাচাইকৃত রিভিউ`, `${productReviews.length} verified customer reviews`)}
+                      {t(
+                        `${realStats.reviewsCount.toLocaleString()} যাচাইকৃত রেটিং · ${realStats.soldCount.toLocaleString()}+ বিক্রি · ${productReviews.length} লিখিত রিভিউ`,
+                        `${realStats.reviewsCount.toLocaleString()} verified ratings · ${realStats.soldCount.toLocaleString()}+ sold · ${productReviews.length} written reviews`
+                      )}
                     </p>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setIsReviewFormOpen(!isReviewFormOpen)}
-                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <MessageSquarePlus className="w-3.5 h-3.5" />
-                  <span>{t('রিভিউ লিখুন', 'Write Review')}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => askProductAI('')}
+                    disabled={qaLoading}
+                    className="px-3 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-emerald-400 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{qaLoading ? t('বিশ্লেষণ চলছে...', 'Analyzing...') : t('AI রিভিউ সারসংক্ষেপ', 'AI Review Summary')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsReviewFormOpen(!isReviewFormOpen)}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <MessageSquarePlus className="w-3.5 h-3.5" />
+                    <span>{t('রিভিউ লিখুন', 'Write Review')}</span>
+                  </button>
+                </div>
               </div>
 
               {isReviewFormOpen && (
@@ -1328,7 +1383,8 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 )}
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {activeDetailTab === 'shipping' && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs animate-fade-in">
@@ -1376,6 +1432,89 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
               )}
             </div>
           )}
+
+          {/* AI Buyer Q&A & Review Summary Panel */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-500/30 shadow-xs space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                  <Sparkles className="w-4 h-4" />
+                </span>
+                <div>
+                  <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                    {t('এআই প্রোডাক্ট ও রিভিউ অ্যাসিস্ট্যান্ট', 'AI Product Q&A & Review Summary')}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {t('ক্রেতাদের আসল রিভিউ ও পণ্যের তথ্য থেকে তাৎক্ষণিক উত্তর পান', 'Instant answers grounded in verified reviews & specs')}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  t('ক্রেতারা কী বলছেন?', 'What do buyers say?'),
+                  t('ডেলিভারি কত দিন লাগবে?', 'Delivery time & fee?'),
+                  t('ক্যাশ অন ডেলিভারি ও গ্যারান্টি?', 'COD & Warranty?')
+                ].map((qChip) => (
+                  <button
+                    key={qChip}
+                    type="button"
+                    disabled={qaLoading}
+                    onClick={() => {
+                      setQaQuestion(qChip);
+                      askProductAI(qChip);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-[11px] font-semibold text-slate-700 dark:text-slate-200 cursor-pointer border border-slate-200 dark:border-slate-700"
+                  >
+                    {qChip}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                askProductAI();
+              }}
+              className="flex flex-wrap gap-2"
+            >
+              <input
+                type="text"
+                value={qaQuestion}
+                onChange={(e) => setQaQuestion(e.target.value)}
+                placeholder={t('এই পণ্য নিয়ে যেকোনো প্রশ্ন করুন (যেমন: কোয়ালিটি কেমন, ওয়ারেন্টি আছে কি?)...', 'Ask anything about quality, delivery, warranty, or buyer reviews...')}
+                className="flex-1 min-w-[200px] px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
+              />
+              <button
+                type="submit"
+                disabled={qaLoading}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{qaLoading ? t('উত্তর খুঁজছে...', 'Thinking...') : t('জিজ্ঞাসা করুন', 'Ask AI')}</span>
+              </button>
+            </form>
+
+            {qaAnswer && (
+              <div className="p-3.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 space-y-2 text-xs">
+                <p className="text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-line">{qaAnswer}</p>
+                {qaHighlights.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {qaHighlights.map((hl, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300"
+                      >
+                        <Check className="w-3 h-3" />
+                        <span>{hl}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

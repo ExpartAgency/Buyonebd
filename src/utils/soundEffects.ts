@@ -112,6 +112,63 @@ class AudioEngine {
     }
   }
 
+  // Soft single-tone outgoing ringback when waiting for remote answer
+  startOutgoingRingback() {
+    if (this.isRinging) return;
+    this.isRinging = true;
+
+    const playRingback = () => {
+      if (!this.isRinging) return;
+      try {
+        const ctx = this.getContext();
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = 425;
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.06, now + 0.04);
+        gain.gain.setValueAtTime(0.06, now + 0.9);
+        gain.gain.linearRampToValueAtTime(0.001, now + 1.05);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 1.1);
+      } catch {}
+    };
+
+    playRingback();
+    this.ringInterval = setInterval(() => {
+      if (this.isRinging) {
+        playRingback();
+      } else {
+        clearInterval(this.ringInterval);
+      }
+    }, 3200);
+  }
+
+  // Distinct crisp double-ping for incoming customer live chat / inquiry
+  playChatNotificationChime() {
+    try {
+      const ctx = this.getContext();
+      const now = ctx.currentTime;
+      [880, 1174.66].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const t0 = now + idx * 0.11;
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, t0);
+        gain.gain.setValueAtTime(0, t0);
+        gain.gain.linearRampToValueAtTime(0.11, t0 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.25);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(t0);
+        osc.stop(t0 + 0.26);
+      });
+    } catch {}
+  }
+
   // Order success chime
   playSuccessChime() {
     try {

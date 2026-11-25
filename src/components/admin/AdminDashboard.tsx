@@ -530,7 +530,8 @@ export const AdminDashboard: React.FC = () => {
   const [utmProductSlug, setUtmProductSlug] = useState('');
 
   // Support Desk unified customer workspace tab
-  const [customerConsoleTab, setCustomerConsoleTab] = useState<'call' | 'chat' | 'orders'>('call');
+  const [customerConsoleTab, setCustomerConsoleTab] = useState<'call' | 'chat' | 'orders' | 'inquiries'>('call');
+  const [deskQueueTab, setDeskQueueTab] = useState<'customers' | 'chats' | 'inquiries'>('customers');
   const [customerChatDraft, setCustomerChatDraft] = useState('');
   const [isGeneratingCustomerChatAi, setIsGeneratingCustomerChatAi] = useState(false);
   const [selectedDeskQuickProductId, setSelectedDeskQuickProductId] = useState('');
@@ -648,6 +649,34 @@ export const AdminDashboard: React.FC = () => {
   const [isAgentDockOpen, setIsAgentDockOpen] = useState<boolean>(false);
   const [dockAgentInput, setDockAgentInput] = useState<string>('');
   const [isDockAgentRunning, setIsDockAgentRunning] = useState<boolean>(false);
+  const [aiInsightsData, setAiInsightsData] = useState<{
+    summary: string;
+    lowStockCount?: number;
+    pendingOrdersCount?: number;
+    topProductIds?: string[];
+  } | null>(null);
+  const [isLoadingAiInsights, setIsLoadingAiInsights] = useState<boolean>(false);
+  const loadAiStoreInsights = async () => {
+    setIsLoadingAiInsights(true);
+    try {
+      const res = await fetch('/api/ai/admin-insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lang: adminLang })
+      });
+      const data = await parseJsonSafe(res);
+      if (data?.success || data?.ok) {
+        setAiInsightsData({
+          summary: data.summary || '',
+          lowStockCount: data.lowStockCount,
+          pendingOrdersCount: data.pendingOrdersCount,
+          topProductIds: Array.isArray(data.topProductIds) ? data.topProductIds : []
+        });
+      }
+    } catch {} finally {
+      setIsLoadingAiInsights(false);
+    }
+  };
 
   // AI Keyword Rules form & inline edit state
   const [newRuleKeywords, setNewRuleKeywords] = useState('');
@@ -734,8 +763,8 @@ export const AdminDashboard: React.FC = () => {
       dhakaOutside: undefined
     },
     rating: 4.9,
-    reviewsCount: 16,
-    soldCount: 120,
+    reviewsCount: 510,
+    soldCount: 520,
     loyaltyPoints: undefined,
     isFlashSale: true,
     colors: ['Black (কালো)', 'Silver (সিলভার)'],
@@ -857,7 +886,14 @@ export const AdminDashboard: React.FC = () => {
     discountType: 'fixed',
     value: 150,
     color: '#059669',
-    isTryAgain: false
+    isTryAgain: false,
+    enabled: true,
+    minOrderBdt: 500,
+    maxDiscountBdt: 0,
+    expiryDays: 7,
+    probabilityWeight: 15,
+    descriptionBn: '',
+    descriptionEn: ''
   });
 
   // Handlers for Products
@@ -891,9 +927,9 @@ export const AdminDashboard: React.FC = () => {
         dhakaSub: undefined,
         dhakaOutside: undefined
       },
-      rating: 4.8,
-      reviewsCount: 15,
-      soldCount: 0,
+      rating: 4.9,
+      reviewsCount: 510,
+      soldCount: 520,
       loyaltyPoints: undefined,
       isFlashSale: true,
       colors: ['Black (কালো)', 'Silver (সিলভার)'],
@@ -2161,502 +2197,788 @@ export const AdminDashboard: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 2: LIVE CHAT INBOX & BROWSER CALL DESK */}
-          {activeTab === 'support_desk' && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-xl font-black text-white flex items-center gap-2">
-                    <Headphones className="w-5 h-5 text-emerald-400" />
-                    <span>{at('লাইভ সাপোর্ট চ্যাট ও ব্রাউজার কল ডেস্ক', 'Backend Live Chat & Browser Call Desk')}</span>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
-                        isLiveSocketConnected
-                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                          : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                      }`}
-                    >
-                      {isLiveSocketConnected ? 'LIVE WEBSOCKET' : 'HTTP SYNC'}
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    {at(
-                      'কাস্টমারের ব্রাউজার কল রিসিভ করুন, WebRTC ভয়েস অডিওতে কথা বলুন এবং ম্যানুয়াল বা AI দিয়ে চ্যাটে রিপ্লাই দিন',
-                      'Receive & dial browser WebRTC voice calls, toggle Direct Support Desk mode per thread, and reply live'
-                    )}
-                  </p>
-                </div>
-              </div>
+          {/* TAB 2: OMNICHANNEL LIVE CHAT INBOX & BROWSER CALL DESK */}
+          {activeTab === 'support_desk' && (() => {
+            const deskRingingCalls = browserCalls.filter((c) => c.status === 'ringing_backend');
+            const liveActiveCallsCount = browserCalls.filter((c) => c.status === 'connected' || c.status === 'ringing_backend').length;
+            const unreadThreadsCount = supportChats.reduce((sum, ch) => sum + (ch.unreadByAdmin || 0), 0);
+            const pendingInquiriesCount = chatInquiries.filter((q) => q.status === 'new').length;
+            const activeCustomerChatSession = selectedCallCustomer
+              ? supportChats.find(
+                  (ch) => normalizePhoneKey(ch.customerPhone) && normalizePhoneKey(ch.customerPhone) === selectedCallCustomer.key
+                ) ||
+                supportChats.find((ch) => ch.id === selectedChatId) ||
+                null
+              : activeChatObj;
 
-              {/* Support Desk Command KPI Strip + Ringing Alert Banner */}
-              {(() => {
-                const ringingCalls = browserCalls.filter((c) => c.status === 'ringing_backend');
-                const liveActiveCallsCount = browserCalls.filter((c) => c.status === 'connected' || c.status === 'ringing_backend').length;
-                const unreadThreadsCount = supportChats.reduce((sum, ch) => sum + (ch.unreadByAdmin || 0), 0);
-                const pendingInquiriesCount = chatInquiries.filter((q) => q.status === 'new').length;
+            const qText = inquirySearch.trim().toLowerCase();
+            const filteredInquiries = chatInquiries.filter((inq) => {
+              const matchStatus = inquiryStatusFilter === 'all' || inq.status === inquiryStatusFilter;
+              const matchSearch =
+                !qText ||
+                inq.name.toLowerCase().includes(qText) ||
+                inq.phone.toLowerCase().includes(qText) ||
+                inq.query.toLowerCase().includes(qText) ||
+                (inq.productTitle || '').toLowerCase().includes(qText);
+              return matchStatus && matchSearch;
+            });
+            const allInqSelected =
+              filteredInquiries.length > 0 && filteredInquiries.every((i) => selectedInquiryIds.includes(i.id));
 
-                return (
-                  <div className="space-y-3">
-                    {ringingCalls.length > 0 && (
-                      <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/50 flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-2.5 text-xs">
-                          <span className="w-8 h-8 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center shrink-0">
-                            <PhoneIncoming className="w-4 h-4" />
-                          </span>
-                          <div>
-                            <p className="font-black text-amber-200">
-                              {at('ইনকামিং কাস্টমার ব্রাউজার কল রিং হচ্ছে!', 'Incoming Customer Browser Call!')} — {ringingCalls[0].customerName} ({ringingCalls[0].customerPhone})
-                            </p>
-                            <p className="text-[11px] text-amber-300/80">
-                              {at('দ্রুত কল রিসিভ করতে ডান পাশের বাটনে ক্লিক করুন।', 'Click Answer Call to connect live audio immediately.')}
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const targetKey = normalizePhoneKey(ringingCalls[0].customerPhone);
-                            if (targetKey) setSelectedCustomerPhone(targetKey);
-                            setSelectedCallId(ringingCalls[0].id);
-                            setCustomerConsoleTab('call');
-                            answerBrowserCallFromBackend(ringingCalls[0].id);
-                          }}
-                          className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-lg"
-                        >
-                          <PhoneIncoming className="w-3.5 h-3.5" />
-                          <span>{at('এখনই কল রিসিভ করুন', 'Answer Call Now')}</span>
-                        </button>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs tabular-nums">
-                      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-                        <div>
-                          <span className="text-[11px] text-slate-400 block">{at('সক্রিয় কল / রিং', 'Active / Ringing Calls')}</span>
-                          <span className="text-lg font-black text-emerald-400 font-mono">{liveActiveCallsCount}</span>
-                        </div>
-                        <PhoneCall className="w-5 h-5 text-emerald-500/70" />
-                      </div>
-                      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-                        <div>
-                          <span className="text-[11px] text-slate-400 block">{at('আনরিড লাইভ মেসেজ', 'Unread Chat Messages')}</span>
-                          <span className="text-lg font-black text-sky-400 font-mono">{unreadThreadsCount}</span>
-                        </div>
-                        <MessageCircle className="w-5 h-5 text-sky-500/70" />
-                      </div>
-                      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-                        <div>
-                          <span className="text-[11px] text-slate-400 block">{at('নতুন ফর্ম ইনকোয়ারি', 'New Form Inquiries')}</span>
-                          <span className="text-lg font-black text-amber-400 font-mono">{pendingInquiriesCount}</span>
-                        </div>
-                        <Mail className="w-5 h-5 text-amber-500/70" />
-                      </div>
-                      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-                        <div>
-                          <span className="text-[11px] text-slate-400 block">{at('মোট কাস্টমার রোস্টার', 'Total Desk Contacts')}</span>
-                          <span className="text-lg font-black text-white font-mono">{callCustomersRoster.length}</span>
-                        </div>
-                        <Users className="w-5 h-5 text-slate-500" />
-                      </div>
-                    </div>
+            return (
+              <div className="space-y-4 animate-fade-in">
+                {/* Desk Header & Audio Controls */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
+                      <Headphones className="w-5 h-5 text-emerald-400 shrink-0" />
+                      <span>{at('লাইভ সাপোর্ট চ্যাট ও ব্রাউজার কল ডেস্ক', 'Omnichannel Support & Voice Call Desk')}</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {at(
+                        'ইউনিফাইড চ্যাট, লাইভ WebRTC ভয়েস কল, ইনকোয়ারি এবং কাস্টমার ৩৬০ কন্ট্রোল সেন্টার',
+                        'Unified customer queue · Real-time WebRTC voice desk · Live chat · Customer 360 history'
+                      )}
+                    </p>
                   </div>
-                );
-              })()}
 
-              {/* A. LIVE VOICE CALL CENTER — DISTINCT CUSTOMER DIRECTORY & TELEPHONE CONSOLE */}
-              <div className="rounded-2xl bg-slate-900 border border-emerald-900/50 overflow-hidden shadow-xl">
-                <div className="px-5 py-3.5 border-b border-slate-800 bg-gradient-to-r from-slate-950 via-emerald-950/30 to-slate-950 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-                      <PhoneCall className="w-4 h-4" />
-                    </span>
-                    <div>
-                      <h4 className="text-sm font-black text-white">
-                        {at('লাইভ ভয়েস কল ডিরেক্টরি ও কাস্টমার কল সেন্টার', 'Live Voice Call Directory & Customer Call Desk')}
-                      </h4>
-                      <p className="text-[11px] text-slate-400">
-                        {at(
-                          'প্রতিটি ভিন্ন কাস্টমারের তালিকা থেকে সরাসরি কল রিসিভ করুন অথবা আউটবাউন্ড লাইভ কল করুন',
-                          'Dial or answer distinct customers individually via live WebRTC + speech with full order details'
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-sky-300">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="font-mono text-[11px] text-slate-300 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 whitespace-nowrap">
+                      {isLiveSocketConnected ? at('ওয়েবসকেট: সংযুক্ত', 'Channel: WebSocket Live') : at('চ্যানেল: HTTP সিঙ্ক', 'Channel: HTTP Sync')}
+                      {' · '}
                       {webrtcAudioStatus === 'live_audio'
-                        ? at('WebRTC ভয়েস লাইভ', 'WebRTC Audio Live')
+                        ? at('অডিও লাইভ', 'Audio Live')
                         : webrtcAudioStatus === 'connecting'
-                        ? at('অডিও সংযুক্ত হচ্ছে...', 'Audio Connecting...')
-                        : at('ভয়েস + টেক্সট চ্যানেল', 'Voice + Speech Desk')}
+                        ? at('সংযুক্ত হচ্ছে', 'Connecting')
+                        : at('স্ট্যান্ডবাই', 'Audio Ready')}
                     </span>
                     <button
                       type="button"
                       onClick={toggleBrowserCallMicMute}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1.5 cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-xl font-bold border flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors ${
                         isBrowserCallMicMuted
                           ? 'bg-amber-950/60 border-amber-600/50 text-amber-300'
-                          : 'bg-slate-950 border-slate-700 text-slate-200'
+                          : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800'
                       }`}
                     >
                       {isBrowserCallMicMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5 text-emerald-400" />}
                       <span>{isBrowserCallMicMuted ? at('মাইক মিউট', 'Mic Muted') : at('মাইক চালু', 'Mic Ready')}</span>
                     </button>
-                    <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-emerald-300 tabular-nums">
-                      {at(`মোট কাস্টমার: ${callCustomersRoster.length} জন`, `${callCustomersRoster.length} Customers`)}
-                    </span>
                     <button
                       type="button"
                       onClick={() => setIsVoiceSpeakerOn((prev) => !prev)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1.5 cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-xl font-bold border flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors ${
                         isVoiceSpeakerOn
-                          ? 'bg-emerald-950/60 border-emerald-600/50 text-emerald-300'
-                          : 'bg-slate-950 border-slate-700 text-slate-400'
+                          ? 'bg-emerald-950/60 border-emerald-700/60 text-emerald-300'
+                          : 'bg-slate-900 border-slate-700 text-slate-400'
                       }`}
                     >
                       {isVoiceSpeakerOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-                      <span>{isVoiceSpeakerOn ? at('স্পিকার চালু', 'Audio On') : at('মিউট', 'Muted')}</span>
+                      <span>{isVoiceSpeakerOn ? at('স্পিকার চালু', 'Speaker On') : at('স্পিকার বন্ধ', 'Muted')}</span>
                     </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-slate-800">
-                  {/* Left: Distinct Customers Directory List */}
-                  <div className="lg:col-span-5 p-3.5 space-y-3 bg-slate-950/30">
-                    <div className="space-y-2">
-                      <div className="relative">
-                        <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          value={callRosterSearch}
-                          onChange={(e) => setCallRosterSearch(e.target.value)}
-                          placeholder={at('নাম, ফোন বা অর্ডার আইডি দিয়ে কাস্টমার খুঁজুন...', 'Search distinct customer by name, phone, district...')}
-                          className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                        />
-                      </div>
-                      <div className="flex items-center gap-1.5 text-[11px] font-bold">
-                        {(['all', 'active', 'orders'] as const).map((flt) => (
-                          <button
-                            key={flt}
-                            type="button"
-                            onClick={() => setCallRosterFilter(flt)}
-                            className={`px-2.5 py-1 rounded-lg border cursor-pointer transition-colors ${
-                              callRosterFilter === flt
-                                ? 'bg-emerald-600 text-white border-emerald-500'
-                                : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
-                            }`}
-                          >
-                            {flt === 'all'
-                              ? at(`সকল কাস্টমার (${callCustomersRoster.length})`, `All (${callCustomersRoster.length})`)
-                              : flt === 'active'
-                              ? at('কল সক্রিয়/হিস্ট্রি', 'Call Activity')
-                              : at('অর্ডারসহ', 'With Orders')}
-                          </button>
-                        ))}
+                {/* Incoming Browser Call Priority Bar */}
+                {deskRingingCalls.length > 0 && (
+                  <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/60 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0">
+                        <PhoneIncoming className="w-4 h-4" />
+                      </span>
+                      <div>
+                        <p className="font-bold text-amber-200">
+                          {at('ইনকামিং কাস্টমার ব্রাউজার কল!', 'Incoming Customer Browser Call')} · {deskRingingCalls[0].customerName} ({deskRingingCalls[0].customerPhone})
+                        </p>
+                        <p className="text-[11px] text-amber-300/80">
+                          {at('সরাসরি লাইভ ভয়েস কানেক্ট করতে রিসিভ বাটনে ক্লিক করুন।', 'Click Answer Call to connect live browser voice immediately.')}
+                        </p>
                       </div>
                     </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetKey = normalizePhoneKey(deskRingingCalls[0].customerPhone);
+                          if (targetKey) setSelectedCustomerPhone(targetKey);
+                          setSelectedCallId(deskRingingCalls[0].id);
+                          setCustomerConsoleTab('call');
+                          answerBrowserCallFromBackend(deskRingingCalls[0].id);
+                        }}
+                        className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                      >
+                        <PhoneIncoming className="w-3.5 h-3.5" />
+                        <span>{at('এখনই কল রিসিভ করুন', 'Answer Call Now')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => endBrowserCallSession(deskRingingCalls[0].id, false)}
+                        className="px-3 py-2 rounded-xl bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-200 font-bold text-xs cursor-pointer whitespace-nowrap"
+                      >
+                        {at('কেটে দিন', 'Decline')}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                    <div className="space-y-2 max-h-[430px] overflow-y-auto pr-1">
-                      {filteredCallCustomers.length === 0 ? (
-                        <div className="p-6 text-center text-xs text-slate-500">
-                          {at('কোনো কাস্টমার পাওয়া যায়নি', 'No matching customers found')}
+                {/* Flat Single-Elevation 4-Metric Strip */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs tabular-nums">
+                  <div className="px-4 py-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <span className="text-[11px] text-slate-400 block">{at('সক্রিয় / রিং কল', 'Active & Ringing Calls')}</span>
+                      <span className="text-xl font-bold text-emerald-400 font-mono">{liveActiveCallsCount}</span>
+                    </div>
+                    <PhoneCall className="w-4 h-4 text-emerald-500/80" />
+                  </div>
+                  <div className="px-4 py-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <span className="text-[11px] text-slate-400 block">{at('আনরিড লাইভ মেসেজ', 'Unread Live Messages')}</span>
+                      <span className="text-xl font-bold text-sky-400 font-mono">{unreadThreadsCount}</span>
+                    </div>
+                    <MessageCircle className="w-4 h-4 text-sky-500/80" />
+                  </div>
+                  <div className="px-4 py-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <span className="text-[11px] text-slate-400 block">{at('নতুন ফর্ম ইনকোয়ারি', 'Pending Form Inquiries')}</span>
+                      <span className="text-xl font-bold text-amber-400 font-mono">{pendingInquiriesCount}</span>
+                    </div>
+                    <Mail className="w-4 h-4 text-amber-500/80" />
+                  </div>
+                  <div className="px-4 py-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <span className="text-[11px] text-slate-400 block">{at('মোট কাস্টমার কন্ট্যাক্ট', 'Total Desk Contacts')}</span>
+                      <span className="text-xl font-bold text-white font-mono">{callCustomersRoster.length}</span>
+                    </div>
+                    <Users className="w-4 h-4 text-slate-500" />
+                  </div>
+                </div>
+
+                {/* UNIFIED 3-PANE OMNICHANNEL WORKSPACE */}
+                <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden grid grid-cols-1 xl:grid-cols-12 divide-y xl:divide-y-0 xl:divide-x divide-slate-800">
+                  {/* PANE 1 (Left, 4 cols): Queue & Contacts Directory */}
+                  <div className="xl:col-span-4 flex flex-col bg-slate-950/40">
+                    {/* Queue Segment Control */}
+                    <div className="p-3 border-b border-slate-800 space-y-2.5">
+                      <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setDeskQueueTab('customers')}
+                          className={`px-2 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap truncate ${
+                            deskQueueTab === 'customers' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {at('কাস্টমার', 'Customers')} ({callCustomersRoster.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeskQueueTab('chats');
+                            setCustomerConsoleTab('chat');
+                          }}
+                          className={`px-2 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap truncate ${
+                            deskQueueTab === 'chats' ? 'bg-slate-800 text-sky-300' : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {at('চ্যাট', 'Chats')} ({supportChats.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeskQueueTab('inquiries');
+                            setCustomerConsoleTab('inquiries');
+                          }}
+                          className={`px-2 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap truncate ${
+                            deskQueueTab === 'inquiries' ? 'bg-slate-800 text-amber-300' : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {at('লিডস', 'Inquiries')} ({chatInquiries.length})
+                        </button>
+                      </div>
+
+                      {deskQueueTab === 'customers' && (
+                        <>
+                          <div className="relative">
+                            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="text"
+                              value={callRosterSearch}
+                              onChange={(e) => setCallRosterSearch(e.target.value)}
+                              placeholder={at('নাম, ফোন বা অর্ডার আইডি খুঁজুন...', 'Search name, phone, order ID...')}
+                              className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold">
+                            {(['all', 'active', 'orders'] as const).map((flt) => (
+                              <button
+                                key={flt}
+                                type="button"
+                                onClick={() => setCallRosterFilter(flt)}
+                                className={`px-2.5 py-1 rounded-lg border cursor-pointer transition-colors whitespace-nowrap ${
+                                  callRosterFilter === flt
+                                    ? 'bg-emerald-600 text-white border-emerald-500'
+                                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                                }`}
+                              >
+                                {flt === 'all'
+                                  ? at('সকল', 'All')
+                                  : flt === 'active'
+                                  ? at('কল হিস্ট্রি', 'Call Activity')
+                                  : at('অর্ডারসহ', 'Has Orders')}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+
+                      {deskQueueTab === 'chats' && (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-slate-400 font-mono">
+                            {at(`${unreadThreadsCount} অপঠিত`, `${unreadThreadsCount} unread`)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsNewManualChatOpen((v) => !v)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>{at('নতুন চ্যাট', 'New Thread')}</span>
+                          </button>
                         </div>
-                      ) : (
-                        filteredCallCustomers.map((cust) => {
-                          const isSelected = selectedCallCustomer?.key === cust.key;
-                          const isRinging = cust.activeCall?.status === 'ringing_backend';
-                          const isRingingCustomer = cust.activeCall?.status === 'ringing_customer';
-                          const isLive = cust.activeCall?.status === 'connected';
+                      )}
+                    </div>
 
-                          return (
-                            <div
-                              key={cust.key}
-                              onClick={() => {
-                                setSelectedCustomerPhone(cust.key);
-                                setSelectedCallId(cust.activeCall?.id || cust.latestCall?.id || '');
-                                const chatId = openOrCreateCustomerChatSession(cust.name, cust.phone);
-                                setSelectedChatId(chatId);
-                                markChatRead(chatId);
-                              }}
-                              className={`p-3 rounded-xl border transition-all cursor-pointer space-y-2 ${
-                                isSelected
-                                  ? 'bg-emerald-950/45 border-emerald-500/70 shadow-lg shadow-emerald-950/30'
-                                  : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                  <div
-                                    className={`w-9 h-9 rounded-full shrink-0 flex items-center justify-center font-black text-xs border ${
+                    {deskQueueTab === 'chats' && isNewManualChatOpen && (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const cname = newManualChatName.trim() || at('কাস্টমার', 'Customer');
+                          const cphone = newManualChatPhone.trim();
+                          const createdId = openOrCreateCustomerChatSession(cname, cphone);
+                          toggleChatManualMode(createdId, true);
+                          setSelectedChatId(createdId);
+                          const pKey = normalizePhoneKey(cphone);
+                          if (pKey) setSelectedCustomerPhone(pKey);
+                          setNewManualChatName('');
+                          setNewManualChatPhone('');
+                          setIsNewManualChatOpen(false);
+                          setCustomerConsoleTab('chat');
+                        }}
+                        className="p-3 bg-slate-950 border-b border-slate-800 space-y-2 text-xs"
+                      >
+                        <input
+                          type="text"
+                          required
+                          value={newManualChatName}
+                          onChange={(e) => setNewManualChatName(e.target.value)}
+                          placeholder={at('কাস্টমারের নাম', 'Customer Name')}
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white"
+                        />
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={newManualChatPhone}
+                            onChange={(e) => setNewManualChatPhone(e.target.value)}
+                            placeholder={at('মোবাইল নম্বর', 'Phone (optional)')}
+                            className="flex-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono"
+                          />
+                          <button
+                            type="submit"
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer whitespace-nowrap"
+                          >
+                            {at('খুলুন', 'Start')}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* Queue List Container */}
+                    <div className="flex-1 overflow-y-auto max-h-[600px] divide-y divide-slate-800/70">
+                      {deskQueueTab === 'customers' ? (
+                        filteredCallCustomers.length === 0 ? (
+                          <div className="p-8 text-center text-xs text-slate-500">
+                            {at('কোনো কাস্টমার পাওয়া যায়নি', 'No matching customers')}
+                          </div>
+                        ) : (
+                          filteredCallCustomers.map((cust) => {
+                            const isSelected = selectedCallCustomer?.key === cust.key;
+                            const isRinging = cust.activeCall?.status === 'ringing_backend';
+                            const isRingingCustomer = cust.activeCall?.status === 'ringing_customer';
+                            const isLive = cust.activeCall?.status === 'connected';
+                            const statusLabel = isRinging
+                              ? at('ইনকামিং রিং', 'Ringing')
+                              : isRingingCustomer
+                              ? at('কল হচ্ছে', 'Calling')
+                              : isLive
+                              ? at('লাইভ কল', 'On Call')
+                              : cust.customerCalls.length > 0
+                              ? at(`${cust.customerCalls.length} কল`, `${cust.customerCalls.length} calls`)
+                              : at('প্রস্তুত', 'Idle');
+
+                            return (
+                              <div
+                                key={cust.key}
+                                onClick={() => {
+                                  setSelectedCustomerPhone(cust.key);
+                                  setSelectedCallId(cust.activeCall?.id || cust.latestCall?.id || '');
+                                  const chatId = openOrCreateCustomerChatSession(cust.name, cust.phone);
+                                  setSelectedChatId(chatId);
+                                  markChatRead(chatId);
+                                  if (customerConsoleTab === 'inquiries') setCustomerConsoleTab('call');
+                                }}
+                                className={`p-3 cursor-pointer transition-colors space-y-1.5 ${
+                                  isSelected ? 'bg-slate-800/75' : 'hover:bg-slate-900/80'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div
+                                      className={`w-8 h-8 rounded-lg shrink-0 flex items-center justify-center font-bold text-[11px] border ${
+                                        isRinging || isRingingCustomer
+                                          ? 'bg-amber-500/20 text-amber-300 border-amber-500'
+                                          : isLive
+                                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500'
+                                          : 'bg-slate-900 text-slate-200 border-slate-700'
+                                      }`}
+                                    >
+                                      {cust.name.slice(0, 2).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-bold text-white truncate">{cust.name}</p>
+                                      <p className="text-[11px] font-mono text-slate-400 truncate tabular-nums">{cust.phone}</p>
+                                    </div>
+                                  </div>
+
+                                  <span
+                                    className={`text-[10px] font-bold shrink-0 ${
                                       isRinging || isRingingCustomer
-                                        ? 'bg-amber-500/20 text-amber-300 border-amber-500 ring-2 ring-amber-500/40'
+                                        ? 'text-amber-300'
                                         : isLive
-                                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500'
-                                        : 'bg-slate-800 text-slate-200 border-slate-700'
+                                        ? 'text-emerald-400'
+                                        : 'text-slate-400'
                                     }`}
                                   >
-                                    {cust.name.slice(0, 2).toUpperCase()}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-black text-white truncate">{cust.name}</p>
-                                    <p className="text-[11px] font-mono text-emerald-400 truncate">{cust.phone}</p>
-                                  </div>
+                                    {statusLabel}
+                                  </span>
                                 </div>
 
-                                <span
-                                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
-                                    isRinging || isRingingCustomer
-                                      ? 'bg-amber-500 text-slate-950'
-                                      : isLive
-                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                      : cust.latestCall
-                                      ? 'bg-slate-800 text-slate-300'
-                                      : 'bg-sky-950/70 text-sky-300 border border-sky-800/60'
-                                  }`}
-                                >
-                                  {isRinging
-                                    ? at('ইনকামিং কল', 'Ringing')
-                                    : isRingingCustomer
-                                    ? at('কাস্টমারে রিং হচ্ছে', 'Calling...')
-                                    : isLive
-                                    ? at('লাইভ কল', 'On Call')
-                                    : cust.latestCall
-                                    ? at(`${cust.customerCalls.length} কল`, `${cust.customerCalls.length} Calls`)
-                                    : at('কল প্রস্তুত', 'Ready')}
-                                </span>
-                              </div>
-
-                              <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400">
-                                <span className="truncate">
-                                  {cust.district ? `${cust.district} • ` : ''}
-                                  {at(`${cust.customerOrders.length}টি অর্ডার`, `${cust.customerOrders.length} orders`)}
-                                  {cust.totalSpent > 0 ? ` • ৳${cust.totalSpent.toLocaleString()}` : ''}
-                                </span>
-                                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleStartLiveVoiceCallForCustomer(cust)}
-                                    className={`px-2.5 py-1 rounded-lg font-bold text-[10px] flex items-center gap-1 cursor-pointer ${
-                                      isRinging || isRingingCustomer
-                                        ? 'bg-amber-400 hover:bg-amber-300 text-slate-950'
-                                        : isLive
-                                        ? 'bg-emerald-500 text-slate-950'
-                                        : 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                                    }`}
-                                  >
-                                    {isRinging ? <PhoneIncoming className="w-3 h-3" /> : <PhoneOutgoing className="w-3 h-3" />}
-                                    <span>
-                                      {isRinging
-                                        ? at('রিসিভ', 'Answer')
-                                        : isRingingCustomer
-                                        ? at('রিং হচ্ছে...', 'Ringing...')
-                                        : isLive
-                                        ? at('কথা বলুন', 'Open')
-                                        : at('লাইভ কল', 'Call Live')}
-                                    </span>
-                                  </button>
-                                  {cust.latestOrder && (
+                                <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400 tabular-nums">
+                                  <span className="truncate">
+                                    {cust.district ? `${cust.district} · ` : ''}
+                                    {cust.customerOrders.length} {at('অর্ডার', 'orders')}
+                                    {cust.totalSpent > 0 ? ` · ৳${cust.totalSpent.toLocaleString()}` : ''}
+                                  </span>
+                                  <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                                     <button
                                       type="button"
-                                      onClick={() => startAICall(cust.latestOrder!)}
-                                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 font-bold text-[10px] cursor-pointer"
-                                      title={at('AI অটো ভয়েস কল', 'Trigger AI Auto-Call')}
+                                      onClick={() => {
+                                        setCustomerConsoleTab('call');
+                                        handleStartLiveVoiceCallForCustomer(cust);
+                                      }}
+                                      className={`px-2 py-1 rounded-md font-bold text-[10px] flex items-center gap-1 cursor-pointer whitespace-nowrap ${
+                                        isRinging || isRingingCustomer
+                                          ? 'bg-amber-400 text-slate-950'
+                                          : isLive
+                                          ? 'bg-emerald-500 text-slate-950'
+                                          : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                                      }`}
                                     >
-                                      AI
+                                      {isRinging ? <PhoneIncoming className="w-3 h-3" /> : <PhoneOutgoing className="w-3 h-3" />}
+                                      <span>{isRinging ? at('রিসিভ', 'Answer') : isLive ? at('খুলুন', 'Open') : at('কল', 'Call')}</span>
                                     </button>
-                                  )}
+                                    {cust.latestOrder && (
+                                      <button
+                                        type="button"
+                                        onClick={() => startAICall(cust.latestOrder!)}
+                                        className="px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-[10px] cursor-pointer"
+                                        title={at('AI ভয়েস কল', 'AI Auto Call')}
+                                      >
+                                        AI
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          );
-                        })
+                            );
+                          })
+                        )
+                      ) : deskQueueTab === 'chats' ? (
+                        supportChats.length === 0 ? (
+                          <div className="p-8 text-center text-xs text-slate-500">
+                            {at('এখনো কোনো চ্যাট থ্রেড নেই', 'No chat threads yet')}
+                          </div>
+                        ) : (
+                          supportChats.map((chat) => {
+                            const isSelected = (activeCustomerChatSession?.id || activeChatObj?.id) === chat.id;
+                            const lastMsg = chat.messages[chat.messages.length - 1];
+                            return (
+                              <button
+                                key={chat.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedChatId(chat.id);
+                                  const pKey = normalizePhoneKey(chat.customerPhone);
+                                  if (pKey) setSelectedCustomerPhone(pKey);
+                                  markChatRead(chat.id);
+                                  setCustomerConsoleTab('chat');
+                                }}
+                                className={`w-full text-left p-3 cursor-pointer transition-colors ${
+                                  isSelected ? 'bg-slate-800/75' : 'hover:bg-slate-900/80'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-xs font-bold text-white truncate">{chat.customerName}</span>
+                                  <div className="flex items-center gap-2 shrink-0 text-[10px] font-mono">
+                                    <span className={chat.manualMode ? 'text-amber-300' : 'text-emerald-400'}>
+                                      {chat.manualMode ? 'MANUAL' : 'AI'}
+                                    </span>
+                                    {chat.unreadByAdmin > 0 && (
+                                      <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white font-bold tabular-nums">
+                                        {chat.unreadByAdmin}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <p className="text-[11px] text-slate-400 line-clamp-1 mt-1">{lastMsg?.text || '...'}</p>
+                                <div className="text-[10px] text-slate-500 font-mono mt-1 tabular-nums">
+                                  {chat.customerPhone || 'Visitor'} · {new Date(chat.lastUpdated).toLocaleTimeString()}
+                                </div>
+                              </button>
+                            );
+                          })
+                        )
+                      ) : (
+                        <div className="p-4 text-xs text-slate-400 space-y-2">
+                          <p className="font-bold text-white">
+                            {at(`মোট ফর্ম ইনকোয়ারি: ${chatInquiries.length}`, `Form Inquiries (${chatInquiries.length})`)}
+                          </p>
+                          <p className="text-[11px]">
+                            {at(
+                              'মাঝের প্যানেলে সকল ফর্ম প্রশ্ন, স্ট্যাটাস ফিল্টার ও সরাসরি রিপ্লাই দেখতে পারবেন।',
+                              'Manage, filter, edit, WhatsApp, and reply directly to every inquiry in the center panel.'
+                            )}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setCustomerConsoleTab('inquiries')}
+                            className="w-full py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold cursor-pointer"
+                          >
+                            {at('ইনকোয়ারি প্যানেল দেখুন', 'Focus Inquiries Panel')}
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Right: Telephone Voice Stage, Order Details & Call Audit Log */}
-                  <div className="lg:col-span-7 p-4 sm:p-5 flex flex-col justify-between gap-4 bg-slate-900">
-                    {!selectedCallCustomer ? (
-                      <div className="flex-1 flex items-center justify-center text-xs text-slate-500 min-h-[360px]">
-                        {at('বাম পাশের তালিকা থেকে যেকোনো কাস্টমার নির্বাচন করুন', 'Select a customer from the directory to start or manage a live call')}
+                  {/* PANE 2 (Center, 5 cols): Active Workspace (Voice Call | Live Chat | Inquiries) */}
+                  <div className="xl:col-span-5 p-4 flex flex-col justify-between gap-3 bg-slate-900 min-h-[560px]">
+                    {/* Workspace Mode Segmented Switcher */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800">
+                      <div className="inline-flex p-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setCustomerConsoleTab('call')}
+                          className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors ${
+                            customerConsoleTab === 'call' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <PhoneCall className="w-3.5 h-3.5" />
+                          <span>{at('ভয়েস কল', 'Voice Call')}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (selectedCallCustomer) {
+                              const chatId = openOrCreateCustomerChatSession(selectedCallCustomer.name, selectedCallCustomer.phone);
+                              setSelectedChatId(chatId);
+                              markChatRead(chatId);
+                            }
+                            setCustomerConsoleTab('chat');
+                          }}
+                          className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors ${
+                            customerConsoleTab === 'chat' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span>{at('লাইভ চ্যাট', 'Live Chat')}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCustomerConsoleTab('inquiries')}
+                          className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors ${
+                            customerConsoleTab === 'inquiries' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <Mail className="w-3.5 h-3.5" />
+                          <span>{at('ইনকোয়ারি', 'Inquiries')} ({chatInquiries.length})</span>
+                        </button>
                       </div>
-                    ) : (() => {
-                      const customerChatSession =
-                        supportChats.find(
-                          (ch) => normalizePhoneKey(ch.customerPhone) && normalizePhoneKey(ch.customerPhone) === selectedCallCustomer.key
-                        ) ||
-                        supportChats.find((ch) => ch.id === selectedChatId) ||
-                        null;
 
-                      return (
-                      <>
-                        {/* Customer 360 Context Bar + 1-Click Create POS Order */}
-                        {(() => {
-                          const walletProf = customerAccounts.find(
-                            (ca) => normalizePhoneKey(ca.phone) && normalizePhoneKey(ca.phone) === selectedCallCustomer.key
-                          );
-                          const nonCancelled = selectedCallCustomer.customerOrders.filter((o) => o.status !== 'cancelled').length;
-                          const totalOrd = selectedCallCustomer.customerOrders.length;
-                          const fraudSuccessPct =
-                            selectedCallCustomer.latestOrder?.fraudCheck?.successRate ??
-                            (totalOrd > 0 ? Math.round((nonCancelled / totalOrd) * 100) : 100);
+                      {selectedCallCustomer && (
+                        <span className="text-[11px] font-mono text-slate-400 truncate max-w-[180px]">
+                          {selectedCallCustomer.name}
+                        </span>
+                      )}
+                    </div>
 
-                          return (
-                            <div className="p-3 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px] tabular-nums">
-                              <div className="flex flex-wrap items-center gap-3">
-                                <span className="font-bold text-white">{selectedCallCustomer.name}</span>
-                                <span className="font-mono text-emerald-400">{selectedCallCustomer.phone}</span>
-                                <span className="px-2 py-0.5 rounded-md bg-emerald-950/70 border border-emerald-800/50 text-emerald-300 font-mono font-bold">
-                                  Wallet: ৳{(walletProf?.walletBalance || 0).toLocaleString()}
-                                </span>
-                                <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-700 text-slate-300 font-mono">
-                                  Orders: {totalOrd} (৳{selectedCallCustomer.totalSpent.toLocaleString()})
-                                </span>
-                                <span
-                                  className={`px-2 py-0.5 rounded-md font-bold ${
-                                    fraudSuccessPct >= 80
-                                      ? 'bg-emerald-500/15 text-emerald-300'
-                                      : 'bg-amber-500/20 text-amber-300'
-                                  }`}
+                    {customerConsoleTab === 'inquiries' ? (
+                      <div className="flex-1 flex flex-col space-y-3 overflow-hidden">
+                        <BulkSectionShell
+                          indexCode="INQUIRIES"
+                          title={at(`চ্যাট ফর্ম ইনকোয়ারি (${chatInquiries.length})`, `Customer Inquiries (${chatInquiries.length})`)}
+                          subtitle={at(
+                            'নাম, নম্বর ও প্রশ্ন দেখে সরাসরি উত্তর সেভ বা WhatsApp করুন',
+                            'Reply directly, open WhatsApp, edit, bulk update, or remove leads'
+                          )}
+                          selectedCount={selectedInquiryIds.length}
+                          totalCount={filteredInquiries.length}
+                          accent="emerald"
+                          headerActions={
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={inquirySearch}
+                                onChange={(e) => setInquirySearch(e.target.value)}
+                                placeholder={at('খুঁজুন...', 'Search...')}
+                                className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white w-32"
+                              />
+                              <select
+                                value={inquiryStatusFilter}
+                                onChange={(e) => setInquiryStatusFilter(e.target.value as any)}
+                                className="px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white"
+                              >
+                                <option value="all">{at('সকল', 'All')}</option>
+                                <option value="new">{at('নতুন', 'New')}</option>
+                                <option value="following_up">{at('ফলো-আপ', 'Following Up')}</option>
+                                <option value="replied">{at('উত্তর দেওয়া', 'Replied')}</option>
+                                <option value="closed">{at('বন্ধ', 'Closed')}</option>
+                              </select>
+                            </div>
+                          }
+                        >
+                          <BulkCommandBar
+                            selectedCount={selectedInquiryIds.length}
+                            totalCount={filteredInquiries.length}
+                            allSelected={allInqSelected}
+                            onToggleSelectAll={() =>
+                              setSelectedInquiryIds(allInqSelected ? [] : filteredInquiries.map((i) => i.id))
+                            }
+                            onClearSelection={() => setSelectedInquiryIds([])}
+                            itemLabel="inquiries"
+                          >
+                            {selectedInquiryIds.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    bulkChatInquiriesAction(selectedInquiryIds, 'replied');
+                                    setSelectedInquiryIds([]);
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] cursor-pointer whitespace-nowrap"
                                 >
-                                  Trust: {fraudSuccessPct}%
-                                </span>
+                                  {at('রিপ্লাইড', 'Mark Replied')}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    bulkChatInquiriesAction(selectedInquiryIds, 'closed');
+                                    setSelectedInquiryIds([]);
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-bold text-[10px] cursor-pointer whitespace-nowrap"
+                                >
+                                  {at('বন্ধ', 'Mark Closed')}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    bulkChatInquiriesAction(selectedInquiryIds, 'delete');
+                                    setSelectedInquiryIds([]);
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] cursor-pointer whitespace-nowrap"
+                                >
+                                  {at('ডিলিট', 'Delete')}
+                                </button>
                               </div>
+                            )}
+                          </BulkCommandBar>
+
+                          {filteredInquiries.length === 0 ? (
+                            <div className="p-6 text-center text-xs text-slate-400">
+                              {at('কোনো ইনকোয়ারি নেই।', 'No customer inquiries match this filter.')}
+                            </div>
+                          ) : (
+                            <div className="divide-y divide-slate-800 max-h-[390px] overflow-y-auto">
+                              {filteredInquiries.map((inq) => {
+                                const isChecked = selectedInquiryIds.includes(inq.id);
+                                const waNum = `${inq.countryCode || '+880'}${inq.phone.replace(/^0+/, '')}`.replace(/[^\d]/g, '');
+                                const draftReply = inquiryReplyDrafts[inq.id] ?? inq.adminReply ?? '';
+
+                                return (
+                                  <div
+                                    key={inq.id}
+                                    className={`p-3 space-y-2 text-xs ${isChecked ? 'bg-emerald-950/20' : 'hover:bg-slate-800/30'}`}
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="flex items-start gap-2 min-w-0">
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={(e) =>
+                                            setSelectedInquiryIds((prev) =>
+                                              e.target.checked ? [...prev, inq.id] : prev.filter((x) => x !== inq.id)
+                                            )
+                                          }
+                                          className="w-3.5 h-3.5 mt-0.5 accent-emerald-500 cursor-pointer shrink-0"
+                                        />
+                                        <div className="min-w-0 space-y-0.5">
+                                          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                                            <span className="font-bold text-white">{inq.name}</span>
+                                            <span className="text-slate-500">·</span>
+                                            <span className="font-mono text-emerald-400">{inq.countryCode} {inq.phone}</span>
+                                            <span className="text-slate-500">·</span>
+                                            <span className="text-[10px] uppercase font-bold text-amber-300">{inq.status}</span>
+                                          </div>
+                                          <p className="text-slate-200 whitespace-pre-wrap">{inq.query}</p>
+                                          {inq.productTitle && (
+                                            <p className="text-[11px] text-sky-400 truncate">
+                                              {at('পণ্য:', 'Product:')} {inq.productTitle}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <a
+                                          href={`https://wa.me/${waNum}?text=${encodeURIComponent(
+                                            `আসসালামু আলাইকুম ${inq.name}, BuyOne BD থেকে আপনার প্রশ্নের উত্তর: ${draftReply || ''}`
+                                          )}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] inline-flex items-center gap-1"
+                                        >
+                                          <MessageCircle className="w-3 h-3" />
+                                          <span>WA</span>
+                                        </a>
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditingInquiry({ ...inq })}
+                                          className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 cursor-pointer"
+                                          title={at('এডিট', 'Edit')}
+                                        >
+                                          <Edit className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => deleteChatInquiry(inq.id)}
+                                          className="p-1 rounded bg-rose-950/70 hover:bg-rose-900 text-rose-300 cursor-pointer"
+                                          title={at('ডিলিট', 'Delete')}
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <div className="pl-5 flex items-center gap-1.5">
+                                      <input
+                                        type="text"
+                                        value={draftReply}
+                                        onChange={(e) =>
+                                          setInquiryReplyDrafts((prev) => ({ ...prev, [inq.id]: e.target.value }))
+                                        }
+                                        placeholder={at('সরাসরি উত্তর লিখে Save চাপুন...', 'Type reply and save...')}
+                                        className="flex-1 min-w-[140px] px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-white text-[11px]"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (!draftReply.trim()) return;
+                                          updateChatInquiry(inq.id, {
+                                            adminReply: draftReply.trim(),
+                                            status: 'replied'
+                                          });
+                                        }}
+                                        className="px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-[11px] cursor-pointer whitespace-nowrap"
+                                      >
+                                        {at('সেভ', 'Save Reply')}
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </BulkSectionShell>
+                      </div>
+                    ) : customerConsoleTab === 'chat' ? (
+                      (() => {
+                        const targetThread = activeCustomerChatSession || activeChatObj;
+                        return !targetThread ? (
+                          <div className="flex-1 flex flex-col items-center justify-center text-xs text-slate-500 gap-3">
+                            <p>{at('বাম দিক থেকে কাস্টমার বা চ্যাট থ্রেড নির্বাচন করুন।', 'Select a customer or chat thread from the queue.')}</p>
+                            {selectedCallCustomer && (
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setPosWalkInName(selectedCallCustomer.name);
-                                  setPosWalkInPhone(selectedCallCustomer.phone);
-                                  setActiveTab('pos_system');
+                                  const cid = openOrCreateCustomerChatSession(selectedCallCustomer.name, selectedCallCustomer.phone);
+                                  setSelectedChatId(cid);
                                 }}
-                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                                className="px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold cursor-pointer"
                               >
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>{at('POS অর্ডার তৈরি করুন', 'Create Order in POS')}</span>
+                                {at(`${selectedCallCustomer.name} সাথে চ্যাট শুরু করুন`, `Start Chat with ${selectedCallCustomer.name}`)}
                               </button>
-                            </div>
-                          );
-                        })()}
-
-                        {/* Customer Console Mode Switcher: Live Voice Call | Direct Live Chat | Order History */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
-                          <div className="inline-flex p-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-bold">
-                            <button
-                              type="button"
-                              onClick={() => setCustomerConsoleTab('call')}
-                              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors ${
-                                customerConsoleTab === 'call'
-                                  ? 'bg-emerald-600 text-white'
-                                  : 'text-slate-400 hover:text-white'
-                              }`}
-                            >
-                              <PhoneCall className="w-3.5 h-3.5" />
-                              <span>{at('লাইভ ভয়েস কল', 'Voice Call')}</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const chatId = openOrCreateCustomerChatSession(selectedCallCustomer.name, selectedCallCustomer.phone);
-                                setSelectedChatId(chatId);
-                                markChatRead(chatId);
-                                setCustomerConsoleTab('chat');
-                              }}
-                              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors ${
-                                customerConsoleTab === 'chat'
-                                  ? 'bg-sky-600 text-white'
-                                  : 'text-slate-400 hover:text-white'
-                              }`}
-                            >
-                              <MessageCircle className="w-3.5 h-3.5" />
-                              <span>{at('লাইভ চ্যাট', 'Direct Chat')}</span>
-                              {customerChatSession && customerChatSession.messages.length > 0 && (
-                                <span className="px-1.5 py-0.2 rounded-full bg-white/15 text-[10px]">
-                                  {customerChatSession.messages.length}
-                                </span>
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setCustomerConsoleTab('orders')}
-                              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors ${
-                                customerConsoleTab === 'orders'
-                                  ? 'bg-amber-600 text-white'
-                                  : 'text-slate-400 hover:text-white'
-                              }`}
-                            >
-                              <ShoppingCart className="w-3.5 h-3.5" />
-                              <span>{at(`অর্ডার (${selectedCallCustomer.customerOrders.length})`, `Orders (${selectedCallCustomer.customerOrders.length})`)}</span>
-                            </button>
+                            )}
                           </div>
-
-                          <span className="text-[11px] font-mono text-slate-400">
-                            {selectedCallCustomer.name} · {selectedCallCustomer.phone}
-                          </span>
-                        </div>
-
-                        {customerConsoleTab === 'chat' ? (
-                          <div className="flex-1 flex flex-col justify-between p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 min-h-[380px]">
-                            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800">
-                              <div>
-                                <h5 className="text-sm font-black text-white flex items-center gap-2">
-                                  <MessageCircle className="w-4 h-4 text-sky-400" />
-                                  <span>{selectedCallCustomer.name}</span>
-                                  {customerChatSession && (
-                                    <span
-                                      className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                                        customerChatSession.manualMode
-                                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                      }`}
-                                    >
-                                      {customerChatSession.manualMode ? 'Manual (AI Paused)' : 'AI Auto'}
-                                    </span>
-                                  )}
-                                </h5>
-                                <p className="text-[11px] text-slate-400 font-mono">
-                                  {selectedCallCustomer.phone} · {at('সরাসরি কাস্টমার চ্যাট ও ম্যানুয়াল সাপোর্ট', 'Direct Customer Chat & Manual Support')}
+                        ) : (
+                          <div className="flex-1 flex flex-col justify-between gap-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800">
+                              <div className="min-w-0">
+                                <h5 className="text-sm font-bold text-white truncate">{targetThread.customerName}</h5>
+                                <p className="text-[11px] font-mono text-slate-400">
+                                  {targetThread.customerPhone || 'Visitor'} · {targetThread.manualMode ? at('ম্যানুয়াল সাপোর্ট', 'Direct Manual') : at('AI অটো', 'AI Auto')} · {targetThread.messages.length} msgs
                                 </p>
                               </div>
-                              <div className="flex items-center gap-1.5">
-                                {customerChatSession && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      toggleChatManualMode(customerChatSession.id, !customerChatSession.manualMode)
-                                    }
-                                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer border ${
-                                      customerChatSession.manualMode
-                                        ? 'bg-emerald-600 text-white border-emerald-500'
-                                        : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                                    }`}
-                                  >
-                                    <UserCheck className="w-3 h-3" />
-                                    <span>
-                                      {customerChatSession.manualMode ? at('AI চালু', 'Resume AI') : at('ম্যানুয়াল', 'Manual Mode')}
-                                    </span>
-                                  </button>
-                                )}
+                              <div className="flex flex-wrap items-center gap-1.5">
                                 <button
                                   type="button"
-                                  onClick={() => setCustomerConsoleTab('call')}
-                                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                                  onClick={() => toggleChatManualMode(targetThread.id, !targetThread.manualMode)}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer border whitespace-nowrap ${
+                                    targetThread.manualMode
+                                      ? 'bg-emerald-600 text-white border-emerald-500'
+                                      : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                  }`}
                                 >
-                                  <PhoneCall className="w-3 h-3" />
-                                  <span>{at('কলে যান', 'Switch to Call')}</span>
+                                  <UserCheck className="w-3 h-3" />
+                                  <span>{targetThread.manualMode ? at('AI চালু', 'Resume AI') : at('ম্যানুয়াল', 'Manual Mode')}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    resolveSupportChatSession(targetThread.id, targetThread.status === 'resolved' ? 'open' : 'resolved')
+                                  }
+                                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-bold text-slate-200 cursor-pointer whitespace-nowrap"
+                                >
+                                  {targetThread.status === 'resolved' ? at('রি-ওপেন', 'Reopen') : at('রিসলভ', 'Resolve')}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteSupportChatSession(targetThread.id)}
+                                  className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
+                                  title={at('চ্যাট মুছুন', 'Delete Thread')}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto space-y-2.5 max-h-64 pr-1">
-                              {(!customerChatSession || customerChatSession.messages.length === 0) ? (
+                            <div className="flex-1 overflow-y-auto space-y-2.5 max-h-[300px] pr-1">
+                              {targetThread.messages.length === 0 ? (
                                 <p className="text-center text-xs text-slate-500 py-10">
-                                  {at('এই কাস্টমারের সাথে প্রথম মেসেজ পাঠান...', 'Start direct conversation with this customer...')}
+                                  {at('প্রথম মেসেজ পাঠিয়ে সরাসরি কথোপকথন শুরু করুন...', 'Send the first direct message to this customer...')}
                                 </p>
                               ) : (
-                                customerChatSession.messages.map((m) => (
+                                targetThread.messages.map((m) => (
                                   <div key={m.id} className={`flex ${m.sender === 'customer' ? 'justify-start' : 'justify-end'}`}>
                                     <div
-                                      className={`max-w-[82%] px-3.5 py-2 rounded-2xl text-xs whitespace-pre-wrap ${
+                                      className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-xs whitespace-pre-wrap ${
                                         m.sender === 'customer'
                                           ? 'bg-slate-800 text-slate-100 rounded-tl-sm'
                                           : m.sender === 'assistant'
@@ -2665,8 +2987,14 @@ export const AdminDashboard: React.FC = () => {
                                       }`}
                                     >
                                       <div className="text-[10px] opacity-75 font-bold mb-0.5 flex items-center justify-between gap-3">
-                                        <span>{m.sender === 'customer' ? selectedCallCustomer.name : m.sender === 'assistant' ? at('অ্যাসিস্ট্যান্ট', 'Assistant') : 'AI'}</span>
-                                        <span>{m.time}</span>
+                                        <span>
+                                          {m.sender === 'customer'
+                                            ? targetThread.customerName
+                                            : m.sender === 'assistant'
+                                            ? at('অ্যাসিস্ট্যান্ট', 'Desk Agent')
+                                            : 'AI'}
+                                        </span>
+                                        <span className="font-mono">{m.time}</span>
                                       </div>
                                       <p>{m.text}</p>
                                     </div>
@@ -2675,15 +3003,15 @@ export const AdminDashboard: React.FC = () => {
                               )}
                             </div>
 
-                            <div className="pt-2 border-t border-slate-800 space-y-2">
-                              {/* Quick Product Link Insert into Live Chat */}
-                              <div className="flex flex-wrap items-center gap-2">
+                            <div className="pt-2.5 border-t border-slate-800 space-y-2">
+                              {/* Quick Product Link Insert */}
+                              <div className="flex items-center gap-1.5">
                                 <select
                                   value={selectedDeskQuickProductId}
                                   onChange={(e) => setSelectedDeskQuickProductId(e.target.value)}
-                                  className="flex-1 min-w-[180px] px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-200"
+                                  className="flex-1 min-w-[140px] px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-200"
                                 >
-                                  <option value="">{at('-- চ্যাটে প্রোডাক্ট লিংক যুক্ত করুন --', '-- Pick product link to insert --')}</option>
+                                  <option value="">{at('-- প্রোডাক্ট লিংক যুক্ত করুন --', '-- Insert product link --')}</option>
                                   {products.map((p) => (
                                     <option key={p.id} value={p.id}>
                                       {at(p.titleBn || p.title, p.title)} (৳{p.price})
@@ -2700,81 +3028,74 @@ export const AdminDashboard: React.FC = () => {
                                     const snippet = `${at(pr.titleBn || pr.title, pr.title)} — ৳${pr.price}\n${url}`;
                                     setCustomerChatDraft((prev) => (prev.trim() ? `${prev.trim()}\n${snippet}` : snippet));
                                   }}
-                                  className="px-2.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer shrink-0"
+                                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-emerald-300 border border-slate-700 font-bold text-[11px] flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap"
                                 >
                                   <Link2 className="w-3 h-3" />
-                                  <span>{at('লিংক যোগ', 'Insert Product')}</span>
+                                  <span>{at('লিংক', 'Insert')}</span>
                                 </button>
                               </div>
 
+                              {/* Quick Canned Templates */}
                               <div className="flex flex-wrap items-center gap-1.5">
                                 {[
                                   {
                                     label: at('অর্ডার কনফার্মড', 'Confirm Order'),
-                                    text: `আসসালামু আলাইকুম ${selectedCallCustomer.name}, আপনার অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে। খুব শীঘ্রই কুরিয়ারে হ্যান্ডওভার করা হবে।`
+                                    text: `আসসালামু আলাইকুম ${targetThread.customerName}, আপনার অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে। খুব শীঘ্রই কুরিয়ারে পাঠানো হবে।`
                                   },
                                   {
-                                    label: at('ডেলিভারি সময় ও চার্জ', 'Delivery ETA'),
-                                    text: `ঢাকার ভিতরে ডেলিভারি চার্জ ৬০ টাকা (২৪ ঘণ্টা) এবং সারাদেশে ১২০ টাকা (৪৮-৭২ ঘণ্টা)। সম্পূর্ণ ক্যাশ অন ডেলিভারি সুবিধা রয়েছে।`
+                                    label: at('ডেলিভারি তথ্য', 'Delivery Info'),
+                                    text: `ঢাকার ভিতরে ডেলিভারি চার্জ ৬০ টাকা (২৪ ঘণ্টা) এবং সারাদেশে ১২০ টাকা (৪৮-৭২ ঘণ্টা)। ক্যাশ অন ডেলিভারি সুবিধা রয়েছে।`
                                   },
                                   {
-                                    label: at('bKash / Nagad পেমেন্ট', 'Payment Info'),
-                                    text: `আমাদের অফিসিয়াল bKash / Nagad নম্বর: ${settings.whatsappNumber}। পেমেন্ট করে TrxID টি দিলে সাথে সাথে আপডেট করে দিচ্ছি।`
-                                  },
-                                  {
-                                    label: at('রিটার্ন ও গ্যারান্টি', 'Return Policy'),
-                                    text: `ডেলিভারি ম্যানের সামনে প্রোডাক্ট চেক করে রিসিভ করতে পারবেন। কোনো সমস্যা থাকলে ৭ দিনের মধ্যে সহজ এক্সচেঞ্জ সুবিধা রয়েছে।`
+                                    label: at('পেমেন্ট নম্বর', 'Payment'),
+                                    text: `অফিসিয়াল bKash / Nagad নম্বর: ${settings.whatsappNumber}। পেমেন্ট করে TrxID দিন।`
                                   }
                                 ].map((tpl, idx) => (
                                   <button
                                     key={idx}
                                     type="button"
                                     onClick={() => setCustomerChatDraft(tpl.text)}
-                                    className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[10px] font-bold text-slate-300 cursor-pointer"
+                                    className="px-2 py-1 rounded-md bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[10px] font-bold text-slate-300 cursor-pointer whitespace-nowrap"
                                   >
                                     {tpl.label}
                                   </button>
                                 ))}
                               </div>
+
                               <form
                                 onSubmit={(e) => {
                                   e.preventDefault();
-                                  const targetChatId =
-                                    customerChatSession?.id ||
-                                    openOrCreateCustomerChatSession(selectedCallCustomer.name, selectedCallCustomer.phone);
-                                  if (!customerChatDraft.trim()) return;
-                                  sendAgentChatReply(targetChatId, customerChatDraft.trim());
+                                  const txt = customerChatDraft.trim();
+                                  if (!txt) return;
+                                  sendAgentChatReply(targetThread.id, txt);
                                   setCustomerChatDraft('');
                                 }}
-                                className="flex flex-wrap gap-2"
+                                className="flex flex-wrap gap-1.5"
                               >
                                 <input
                                   type="text"
                                   value={customerChatDraft}
                                   onChange={(e) => setCustomerChatDraft(e.target.value)}
-                                  placeholder={at(`${selectedCallCustomer.name} কে মেসেজ লিখুন...`, `Message ${selectedCallCustomer.name} or generate AI reply...`)}
-                                  className="flex-1 min-w-[180px] px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white"
+                                  placeholder={at(`${targetThread.customerName} কে মেসেজ লিখুন...`, `Reply to ${targetThread.customerName}...`)}
+                                  className="flex-1 min-w-[160px] px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-sky-500"
                                 />
                                 <button
                                   type="button"
-                                  disabled={isGeneratingCustomerChatAi}
+                                  disabled={isGeneratingCustomerChatAi || isGeneratingAiReply}
                                   onClick={async () => {
-                                    const targetChatId =
-                                      customerChatSession?.id ||
-                                      openOrCreateCustomerChatSession(selectedCallCustomer.name, selectedCallCustomer.phone);
                                     setIsGeneratingCustomerChatAi(true);
-                                    const draft = await generateAgentAIReply(targetChatId);
+                                    const draft = await generateAgentAIReply(targetThread.id);
                                     if (draft) setCustomerChatDraft(draft);
                                     setIsGeneratingCustomerChatAi(false);
                                   }}
-                                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer"
+                                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer whitespace-nowrap"
                                 >
                                   <Sparkles className="w-3.5 h-3.5" />
-                                  <span>{isGeneratingCustomerChatAi ? '...' : 'Generate AI'}</span>
+                                  <span>{isGeneratingCustomerChatAi ? '...' : at('AI ড্রাফট', 'AI Draft')}</span>
                                 </button>
                                 <button
                                   type="submit"
-                                  className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer"
+                                  className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer whitespace-nowrap"
                                 >
                                   <Send className="w-3.5 h-3.5" />
                                   <span>{at('পাঠান', 'Send')}</span>
@@ -2782,62 +3103,22 @@ export const AdminDashboard: React.FC = () => {
                               </form>
                             </div>
                           </div>
-                        ) : customerConsoleTab === 'orders' ? (
-                          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 min-h-[360px]">
-                            <div className="flex items-center justify-between">
-                              <h5 className="text-sm font-black text-white">
-                                {at(`${selectedCallCustomer.name} এর সকল অর্ডার`, `Complete Order History for ${selectedCallCustomer.name}`)}
-                              </h5>
-                              <span className="text-xs font-mono text-emerald-400 font-bold">
-                                {at('মোট খরচ:', 'Total Spent:')} ৳{selectedCallCustomer.totalSpent.toLocaleString()}
-                              </span>
-                            </div>
-                            {selectedCallCustomer.customerOrders.length === 0 ? (
-                              <p className="text-xs text-slate-500 py-10 text-center">
-                                {at('এই কাস্টমারের কোনো অর্ডার পাওয়া যায়নি।', 'No orders placed by this customer yet.')}
-                              </p>
-                            ) : (
-                              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                                {selectedCallCustomer.customerOrders.map((ord) => (
-                                  <div key={ord.id} className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
-                                    <div className="space-y-0.5 min-w-0">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-mono font-bold text-emerald-400">#{ord.id}</span>
-                                        <span className="px-2 py-0.5 rounded bg-slate-800 text-[10px] uppercase font-bold text-amber-300">{ord.status}</span>
-                                        <span className="text-[10px] text-slate-400">{new Date(ord.createdAt).toLocaleDateString()}</span>
-                                      </div>
-                                      <p className="text-slate-200 truncate">
-                                        {ord.items.map((i) => `${at(i.productTitleBn, i.productTitle)} ×${i.quantity}`).join(', ')}
-                                      </p>
-                                      <p className="text-[11px] text-slate-400 truncate">
-                                        {ord.customer.address}, {ord.customer.district}
-                                      </p>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-black font-mono text-white">৳{ord.pricing.total.toLocaleString()}</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => setSelectedOrderDetails(ord)}
-                                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
-                                      >
-                                        <Eye className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                      <>
-                        {/* Telephone Dialer Stage Header */}
-                        <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-950 via-slate-950 to-emerald-950/40 border border-slate-800 space-y-3">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex items-center gap-3">
+                        );
+                      })()
+                    ) : !selectedCallCustomer ? (
+                      <div className="flex-1 flex items-center justify-center text-xs text-slate-500">
+                        {at('বাম পাশের তালিকা থেকে কাস্টমার নির্বাচন করুন', 'Select a customer from the queue to start a live call')}
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex flex-col justify-between gap-3">
+                        {/* Voice Call Console Card */}
+                        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-3 min-w-0">
                               <div
-                                className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${
+                                className={`w-11 h-11 rounded-xl flex items-center justify-center border shrink-0 ${
                                   activeCallObj?.status === 'ringing_backend'
-                                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 ring-2 ring-amber-500/40'
+                                    ? 'bg-amber-500/20 border-amber-500 text-amber-300'
                                     : activeCallObj?.status === 'connected'
                                     ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
                                     : 'bg-slate-800 border-slate-700 text-slate-300'
@@ -2845,51 +3126,33 @@ export const AdminDashboard: React.FC = () => {
                               >
                                 <PhoneCall className="w-5 h-5" />
                               </div>
-                              <div>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <h5 className="text-base font-black text-white">{selectedCallCustomer.name}</h5>
-                                  <span className="text-xs font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/50 px-2 py-0.5 rounded-md">
-                                    {selectedCallCustomer.phone}
+                              <div className="min-w-0">
+                                <h5 className="text-sm font-bold text-white truncate">{selectedCallCustomer.name}</h5>
+                                <div className="text-[11px] font-mono text-slate-400 flex items-center gap-2 tabular-nums">
+                                  <span className="text-emerald-400">{selectedCallCustomer.phone}</span>
+                                  <span>·</span>
+                                  <span>
+                                    {activeCallObj?.status === 'connected'
+                                      ? `${at('সংযুক্ত', 'Connected')} ${formatCallTimer(callElapsed)}`
+                                      : activeCallObj?.status === 'ringing_backend'
+                                      ? at('ইনকামিং রিং...', 'Incoming call')
+                                      : activeCallObj?.status === 'ringing_customer'
+                                      ? at('কাস্টমার ব্রাউজারে রিং...', 'Ringing customer browser')
+                                      : at(`${selectedCallCustomer.customerCalls.length} পূর্বের কল`, `${selectedCallCustomer.customerCalls.length} prior calls`)}
                                   </span>
-                                </div>
-                                <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                                  {activeCallObj?.status === 'connected' ? (
-                                    <>
-                                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
-                                      <span className="font-bold text-emerald-400">
-                                        {at('লাইভ ভয়েস সংযুক্ত', 'Live Voice Connected')}
-                                      </span>
-                                      <span className="font-mono text-white font-bold tabular-nums">
-                                        {formatCallTimer(callElapsed)}
-                                      </span>
-                                    </>
-                                  ) : activeCallObj?.status === 'ringing_backend' ? (
-                                    <span className="font-bold text-amber-300">
-                                      {at('ব্রাউজার থেকে কল আসছে — রিসিভ করতে বাটনে ক্লিক করুন', 'Incoming browser call ringing...')}
-                                    </span>
-                                  ) : activeCallObj?.status === 'ringing_customer' ? (
-                                    <span className="font-bold text-amber-300">
-                                      {at('কাস্টমারের স্টোরফ্রন্ট ব্রাউজারে রিং হচ্ছে — রিসিভের জন্য অপেক্ষমান...', 'Ringing Customer Storefront Browser Live...')}
-                                    </span>
-                                  ) : (
-                                    <span>
-                                      {selectedCallCustomer.district || at('বাংলাদেশ', 'Bangladesh')} •{' '}
-                                      {at(`মোট কল: ${selectedCallCustomer.customerCalls.length}টি`, `${selectedCallCustomer.customerCalls.length} past call(s)`)}
-                                    </span>
-                                  )}
                                 </div>
                               </div>
                             </div>
 
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               {activeCallObj?.status === 'ringing_backend' && (
                                 <button
                                   type="button"
                                   onClick={() => answerBrowserCallFromBackend(activeCallObj.id)}
-                                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/20"
+                                  className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                                 >
                                   <PhoneIncoming className="w-3.5 h-3.5" />
-                                  <span>{at('কল রিসিভ করুন', 'Answer Call')}</span>
+                                  <span>{at('কল রিসিভ', 'Answer')}</span>
                                 </button>
                               )}
 
@@ -2898,29 +3161,29 @@ export const AdminDashboard: React.FC = () => {
                                   <button
                                     type="button"
                                     onClick={toggleMicVoiceInput}
-                                    className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 border cursor-pointer ${
+                                    className={`px-2.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 border cursor-pointer whitespace-nowrap ${
                                       isMicListening
                                         ? 'bg-rose-600 text-white border-rose-400'
                                         : 'bg-slate-800 hover:bg-slate-700 text-emerald-300 border-slate-700'
                                     }`}
                                   >
                                     <Mic className="w-3.5 h-3.5" />
-                                    <span>{isMicListening ? at('শুনছে...', 'Listening...') : at('মাইক কথা', 'Mic Speak')}</span>
+                                    <span>{isMicListening ? at('শুনছে', 'Listening') : at('মাইক', 'Dictate')}</span>
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => endBrowserCallSession(activeCallObj.id, true)}
-                                    className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl cursor-pointer"
+                                    className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs rounded-lg cursor-pointer whitespace-nowrap"
                                   >
-                                    {at('কনফার্ম ও শেষ', 'Confirm & End')}
+                                    {at('কনফার্ম', 'Confirm')}
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => endBrowserCallSession(activeCallObj.id, false)}
-                                    className="px-3 py-2 bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-200 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer"
+                                    className="px-2.5 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-200 font-bold text-xs rounded-lg flex items-center gap-1 cursor-pointer whitespace-nowrap"
                                   >
                                     <PhoneOff className="w-3.5 h-3.5" />
-                                    <span>{at('কাটুন', 'Hang Up')}</span>
+                                    <span>{at('কাটুন', 'End')}</span>
                                   </button>
                                 </>
                               ) : (
@@ -2928,19 +3191,19 @@ export const AdminDashboard: React.FC = () => {
                                   <button
                                     type="button"
                                     onClick={() => handleStartLiveVoiceCallForCustomer(selectedCallCustomer)}
-                                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                                   >
                                     <PhoneOutgoing className="w-3.5 h-3.5" />
-                                    <span>{at('নতুন লাইভ কল করুন', 'Start Live Call')}</span>
+                                    <span>{at('লাইভ ব্রাউজার কল', 'Start Live Call')}</span>
                                   </button>
                                   {selectedCallCustomer.latestOrder && (
                                     <button
                                       type="button"
                                       onClick={() => startAICall(selectedCallCustomer.latestOrder!)}
-                                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 font-bold text-xs rounded-lg flex items-center gap-1 cursor-pointer whitespace-nowrap"
                                     >
                                       <Bot className="w-3.5 h-3.5" />
-                                      <span>{at('AI অটো কল', 'AI Voice Call')}</span>
+                                      <span>{at('AI কল', 'AI Call')}</span>
                                     </button>
                                   )}
                                 </>
@@ -2948,109 +3211,54 @@ export const AdminDashboard: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Audio Waveform Strip when Call is Connected */}
                           {activeCallObj?.status === 'connected' && (
-                            <div className="px-3 py-2 rounded-xl bg-emerald-950/30 border border-emerald-800/40 flex items-center justify-between gap-3">
-                              <div className="flex items-center gap-2 text-[11px] text-emerald-300 font-bold">
+                            <div className="px-3 py-2 rounded-lg bg-emerald-950/30 border border-emerald-800/40 flex items-center justify-between gap-2 text-[11px] text-emerald-300 font-semibold">
+                              <span className="flex items-center gap-1.5">
                                 <Radio className="w-3.5 h-3.5 text-emerald-400" />
-                                <span>{at('ভয়েস চ্যানেল সক্রিয় — স্পিকার ও মাইক রেডি', 'Live Voice Audio Channel Ready')}</span>
-                              </div>
-                              <div className="flex items-end gap-1 h-4">
-                                {[40, 85, 55, 95, 70, 45, 90, 60, 80, 50].map((h, idx) => (
-                                  <span
-                                    key={idx}
-                                    style={{ height: `${h}%` }}
-                                    className="w-1 rounded-full bg-emerald-400/80"
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Complete Customer Orders Details When Calling */}
-                          {selectedCallCustomer.customerOrders.length > 0 && (
-                            <div className="space-y-1.5">
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                                {at(
-                                  `কাস্টমারের অর্ডারসমূহ (${selectedCallCustomer.customerOrders.length}টি)`,
-                                  `Customer Order Details (${selectedCallCustomer.customerOrders.length})`
-                                )}
-                              </p>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-28 overflow-y-auto">
-                                {selectedCallCustomer.customerOrders.map((ord) => (
-                                  <div
-                                    key={ord.id}
-                                    className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-[11px] space-y-1"
-                                  >
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span className="font-mono font-bold text-amber-400">#{ord.id}</span>
-                                      <span className="font-black text-emerald-400 tabular-nums">৳{ord.pricing.total.toLocaleString()}</span>
-                                    </div>
-                                    <p className="text-slate-200 truncate">
-                                      {ord.items.map((i) => `${i.productTitleBn} x${i.quantity}`).join(', ')}
-                                    </p>
-                                    <div className="flex items-center justify-between gap-2 text-[10px] text-slate-400">
-                                      <span className="truncate">{ord.customer.address}, {ord.customer.district}</span>
-                                      <select
-                                        value={ord.status}
-                                        onChange={(e) => updateOrderStatus(ord.id, e.target.value as OrderStatus)}
-                                        className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-amber-300 font-bold uppercase text-[10px] shrink-0"
-                                      >
-                                        <option value="pending">pending</option>
-                                        <option value="ai_confirmed">confirmed</option>
-                                        <option value="processing">processing</option>
-                                        <option value="shipped">shipped</option>
-                                        <option value="delivered">delivered</option>
-                                        <option value="partial">partial</option>
-                                        <option value="cancelled">cancelled</option>
-                                      </select>
-                                    </div>
-                                  </div>
+                                {at('WebRTC অডিও সক্রিয়', 'Live Audio Stream Active')}
+                              </span>
+                              <div className="flex items-end gap-1 h-3.5">
+                                {[35, 80, 50, 95, 65, 45, 85, 55].map((h, idx) => (
+                                  <span key={idx} style={{ height: `${h}%` }} className="w-1 rounded-full bg-emerald-400/80" />
                                 ))}
                               </div>
                             </div>
                           )}
                         </div>
 
-                        {/* One-Click Voice Prompts + Custom Voice Broadcast Bar */}
+                        {/* Quick Voice Broadcast & AI Script */}
                         {activeCallObj && activeCallObj.status !== 'ended' && (
-                          <div className="space-y-2.5">
+                          <div className="space-y-2">
                             <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">
-                                {at('দ্রুত ভয়েস বার্তা:', 'Quick Voice Prompts:')}
-                              </span>
                               {[
                                 {
-                                  labelBn: 'অর্ডার কনফার্ম করুন',
+                                  labelBn: 'অর্ডার কনফার্ম',
                                   labelEn: 'Confirm Order',
-                                  speakBn: `আসসালামু আলাইকুম ${selectedCallCustomer.name}, BuyOne BD থেকে আপনার অর্ডারটি কনফার্ম করার জন্য কল করেছি। অনুগ্রহ করে ঠিকানাটি নিশ্চিত করবেন?`,
-                                  speakEn: `Hello ${selectedCallCustomer.name}, calling from BuyOne BD to confirm your order and delivery address.`
+                                  speakBn: `আসসালামু আলাইকুম ${selectedCallCustomer.name}, BuyOne BD থেকে আপনার অর্ডারটি কনফার্ম করার জন্য কল করেছি।`,
+                                  speakEn: `Hello ${selectedCallCustomer.name}, calling from BuyOne BD to confirm your order.`
                                 },
                                 {
                                   labelBn: 'ঠিকানা যাচাই',
                                   labelEn: 'Verify Address',
                                   speakBn: `আপনার ডেলিভারি ঠিকানা (${selectedCallCustomer.latestOrder?.customer?.address || selectedCallCustomer.district || 'ঢাকা'}) কি ঠিক আছে?`,
-                                  speakEn: `Please confirm if your delivery address (${selectedCallCustomer.latestOrder?.customer?.address || 'Dhaka'}) is correct.`
+                                  speakEn: `Is your delivery address (${selectedCallCustomer.latestOrder?.customer?.address || 'Dhaka'}) correct?`
                                 },
                                 {
-                                  labelBn: 'কুরিয়ারে পাঠানো হয়েছে',
-                                  labelEn: 'Parcel Dispatched',
-                                  speakBn: `আপনার পার্সেলটি স্টিডফাস্ট কুরিয়ারে হ্যান্ডওভার করা হয়েছে। ২৪ থেকে ৪৮ ঘণ্টার মধ্যে হাতে পেয়ে যাবেন ইনশাআল্লাহ।`,
-                                  speakEn: `Your parcel has been dispatched via Steadfast Courier and will reach you within 24-48 hours.`
+                                  labelBn: 'পার্সেল ডিসপ্যাচ',
+                                  labelEn: 'Dispatched',
+                                  speakBn: `আপনার পার্সেলটি স্টিডফাস্ট কুরিয়ারে পাঠানো হয়েছে, দ্রুত হাতে পাবেন।`,
+                                  speakEn: `Your parcel has been dispatched via Steadfast Courier.`
                                 }
                               ].map((preset, idx) => (
                                 <button
                                   key={idx}
                                   type="button"
                                   onClick={() =>
-                                    sendAssistantVoiceSpeech(
-                                      activeCallObj.id,
-                                      adminLang === 'bn' ? preset.speakBn : preset.speakEn
-                                    )
+                                    sendAssistantVoiceSpeech(activeCallObj.id, adminLang === 'bn' ? preset.speakBn : preset.speakEn)
                                   }
-                                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-emerald-950/70 border border-slate-700 hover:border-emerald-600/50 text-[11px] font-bold text-slate-200 cursor-pointer transition-colors"
+                                  className="px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[11px] font-semibold text-slate-200 cursor-pointer whitespace-nowrap"
                                 >
-                                  🎙️ {adminLang === 'bn' ? preset.labelBn : preset.labelEn}
+                                  {adminLang === 'bn' ? preset.labelBn : preset.labelEn}
                                 </button>
                               ))}
                             </div>
@@ -3062,72 +3270,67 @@ export const AdminDashboard: React.FC = () => {
                                 sendAssistantVoiceSpeech(activeCallObj.id, callReplyInput.trim());
                                 setCallReplyInput('');
                               }}
-                              className="flex flex-wrap gap-2"
+                              className="flex flex-wrap gap-1.5"
                             >
                               <input
                                 type="text"
                                 value={callReplyInput}
                                 onChange={(e) => setCallReplyInput(e.target.value)}
-                                placeholder={at('ভয়েসে কাস্টমারকে যা বলবেন লিখুন...', 'Enter voice line to speak aloud & log in call...')}
-                                className="flex-1 min-w-[200px] px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                                placeholder={at('ভয়েসে যা বলবেন লিখুন...', 'Type voice line to speak...')}
+                                className="flex-1 min-w-[160px] px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
                               />
                               <button
                                 type="button"
                                 onClick={handleGenerateCallAiDraft}
                                 disabled={isGeneratingCallDraft}
-                                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer whitespace-nowrap"
                               >
                                 <Wand2 className="w-3.5 h-3.5" />
-                                <span>{isGeneratingCallDraft ? '...' : at('AI ভয়েস স্ক্রিপ্ট', 'AI Script')}</span>
+                                <span>{isGeneratingCallDraft ? '...' : at('AI স্ক্রিপ্ট', 'AI Script')}</span>
                               </button>
                               <button
                                 type="submit"
-                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer whitespace-nowrap"
                               >
                                 <Volume2 className="w-3.5 h-3.5" />
-                                <span>{at('ভয়েস বলুন', 'Speak')}</span>
+                                <span>{at('বলুন', 'Speak')}</span>
                               </button>
                             </form>
+
+                            <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                              <span className="text-slate-400 font-bold mr-1">{at('কল ট্যাগ:', 'Tag:')}</span>
+                              {[
+                                { id: 'confirmed', bn: 'কনফার্মড', en: 'Confirmed' },
+                                { id: 'callback', bn: 'কল ব্যাক', en: 'Callback' },
+                                { id: 'no_answer', bn: 'নো আনসার', en: 'No Answer' },
+                                { id: 'cancelled', bn: 'বাতিল', en: 'Cancelled' }
+                              ].map((disp) => (
+                                <button
+                                  key={disp.id}
+                                  type="button"
+                                  onClick={() => {
+                                    appendBrowserCallMessage(
+                                      activeCallObj.id,
+                                      'assistant',
+                                      `[Disposition: ${disp.en}] ${at(disp.bn, disp.en)}`
+                                    );
+                                    addToast('info', at('কল ট্যাগ সেভ হয়েছে', 'Disposition Logged'), at(disp.bn, disp.en));
+                                  }}
+                                  className="px-2 py-0.5 rounded bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 cursor-pointer"
+                                >
+                                  {at(disp.bn, disp.en)}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         )}
 
-                        {/* Quick Call Disposition Outcome Logger */}
-                        {activeCallObj && (
-                          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-                            <span className="text-slate-400 font-bold mr-1">
-                              {at('কল ফলাফল ট্যাগ:', 'Call Disposition:')}
-                            </span>
-                            {[
-                              { id: 'confirmed', bn: 'অর্ডার কনফার্মড', en: 'Confirmed' },
-                              { id: 'callback', bn: 'পরে কল ব্যাক', en: 'Callback Later' },
-                              { id: 'no_answer', bn: 'রিসিভ করেনি', en: 'No Answer' },
-                              { id: 'cancelled', bn: 'কাস্টমার বাতিল', en: 'Cancelled' }
-                            ].map((disp) => (
-                              <button
-                                key={disp.id}
-                                type="button"
-                                onClick={() => {
-                                  appendBrowserCallMessage(
-                                    activeCallObj.id,
-                                    'assistant',
-                                    `[Disposition: ${disp.en}] ${at(disp.bn, disp.en)} by Desk Agent`
-                                  );
-                                  addToast('info', at('কল ট্যাগ সেভ হয়েছে', 'Disposition Logged'), at(disp.bn, disp.en));
-                                }}
-                                className="px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-semibold cursor-pointer"
-                              >
-                                {at(disp.bn, disp.en)}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Compact Structured Call Audit Log (Distinct from Live Chat Bubbles) */}
-                        <div className="rounded-xl bg-slate-950 border border-slate-800 overflow-hidden">
-                          <div className="px-3.5 py-2 border-b border-slate-800 bg-slate-950 flex items-center justify-between text-[11px]">
+                        {/* Call Audit Log */}
+                        <div className="rounded-xl bg-slate-950 border border-slate-800 overflow-hidden flex-1 flex flex-col">
+                          <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between text-[11px]">
                             <span className="font-bold text-slate-300 flex items-center gap-1.5">
                               <History className="w-3.5 h-3.5 text-emerald-400" />
-                              <span>{at('কল ভয়েস লগ ও হিস্ট্রি', 'Structured Call Voice Log')}</span>
+                              <span>{at('কল ট্রান্সক্রিপ্ট ও লগ', 'Call Transcript Log')}</span>
                             </span>
                             {selectedCallCustomer.customerCalls.length > 1 && (
                               <div className="flex items-center gap-1 overflow-x-auto">
@@ -3136,47 +3339,31 @@ export const AdminDashboard: React.FC = () => {
                                     key={histCall.id}
                                     type="button"
                                     onClick={() => setSelectedCallId(histCall.id)}
-                                    className={`px-2 py-0.5 rounded font-mono text-[10px] cursor-pointer ${
+                                    className={`px-2 py-0.5 rounded font-mono text-[10px] cursor-pointer tabular-nums ${
                                       activeCallObj?.id === histCall.id
                                         ? 'bg-emerald-600 text-white'
                                         : 'bg-slate-800 text-slate-400 hover:text-white'
                                     }`}
                                   >
-                                    #{i + 1} ({histCall.durationSeconds}s)
+                                    #{i + 1} · {histCall.durationSeconds}s
                                   </button>
                                 ))}
                               </div>
                             )}
                           </div>
-
-                          <div className="divide-y divide-slate-800/70 max-h-44 overflow-y-auto">
+                          <div className="divide-y divide-slate-800/70 max-h-52 overflow-y-auto flex-1">
                             {!activeCallObj || activeCallObj.transcript.length === 0 ? (
-                              <div className="p-4 text-center text-[11px] text-slate-500">
-                                {at(
-                                  'এই কাস্টমারের সাথে এখনও কোনো কল রেকর্ড হয়নি। "নতুন লাইভ কল করুন" বাটনে ক্লিক করে কথা শুরু করুন।',
-                                  'No call audio logs yet for this customer. Click "Start Live Call" above to begin.'
-                                )}
+                              <div className="p-6 text-center text-[11px] text-slate-500">
+                                {at('এই কাস্টমারের কোনো কল রেকর্ড নেই। "লাইভ ব্রাউজার কল" বাটনে ক্লিক করুন।', 'No call log yet. Start a live call above.')}
                               </div>
                             ) : (
                               activeCallObj.transcript.map((item) => (
-                                <div key={item.id} className="px-3.5 py-2 flex items-start gap-2.5 text-xs">
-                                  <span className="font-mono text-[10px] text-slate-500 shrink-0 mt-0.5 w-12">
+                                <div key={item.id} className="px-3 py-2 flex items-start gap-2 text-xs">
+                                  <span className="font-mono text-[10px] text-slate-500 shrink-0 mt-0.5 w-11 tabular-nums">
                                     {item.time}
                                   </span>
-                                  <span
-                                    className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase shrink-0 ${
-                                      item.speaker === 'customer'
-                                        ? 'bg-slate-800 text-sky-300'
-                                        : item.speaker === 'assistant'
-                                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/50'
-                                        : 'bg-amber-950 text-amber-300 border border-amber-700/50'
-                                    }`}
-                                  >
-                                    {item.speaker === 'customer'
-                                      ? at('ক্রেতা', 'Customer')
-                                      : item.speaker === 'assistant'
-                                      ? at('এজেন্ট ভয়েস', 'Agent')
-                                      : 'AI'}
+                                  <span className="text-[10px] font-bold uppercase text-emerald-400 shrink-0 w-12">
+                                    {item.speaker === 'customer' ? at('ক্রেতা', 'Buyer') : item.speaker === 'assistant' ? at('এজেন্ট', 'Agent') : 'AI'}
                                   </span>
                                   <p className="text-slate-200 leading-snug flex-1">{item.textBn || item.text}</p>
                                 </div>
@@ -3184,521 +3371,129 @@ export const AdminDashboard: React.FC = () => {
                             )}
                           </div>
                         </div>
-                      </>
-                        )}
-                      </>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* PANE 3 (Right, 3 cols): Customer 360 & Quick POS */}
+                  <div className="xl:col-span-3 p-4 flex flex-col justify-between gap-3 bg-slate-950/30">
+                    {!selectedCallCustomer ? (
+                      <div className="flex-1 flex items-center justify-center text-xs text-slate-500 text-center">
+                        {at('কাস্টমার প্রোফাইল ও অর্ডার দেখতে তালিকা থেকে একজন বেছে নিন', 'Select a customer to view orders & wallet')}
+                      </div>
+                    ) : (() => {
+                      const walletProf = customerAccounts.find(
+                        (ca) => normalizePhoneKey(ca.phone) && normalizePhoneKey(ca.phone) === selectedCallCustomer.key
+                      );
+                      const nonCancelled = selectedCallCustomer.customerOrders.filter((o) => o.status !== 'cancelled').length;
+                      const totalOrd = selectedCallCustomer.customerOrders.length;
+                      const fraudSuccessPct =
+                        selectedCallCustomer.latestOrder?.fraudCheck?.successRate ??
+                        (totalOrd > 0 ? Math.round((nonCancelled / totalOrd) * 100) : 100);
+
+                      return (
+                        <div className="space-y-3 flex-1 flex flex-col">
+                          <div className="space-y-2 pb-3 border-b border-slate-800">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <h5 className="text-sm font-bold text-white truncate">{selectedCallCustomer.name}</h5>
+                                <p className="text-xs font-mono text-emerald-400">{selectedCallCustomer.phone}</p>
+                                {selectedCallCustomer.district && (
+                                  <p className="text-[11px] text-slate-400">{selectedCallCustomer.district}</p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2 pt-1 text-[11px] tabular-nums">
+                              <div className="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                                <span className="text-[10px] text-slate-400 block">{at('ওয়ালেট', 'Wallet')}</span>
+                                <span className="font-mono font-bold text-emerald-400">
+                                  ৳{(walletProf?.walletBalance || 0).toLocaleString()}
+                                </span>
+                              </div>
+                              <div className="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                                <span className="text-[10px] text-slate-400 block">{at('মোট খরচ', 'Spent')}</span>
+                                <span className="font-mono font-bold text-white">
+                                  ৳{selectedCallCustomer.totalSpent.toLocaleString()}
+                                </span>
+                              </div>
+                              <div className="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                                <span className="text-[10px] text-slate-400 block">{at('ট্রাস্ট', 'Trust')}</span>
+                                <span className={`font-mono font-bold ${fraudSuccessPct >= 80 ? 'text-emerald-400' : 'text-amber-300'}`}>
+                                  {fraudSuccessPct}%
+                                </span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPosWalkInName(selectedCallCustomer.name);
+                                setPosWalkInPhone(selectedCallCustomer.phone);
+                                setActiveTab('pos_system');
+                              }}
+                              className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>{at('১-ক্লিক POS অর্ডার তৈরি করুন', 'Create POS Order')}</span>
+                            </button>
+                          </div>
+
+                          <div className="flex-1 flex flex-col min-h-0">
+                            <p className="text-[11px] font-bold text-slate-300 mb-2">
+                              {at(`অর্ডারসমূহ (${selectedCallCustomer.customerOrders.length})`, `Order History (${selectedCallCustomer.customerOrders.length})`)}
+                            </p>
+                            {selectedCallCustomer.customerOrders.length === 0 ? (
+                              <p className="text-[11px] text-slate-500 py-6 text-center">
+                                {at('কোনো অর্ডার নেই', 'No orders yet')}
+                              </p>
+                            ) : (
+                              <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                                {selectedCallCustomer.customerOrders.map((ord) => (
+                                  <div key={ord.id} className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] space-y-1.5">
+                                    <div className="flex items-center justify-between gap-2 tabular-nums">
+                                      <span className="font-mono font-bold text-emerald-400">#{ord.id}</span>
+                                      <span className="font-mono font-bold text-white">৳{ord.pricing.total.toLocaleString()}</span>
+                                    </div>
+                                    <p className="text-slate-300 truncate">
+                                      {ord.items.map((i) => `${at(i.productTitleBn, i.productTitle)} ×${i.quantity}`).join(', ')}
+                                    </p>
+                                    <div className="flex items-center justify-between gap-1.5 pt-0.5">
+                                      <select
+                                        value={ord.status}
+                                        onChange={(e) => updateOrderStatus(ord.id, e.target.value as OrderStatus)}
+                                        className="flex-1 px-2 py-1 rounded bg-slate-900 border border-slate-700 text-amber-300 font-bold uppercase text-[10px]"
+                                      >
+                                        <option value="pending">pending</option>
+                                        <option value="ai_confirmed">confirmed</option>
+                                        <option value="processing">processing</option>
+                                        <option value="shipped">shipped</option>
+                                        <option value="delivered">delivered</option>
+                                        <option value="partial">partial</option>
+                                        <option value="cancelled">cancelled</option>
+                                      </select>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedOrderDetails(ord)}
+                                        className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 cursor-pointer shrink-0"
+                                        title={at('অর্ডার দেখুন', 'Inspect Order')}
+                                      >
+                                        <Eye className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       );
                     })()}
                   </div>
                 </div>
               </div>
-
-              {/* B. FULL CHAT HISTORY & MANUAL / AI REPLY INBOX */}
-              <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-950/60 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-black text-white flex items-center gap-2">
-                      <MessageCircle className="w-4 h-4 text-sky-400" />
-                      <span>{at('কাস্টমার লাইভ চ্যাট হিস্ট্রি ও ম্যানুয়াল / AI রিপ্লাই', 'Customer Live Chat History & Manual Support Desk')}</span>
-                    </h4>
-                    <span className="text-[11px] font-mono text-slate-400">
-                      {at(`${supportChats.length}টি থ্রেড`, `${supportChats.length} threads`)}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsNewManualChatOpen((v) => !v)}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>{at('নতুন ম্যানুয়াল চ্যাট', 'New Manual Chat')}</span>
-                  </button>
-                </div>
-
-                {isNewManualChatOpen && (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const cname = newManualChatName.trim() || at('কাস্টমার', 'Customer');
-                      const cphone = newManualChatPhone.trim();
-                      const createdId = openOrCreateCustomerChatSession(cname, cphone);
-                      toggleChatManualMode(createdId, true);
-                      setSelectedChatId(createdId);
-                      setNewManualChatName('');
-                      setNewManualChatPhone('');
-                      setIsNewManualChatOpen(false);
-                    }}
-                    className="p-3 bg-slate-950 border-b border-slate-800 flex flex-wrap items-center gap-2 text-xs"
-                  >
-                    <input
-                      type="text"
-                      required
-                      value={newManualChatName}
-                      onChange={(e) => setNewManualChatName(e.target.value)}
-                      placeholder={at('কাস্টমারের নাম', 'Customer Name')}
-                      className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white min-w-[160px]"
-                    />
-                    <input
-                      type="text"
-                      value={newManualChatPhone}
-                      onChange={(e) => setNewManualChatPhone(e.target.value)}
-                      placeholder={at('মোবাইল নম্বর (ঐচ্ছিক)', 'Phone (optional)')}
-                      className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono min-w-[150px]"
-                    />
-                    <button
-                      type="submit"
-                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
-                    >
-                      {at('চ্যাট খুলুন', 'Start Manual Thread')}
-                    </button>
-                  </form>
-                )}
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-800">
-                  {/* Threads Column */}
-                  <div className="p-3 space-y-2 max-h-[460px] overflow-y-auto">
-                    {supportChats.map((chat) => {
-                      const isSelected = activeChatObj?.id === chat.id;
-                      const lastMsg = chat.messages[chat.messages.length - 1];
-                      return (
-                        <button
-                          key={chat.id}
-                          onClick={() => {
-                            setSelectedChatId(chat.id);
-                            markChatRead(chat.id);
-                          }}
-                          className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer ${
-                            isSelected
-                              ? 'bg-sky-950/50 border-sky-500/60'
-                              : 'bg-slate-950/50 border-slate-800 hover:border-slate-700'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-bold text-white truncate">{chat.customerName}</span>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <span
-                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                                  chat.manualMode
-                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                                    : 'bg-emerald-500/15 text-emerald-300'
-                                }`}
-                              >
-                                {chat.manualMode ? 'MANUAL' : 'AI'}
-                              </span>
-                              {chat.status === 'resolved' && (
-                                <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 text-[9px]">
-                                  DONE
-                                </span>
-                              )}
-                              {chat.unreadByAdmin > 0 && (
-                                <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold">
-                                  {chat.unreadByAdmin}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <p className="text-[11px] text-slate-400 line-clamp-1 mt-1">
-                            {lastMsg?.text || '...'}
-                          </p>
-                          <div className="text-[10px] text-slate-500 font-mono mt-1">
-                            {chat.customerPhone || 'Visitor'} • {new Date(chat.lastUpdated).toLocaleTimeString()}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Selected Thread + Reply Composer */}
-                  <div className="lg:col-span-2 p-4 flex flex-col justify-between min-h-[420px]">
-                    {!activeChatObj ? (
-                      <div className="flex-1 flex items-center justify-center text-xs text-slate-500">
-                        {at('চ্যাট দেখতে একটি থ্রেড নির্বাচন করুন', 'Select a chat thread to inspect & reply')}
-                      </div>
-                    ) : (
-                      <>
-                        <div className="pb-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <h5 className="text-sm font-black text-white flex items-center gap-2">
-                              <span>{activeChatObj.customerName}</span>
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                  activeChatObj.manualMode
-                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                }`}
-                              >
-                                {activeChatObj.manualMode
-                                  ? at('ম্যানুয়াল সাপোর্ট চালু (AI পজ)', 'Direct Desk Mode (AI Paused)')
-                                  : at('AI অটো সাপোর্ট চালু', 'AI Auto-Reply Active')}
-                              </span>
-                            </h5>
-                            <p className="text-[11px] text-slate-400 font-mono">
-                              {activeChatObj.customerPhone || 'Visitor'} • {activeChatObj.messages.length} messages
-                            </p>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => toggleChatManualMode(activeChatObj.id, !activeChatObj.manualMode)}
-                              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer border ${
-                                activeChatObj.manualMode
-                                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500'
-                                  : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
-                              }`}
-                            >
-                              <UserCheck className="w-3.5 h-3.5" />
-                              <span>
-                                {activeChatObj.manualMode
-                                  ? at('AI অটো চালু', 'Switch to AI')
-                                  : at('ম্যানুয়াল নিন', 'Take Over Manual')}
-                              </span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                resolveSupportChatSession(
-                                  activeChatObj.id,
-                                  activeChatObj.status === 'resolved' ? 'open' : 'resolved'
-                                )
-                              }
-                              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-bold text-slate-200 cursor-pointer"
-                            >
-                              {activeChatObj.status === 'resolved' ? at('রি-ওপেন', 'Reopen') : at('রিসলভড', 'Resolve')}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => deleteSupportChatSession(activeChatObj.id)}
-                              className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
-                              title={at('চ্যাট মুছুন', 'Delete Thread')}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto py-3 space-y-2.5 max-h-72">
-                          {activeChatObj.messages.map((m) => (
-                            <div
-                              key={m.id}
-                              className={`flex ${m.sender === 'customer' ? 'justify-start' : 'justify-end'}`}
-                            >
-                              <div
-                                className={`max-w-[82%] px-3.5 py-2 rounded-2xl text-xs whitespace-pre-wrap ${
-                                  m.sender === 'customer'
-                                    ? 'bg-slate-800 text-slate-100 rounded-tl-sm'
-                                    : m.sender === 'assistant'
-                                    ? 'bg-emerald-600 text-white rounded-tr-sm'
-                                    : 'bg-sky-700 text-white rounded-tr-sm'
-                                }`}
-                              >
-                                <div className="text-[10px] opacity-75 font-bold mb-0.5 flex items-center justify-between gap-3">
-                                  <span>
-                                    {m.sender === 'customer'
-                                      ? activeChatObj.customerName
-                                      : m.sender === 'assistant'
-                                      ? at('অ্যাসিস্ট্যান্ট (ম্যানুয়াল)', 'Support Assistant')
-                                      : at('AI অটো উত্তর', 'AI Auto-Reply')}
-                                  </span>
-                                  <span>{m.time}</span>
-                                </div>
-                                <p>{m.text}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            if (!chatReplyDraft.trim()) return;
-                            sendAgentChatReply(activeChatObj.id, chatReplyDraft.trim());
-                            setChatReplyDraft('');
-                          }}
-                          className="pt-3 border-t border-slate-800 space-y-2"
-                        >
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {[
-                              {
-                                label: at('অর্ডার কনফার্মড', 'Confirm Order'),
-                                text: `আসসালামু আলাইকুম ${activeChatObj.customerName}, আপনার অর্ডারটি কনফার্ম করা হয়েছে। খুব শীঘ্রই ডেলিভারির জন্য পাঠানো হবে।`
-                              },
-                              {
-                                label: at('ডেলিভারি সময় ও চার্জ', 'Delivery Info'),
-                                text: `ঢাকার ভিতরে ডেলিভারি চার্জ ৬০ টাকা (২৪ ঘণ্টায় ডেলিভারি) এবং ঢাকার বাইরে ১২০ টাকা (৪৮-৭২ ঘণ্টায় ডেলিভারি)।`
-                              },
-                              {
-                                label: at('ট্র্যাকিং ও হেল্প', 'Tracking Link'),
-                                text: `আপনি আমাদের ওয়েবসাইটের Order Tracker পেজে অর্ডার আইডি বা মোবাইল নম্বর দিয়ে পার্সেলের লাইভ অবস্থান দেখতে পারবেন।`
-                              }
-                            ].map((canned, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => setChatReplyDraft(canned.text)}
-                                className="px-2 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-700 text-[10px] font-bold text-slate-300 cursor-pointer"
-                              >
-                                {canned.label}
-                              </button>
-                            ))}
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <input
-                              type="text"
-                              value={chatReplyDraft}
-                              onChange={(e) => setChatReplyDraft(e.target.value)}
-                              placeholder={at('ম্যানুয়ালি উত্তর লিখুন অথবা "Generate AI" চাপুন...', 'Type manual reply or click "Generate AI"...')}
-                              className="flex-1 min-w-[200px] px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"
-                            />
-                            <button
-                              type="button"
-                              disabled={isGeneratingAiReply}
-                              onClick={async () => {
-                                setIsGeneratingAiReply(true);
-                                const draft = await generateAgentAIReply(activeChatObj.id);
-                                if (draft) setChatReplyDraft(draft);
-                                setIsGeneratingAiReply(false);
-                              }}
-                              className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Sparkles className="w-3.5 h-3.5" />
-                              <span>{isGeneratingAiReply ? at('তৈরি হচ্ছে...', 'Generating...') : 'Generate AI'}</span>
-                            </button>
-                            <button
-                              type="submit"
-                              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Send className="w-3.5 h-3.5" />
-                              <span>{at('রিপ্লাই পাঠান', 'Send Reply')}</span>
-                            </button>
-                          </div>
-                        </form>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* C. WEBSITE CHAT INQUIRY FORM LEADS (SCREENSHOTS A & B) */}
-              {(() => {
-                const qText = inquirySearch.trim().toLowerCase();
-                const filteredInquiries = chatInquiries.filter((inq) => {
-                  const matchStatus = inquiryStatusFilter === 'all' || inq.status === inquiryStatusFilter;
-                  const matchSearch =
-                    !qText ||
-                    inq.name.toLowerCase().includes(qText) ||
-                    inq.phone.toLowerCase().includes(qText) ||
-                    inq.query.toLowerCase().includes(qText) ||
-                    (inq.productTitle || '').toLowerCase().includes(qText);
-                  return matchStatus && matchSearch;
-                });
-                const allInqSelected =
-                  filteredInquiries.length > 0 && filteredInquiries.every((i) => selectedInquiryIds.includes(i.id));
-
-                return (
-                  <BulkSectionShell
-                    indexCode="BULK // INQUIRIES"
-                    title={at(`ওয়েবসাইট চ্যাট ইনকোয়ারি ও প্রশ্ন (${chatInquiries.length})`, `Website Chat Inquiries & Customer Queries (${chatInquiries.length})`)}
-                    subtitle={at(
-                      'চ্যাট ফর্ম থেকে পাঠানো ক্রেতার নাম, নম্বর, প্রশ্ন দেখুন — এডিট, ডিলিট, বাল্ক সিলেক্ট এবং সরাসরি উত্তর দিন',
-                      'Manage every customer inquiry sent from the website chat form — reply directly, WhatsApp, edit, bulk-update, or delete'
-                    )}
-                    selectedCount={selectedInquiryIds.length}
-                    totalCount={filteredInquiries.length}
-                    accent="emerald"
-                    headerActions={
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          type="text"
-                          value={inquirySearch}
-                          onChange={(e) => setInquirySearch(e.target.value)}
-                          placeholder={at('নাম, ফোন বা প্রশ্ন খুঁজুন...', 'Search name, phone, query...')}
-                          className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                        />
-                        <select
-                          value={inquiryStatusFilter}
-                          onChange={(e) => setInquiryStatusFilter(e.target.value as any)}
-                          className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                        >
-                          <option value="all">{at('সকল স্ট্যাটাস', 'All Status')}</option>
-                          <option value="new">{at('নতুন (New)', 'New')}</option>
-                          <option value="following_up">{at('ফলো-আপ', 'Following Up')}</option>
-                          <option value="replied">{at('উত্তর দেওয়া হয়েছে', 'Replied')}</option>
-                          <option value="closed">{at('বন্ধ (Closed)', 'Closed')}</option>
-                        </select>
-                      </div>
-                    }
-                  >
-                    <BulkCommandBar
-                      selectedCount={selectedInquiryIds.length}
-                      totalCount={filteredInquiries.length}
-                      allSelected={allInqSelected}
-                      onToggleSelectAll={() =>
-                        setSelectedInquiryIds(allInqSelected ? [] : filteredInquiries.map((i) => i.id))
-                      }
-                      onClearSelection={() => setSelectedInquiryIds([])}
-                      itemLabel="inquiries"
-                    >
-                      {selectedInquiryIds.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              bulkChatInquiriesAction(selectedInquiryIds, 'replied');
-                              setSelectedInquiryIds([]);
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer whitespace-nowrap shrink-0"
-                          >
-                            {at('উত্তর হয়েছে মার্ক', 'Mark Replied')}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              bulkChatInquiriesAction(selectedInquiryIds, 'closed');
-                              setSelectedInquiryIds([]);
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-bold text-[11px] cursor-pointer whitespace-nowrap shrink-0"
-                          >
-                            {at('বন্ধ করুন', 'Mark Closed')}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              bulkChatInquiriesAction(selectedInquiryIds, 'delete');
-                              setSelectedInquiryIds([]);
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] cursor-pointer whitespace-nowrap shrink-0"
-                          >
-                            {at('বাল্ক ডিলিট', 'Delete Selected')}
-                          </button>
-                        </div>
-                      )}
-                    </BulkCommandBar>
-                    {filteredInquiries.length === 0 ? (
-                      <div className="p-6 text-center text-xs text-slate-400">
-                        {at('এখনো কোনো চ্যাট ইনকোয়ারি নেই।', 'No customer chat inquiries match this filter yet.')}
-                      </div>
-                    ) : (
-                      <div className="divide-y divide-slate-800 max-h-[520px] overflow-y-auto">
-                        {filteredInquiries.map((inq) => {
-                          const isChecked = selectedInquiryIds.includes(inq.id);
-                          const waNum = `${inq.countryCode || '+880'}${inq.phone.replace(/^0+/, '')}`.replace(/[^\d]/g, '');
-                          const draftReply = inquiryReplyDrafts[inq.id] ?? inq.adminReply ?? '';
-
-                          return (
-                            <div
-                              key={inq.id}
-                              className={`p-4 space-y-2.5 text-xs ${isChecked ? 'bg-emerald-950/20' : 'hover:bg-slate-800/30'}`}
-                            >
-                              <div className="flex flex-wrap items-start justify-between gap-2">
-                                <div className="flex items-start gap-2.5 min-w-0">
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={(e) =>
-                                      setSelectedInquiryIds((prev) =>
-                                        e.target.checked ? [...prev, inq.id] : prev.filter((x) => x !== inq.id)
-                                      )
-                                    }
-                                    className="w-4 h-4 mt-0.5 accent-emerald-500 cursor-pointer shrink-0"
-                                  />
-                                  <div className="min-w-0 space-y-0.5">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <span className="font-bold text-white text-sm">{inq.name}</span>
-                                      <span className="font-mono text-emerald-400 font-bold">
-                                        {inq.countryCode} {inq.phone}
-                                      </span>
-                                      <span className="text-[10px] font-mono text-slate-400">
-                                        {new Date(inq.createdAt).toLocaleString()}
-                                      </span>
-                                      <span
-                                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                          inq.status === 'new'
-                                            ? 'bg-amber-500/20 text-amber-300'
-                                            : inq.status === 'replied'
-                                            ? 'bg-emerald-500/20 text-emerald-300'
-                                            : inq.status === 'following_up'
-                                            ? 'bg-sky-500/20 text-sky-300'
-                                            : 'bg-slate-800 text-slate-400'
-                                        }`}
-                                      >
-                                        {inq.status}
-                                      </span>
-                                    </div>
-                                    <p className="text-slate-200 whitespace-pre-wrap">{inq.query}</p>
-                                    {inq.productTitle && (
-                                      <p className="text-[11px] text-sky-400">
-                                        {at('পণ্য:', 'Product:')} {inq.productTitle}
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <a
-                                    href={`https://wa.me/${waNum}?text=${encodeURIComponent(
-                                      `আসসালামু আলাইকুম ${inq.name}, BuyOne BD থেকে আপনার প্রশ্নের উত্তর: ${draftReply || ''}`
-                                    )}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] inline-flex items-center gap-1"
-                                  >
-                                    <MessageCircle className="w-3.5 h-3.5" />
-                                    <span>WhatsApp</span>
-                                  </a>
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingInquiry({ ...inq })}
-                                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 cursor-pointer"
-                                    title={at('এডিট', 'Edit')}
-                                  >
-                                    <Edit className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => deleteChatInquiry(inq.id)}
-                                    className="p-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 text-rose-300 cursor-pointer"
-                                    title={at('ডিলিট', 'Delete')}
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="pl-6 flex flex-wrap items-center gap-2">
-                                <input
-                                  type="text"
-                                  value={draftReply}
-                                  onChange={(e) =>
-                                    setInquiryReplyDrafts((prev) => ({ ...prev, [inq.id]: e.target.value }))
-                                  }
-                                  placeholder={at('এখানে সরাসরি উত্তর লিখুন এবং Save চাপুন...', 'Type direct admin reply here...')}
-                                  className="flex-1 min-w-[220px] px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-white"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (!draftReply.trim()) return;
-                                    updateChatInquiry(inq.id, {
-                                      adminReply: draftReply.trim(),
-                                      status: 'replied'
-                                    });
-                                  }}
-                                  className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold cursor-pointer"
-                                >
-                                  {at('উত্তর সেভ ও রিপ্লাইড', 'Save Reply')}
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </BulkSectionShell>
-                );
-              })()}
-            </div>
-          )}
+            );
+          })()}
 
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
@@ -3838,6 +3633,64 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 );
               })()}
+
+              {/* AI Store Intelligence Brief */}
+              <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-emerald-400" />
+                      <span>{at('এআই স্টোর ইন্টেলিজেন্স ও স্ট্র্যাটেজি ব্রিফ', 'AI Store Intelligence & Merchandising Brief')}</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      {at(
+                        'স্টক অগ্রাধিকার, প্রাইসিং সুযোগ ও অর্ডার কনভার্সন বাড়ানোর তাৎক্ষণিক AI পরামর্শ',
+                        'Live catalog health, low-stock priority, and COD conversion insights from your store data'
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={loadAiStoreInsights}
+                    disabled={isLoadingAiInsights}
+                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingAiInsights ? 'animate-spin' : ''}`} />
+                    <span>
+                      {isLoadingAiInsights
+                        ? at('বিশ্লেষণ চলছে...', 'Analyzing...')
+                        : aiInsightsData
+                        ? at('রিফ্রেশ ব্রিফ', 'Refresh Brief')
+                        : at('AI বিশ্লেষণ তৈরি করুন', 'Generate AI Brief')}
+                    </span>
+                  </button>
+                </div>
+
+                {aiInsightsData ? (
+                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2 text-xs">
+                    <p className="text-slate-200 whitespace-pre-line leading-relaxed">{aiInsightsData.summary}</p>
+                    <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px] font-mono text-slate-400 tabular-nums">
+                      <span>{at('লো-স্টক:', 'Low stock:')} {aiInsightsData.lowStockCount ?? 0}</span>
+                      <span>·</span>
+                      <span>{at('পেন্ডিং অর্ডার:', 'Pending orders:')} {aiInsightsData.pendingOrdersCount ?? 0}</span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('orders')}
+                        className="text-emerald-400 hover:underline font-sans font-bold cursor-pointer ml-auto"
+                      >
+                        {at('অর্ডার দেখুন →', 'Review Orders →')}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    {at(
+                      'রিস্টক, ফ্ল্যাশ সেল এবং পেন্ডিং অর্ডার অপ্টিমাইজ করতে উপরের বাটনে ক্লিক করুন।',
+                      'Click "Generate AI Brief" for automated merchandising and restock priorities across your 13+ products.'
+                    )}
+                  </p>
+                )}
+              </div>
 
               {/* Overview Interactive SVG Analytics Graphics */}
               {(() => {
@@ -11410,10 +11263,16 @@ export const AdminDashboard: React.FC = () => {
             <div className="space-y-6 animate-fade-in">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h3 className="text-xl font-black text-white">{t('লাকি স্পিন কুপন ম্যানেজার', 'Spin Wheel Coupons')}</h3>
-                  <p className="text-xs text-slate-400">{t('স্পিনের পুরস্কারসমূহ, কুপন কোড ও মান নির্ধারণ করুন (প্রতিদিন ৪টি স্পিন, ১০ মিনিট কুলডাউন)', 'Configure wheel coupon prizes, 4 spins/day limit and 10m cooldown')}</p>
+                  <h3 className="text-xl font-black text-white">{t('লাকি স্পিন কুপন ম্যানেজার', 'Spin Wheel Coupons Manager')}</h3>
+                  <p className="text-xs text-slate-400">
+                    {at(
+                      'বাংলা ও ইংরেজি নাম, কুপন কোড, মিনিমাম অর্ডার, সর্বোচ্চ ছাড়, মেয়াদ, কালার ও স্পিন হুইল হেডলাইন সম্পূর্ণ এডিট করুন',
+                      'Edit every Spin Wheel coupon field including English & Bengali names, codes, limits, expiry days, weights, and wheel settings'
+                    )}
+                  </p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => {
                     setEditingSpinRewardId(null);
                     setSpinForm({
@@ -11423,92 +11282,211 @@ export const AdminDashboard: React.FC = () => {
                       discountType: 'fixed',
                       value: 100,
                       color: '#059669',
-                      isTryAgain: false
+                      isTryAgain: false,
+                      enabled: true,
+                      minOrderBdt: 0,
+                      maxDiscountBdt: 0,
+                      expiryDays: 7,
+                      probabilityWeight: 10,
+                      descriptionBn: '',
+                      descriptionEn: ''
                     });
                     setIsSpinModalOpen(true);
                   }}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-600/20"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer whitespace-nowrap"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>{t('নতুন কুপন অফার যোগ করুন', 'Add Prize')}</span>
+                  <span>{at('নতুন কুপন অফার যোগ', 'Add Wheel Coupon')}</span>
                 </button>
               </div>
 
-              {/* Daily Spin Limit Control */}
-              <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <h4 className="text-xs font-bold text-white flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-amber-400" />
-                    <span>{at('দৈনিক স্পিন সংখ্যা নির্ধারণ (Daily Spins per Customer)', 'Daily Spin Limit per Customer')}</span>
-                  </h4>
-                  <p className="text-[11px] text-slate-400">
-                    {at('প্রতি গ্রাহক দিনে কতবার স্পিন করতে পারবে (১-১০ বার)', 'Allowable spins per customer each day')}
-                  </p>
+              {/* Spin Wheel Settings Card (Enabled, Spins/Day, BN/EN Headlines) */}
+              <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                    <div>
+                      <h4 className="text-xs font-bold text-white">{at('স্পিন হুইল সেটিংস ও হেডলাইন', 'Wheel Activation, Daily Limit & Headlines')}</h4>
+                      <p className="text-[11px] text-slate-400">{at('পরিবর্তন করার পর সেভ বাটনে ক্লিক করুন', 'Customize wheel availability, daily limit, and Bengali/English titles')}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateSettings({
+                          spinSettings: {
+                            ...settings.spinSettings,
+                            enabled: settings.spinSettings?.enabled === false
+                          }
+                        })
+                      }
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer border ${
+                        settings.spinSettings?.enabled !== false
+                          ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-slate-800 text-slate-400 border-slate-700'
+                      }`}
+                    >
+                      {settings.spinSettings?.enabled !== false ? at('হুইল চালু', 'Wheel Enabled') : at('হুইল বন্ধ', 'Wheel Paused')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => saveSettingsChanges(undefined, at('স্পিন হুইল সেটিংস সংরক্ষিত হয়েছে!', 'Spin Wheel settings saved!'))}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{at('সেটিংস সেভ', 'Save Wheel')}</span>
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={settings.spinSettings?.spinsPerDay || 1}
-                    onChange={(e) => {
-                      updateSettings({
-                        spinSettings: {
-                          ...settings.spinSettings,
-                          spinsPerDay: Math.max(1, Number(e.target.value))
-                        }
-                      });
-                    }}
-                    className="w-20 px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-white text-center font-mono outline-none focus:border-emerald-500"
-                  />
-                  <span className="text-xs text-slate-400 font-bold">{at('বার / দিন', 'times / day')}</span>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1">{at('দৈনিক স্পিন সীমা (১-১০)', 'Daily Spins / User')}</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={settings.spinSettings?.spinsPerDay || 1}
+                      onChange={(e) =>
+                        updateSettings({
+                          spinSettings: {
+                            ...settings.spinSettings,
+                            spinsPerDay: Math.max(1, Math.min(10, Number(e.target.value) || 1))
+                          }
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl font-bold text-white font-mono outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div className="md:col-span-1.5">
+                    <label className="block text-slate-400 font-bold mb-1">{at('বাংলা হেডলাইন', 'Headline (Bengali)')}</label>
+                    <input
+                      type="text"
+                      value={settings.spinSettings?.headlineBn || ''}
+                      onChange={(e) =>
+                        updateSettings({
+                          spinSettings: {
+                            ...settings.spinSettings,
+                            headlineBn: e.target.value
+                          }
+                        })
+                      }
+                      placeholder="চাকা ঘোরান এবং কুপন জিতুন!"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div className="md:col-span-1.5">
+                    <label className="block text-slate-400 font-bold mb-1">{at('ইংরেজি হেডলাইন', 'Headline (English)')}</label>
+                    <input
+                      type="text"
+                      value={settings.spinSettings?.headlineEn || ''}
+                      onChange={(e) =>
+                        updateSettings({
+                          spinSettings: {
+                            ...settings.spinSettings,
+                            headlineEn: e.target.value
+                          }
+                        })
+                      }
+                      placeholder="Spin the Wheel & Win Instant Coupons!"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* Spin Rewards Table */}
-              <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-sm">
+              <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs text-slate-300">
+                  <table className="w-full text-left text-xs text-slate-300 tabular-nums">
                     <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-slate-800">
                       <tr>
-                        <th className="py-3 px-4">কালার</th>
-                        <th className="py-3 px-4">অফারের নাম (বাংলা)</th>
-                        <th className="py-3 px-4">ইংরেজি নাম</th>
-                        <th className="py-3 px-4">কুপন কোড</th>
-                        <th className="py-3 px-4">ছাড়ের ধরন</th>
-                        <th className="py-3 px-4">মান / ভ্যালু</th>
-                        <th className="py-3 px-4 text-right">অ্যাকশন</th>
+                        <th className="py-3 px-4">{at('কালার', 'Color')}</th>
+                        <th className="py-3 px-4">{at('বাংলা নাম', 'Bengali Name')}</th>
+                        <th className="py-3 px-4">{at('ইংরেজি নাম', 'English Name')}</th>
+                        <th className="py-3 px-4">{at('কুপন কোড', 'Code')}</th>
+                        <th className="py-3 px-4">{at('ধরন ও মান', 'Reward')}</th>
+                        <th className="py-3 px-4">{at('শর্ত (Min / Cap)', 'Min / Cap')}</th>
+                        <th className="py-3 px-4">{at('মেয়াদ / ওজন', 'Expiry / Wt')}</th>
+                        <th className="py-3 px-4">{at('স্ট্যাটাস', 'Status')}</th>
+                        <th className="py-3 px-4 text-right">{at('অ্যাকশন', 'Actions')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800">
                       {spinRewards.map((rew) => (
                         <tr key={rew.id} className="hover:bg-slate-800/40">
-                          <td className="py-3.5 px-4">
-                            <div className="w-6 h-6 rounded-full border border-slate-700" style={{ backgroundColor: rew.color }} />
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-md border border-slate-700 shrink-0" style={{ backgroundColor: rew.color }} />
+                              <span className="font-mono text-[10px] text-slate-500">{rew.color}</span>
+                            </div>
                           </td>
-                          <td className="py-3.5 px-4 font-bold text-white">{rew.labelBn}</td>
-                          <td className="py-3.5 px-4">{rew.labelEn}</td>
-                          <td className="py-3.5 px-4 font-mono font-bold text-amber-400">{rew.code}</td>
-                          <td className="py-3.5 px-4 uppercase text-[11px]">{rew.discountType}</td>
-                          <td className="py-3.5 px-4 font-bold text-white">
-                            {rew.discountType === 'percent' ? `${rew.value}%` : rew.discountType === 'free_shipping' ? 'ফ্রি' : `৳${rew.value}`}
+                          <td className="py-3 px-4 font-bold text-white">{rew.labelBn}</td>
+                          <td className="py-3 px-4 font-semibold text-slate-200">{rew.labelEn}</td>
+                          <td className="py-3 px-4 font-mono font-bold text-amber-400">{rew.code}</td>
+                          <td className="py-3 px-4 font-mono font-bold text-white">
+                            {rew.isTryAgain || rew.discountType === 'try_again'
+                              ? at('Try Again', 'Try Again')
+                              : rew.discountType === 'percent'
+                              ? `${rew.value}%`
+                              : rew.discountType === 'free_shipping'
+                              ? at('ফ্রি ডেলিভারি', 'Free Shipping')
+                              : `৳${rew.value}`}
                           </td>
-                          <td className="py-3.5 px-4 text-right">
+                          <td className="py-3 px-4 font-mono text-[11px] text-slate-400">
+                            Min ৳{rew.minOrderBdt ?? 0}
+                            {(rew.maxDiscountBdt ?? 0) > 0 ? ` · Max ৳${rew.maxDiscountBdt}` : ''}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-[11px] text-slate-400">
+                            {rew.expiryDays ?? 7}d · w:{rew.probabilityWeight ?? 10}
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              type="button"
+                              onClick={() => updateSpinReward(rew.id, { enabled: rew.enabled === false })}
+                              className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer ${
+                                rew.enabled !== false
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                  : 'bg-slate-800 text-slate-400 border border-slate-700'
+                              }`}
+                            >
+                              {rew.enabled !== false ? at('চালু', 'Active') : at('বন্ধ', 'Paused')}
+                            </button>
+                          </td>
+                          <td className="py-3 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
                               <button
+                                type="button"
                                 onClick={() => {
                                   setEditingSpinRewardId(rew.id);
-                                  setSpinForm({ ...rew });
+                                  setSpinForm({
+                                    labelBn: rew.labelBn || '',
+                                    labelEn: rew.labelEn || '',
+                                    code: rew.code || '',
+                                    discountType: rew.discountType || 'fixed',
+                                    value: rew.value ?? 0,
+                                    color: rew.color || '#059669',
+                                    isTryAgain: Boolean(rew.isTryAgain),
+                                    enabled: rew.enabled !== false,
+                                    minOrderBdt: rew.minOrderBdt ?? 0,
+                                    maxDiscountBdt: rew.maxDiscountBdt ?? 0,
+                                    expiryDays: rew.expiryDays ?? 7,
+                                    probabilityWeight: rew.probabilityWeight ?? 10,
+                                    descriptionBn: rew.descriptionBn || '',
+                                    descriptionEn: rew.descriptionEn || ''
+                                  });
                                   setIsSpinModalOpen(true);
                                 }}
-                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white"
+                                title={at('সব তথ্য এডিট করুন', 'Edit All Coupon Details')}
+                                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold inline-flex items-center gap-1 cursor-pointer"
                               >
                                 <Edit className="w-3.5 h-3.5" />
+                                <span>{at('এডিট', 'Edit')}</span>
                               </button>
                               <button
-                                onClick={() => {
-                                  deleteSpinReward(rew.id);
-                                }}
+                                type="button"
+                                onClick={() => deleteSpinReward(rew.id)}
                                 title={at('কুপন মুছে ফেলুন', 'Delete Coupon')}
                                 className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer"
                               >
@@ -20015,29 +19993,41 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
         </div>
       )}
 
-      {/* MODAL 7: SPIN REWARD ADD/EDIT MODAL */}
+      {/* MODAL 7: SPIN REWARD ADD/EDIT MODAL (ALL FIELDS EDITABLE) */}
       {isSpinModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-          <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl">
+          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl">
             <button
+              type="button"
               onClick={() => setIsSpinModalOpen(false)}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800"
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
 
             <h3 className="text-lg font-black text-white mb-4">
-              {editingSpinRewardId ? 'স্পিন অফার এডিট' : 'নতুন স্পিন অফার যোগ'}
+              {editingSpinRewardId ? at('স্পিন কুপন এডিট করুন', 'Edit Spin Wheel Coupon') : at('নতুন স্পিন কুপন যোগ করুন', 'Add New Spin Coupon')}
             </h3>
 
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!spinForm.labelBn.trim()) return;
-                const payload = {
+                if (!spinForm.labelBn.trim() && !spinForm.labelEn.trim()) return;
+                const isTry = spinForm.discountType === 'try_again' || Boolean(spinForm.isTryAgain);
+                const payload: Omit<SpinReward, 'id'> = {
                   ...spinForm,
-                  code: spinForm.code.trim().toUpperCase(),
-                  value: Number(spinForm.value)
+                  labelBn: (spinForm.labelBn || spinForm.labelEn).trim(),
+                  labelEn: (spinForm.labelEn || spinForm.labelBn).trim(),
+                  code: (spinForm.code || 'SPIN').trim().toUpperCase(),
+                  value: isTry || spinForm.discountType === 'free_shipping' ? 0 : Math.max(0, Number(spinForm.value) || 0),
+                  isTryAgain: isTry,
+                  enabled: spinForm.enabled !== false,
+                  minOrderBdt: Math.max(0, Number(spinForm.minOrderBdt) || 0),
+                  maxDiscountBdt: Math.max(0, Number(spinForm.maxDiscountBdt) || 0),
+                  expiryDays: Math.max(1, Number(spinForm.expiryDays) || 7),
+                  probabilityWeight: Math.max(1, Number(spinForm.probabilityWeight) || 10),
+                  descriptionBn: (spinForm.descriptionBn || '').trim(),
+                  descriptionEn: (spinForm.descriptionEn || '').trim()
                 };
                 if (editingSpinRewardId) {
                   updateSpinReward(editingSpinRewardId, payload);
@@ -20048,70 +20038,190 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
               }}
               className="space-y-3 text-xs"
             >
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">পুরস্কারের বাংলা নাম *</label>
-                <input
-                  type="text"
-                  required
-                  value={spinForm.labelBn}
-                  onChange={(e) => setSpinForm({ ...spinForm, labelBn: e.target.value })}
-                  placeholder="যেমন: ৳১৫০ ক্যাশ ছাড়"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">কুপন কোড (যেমন: SPIN150)</label>
-                <input
-                  type="text"
-                  required
-                  value={spinForm.code}
-                  onChange={(e) => setSpinForm({ ...spinForm, code: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono uppercase"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-bold mb-1">ছাড়ের ধরন</label>
-                  <select
-                    value={spinForm.discountType}
-                    onChange={(e) => setSpinForm({ ...spinForm, discountType: e.target.value as any })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
-                  >
-                    <option value="fixed">টাকা ছাড় (Fixed BDT)</option>
-                    <option value="percent">শতাংশ (%)</option>
-                    <option value="free_shipping">ফ্রি ডেলিভারি</option>
-                    <option value="try_again">আবার চেষ্টা করুন</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-300 font-bold mb-1">মূল্য / ভ্যালু</label>
+                  <label className="block text-slate-300 font-bold mb-1">{at('পুরস্কারের বাংলা নাম *', 'Bengali Name *')}</label>
                   <input
-                    type="number"
-                    value={spinForm.value}
-                    onChange={(e) => setSpinForm({ ...spinForm, value: Number(e.target.value) })}
+                    type="text"
+                    required
+                    value={spinForm.labelBn}
+                    onChange={(e) => setSpinForm({ ...spinForm, labelBn: e.target.value })}
+                    placeholder="যেমন: ৳১৫০ ক্যাশ ছাড়"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('ইংরেজি নাম (English Name) *', 'English Name *')}</label>
+                  <input
+                    type="text"
+                    required
+                    value={spinForm.labelEn}
+                    onChange={(e) => setSpinForm({ ...spinForm, labelEn: e.target.value })}
+                    placeholder="e.g. ৳150 Cash OFF"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">হুইল স্লাইসের কালার</label>
-                <input
-                  type="color"
-                  value={spinForm.color}
-                  onChange={(e) => setSpinForm({ ...spinForm, color: e.target.value })}
-                  className="w-full h-9 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('কুপন কোড *', 'Coupon Code *')}</label>
+                  <input
+                    type="text"
+                    required
+                    value={spinForm.code}
+                    onChange={(e) => setSpinForm({ ...spinForm, code: e.target.value })}
+                    placeholder="SPIN150"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('ছাড়ের ধরন', 'Discount Type')}</label>
+                  <select
+                    value={spinForm.discountType}
+                    onChange={(e) => {
+                      const nextType = e.target.value as SpinReward['discountType'];
+                      setSpinForm({
+                        ...spinForm,
+                        discountType: nextType,
+                        isTryAgain: nextType === 'try_again'
+                      });
+                    }}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  >
+                    <option value="fixed">{at('টাকা ছাড় (Fixed ৳)', 'Fixed Amount (৳)')}</option>
+                    <option value="percent">{at('শতাংশ (%)', 'Percentage (%)')}</option>
+                    <option value="free_shipping">{at('ফ্রি ডেলিভারি', 'Free Shipping')}</option>
+                    <option value="try_again">{at('আবার চেষ্টা করুন', 'Try Again (No Discount)')}</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('মান / ভ্যালু', 'Discount Value')}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    disabled={spinForm.discountType === 'try_again' || spinForm.discountType === 'free_shipping'}
+                    value={spinForm.value}
+                    onChange={(e) => setSpinForm({ ...spinForm, value: Math.max(0, Number(e.target.value) || 0) })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono disabled:opacity-40"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('মিনিমাম অর্ডার (৳)', 'Min Order (৳)')}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={spinForm.minOrderBdt ?? 0}
+                    onChange={(e) => setSpinForm({ ...spinForm, minOrderBdt: Math.max(0, Number(e.target.value) || 0) })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('সর্বোচ্চ ছাড় (৳)', 'Max Cap (৳)')}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={spinForm.maxDiscountBdt ?? 0}
+                    onChange={(e) => setSpinForm({ ...spinForm, maxDiscountBdt: Math.max(0, Number(e.target.value) || 0) })}
+                    placeholder="0 = Unlimited"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('মেয়াদ (দিন)', 'Validity (Days)')}</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={spinForm.expiryDays ?? 7}
+                    onChange={(e) => setSpinForm({ ...spinForm, expiryDays: Math.max(1, Number(e.target.value) || 7) })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('উইন ওয়েট', 'Win Weight')}</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={spinForm.probabilityWeight ?? 10}
+                    onChange={(e) => setSpinForm({ ...spinForm, probabilityWeight: Math.max(1, Number(e.target.value) || 10) })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('বিবরণ / শর্ত (বাংলা)', 'Description Note (BN)')}</label>
+                  <input
+                    type="text"
+                    value={spinForm.descriptionBn || ''}
+                    onChange={(e) => setSpinForm({ ...spinForm, descriptionBn: e.target.value })}
+                    placeholder={at('ঐচ্ছিক: ক্রেতার জন্য নির্দেশনা', 'Optional note in Bengali')}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('বিবরণ / শর্ত (ইংরেজি)', 'Description Note (EN)')}</label>
+                  <input
+                    type="text"
+                    value={spinForm.descriptionEn || ''}
+                    onChange={(e) => setSpinForm({ ...spinForm, descriptionEn: e.target.value })}
+                    placeholder={at('ঐচ্ছিক ইংরেজি নোট', 'Optional customer note in English')}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center pt-1">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">{at('স্লাইস কালার ও হেক্স কোড', 'Wheel Slice Color')}</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={spinForm.color}
+                      onChange={(e) => setSpinForm({ ...spinForm, color: e.target.value })}
+                      className="w-12 h-9 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer shrink-0"
+                    />
+                    <input
+                      type="text"
+                      value={spinForm.color}
+                      onChange={(e) => setSpinForm({ ...spinForm, color: e.target.value })}
+                      className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2 pt-3">
+                  <label className="flex items-center gap-2 text-slate-200 font-semibold cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={spinForm.enabled !== false}
+                      onChange={(e) => setSpinForm({ ...spinForm, enabled: e.target.checked })}
+                      className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
+                    />
+                    <span>{at('চাকায় সক্রিয় রাখুন (Active on Wheel)', 'Active on Spin Wheel')}</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-slate-300 font-semibold cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(spinForm.isTryAgain)}
+                      onChange={(e) => setSpinForm({ ...spinForm, isTryAgain: e.target.checked })}
+                      className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                    />
+                    <span>{at('Try Again / কোনো ডিসকাউন্ট নয়', 'Try Again Slice (No Coupon)')}</span>
+                  </label>
+                </div>
               </div>
 
               <button
                 type="submit"
-                className="w-full py-2.5 mt-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl"
+                className="w-full py-2.5 mt-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl cursor-pointer"
               >
-                কুপন সেভ করুন
+                {at('কুপন পরিবর্তন সেভ করুন', 'Save Spin Coupon')}
               </button>
             </form>
           </div>

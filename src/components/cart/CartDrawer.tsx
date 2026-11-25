@@ -1,12 +1,14 @@
-import React from 'react';
-import { X, Trash2, ShoppingBag, Zap, ArrowRight, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, Trash2, ShoppingBag, Zap, ArrowRight, ShieldCheck, Sparkles, Plus } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
+import { Product } from '../../types';
 
 export const CartDrawer: React.FC = () => {
   const {
     cart,
     isCartOpen,
     setIsCartOpen,
+    addToCart,
     updateCartQuantity,
     removeFromCart,
     clearCart,
@@ -14,10 +16,63 @@ export const CartDrawer: React.FC = () => {
     cartCount,
     openOneClickCheckout,
     getPartnerPriceInfo,
+    visibleStoreProducts,
     settings,
     lang,
     t
   } = useStore();
+
+  const [upsellData, setUpsellData] = useState<{
+    recommendedProduct: Product | null;
+    reason: string;
+    freeShippingGap: number;
+  } | null>(null);
+  const [isLoadingUpsell, setIsLoadingUpsell] = useState(false);
+
+  const cartIdsKey = cart.map((c) => `${c.product.id}:${c.quantity}`).join(',');
+
+  useEffect(() => {
+    if (!isCartOpen || cart.length === 0) {
+      setUpsellData(null);
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setIsLoadingUpsell(true);
+    fetch('/api/ai/cart-upsell', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cartProductIds: cart.map((c) => c.product.id),
+        cartTotal,
+        lang
+      }),
+      signal: controller.signal
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.ok || !data?.recommendedProduct) return;
+        const matched = visibleStoreProducts.find((p) => p.id === data.recommendedProduct.id);
+        if (matched) {
+          setUpsellData({
+            recommendedProduct: matched,
+            reason: data.reason || '',
+            freeShippingGap: Number(data.freeShippingGap || 0)
+          });
+        } else {
+          setUpsellData(null);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setIsLoadingUpsell(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [isCartOpen, cartIdsKey, cartTotal, lang]);
 
   if (!isCartOpen) return null;
 
@@ -72,92 +127,148 @@ export const CartDrawer: React.FC = () => {
                 </button>
               </div>
             ) : (
-              cart.map((item, index) => (
-                <div
-                  key={`${item.product.id}-${item.selectedColor}-${item.selectedSize}-${index}`}
-                  className="flex gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40"
-                >
-                  {item.product.images?.[0]?.trim() ? (
-                    <img
-                      src={item.product.images[0]}
-                      alt={item.product.title}
-                      referrerPolicy="no-referrer"
-                      className="w-16 h-16 object-cover rounded-xl border border-slate-200 dark:border-slate-700 shrink-0"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-xl bg-slate-200 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0" />
-                  )}
+              <>
+                {cart.map((item, index) => (
+                  <div
+                    key={`${item.product.id}-${item.selectedColor}-${item.selectedSize}-${index}`}
+                    className="flex gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40"
+                  >
+                    {item.product.images?.[0]?.trim() ? (
+                      <img
+                        src={item.product.images[0]}
+                        alt={item.product.title}
+                        referrerPolicy="no-referrer"
+                        className="w-16 h-16 object-cover rounded-xl border border-slate-200 dark:border-slate-700 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-xl bg-slate-200 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0" />
+                    )}
 
-                  <div className="flex-1 min-w-0 flex flex-col justify-between">
-                    <div>
-                      <div className="flex justify-between items-start gap-2">
-                        <h4 className="font-bold text-xs text-slate-900 dark:text-white line-clamp-1">
-                          {lang === 'bn' ? item.product.titleBn : item.product.title}
-                        </h4>
-                        <button
-                          onClick={() => removeFromCart(item.product.id, item.selectedColor, item.selectedSize, item.selectedAttributes)}
-                          className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer shrink-0"
-                          aria-label="Remove item"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                    <div className="flex-1 min-w-0 flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-start gap-2">
+                          <h4 className="font-bold text-xs text-slate-900 dark:text-white line-clamp-1">
+                            {lang === 'bn' ? item.product.titleBn : item.product.title}
+                          </h4>
+                          <button
+                            onClick={() => removeFromCart(item.product.id, item.selectedColor, item.selectedSize, item.selectedAttributes)}
+                            className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer shrink-0"
+                            aria-label="Remove item"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {(item.selectedColor || item.selectedSize || (item.selectedAttributes && Object.keys(item.selectedAttributes).length > 0)) && (
+                          <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                            {[
+                              item.selectedColor,
+                              item.selectedSize,
+                              ...(item.selectedAttributes ? Object.entries(item.selectedAttributes).map(([k, v]) => `${k}: ${v}`) : [])
+                            ].filter(Boolean).join(' · ')}
+                          </p>
+                        )}
                       </div>
 
-                      {(item.selectedColor || item.selectedSize || (item.selectedAttributes && Object.keys(item.selectedAttributes).length > 0)) && (
-                        <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                          {[
-                            item.selectedColor,
-                            item.selectedSize,
-                            ...(item.selectedAttributes ? Object.entries(item.selectedAttributes).map(([k, v]) => `${k}: ${v}`) : [])
-                          ].filter(Boolean).join(' · ')}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between mt-2">
-                      {(() => {
-                        const pInfo = getPartnerPriceInfo(item.product, item.quantity);
-                        return (
-                          <div className="min-w-0">
-                            <span className="font-bold text-xs text-emerald-600 dark:text-emerald-400 tabular-nums block">
-                              ৳ {(pInfo.unitPrice * item.quantity).toLocaleString()}
-                            </span>
-                            {pInfo.mode === 'reseller' && (
-                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
-                                Reseller · Profit ৳{((pInfo.estimatedProfitPerUnit || 0) * item.quantity).toLocaleString()}
+                      <div className="flex items-center justify-between mt-2">
+                        {(() => {
+                          const pInfo = getPartnerPriceInfo(item.product, item.quantity);
+                          return (
+                            <div className="min-w-0">
+                              <span className="font-bold text-xs text-emerald-600 dark:text-emerald-400 tabular-nums block">
+                                ৳ {(pInfo.unitPrice * item.quantity).toLocaleString()}
                               </span>
-                            )}
-                            {pInfo.mode === 'wholesale' && (
-                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
-                                B2B ৳{pInfo.unitPrice.toLocaleString()}/pc · MOQ {pInfo.minQty}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })()}
+                              {pInfo.mode === 'reseller' && (
+                                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
+                                  Reseller · Profit ৳{((pInfo.estimatedProfitPerUnit || 0) * item.quantity).toLocaleString()}
+                                </span>
+                              )}
+                              {pInfo.mode === 'wholesale' && (
+                                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
+                                  B2B ৳{pInfo.unitPrice.toLocaleString()}/pc · MOQ {pInfo.minQty}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
 
-                      {/* Quantity Controls */}
-                      <div className="flex items-center border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800">
-                        <button
-                          onClick={() => updateCartQuantity(item.product.id, -1, item.selectedColor, item.selectedSize, item.selectedAttributes)}
-                          className="px-2.5 py-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold text-xs cursor-pointer"
-                        >
-                          -
-                        </button>
-                        <span className="px-2.5 py-0.5 text-xs font-bold text-slate-900 dark:text-white font-mono tabular-nums">
-                          {item.quantity}
-                        </span>
-                        <button
-                          onClick={() => updateCartQuantity(item.product.id, 1, item.selectedColor, item.selectedSize, item.selectedAttributes)}
-                          className="px-2.5 py-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold text-xs cursor-pointer"
-                        >
-                          +
-                        </button>
+                        {/* Quantity Controls */}
+                        <div className="flex items-center border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800">
+                          <button
+                            onClick={() => updateCartQuantity(item.product.id, -1, item.selectedColor, item.selectedSize, item.selectedAttributes)}
+                            className="px-2.5 py-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold text-xs cursor-pointer"
+                          >
+                            -
+                          </button>
+                          <span className="px-2.5 py-0.5 text-xs font-bold text-slate-900 dark:text-white font-mono tabular-nums">
+                            {item.quantity}
+                          </span>
+                          <button
+                            onClick={() => updateCartQuantity(item.product.id, 1, item.selectedColor, item.selectedSize, item.selectedAttributes)}
+                            className="px-2.5 py-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold text-xs cursor-pointer"
+                          >
+                            +
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))
+                ))}
+
+                {/* AI Smart Cart Pairing Suggestion */}
+                {upsellData?.recommendedProduct && (
+                  <div className="p-3 rounded-2xl border border-emerald-500/30 bg-emerald-50/70 dark:bg-emerald-950/30 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                        <Sparkles className="w-3 h-3 text-amber-500" />
+                        {t('এআই স্মার্ট পেয়ারিং অফার', 'AI Smart Pairing')}
+                      </span>
+                      {upsellData.freeShippingGap > 0 && (
+                        <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                          {t(`ফ্রি ডেলিভারি বাকি ৳${upsellData.freeShippingGap.toLocaleString()}`, `৳${upsellData.freeShippingGap.toLocaleString()} to free ship`)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
+                      {upsellData.reason}
+                    </p>
+                    <div className="flex items-center gap-2.5 pt-0.5">
+                      {upsellData.recommendedProduct.images?.[0] && (
+                        <img
+                          src={upsellData.recommendedProduct.images[0]}
+                          alt={upsellData.recommendedProduct.title}
+                          referrerPolicy="no-referrer"
+                          className="w-11 h-11 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                          {lang === 'bn'
+                            ? upsellData.recommendedProduct.titleBn || upsellData.recommendedProduct.title
+                            : upsellData.recommendedProduct.title}
+                        </p>
+                        <p className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                          ৳{upsellData.recommendedProduct.price.toLocaleString()}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => addToCart(upsellData.recommendedProduct!, 1)}
+                        className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{t('যোগ করুন', 'Add')}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {!upsellData?.recommendedProduct && isLoadingUpsell && (
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 text-[11px] text-slate-400 flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3 text-emerald-500" />
+                    <span>{t('সেরা কম্বো খুঁজছে...', 'Finding best pairing...')}</span>
+                  </div>
+                )}
+              </>
             )}
           </div>
 

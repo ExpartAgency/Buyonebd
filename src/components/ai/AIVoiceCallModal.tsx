@@ -89,14 +89,18 @@ export const AIVoiceCallModal: React.FC = () => {
     setAiSpeaking(false);
   };
 
-  // Ringtone control for both AI order calls and backend-routed/admin-initiated browser calls
+  // Ringtone vs outgoing ringback control
   useEffect(() => {
-    const shouldRing =
+    const isIncomingRing =
       isCallRinging ||
-      (isBackendBrowserCall &&
-        (activeBrowserCall?.status === 'ringing_backend' || activeBrowserCall?.status === 'ringing_customer'));
-    if (shouldRing) {
+      (isBackendBrowserCall && activeBrowserCall?.status === 'ringing_customer');
+    const isOutgoingRing =
+      !isCallRinging && isBackendBrowserCall && activeBrowserCall?.status === 'ringing_backend';
+
+    if (isIncomingRing) {
       audioEngine.startPhoneRingtone();
+    } else if (isOutgoingRing) {
+      audioEngine.startOutgoingRingback();
     } else {
       audioEngine.stopPhoneRingtone();
     }

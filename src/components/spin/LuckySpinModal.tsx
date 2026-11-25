@@ -57,9 +57,21 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
     { id: '8', labelBn: '৳৩০০ বোনাস', labelEn: '৳300 Bonus', code: 'BONUS300', discountType: 'fixed', value: 300, color: '#c026d3' }
   ];
 
-  const rewards = spinRewards && spinRewards.length >= 2 ? spinRewards : defaultRewards;
+  const activeFromStore = (spinRewards || []).filter((r) => r.enabled !== false);
+  const rewards = activeFromStore.length >= 2 ? activeFromStore : defaultRewards;
   const numSegments = rewards.length;
   const segmentAngle = 360 / numSegments;
+
+  const pickWeightedIndex = (list: SpinReward[]): number => {
+    const weights = list.map((r) => Math.max(1, Number(r.probabilityWeight) || 10));
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    let roll = Math.random() * totalWeight;
+    for (let i = 0; i < list.length; i++) {
+      roll -= weights[i];
+      if (roll <= 0) return i;
+    }
+    return 0;
+  };
 
   const handleSpin = () => {
     if (isSpinning) return;
@@ -68,7 +80,7 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
       addToast(
         'warning',
         t('আজকের স্পিন সম্পন্ন হয়েছে!', 'Daily Spin Used!'),
-        t('প্রতিদিন ১টি ফ্রি স্পিন পাওয়া যায়। আগামীকাল আবার ঘুরিয়ে উপহার জিতুন!', 'Only 1 free spin allowed per day. Return tomorrow!')
+        t('প্রতিদিন নির্ধারিত ফ্রি স্পিন শেষ হয়েছে। আগামীকাল আবার চেষ্টা করুন!', 'Daily free spins used. Return tomorrow!')
       );
       return;
     }
@@ -76,9 +88,9 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
     setIsSpinning(true);
     setSelectedReward(null);
 
-    // Pick a winning index
-    const winningIndex = Math.floor(Math.random() * numSegments);
+    const winningIndex = pickWeightedIndex(rewards);
     const selected = rewards[winningIndex];
+    const isTryAgain = Boolean(selected.isTryAgain || selected.discountType === 'try_again');
 
     const extraRounds = 5 + Math.floor(Math.random() * 3);
     const targetAngle = 360 - (winningIndex * segmentAngle + segmentAngle / 2);
@@ -98,33 +110,34 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
       setIsSpinning(false);
       setSelectedReward(selected);
 
-      // Record spin
       recordSpinUsed();
 
-      // Win sound & confetti
-      audioEngine.playSuccessChime();
-      confetti({
-        particleCount: 120,
-        spread: 80,
-        origin: { y: 0.6 }
-      });
-
-      // Automatically credit gift money & save coupon to customer profile
-      if (!selected.isTryAgain) {
+      if (!isTryAgain) {
+        audioEngine.playSuccessChime();
+        confetti({
+          particleCount: 120,
+          spread: 80,
+          origin: { y: 0.6 }
+        });
         saveSpinCoupon(selected);
+        if (selected.value > 0 && selected.discountType === 'fixed') {
+          claimSpinBonus(selected.value, `Lucky Spin ${selected.expiryDays || 2}d Bonus`);
+        }
+        addToast(
+          'success',
+          t('অভিনন্দন! আপনি জিতেছেন!', 'Congratulations! You won!'),
+          t(
+            `পুরস্কার: ${selected.labelBn || selected.labelEn}! কুপন: ${selected.code}`,
+            `Reward: ${selected.labelEn || selected.labelBn}! Coupon: ${selected.code}`
+          )
+        );
+      } else {
+        addToast(
+          'info',
+          t('আবার চেষ্টা করুন!', 'Try Again Next Time!'),
+          t('এবার হয়নি, পরের স্পিনে বড় উপহার জিতুন!', 'Better luck next spin!')
+        );
       }
-      if (selected.value > 0 && !selected.isTryAgain) {
-        claimSpinBonus(selected.value, 'Lucky Spin 48h Bonus');
-      }
-
-      addToast(
-        'success',
-        t('অভিনন্দন! আপনি জিতেছেন!', 'Congratulations! You won!'),
-        t(
-          `পুরস্কার: ${lang === 'bn' ? selected.labelBn : selected.labelEn}! কুপন: ${selected.code}`,
-          `Reward: ${selected.labelEn}! Coupon: ${selected.code}`
-        )
-      );
     }, 4200);
   };
 
@@ -171,19 +184,18 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
             {lang === 'bn' ? settings.spinSettings?.headlineBn : settings.spinSettings?.headlineEn}
           </h3>
           <p className="text-[11px] text-slate-400">
-            {t('চাকা ঘুরিয়ে সরাসরি ৪৮-ঘণ্টা মেয়াদী স্পিন বোনাস ও কুপন জিতুন!', 'Spin to win 48-hour bonus cash & coupons for your next order!')}
+            {t('চাকা ঘুরিয়ে সরাসরি বোনাস ও কুপন কোড জিতুন!', 'Spin to win instant discount coupons & bonus cash for your next order!')}
           </p>
 
           <div className="flex items-center justify-center gap-2 pt-1 text-xs">
-            <span className="px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-emerald-400 font-bold">
+            <span className="px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-emerald-400 font-bold tabular-nums">
               {t(`আজকের বাকি স্পিন: ${remainingSpinsToday}/${settings?.spinSettings?.spinsPerDay || 1}`, `Daily Spins Left: ${remainingSpinsToday}/${settings?.spinSettings?.spinsPerDay || 1}`)}
             </span>
           </div>
         </div>
 
-        {/* Responsive Wheel Container - Clean SVG, No Truncation (Req 12, 14 & Screenshot 3) */}
+        {/* Responsive Wheel Container */}
         <div className="relative my-3 flex items-center justify-center">
-          {/* Top Indicator Pointer pointing to top slice */}
           <div className="absolute -top-3 z-30 w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-t-[22px] border-t-amber-400 drop-shadow-[0_4px_6px_rgba(0,0,0,0.6)]" />
 
           <div className="relative w-[min(78vw,296px)] h-[min(78vw,296px)] sm:w-80 sm:h-80 rounded-full p-2.5 bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-400 shadow-2xl ring-4 ring-emerald-400/30">
@@ -214,8 +226,8 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
                   const x2 = 120 + 120 * Math.cos(rad2);
                   const y2 = 120 + 120 * Math.sin(rad2);
 
-                  const pathData = `M 120 120 L ${x1} ${y1} A 120 120 0 0 1 ${x2} ${y2} Z`;
-                  const labelText = lang === 'bn' ? rew.labelBn : rew.labelEn;
+                  const pathData = `M 120 120 L ${x1} ${y1} A 120 120 0 ${segmentAngle > 180 ? 1 : 0} 1 ${x2} ${y2} Z`;
+                  const labelText = lang === 'bn' ? (rew.labelBn || rew.labelEn) : (rew.labelEn || rew.labelBn);
                   const fSize = labelText.length > 13 ? 7.8 : labelText.length > 10 ? 8.6 : 9.6;
 
                   return (
@@ -281,27 +293,38 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
           </button>
         </div>
 
-        {/* Won Prize Popup Card */}
+        {/* Won Prize / Try Again Popup Card */}
         {selectedReward && (
+          selectedReward.isTryAgain || selectedReward.discountType === 'try_again' ? (
+            <div className="mt-4 p-4 rounded-2xl bg-slate-800/90 border border-slate-700 shadow-xl animate-fade-in text-center space-y-1.5">
+              <h4 className="text-sm font-black text-white">
+                {lang === 'bn' ? selectedReward.labelBn || 'আবার চেষ্টা করুন' : selectedReward.labelEn || 'Try Again'}
+              </h4>
+              <p className="text-[11px] text-slate-300">
+                {lang === 'bn'
+                  ? selectedReward.descriptionBn || 'এবার কুপন মেলেনি — পরের স্পিনে বড় পুরস্কার জিতুন!'
+                  : selectedReward.descriptionEn || 'Better luck on your next spin!'}
+              </p>
+            </div>
+          ) : (
           <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-emerald-950/80 via-slate-900 to-teal-950/80 border border-emerald-400/40 shadow-2xl animate-fade-in text-left">
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
                   <Trophy className="w-3.5 h-3.5" />
                   {t('অভিনন্দন!', 'Congratulations!')}
                 </span>
-                <h4 className="text-base font-black text-white mt-0.5">
-                  {lang === 'bn' ? selectedReward.labelBn : selectedReward.labelEn}
+                <h4 className="text-base font-black text-white mt-0.5 truncate">
+                  {lang === 'bn' ? (selectedReward.labelBn || selectedReward.labelEn) : (selectedReward.labelEn || selectedReward.labelBn)}
                 </h4>
-                <p className="text-[11px] text-emerald-300 font-medium">
-                  {t(
-                    `৳${selectedReward.value} স্পিন বোনাস ওয়ালেটে যোগ হয়েছে (মেয়াদ: ৪৮ ঘণ্টা · অ্যাড করা ব্যালেন্স আজীবন থাকবে)।`,
-                    `৳${selectedReward.value} Spin Bonus added! Valid for 48 hours (deposited cash remains lifetime).`
-                  )}
+                <p className="text-[11px] text-emerald-300 font-medium leading-relaxed">
+                  {lang === 'bn'
+                    ? selectedReward.descriptionBn || `মেয়াদ: ${selectedReward.expiryDays || 7} দিন${selectedReward.minOrderBdt ? ` · সর্বনিম্ন অর্ডার ৳${selectedReward.minOrderBdt}` : ''}।`
+                    : selectedReward.descriptionEn || `Valid ${selectedReward.expiryDays || 7} days${selectedReward.minOrderBdt ? ` · Min order ৳${selectedReward.minOrderBdt}` : ''}.`}
                 </p>
               </div>
 
-              <div className="text-right">
+              <div className="text-right shrink-0">
                 <span className="text-[9px] uppercase font-bold text-slate-400 block">
                   {t('কুপন কোড', 'Coupon Code')}
                 </span>
@@ -329,6 +352,7 @@ export const LuckySpinModal: React.FC<LuckySpinModalProps> = ({
               </button>
             </div>
           </div>
+          )
         )}
       </div>
     </div>
