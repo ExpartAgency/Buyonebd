@@ -1,7 +1,9 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import {
   getFirestore,
+  initializeFirestore,
+  enableNetwork,
   doc,
   getDoc,
   getDocs,
@@ -12,7 +14,8 @@ import {
   serverTimestamp,
   collection,
   query,
-  where
+  where,
+  type Firestore
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 import {
@@ -41,8 +44,28 @@ import {
   AffiliatePayoutRequest
 } from './types';
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+
+function createFirestoreInstance(): Firestore {
+  const dbId = firebaseConfig.firestoreDatabaseId;
+  if (typeof window !== 'undefined') {
+    try {
+      return initializeFirestore(
+        app,
+        {
+          experimentalForceLongPolling: true,
+          ignoreUndefinedProperties: true
+        },
+        dbId
+      );
+    } catch {
+      return getFirestore(app, dbId);
+    }
+  }
+  return getFirestore(app, dbId);
+}
+
+export const db = createFirestoreInstance();
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
@@ -103,15 +126,34 @@ export function handleFirestoreError(
 }
 
 async function testFirestoreConnection() {
+  if (typeof window === 'undefined') return;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
   try {
     await getDocFromServer(doc(db, 'storefront', 'public'));
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
+    const msg = error instanceof Error ? error.message.toLowerCase() : String(error || '').toLowerCase();
+    if (msg.includes('the client is offline') || msg.includes('unavailable') || msg.includes('could not reach')) {
+      try {
+        await enableNetwork(db).catch(() => {});
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        await getDocFromServer(doc(db, 'storefront', 'public'));
+        return;
+      } catch (retryError) {
+        const retryMsg = retryError instanceof Error ? retryError.message.toLowerCase() : '';
+        if (retryMsg.includes('the client is offline')) {
+          console.error('Please check your Firebase configuration.');
+        }
+      }
     }
   }
 }
-testFirestoreConnection();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    enableNetwork(db).catch(() => {});
+  });
+  void testFirestoreConnection();
+}
 
 export function stripUndefinedDeep<T>(value: T): T {
   if (Array.isArray(value)) {

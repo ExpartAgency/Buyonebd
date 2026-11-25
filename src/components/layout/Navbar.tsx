@@ -5,10 +5,9 @@ import { useStore } from '../../context/StoreContext';
 interface NavbarProps {
   onOpenMobileCategories?: () => void;
   onSelectCategory?: (slug: string, subSlug?: string | null) => void;
-  onOpenAIAdvisor?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelectCategory, onOpenAIAdvisor }) => {
+export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelectCategory }) => {
   const {
     settings,
     categories,
@@ -343,20 +342,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
           </button>
         </form>
 
-        {/* Right Section: AI Finder, Language Toggle, Cart, Customer Profile Icon */}
+        {/* Right Section: Language Toggle, Cart, Customer Profile Icon */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-          {onOpenAIAdvisor && (
-            <button
-              type="button"
-              onClick={onOpenAIAdvisor}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[11px] sm:text-xs font-bold cursor-pointer transition-colors whitespace-nowrap shrink-0 shadow-xs"
-              title={t('AI শপিং ফাইন্ডার — আপনার বাজেট অনুযায়ী পণ্য খুঁজুন', 'AI Shopping Finder')}
-            >
-              <Sparkles className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">{t('এআই ফাইন্ডার', 'AI Finder')}</span>
-            </button>
-          )}
-
           <button
             type="button"
             onClick={() => setLang(lang === 'bn' ? 'en' : 'bn')}
