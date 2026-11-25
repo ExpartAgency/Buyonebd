@@ -2075,6 +2075,11 @@ app.post('/api/store/sync', (req, res) => {
     autoMarketingLogs: Array.isArray(req.body?.autoMarketingLogs)
       ? unionMergeById(req.body.autoMarketingLogs, current.autoMarketingLogs)
       : current.autoMarketingLogs || [],
+    userNotifications: Array.isArray(req.body?.userNotifications)
+      ? unionMergeById(req.body.userNotifications, current.userNotifications)
+          .sort((a: any, b: any) => new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime())
+          .slice(0, 120)
+      : current.userNotifications || [],
     users: preserveNonEmpty(users, current.users),
     mediaLibrary: preserveNonEmpty(mediaLibrary, current.mediaLibrary),
     productViews: current.productViews || {},
@@ -2433,9 +2438,11 @@ app.patch('/api/orders/:id', (req, res) => {
   const current = loadStoreData() || {};
   const existingOrders: any[] = Array.isArray(current.orders) ? current.orders : [];
   let updatedOrder: any = null;
+  let prevOrderStatus = '';
   const nowIso = new Date().toISOString();
   current.orders = existingOrders.map((o) => {
     if (o && o.id === id) {
+      prevOrderStatus = o.status || '';
       updatedOrder = {
         ...o,
         ...updates,
@@ -2450,9 +2457,98 @@ app.patch('/api/orders/:id', (req, res) => {
     }
     return o;
   });
+  if (updatedOrder && updates.status && updates.status !== prevOrderStatus) {
+    const statusMap: Record<string, { en: string; bn: string }> = {
+      ai_confirmed: { en: 'Order Confirmed', bn: 'অর্ডার কনফার্ম হয়েছে' },
+      processing: { en: 'Order Processing & Packing', bn: 'অর্ডার প্যাকিং চলছে' },
+      shipped: { en: 'Order Shipped via Courier', bn: 'কুরিয়ারে শিপড হয়েছে' },
+      delivered: { en: 'Order Delivered Successfully', bn: 'অর্ডার সফলভাবে ডেলিভার্ড হয়েছে' },
+      cancelled: { en: 'Order Cancelled', bn: 'অর্ডার বাতিল করা হয়েছে' },
+      on_hold: { en: 'Order On Hold', bn: 'অর্ডার হোল্ডে রয়েছে' }
+    };
+    const stInfo = statusMap[String(updates.status)] || {
+      en: `Order Status: ${String(updates.status).replace('_', ' ')}`,
+      bn: `অর্ডার স্ট্যাটাস: ${String(updates.status)}`
+    };
+    const notif = {
+      id: `notif-ord-${updatedOrder.id}-${updates.status}-${Date.now()}`,
+      category: 'order_update',
+      title: `${stInfo.en} (#${updatedOrder.id})`,
+      titleBn: `${stInfo.bn} (#${updatedOrder.id})`,
+      message: `Your order #${updatedOrder.id} (৳${updatedOrder.pricing?.total || 0}) is now ${String(updates.status).replace('_', ' ')}.`,
+      messageBn: `আপনার অর্ডার #${updatedOrder.id} (৳${updatedOrder.pricing?.total || 0}) এখন "${stInfo.bn}" পর্যায়ে আছে।`,
+      createdAt: nowIso,
+      actionType: 'track_order',
+      orderId: updatedOrder.id,
+      trackingCode: updatedOrder.courier?.trackingCode || updatedOrder.id,
+      targetPhone: updatedOrder.customer?.phone || ''
+    };
+    current.userNotifications = [notif, ...(Array.isArray(current.userNotifications) ? current.userNotifications : [])].slice(0, 120);
+    broadcastWs({ type: 'notifications:sync', userNotifications: current.userNotifications });
+  }
   current.lastUpdated = nowIso;
   saveStoreData(current);
   return res.json({ success: true, order: updatedOrder });
+});
+
+app.post('/api/notifications/publish', (req, res) => {
+  const {
+    category = 'promo',
+    title,
+    titleBn,
+    message,
+    messageBn,
+    actionType = 'none',
+    productId,
+    couponCode,
+    orderId,
+    trackingCode,
+    badgeText,
+    oldPrice,
+    newPrice,
+    targetPhone
+  } = req.body || {};
+
+  if (!title && !titleBn) {
+    return res.status(400).json({ success: false, error: 'Notification title is required.' });
+  }
+  const current = loadStoreData() || {};
+  const nowIso = new Date().toISOString();
+  const notif = {
+    id: `notif-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
+    category: ['order_update', 'promo', 'price_drop'].includes(category) ? category : 'promo',
+    title: String(title || titleBn).trim(),
+    titleBn: String(titleBn || title).trim(),
+    message: String(message || messageBn || '').trim(),
+    messageBn: String(messageBn || message || '').trim(),
+    createdAt: nowIso,
+    actionType,
+    ...(productId ? { productId } : {}),
+    ...(couponCode ? { couponCode } : {}),
+    ...(orderId ? { orderId } : {}),
+    ...(trackingCode ? { trackingCode } : {}),
+    ...(badgeText ? { badgeText } : {}),
+    ...(typeof oldPrice === 'number' ? { oldPrice } : {}),
+    ...(typeof newPrice === 'number' ? { newPrice } : {}),
+    ...(targetPhone ? { targetPhone } : {})
+  };
+  current.userNotifications = [notif, ...(Array.isArray(current.userNotifications) ? current.userNotifications : [])].slice(0, 120);
+  current.lastUpdated = nowIso;
+  saveStoreData(current);
+  broadcastWs({ type: 'notifications:sync', userNotifications: current.userNotifications });
+  return res.json({ success: true, notification: notif, userNotifications: current.userNotifications });
+});
+
+app.delete('/api/notifications/:id', (req, res) => {
+  const { id } = req.params;
+  const current = loadStoreData() || {};
+  current.userNotifications = (Array.isArray(current.userNotifications) ? current.userNotifications : []).filter(
+    (n: any) => n && n.id !== id
+  );
+  current.lastUpdated = new Date().toISOString();
+  saveStoreData(current);
+  broadcastWs({ type: 'notifications:sync', userNotifications: current.userNotifications });
+  return res.json({ success: true, userNotifications: current.userNotifications });
 });
 
 app.delete('/api/orders/:id', (req, res) => {
@@ -5837,6 +5933,7 @@ async function startServer() {
           chatInquiries: initialSaved.chatInquiries || [],
           socialPosts: initialSaved.socialPosts || [],
           autoMarketingLogs: initialSaved.autoMarketingLogs || [],
+          userNotifications: initialSaved.userNotifications || [],
           productViews: initialSaved.productViews || {},
           activeClients: Math.max(1, activeWsClients.size)
         })

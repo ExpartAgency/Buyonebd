@@ -21,6 +21,7 @@ import { AboutView } from './components/home/AboutView';
 import { BlogView } from './components/home/BlogView';
 import { Product } from './types';
 import { Flame, PackageSearch, Clock, Sparkles, X, Copy, Gift, History, Trash2 } from 'lucide-react';
+import { safeStorageSetItem, safeSessionSetItem, healOversizedLocalStorageOnBoot } from './utils/safeStorage';
 
 const AdminDashboard = React.lazy(() =>
   import('./components/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard }))
@@ -157,12 +158,12 @@ function StoreMainContent() {
     const refCode = params.get('ref');
     if (refCode && settings.organicMarketing?.referralProgram?.enabled !== false) {
       setReferralBannerCode(refCode.toUpperCase());
-      localStorage.setItem('buyone_referred_by', refCode.toUpperCase());
+      safeStorageSetItem('buyone_referred_by', refCode.toUpperCase());
     }
     const utmSource = params.get('utm_source');
     const utmCampaign = params.get('utm_campaign');
     if (utmSource || utmCampaign) {
-      sessionStorage.setItem(
+      safeSessionSetItem(
         'buyone_utm_attribution',
         JSON.stringify({ source: utmSource || '', medium: params.get('utm_medium') || '', campaign: utmCampaign || '' })
       );
@@ -983,7 +984,7 @@ function StoreMainContent() {
               type="button"
               onClick={() => {
                 setIsPromoPopupVisible(false);
-                sessionStorage.setItem('buyone_promo_dismissed', '1');
+                safeSessionSetItem('buyone_promo_dismissed', '1');
               }}
               className="absolute top-3.5 right-3.5 p-2 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
             >
@@ -1023,7 +1024,7 @@ function StoreMainContent() {
                     }
                     addToast('success', t('কুপন কোড কপি হয়েছে!', 'Coupon Copied!'), code);
                     setIsPromoPopupVisible(false);
-                    sessionStorage.setItem('buyone_promo_dismissed', '1');
+                    safeSessionSetItem('buyone_promo_dismissed', '1');
                   }}
                   className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
                 >
@@ -1097,22 +1098,63 @@ class AppErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error) {
     console.error('App ErrorBoundary caught:', error);
+    const msg = String(error?.message || '').toLowerCase();
+    if (msg.includes('quota') || msg.includes('exceeded') || msg.includes('storage')) {
+      try {
+        [
+          'buyonebd_abandoned_v3',
+          'buyonebd_media_library_v1',
+          'buyonebd_browsing_logs_v3',
+          'buyonebd_pixel_events_v3',
+          'buyonebd_wa_logs_v3'
+        ].forEach((k) => window.localStorage.removeItem(k));
+        healOversizedLocalStorageOnBoot();
+      } catch {}
+    }
   }
+
+  handleClearStorageAndReload = () => {
+    try {
+      [
+        'buyonebd_abandoned_v3',
+        'buyonebd_media_library_v1',
+        'buyonebd_browsing_logs_v3',
+        'buyonebd_pixel_events_v3',
+        'buyonebd_wa_logs_v3',
+        'buyonebd_ai_review_queue_v1',
+        'buyonebd_social_posts_v1'
+      ].forEach((k) => window.localStorage.removeItem(k));
+      healOversizedLocalStorageOnBoot();
+    } catch {}
+    window.location.reload();
+  };
 
   render() {
     if (this.state.hasError) {
+      const isQuotaErr = /quota|exceeded|storage/i.test(this.state.errorMessage || '');
       return (
         <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
           <div className="max-w-md w-full p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 text-center">
             <h2 className="text-lg font-bold text-white">Something went wrong</h2>
             <p className="text-xs text-slate-400 break-words">{this.state.errorMessage}</p>
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
-            >
-              Reload Storefront
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {isQuotaErr && (
+                <button
+                  type="button"
+                  onClick={this.handleClearStorageAndReload}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold cursor-pointer"
+                >
+                  Clear Heavy Cache &amp; Recover
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+              >
+                Reload Storefront
+              </button>
+            </div>
           </div>
         </div>
       );

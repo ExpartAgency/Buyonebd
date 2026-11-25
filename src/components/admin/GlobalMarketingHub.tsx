@@ -23,11 +23,12 @@ import {
   MapPin,
   Image as ImageIcon,
   Share2,
-  CheckSquare
+  CheckSquare,
+  BellRing
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useStore } from '../../context/StoreContext';
-import { BulkSmsCampaignLog } from '../../types';
+import { BulkSmsCampaignLog, UserNotificationCategory } from '../../types';
 import { BulkSectionShell } from './BulkSectionShell';
 
 export const GlobalMarketingHub: React.FC = () => {
@@ -55,6 +56,9 @@ export const GlobalMarketingHub: React.FC = () => {
     autoMarketingLogs,
     isRunningAutoMarketingSuite,
     runAutoMarketingSuiteNow,
+    publishedNotifications,
+    publishPromotionalNotification,
+    deletePublishedNotification,
     addToast,
     adminLang
   } = useStore();
@@ -110,6 +114,43 @@ export const GlobalMarketingHub: React.FC = () => {
     commentToOrderReply: string;
     quoraPinterestPinText: string;
   } | null>(null);
+
+  // In-App Customer Notification Center Broadcaster State
+  const [notifCategory, setNotifCategory] = useState<UserNotificationCategory>('promo');
+  const [notifTitle, setNotifTitle] = useState('');
+  const [notifMessage, setNotifMessage] = useState('');
+  const [notifCoupon, setNotifCoupon] = useState('');
+  const [notifProductId, setNotifProductId] = useState('');
+  const [isPublishingNotif, setIsPublishingNotif] = useState(false);
+
+  const handlePublishInAppNotif = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notifTitle.trim() || !notifMessage.trim()) {
+      addToast('warning', at('শিরোনাম ও মেসেজ দিন', 'Title & Message Required'), '');
+      return;
+    }
+    setIsPublishingNotif(true);
+    try {
+      const selectedProd = activeOwnProducts.find((p) => p.id === notifProductId);
+      await publishPromotionalNotification({
+        category: notifCategory,
+        title: notifTitle,
+        titleBn: notifTitle,
+        message: notifMessage,
+        messageBn: notifMessage,
+        couponCode: notifCoupon || undefined,
+        productId: selectedProd?.id,
+        badgeText: notifCategory === 'price_drop' ? 'PRICE DROP' : notifCoupon || 'PROMO',
+        oldPrice: selectedProd?.originalPrice,
+        newPrice: selectedProd?.price
+      });
+      setNotifTitle('');
+      setNotifMessage('');
+      setNotifCoupon('');
+    } finally {
+      setIsPublishingNotif(false);
+    }
+  };
 
   const at = (bn: string, en: string) => (adminLang === 'en' ? en : bn);
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://buyonebd.com';
@@ -2417,6 +2458,138 @@ export const GlobalMarketingHub: React.FC = () => {
                     {item.content}
                   </p>
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 10. Customer App Notification Center Broadcaster */}
+      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="font-black text-white text-sm flex items-center gap-2">
+              <BellRing className="w-4 h-4 text-amber-400" />
+              <span>
+                {at(
+                  '১০. ইন-অ্যাপ কাস্টমার নোটিফিকেশন সেন্টার ব্রডকাস্টার (৳০ ফ্রি)',
+                  '10. Customer Notification Center Broadcaster (Free In-App Alerts)'
+                )}
+              </span>
+            </h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {at(
+                'সরাসরি সব ক্রেতার অ্যাপ ড্যাশবোর্ডের বেল আইকন ও নোটিফিকেশন সেন্টারে প্রোমো কোড বা দাম কমার সতর্কতা পাঠান।',
+                'Push promotional deals, coupon codes, or price-drop alerts directly to every customer dashboard Notification Center.'
+              )}
+            </p>
+          </div>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-emerald-400">
+            Active Broadcasts: {publishedNotifications.length}
+          </span>
+        </div>
+
+        <form onSubmit={handlePublishInAppNotif} className="grid grid-cols-1 md:grid-cols-12 gap-3 text-xs">
+          <div className="md:col-span-3 space-y-1">
+            <label className="text-[11px] font-bold text-slate-300">{at('ধরণ', 'Alert Category')}</label>
+            <select
+              value={notifCategory}
+              onChange={(e) => setNotifCategory(e.target.value as UserNotificationCategory)}
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-semibold"
+            >
+              <option value="promo">{at('প্রোমো অফার / কুপন', 'Promotional Alert')}</option>
+              <option value="price_drop">{at('প্রাইস ড্রপ অ্যালার্ট', 'Price Drop Alert')}</option>
+              <option value="order_update">{at('অর্ডার ঘোষণা', 'Order / Dispatch Notice')}</option>
+            </select>
+          </div>
+
+          <div className="md:col-span-5 space-y-1">
+            <label className="text-[11px] font-bold text-slate-300">{at('শিরোনাম', 'Headline / Title')}</label>
+            <input
+              type="text"
+              required
+              value={notifTitle}
+              onChange={(e) => setNotifTitle(e.target.value)}
+              placeholder={at('যেমন: ঈদ স্পেশাল ফ্ল্যাশ অফার — ২০০ টাকা ছাড়!', 'e.g. Weekend Flash Deal — Extra ৳200 Off!')}
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+            />
+          </div>
+
+          <div className="md:col-span-4 space-y-1">
+            <label className="text-[11px] font-bold text-slate-300">{at('লিংকড পণ্য (ঐচ্ছিক)', 'Link Product (Optional)')}</label>
+            <select
+              value={notifProductId}
+              onChange={(e) => setNotifProductId(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+            >
+              <option value="">{at('-- কোনো পণ্য নয় --', '-- None --')}</option>
+              {activeOwnProducts.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.titleBn || p.title} (৳{p.price})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="md:col-span-8 space-y-1">
+            <label className="text-[11px] font-bold text-slate-300">{at('বিস্তারিত বার্তা', 'Notification Message')}</label>
+            <input
+              type="text"
+              required
+              value={notifMessage}
+              onChange={(e) => setNotifMessage(e.target.value)}
+              placeholder={at('ক্রেতাদের জন্য অফার বা ডিসকাউন্টের বিবরণ লিখুন...', 'Enter deal details or coupon instructions...')}
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+            />
+          </div>
+
+          <div className="md:col-span-2 space-y-1">
+            <label className="text-[11px] font-bold text-slate-300">{at('কুপন কোড', 'Coupon Code')}</label>
+            <input
+              type="text"
+              value={notifCoupon}
+              onChange={(e) => setNotifCoupon(e.target.value.toUpperCase())}
+              placeholder="WELCOME100"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-emerald-400 font-mono uppercase"
+            />
+          </div>
+
+          <div className="md:col-span-2 flex items-end">
+            <button
+              type="submit"
+              disabled={isPublishingNotif}
+              className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>{isPublishingNotif ? at('পাঠাচ্ছে...', 'Sending...') : at('ব্রডকাস্ট করুন', 'Broadcast')}</span>
+            </button>
+          </div>
+        </form>
+
+        {publishedNotifications.length > 0 && (
+          <div className="space-y-2 pt-2 border-t border-slate-800 max-h-56 overflow-y-auto">
+            {publishedNotifications.slice(0, 12).map((n) => (
+              <div
+                key={n.id}
+                className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3 text-xs"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-mono uppercase text-amber-300">
+                      {n.category}
+                    </span>
+                    <span className="font-bold text-white truncate">{n.titleBn || n.title}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 truncate mt-0.5">{n.messageBn || n.message}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => deletePublishedNotification(n.id)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-900 cursor-pointer shrink-0"
+                  title={at('মুছুন', 'Delete')}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
             ))}
           </div>

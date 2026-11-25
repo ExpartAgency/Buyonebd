@@ -1467,5 +1467,28 @@ export interface AITeamBriefing {
   recommendedActions: AITeamActionItem[];
 }
 
+export type UserNotificationCategory = 'order_update' | 'promo' | 'price_drop';
+
+export interface UserNotification {
+  id: string;
+  category: UserNotificationCategory;
+  title: string;
+  titleBn: string;
+  message: string;
+  messageBn: string;
+  createdAt: string;
+  isRead?: boolean;
+  actionType?: 'track_order' | 'view_product' | 'copy_coupon' | 'open_wallet' | 'none';
+  orderId?: string;
+  trackingCode?: string;
+  productId?: string;
+  couponCode?: string;
+  badgeText?: string;
+  oldPrice?: number;
+  newPrice?: number;
+  targetPhone?: string;
+}
+
+
 
 

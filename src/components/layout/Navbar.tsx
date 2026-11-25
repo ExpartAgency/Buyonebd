@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ShoppingBag, User, Menu, Globe, ChevronDown, ChevronRight, Layers, Sparkles, Search, X, ThumbsUp } from 'lucide-react';
+import { ShoppingBag, User, Menu, Globe, ChevronDown, ChevronRight, Layers, Sparkles, Search, X, ThumbsUp, Bell } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 
 interface NavbarProps {
@@ -30,6 +30,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
     setLang,
     t,
     openCustomerPortal,
+    openCustomerNotifications,
+    unreadNotificationsCount,
     isCustomerLoggedIn
   } = useStore();
 
@@ -368,6 +370,21 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
             >
               {cartCount}
             </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={openCustomerNotifications}
+            className="relative p-1.5 sm:p-2 rounded-xl border bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 transition-all cursor-pointer active:scale-95 shrink-0"
+            title={t('নোটিফিকেশন সেন্টার', 'Notification Center')}
+            aria-label={t('নোটিফিকেশন সেন্টার', 'Notification Center')}
+          >
+            <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
+            {unreadNotificationsCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center font-mono tabular-nums border border-white dark:border-slate-900">
+                {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+              </span>
+            )}
           </button>
 
           <button

@@ -48,9 +48,18 @@ import {
   SocialScheduledPost,
   ExpenseEntry,
   AITeamBriefing,
-  AutoMarketingLogEntry
+  AutoMarketingLogEntry,
+  UserNotification,
+  UserNotificationCategory
 } from '../types';
 import { speakClearText, stopAllVoicePlayback } from '../utils/voiceAudio';
+import {
+  safeStorageSetItem,
+  safeSessionSetItem,
+  compactAbandonedCartsForStorage,
+  compactOrdersForStorage,
+  compactCartForStorage
+} from '../utils/safeStorage';
 import {
   INITIAL_PRODUCTS,
   INITIAL_ORDERS,
@@ -402,6 +411,28 @@ interface StoreContextType {
   deleteCustomerLoyaltyPoints: (identifier: string) => boolean;
   isCustomerDashboardOpen: boolean;
   setIsCustomerDashboardOpen: (open: boolean) => void;
+  customerDashboardTab: 'notifications' | 'wallet' | 'orders' | 'history' | 'alerts' | 'profile';
+  setCustomerDashboardTab: (tab: 'notifications' | 'wallet' | 'orders' | 'history' | 'alerts' | 'profile') => void;
+  openCustomerNotifications: () => void;
+  userNotifications: UserNotification[];
+  unreadNotificationsCount: number;
+  markNotificationRead: (id: string) => void;
+  markAllNotificationsRead: () => void;
+  dismissNotification: (id: string) => void;
+  publishPromotionalNotification: (payload: {
+    category?: UserNotificationCategory;
+    title: string;
+    titleBn?: string;
+    message: string;
+    messageBn?: string;
+    couponCode?: string;
+    productId?: string;
+    badgeText?: string;
+    oldPrice?: number;
+    newPrice?: number;
+  }) => Promise<UserNotification | null>;
+  deletePublishedNotification: (id: string) => void;
+  publishedNotifications: UserNotification[];
 
   // Single Product Page View
   selectedProductForPage: Product | null;
@@ -1179,7 +1210,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setLang = (newLang: 'bn' | 'en') => {
     setLangState(newLang);
-    localStorage.setItem(LOCAL_STORAGE_LANG, newLang);
+    safeStorageSetItem(LOCAL_STORAGE_LANG, newLang);
   };
 
   // Security Audit Logs State
@@ -1194,7 +1225,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_security_logs_v1', JSON.stringify(securityLogs.slice(0, 120)));
+      safeStorageSetItem('buyonebd_security_logs_v1', JSON.stringify(securityLogs.slice(0, 120)));
     } catch {}
   }, [securityLogs]);
 
@@ -1221,7 +1252,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setAdminLang = (newLang: 'bn' | 'en') => {
     setAdminLangState(newLang);
-    localStorage.setItem('buyonebd_admin_lang_v3', newLang);
+    safeStorageSetItem('buyonebd_admin_lang_v3', newLang);
   };
 
   const t = (bn: string, en: string) => (lang === 'bn' ? bn : en);
@@ -1249,7 +1280,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   hasUnsavedSettingsRef.current = hasUnsavedSettings;
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_SETTINGS, JSON.stringify(committedSettings));
+    safeStorageSetItem(LOCAL_STORAGE_SETTINGS, JSON.stringify(committedSettings));
   }, [committedSettings]);
 
   // Reseller & Wholesale Partner System + Bulk SMS Logs State
@@ -1266,7 +1297,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_resellers_v1', JSON.stringify(resellers));
+      safeStorageSetItem('buyonebd_resellers_v1', JSON.stringify(resellers));
     } catch {}
   }, [resellers]);
 
@@ -1281,7 +1312,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     try {
       if (activeReseller) {
-        localStorage.setItem('buyonebd_active_reseller_v1', JSON.stringify(activeReseller));
+        safeStorageSetItem('buyonebd_active_reseller_v1', JSON.stringify(activeReseller));
       } else {
         localStorage.removeItem('buyonebd_active_reseller_v1');
       }
@@ -1326,7 +1357,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   resellerPayoutsRef.current = resellerPayouts;
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_reseller_payouts_v1', JSON.stringify(resellerPayouts));
+      safeStorageSetItem('buyonebd_reseller_payouts_v1', JSON.stringify(resellerPayouts));
     } catch {}
   }, [resellerPayouts]);
 
@@ -1342,7 +1373,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   wholesalersRef.current = wholesalers;
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_wholesalers_v1', JSON.stringify(wholesalers));
+      safeStorageSetItem('buyonebd_wholesalers_v1', JSON.stringify(wholesalers));
     } catch {}
   }, [wholesalers]);
 
@@ -1357,7 +1388,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     try {
       if (activeWholesaler) {
-        localStorage.setItem('buyonebd_active_wholesaler_v1', JSON.stringify(activeWholesaler));
+        safeStorageSetItem('buyonebd_active_wholesaler_v1', JSON.stringify(activeWholesaler));
       } else {
         localStorage.removeItem('buyonebd_active_wholesaler_v1');
       }
@@ -1378,7 +1409,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   wholesaleQuotesRef.current = wholesaleQuotes;
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_wholesale_quotes_v1', JSON.stringify(wholesaleQuotes));
+      safeStorageSetItem('buyonebd_wholesale_quotes_v1', JSON.stringify(wholesaleQuotes));
     } catch {}
   }, [wholesaleQuotes]);
 
@@ -1394,7 +1425,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   bulkSmsLogsRef.current = bulkSmsLogs;
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_bulk_sms_logs_v1', JSON.stringify(bulkSmsLogs));
+      safeStorageSetItem('buyonebd_bulk_sms_logs_v1', JSON.stringify(bulkSmsLogs));
     } catch {}
   }, [bulkSmsLogs]);
 
@@ -1410,7 +1441,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   resellerTopUpsRef.current = resellerTopUps;
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_reseller_topups_v1', JSON.stringify(resellerTopUps));
+      safeStorageSetItem('buyonebd_reseller_topups_v1', JSON.stringify(resellerTopUps));
     } catch {}
   }, [resellerTopUps]);
 
@@ -1428,7 +1459,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   blogsRef.current = blogs;
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_blogs_v1', JSON.stringify(blogs));
+      safeStorageSetItem('buyonebd_blogs_v1', JSON.stringify(blogs));
     } catch {}
   }, [blogs]);
 
@@ -1444,7 +1475,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   chatInquiriesRef.current = chatInquiries;
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_chat_inquiries_v1', JSON.stringify(chatInquiries.slice(0, 300)));
+      safeStorageSetItem('buyonebd_chat_inquiries_v1', JSON.stringify(chatInquiries.slice(0, 300)));
     } catch {}
   }, [chatInquiries]);
 
@@ -1460,7 +1491,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   socialPostsRef.current = socialPosts;
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_social_posts_v1', JSON.stringify(socialPosts.slice(0, 300)));
+      safeStorageSetItem('buyonebd_social_posts_v1', JSON.stringify(socialPosts.slice(0, 300)));
     } catch {}
   }, [socialPosts]);
 
@@ -1477,7 +1508,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isRunningAutoMarketingSuite, setIsRunningAutoMarketingSuite] = useState(false);
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_auto_marketing_logs_v1', JSON.stringify(autoMarketingLogs.slice(0, 60)));
+      safeStorageSetItem('buyonebd_auto_marketing_logs_v1', JSON.stringify(autoMarketingLogs.slice(0, 60)));
     } catch {}
   }, [autoMarketingLogs]);
 
@@ -1493,7 +1524,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   expensesRef.current = expenses;
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_expenses_v1', JSON.stringify(expenses.slice(0, 500)));
+      safeStorageSetItem('buyonebd_expenses_v1', JSON.stringify(expenses.slice(0, 500)));
     } catch {}
   }, [expenses]);
 
@@ -1509,7 +1540,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   aiTeamBriefingsRef.current = aiTeamBriefings;
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_ai_team_briefings_v1', JSON.stringify(aiTeamBriefings.slice(0, 30)));
+      safeStorageSetItem('buyonebd_ai_team_briefings_v1', JSON.stringify(aiTeamBriefings.slice(0, 30)));
     } catch {}
   }, [aiTeamBriefings]);
   const [isRunningAITeam, setIsRunningAITeam] = useState(false);
@@ -1526,7 +1557,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   affiliatesRef.current = affiliates;
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_affiliates_v1', JSON.stringify(affiliates));
+      safeStorageSetItem('buyonebd_affiliates_v1', JSON.stringify(affiliates));
     } catch {}
   }, [affiliates]);
 
@@ -1541,7 +1572,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     try {
       if (activeAffiliate) {
-        localStorage.setItem('buyonebd_active_affiliate_v1', JSON.stringify(activeAffiliate));
+        safeStorageSetItem('buyonebd_active_affiliate_v1', JSON.stringify(activeAffiliate));
       } else {
         localStorage.removeItem('buyonebd_active_affiliate_v1');
       }
@@ -1578,7 +1609,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   affiliateConversionsRef.current = affiliateConversions;
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_affiliate_conversions_v1', JSON.stringify(affiliateConversions));
+      safeStorageSetItem('buyonebd_affiliate_conversions_v1', JSON.stringify(affiliateConversions));
     } catch {}
   }, [affiliateConversions]);
 
@@ -1594,7 +1625,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   affiliatePayoutsRef.current = affiliatePayouts;
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_affiliate_payouts_v1', JSON.stringify(affiliatePayouts));
+      safeStorageSetItem('buyonebd_affiliate_payouts_v1', JSON.stringify(affiliatePayouts));
     } catch {}
   }, [affiliatePayouts]);
 
@@ -1644,7 +1675,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   categoriesRef.current = categories;
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_CATEGORIES, JSON.stringify(categories));
+    safeStorageSetItem(LOCAL_STORAGE_CATEGORIES, JSON.stringify(categories));
     setSettings((prev) => ({ ...prev, categories }));
     setCommittedSettings((prev) => ({ ...prev, categories }));
   }, [categories]);
@@ -1697,7 +1728,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   slidersRef.current = sliders;
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_SLIDERS, JSON.stringify(sliders));
+    safeStorageSetItem(LOCAL_STORAGE_SLIDERS, JSON.stringify(sliders));
     setSettings((prev) => ({ ...prev, sliders }));
     setCommittedSettings((prev) => ({ ...prev, sliders }));
   }, [sliders]);
@@ -1789,7 +1820,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   visibleStoreProductsRef.current = visibleStoreProducts;
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PRODUCTS, JSON.stringify(products));
+    safeStorageSetItem(LOCAL_STORAGE_PRODUCTS, JSON.stringify(products));
   }, [products]);
 
   const addProduct = (productData: Omit<Product, 'id'>) => {
@@ -1868,7 +1899,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       })
     );
 
-    // Zero-Time Automatic Price-Drop & Restock Waitlist Matcher
+    // Notification Center & Zero-Time Automatic Price-Drop & Restock Waitlist Matcher
+    if (prevTarget && typeof updates.price === 'number' && updates.price < prevTarget.price) {
+      const dropPct = Math.round(((prevTarget.price - updates.price) / Math.max(1, prevTarget.price)) * 100);
+      pushInternalNotification({
+        id: `notif-pdrop-${id}-${updates.price}`,
+        category: 'price_drop',
+        title: `Price Drop: ${prevTarget.title} (-${dropPct}%)`,
+        titleBn: `দাম কমেছে: ${prevTarget.titleBn || prevTarget.title} (-${dropPct}%)`,
+        message: `Dropped from ৳${prevTarget.price.toLocaleString()} to ৳${updates.price.toLocaleString()}. Grab it while stock lasts!`,
+        messageBn: `আগে ছিল ৳${prevTarget.price.toLocaleString()}, এখন মাত্র ৳${updates.price.toLocaleString()}!`,
+        actionType: 'view_product',
+        productId: id,
+        oldPrice: prevTarget.price,
+        newPrice: updates.price,
+        badgeText: `${dropPct}% OFF`
+      });
+    }
+
     const suiteCfg = settingsRef.current.autoMarketingSuite;
     if (prevTarget && suiteCfg?.enabled !== false && suiteCfg?.autoPriceDropAndRestockAlerts !== false) {
       const alertsTriggered: string[] = [];
@@ -1988,7 +2036,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   ordersRef.current = orders;
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_ORDERS, JSON.stringify(orders));
+    safeStorageSetItem(LOCAL_STORAGE_ORDERS, JSON.stringify(compactOrdersForStorage(orders)));
   }, [orders]);
 
   // Abandoned Carts
@@ -2004,7 +2052,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   abandonedCartsRef.current = abandonedCarts;
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_ABANDONED, JSON.stringify(abandonedCarts));
+    safeStorageSetItem(LOCAL_STORAGE_ABANDONED, JSON.stringify(compactAbandonedCartsForStorage(abandonedCarts)));
   }, [abandonedCarts]);
 
   const markAbandonedCartWhatsAppSent = (cartId: string) => {
@@ -2165,7 +2213,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_COMPARE, JSON.stringify(compareList));
+    safeStorageSetItem(LOCAL_STORAGE_COMPARE, JSON.stringify(compareList));
   }, [compareList]);
 
   const toggleCompare = (productId: string) => {
@@ -2199,7 +2247,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   reviewsRef.current = reviews;
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_REVIEWS, JSON.stringify(reviews));
+    safeStorageSetItem(LOCAL_STORAGE_REVIEWS, JSON.stringify(reviews));
   }, [reviews]);
 
   const addProductReview = (reviewData: Omit<ProductReview, 'id' | 'date' | 'verifiedPurchase'>) => {
@@ -2305,7 +2353,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   usersRef.current = users;
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_USERS, JSON.stringify(users));
+    safeStorageSetItem(LOCAL_STORAGE_USERS, JSON.stringify(users));
   }, [users]);
 
   const addUser = (userData: Omit<UserStaff, 'id' | 'createdAt'>) => {
@@ -2374,7 +2422,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return false;
         }
       } else {
-        localStorage.setItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
+        safeStorageSetItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
       }
       return true;
     } catch {
@@ -2813,7 +2861,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (isAuthorizedAdmin) {
         setIsFirebaseAdminConnected(true);
         setIsAdminLoggedIn(true);
-        localStorage.setItem(LOCAL_STORAGE_ADMIN_AUTH, 'true');
+        safeStorageSetItem(LOCAL_STORAGE_ADMIN_AUTH, 'true');
         setIsAdminLoginOpen(false);
         setActiveView('admin');
         setCloudSyncError(null);
@@ -2902,8 +2950,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       pass === 'Hossain777@#$'
     ) {
       setIsAdminLoggedIn(true);
-      localStorage.setItem(LOCAL_STORAGE_ADMIN_AUTH, 'true');
-      localStorage.setItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
+      safeStorageSetItem(LOCAL_STORAGE_ADMIN_AUTH, 'true');
+      safeStorageSetItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
       setIsAdminLoginOpen(false);
       setActiveView('admin');
       if (window.location.pathname !== '/hossain') {
@@ -2922,7 +2970,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         .then((res) => {
           if (res?.token) {
             try {
-              localStorage.setItem(LOCAL_STORAGE_ADMIN_TOKEN, res.token);
+              safeStorageSetItem(LOCAL_STORAGE_ADMIN_TOKEN, res.token);
             } catch {}
           }
         })
@@ -2968,7 +3016,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     if (!localStorage.getItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY)) {
-      localStorage.setItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
+      safeStorageSetItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
     }
 
     let lastTouchWrite = 0;
@@ -2977,7 +3025,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (now - lastTouchWrite < 4000) return;
       lastTouchWrite = now;
       try {
-        localStorage.setItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(now));
+        safeStorageSetItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(now));
       } catch {}
     };
 
@@ -3049,7 +3097,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       lastSpinTime: Date.now()
     };
     setSpinStats(updated);
-    localStorage.setItem(LOCAL_STORAGE_SPIN_STATS, JSON.stringify(updated));
+    safeStorageSetItem(LOCAL_STORAGE_SPIN_STATS, JSON.stringify(updated));
     return true;
   };
 
@@ -3177,7 +3225,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   customerAccountsRef.current = customerAccounts;
 
   useEffect(() => {
-    localStorage.setItem('buyonebd_customer_accounts_v3', JSON.stringify(customerAccounts));
+    safeStorageSetItem('buyonebd_customer_accounts_v3', JSON.stringify(customerAccounts));
   }, [customerAccounts]);
 
   // Customer Profile & Rewards State
@@ -3203,7 +3251,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   useEffect(() => {
-    localStorage.setItem('buyonebd_customer_profile_v3', JSON.stringify(customerProfile));
+    safeStorageSetItem('buyonebd_customer_profile_v3', JSON.stringify(customerProfile));
   }, [customerProfile]);
 
   const [recentlyViewedIds, setRecentlyViewedIds] = useState<string[]>(() => {
@@ -3224,12 +3272,74 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     try {
-      localStorage.setItem(LOCAL_STORAGE_RECENTLY_VIEWED, JSON.stringify(recentlyViewedIds.slice(0, 5)));
+      safeStorageSetItem(LOCAL_STORAGE_RECENTLY_VIEWED, JSON.stringify(recentlyViewedIds.slice(0, 5)));
     } catch {}
   }, [recentlyViewedIds]);
 
   const [isCustomerDashboardOpen, setIsCustomerDashboardOpen] = useState(false);
+  const [customerDashboardTab, setCustomerDashboardTab] = useState<
+    'notifications' | 'wallet' | 'orders' | 'history' | 'alerts' | 'profile'
+  >('wallet');
   const [selectedProductForPage, setSelectedProductForPage] = useState<Product | null>(null);
+
+  // Customer Notification Center (Order updates, Promotional alerts, Price drops)
+  const [publishedNotifications, setPublishedNotifications] = useState<UserNotification[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_user_notifications_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+  useEffect(() => {
+    safeStorageSetItem('buyonebd_user_notifications_v1', JSON.stringify(publishedNotifications.slice(0, 100)));
+  }, [publishedNotifications]);
+
+  const [readNotificationIds, setReadNotificationIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_read_notifs_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    safeStorageSetItem('buyonebd_read_notifs_v1', JSON.stringify(readNotificationIds.slice(0, 200)));
+  }, [readNotificationIds]);
+
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('buyonebd_dismissed_notifs_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    safeStorageSetItem('buyonebd_dismissed_notifs_v1', JSON.stringify(dismissedNotificationIds.slice(0, 200)));
+  }, [dismissedNotificationIds]);
+
+  const pushInternalNotification = (
+    payload: Omit<UserNotification, 'id' | 'createdAt'> & { id?: string; createdAt?: string }
+  ) => {
+    const entry: UserNotification = {
+      id: payload.id || `notif-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
+      createdAt: payload.createdAt || new Date().toISOString(),
+      ...payload
+    };
+    setPublishedNotifications((prev) => {
+      const deduped = prev.filter((n) => n.id !== entry.id);
+      return [entry, ...deduped].slice(0, 100);
+    });
+    return entry;
+  };
+
+  const openCustomerNotifications = () => {
+    setCustomerDashboardTab('notifications');
+    setIsCustomerDashboardOpen(true);
+  };
 
   const loginCustomer = (identifier: string, password: string): boolean => {
     const cleanId = identifier.trim().toLowerCase();
@@ -3244,7 +3354,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (matched) {
       setCustomerProfile(matched);
       setIsCustomerLoggedIn(true);
-      localStorage.setItem('buyonebd_customer_auth_v3', 'true');
+      safeStorageSetItem('buyonebd_customer_auth_v3', 'true');
       setIsCustomerLoginOpen(false);
       setIsCustomerDashboardOpen(true);
       addToast('success', t('লগইন সফল হয়েছে!', 'Welcome Back!'), matched.name);
@@ -3298,7 +3408,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     saveCustomerToFirestore(newAcc).catch(() => {});
     setCustomerProfile(newAcc);
     setIsCustomerLoggedIn(true);
-    localStorage.setItem('buyonebd_customer_auth_v3', 'true');
+    safeStorageSetItem('buyonebd_customer_auth_v3', 'true');
     setIsCustomerLoginOpen(false);
     setIsCustomerDashboardOpen(true);
     addToast('success', t('রেজিস্ট্রেশন সম্পন্ন!', 'Account Created!'), newAcc.name);
@@ -3382,6 +3492,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const openCustomerPortal = () => {
     if (isCustomerLoggedIn) {
+      setCustomerDashboardTab('wallet');
       setIsCustomerDashboardOpen(true);
     } else {
       setIsCustomerLoginOpen(true);
@@ -3429,7 +3540,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setProductViews((prev) => {
         const next = { ...prev, [productId]: (prev[productId] || 0) + 1 };
         try {
-          localStorage.setItem('buyonebd_product_views_v1', JSON.stringify(next));
+          safeStorageSetItem('buyonebd_product_views_v1', JSON.stringify(next));
         } catch {}
         return next;
       });
@@ -3443,7 +3554,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (json?.productViews && typeof json.productViews === 'object') {
             setProductViews(json.productViews);
             try {
-              localStorage.setItem('buyonebd_product_views_v1', JSON.stringify(json.productViews));
+              safeStorageSetItem('buyonebd_product_views_v1', JSON.stringify(json.productViews));
             } catch {}
           }
         })
@@ -3453,7 +3564,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (prev[0] === productId) return prev;
       const next = [productId, ...prev.filter((id) => id !== productId)].slice(0, 5);
       try {
-        localStorage.setItem(LOCAL_STORAGE_RECENTLY_VIEWED, JSON.stringify(next));
+        safeStorageSetItem(LOCAL_STORAGE_RECENTLY_VIEWED, JSON.stringify(next));
       } catch {}
       return next;
     });
@@ -3480,7 +3591,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setProductViews((prev) => {
       const next = { ...prev, [productId]: clean };
       try {
-        localStorage.setItem('buyonebd_product_views_v1', JSON.stringify(next));
+        safeStorageSetItem('buyonebd_product_views_v1', JSON.stringify(next));
       } catch {}
       return next;
     });
@@ -3577,7 +3688,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   walletTopUpsRef.current = walletTopUps;
 
   useEffect(() => {
-    localStorage.setItem('buyonebd_wallet_topups_v1', JSON.stringify(walletTopUps));
+    safeStorageSetItem('buyonebd_wallet_topups_v1', JSON.stringify(walletTopUps));
   }, [walletTopUps]);
 
   const expiryDaysSetting = Math.max(1, settings.walletSettings?.expiryDays ?? 30);
@@ -3599,7 +3710,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const expiredAmt = spinBonusBalance;
       setSpinBonusBalance(0);
       setSpinBonusExpiresAt(null);
-      localStorage.setItem('buyonebd_spin_bonus_bal_v1', '0');
+      safeStorageSetItem('buyonebd_spin_bonus_bal_v1', '0');
       localStorage.removeItem('buyonebd_spin_bonus_exp_v1');
       setCustomerProfile((cp) => ({ ...cp, spinBonusBalance: 0, spinBonusExpiresAt: undefined }));
       expiredCount += 1;
@@ -3635,7 +3746,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!spinBonusExpiresAt) {
       const expIso = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
       setSpinBonusExpiresAt(expIso);
-      localStorage.setItem('buyonebd_spin_bonus_exp_v1', expIso);
+      safeStorageSetItem('buyonebd_spin_bonus_exp_v1', expIso);
       return;
     }
     if (Date.now() >= new Date(spinBonusExpiresAt).getTime()) {
@@ -3668,10 +3779,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       date: nowIso
     };
     setCustomerWalletBalance(nextBal);
-    localStorage.setItem('buyonebd_customer_wallet_v3', nextBal.toString());
+    safeStorageSetItem('buyonebd_customer_wallet_v3', nextBal.toString());
     if (!walletLastCreditAt) {
       setWalletLastCreditAt(nowIso);
-      localStorage.setItem('buyonebd_wallet_last_credit_v1', nowIso);
+      safeStorageSetItem('buyonebd_wallet_last_credit_v1', nowIso);
     }
     const cleanPhone = (customerProfile.phone || '').replace(/[^0-9]/g, '');
     setCustomerProfile((cp) => {
@@ -3972,10 +4083,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const nowIso = new Date().toISOString();
     setCustomerWalletBalance((prev) => {
       const next = prev + amount;
-      localStorage.setItem('buyonebd_customer_wallet_v3', next.toString());
+      safeStorageSetItem('buyonebd_customer_wallet_v3', next.toString());
       if (prev <= 0 || !walletLastCreditAt) {
         setWalletLastCreditAt(nowIso);
-        localStorage.setItem('buyonebd_wallet_last_credit_v1', nowIso);
+        safeStorageSetItem('buyonebd_wallet_last_credit_v1', nowIso);
       }
       setCustomerProfile((cp) => ({
         ...cp,
@@ -3997,8 +4108,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const expIso = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
     setSpinBonusBalance((prev) => {
       const next = prev + cleanAmt;
-      localStorage.setItem('buyonebd_spin_bonus_bal_v1', next.toString());
-      localStorage.setItem('buyonebd_spin_bonus_exp_v1', expIso);
+      safeStorageSetItem('buyonebd_spin_bonus_bal_v1', next.toString());
+      safeStorageSetItem('buyonebd_spin_bonus_exp_v1', expIso);
       setSpinBonusExpiresAt(expIso);
       setCustomerProfile((cp) => ({
         ...cp,
@@ -4028,7 +4139,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (fromSpin > 0) {
       const nextSpin = Math.max(0, spinBonusBalance - fromSpin);
       setSpinBonusBalance(nextSpin);
-      localStorage.setItem('buyonebd_spin_bonus_bal_v1', nextSpin.toString());
+      safeStorageSetItem('buyonebd_spin_bonus_bal_v1', nextSpin.toString());
       if (nextSpin === 0) {
         setSpinBonusExpiresAt(null);
         localStorage.removeItem('buyonebd_spin_bonus_exp_v1');
@@ -4043,7 +4154,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (fromLifetime > 0) {
       setCustomerWalletBalance((prev) => {
         const next = Math.max(0, prev - fromLifetime);
-        localStorage.setItem('buyonebd_customer_wallet_v3', next.toString());
+        safeStorageSetItem('buyonebd_customer_wallet_v3', next.toString());
         setCustomerProfile((cp) => ({ ...cp, walletBalance: next }));
         return next;
       });
@@ -4174,6 +4285,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         t(`${req.customerName}-এর অ্যাকাউন্টে ৳${req.amount} যোগ হয়েছে।`, `৳${req.amount} credited to ${req.customerName}.`)
       );
     }
+
+    pushInternalNotification({
+      id: `notif-topup-${requestId}`,
+      category: 'promo',
+      title: `Wallet Credited: +৳${req.amount.toLocaleString()}`,
+      titleBn: `ওয়ালেটে ৳${req.amount.toLocaleString()} যোগ হয়েছে!`,
+      message: `Your ${req.method.toUpperCase()} wallet top-up (TrxID: ${req.trxId}) was approved and added to your lifetime balance.`,
+      messageBn: `আপনার ${req.method.toUpperCase()} রিচার্জ (TrxID: ${req.trxId}) অনুমোদিত হয়ে ওয়ালেটে জমা হয়েছে।`,
+      actionType: 'open_wallet',
+      targetPhone: req.customerPhone
+    });
   };
 
   const rejectWalletTopUp = (requestId: string, note?: string) => {
@@ -4264,10 +4386,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     lastLocalMutationAtRef.current = Date.now();
     setCustomerWalletBalance((prev) => {
       const next = Math.max(0, prev + delta);
-      localStorage.setItem('buyonebd_customer_wallet_v3', next.toString());
+      safeStorageSetItem('buyonebd_customer_wallet_v3', next.toString());
       if (delta > 0 && (prev <= 0 || !walletLastCreditAt)) {
         setWalletLastCreditAt(nowIso);
-        localStorage.setItem('buyonebd_wallet_last_credit_v1', nowIso);
+        safeStorageSetItem('buyonebd_wallet_last_credit_v1', nowIso);
       }
       setCustomerProfile((cp) => {
         const updatedCp = {
@@ -4331,10 +4453,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     if (activeMatches) {
       setCustomerWalletBalance(updatedBalance);
-      localStorage.setItem('buyonebd_customer_wallet_v3', updatedBalance.toString());
+      safeStorageSetItem('buyonebd_customer_wallet_v3', updatedBalance.toString());
       if (delta > 0 && !walletLastCreditAt) {
         setWalletLastCreditAt(nowIso);
-        localStorage.setItem('buyonebd_wallet_last_credit_v1', nowIso);
+        safeStorageSetItem('buyonebd_wallet_last_credit_v1', nowIso);
       }
       setCustomerProfile((cp) => ({
         ...cp,
@@ -4390,13 +4512,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (activeMatches) {
       if (expireNow) {
         setCustomerWalletBalance(0);
-        localStorage.setItem('buyonebd_customer_wallet_v3', '0');
+        safeStorageSetItem('buyonebd_customer_wallet_v3', '0');
         setCustomerProfile((cp) => ({ ...cp, walletBalance: 0 }));
       } else {
         setWalletLastPurchaseAt(nowIso);
         setWalletLastCreditAt(nowIso);
-        localStorage.setItem('buyonebd_wallet_last_purchase_v1', nowIso);
-        localStorage.setItem('buyonebd_wallet_last_credit_v1', nowIso);
+        safeStorageSetItem('buyonebd_wallet_last_purchase_v1', nowIso);
+        safeStorageSetItem('buyonebd_wallet_last_credit_v1', nowIso);
         setCustomerProfile((cp) => ({ ...cp, lastPurchaseAt: nowIso, lastWalletCreditAt: nowIso }));
       }
     }
@@ -4462,7 +4584,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_media_library_v1', JSON.stringify(mediaLibrary));
+      safeStorageSetItem('buyonebd_media_library_v1', JSON.stringify(mediaLibrary));
     } catch {}
   }, [mediaLibrary]);
 
@@ -4691,7 +4813,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     lastLocalMutationAtRef.current = Date.now();
     setPriceAlerts((prev) => {
       const next = [newAlert, ...prev];
-      localStorage.setItem('buyonebd_price_alerts_v3', JSON.stringify(next));
+      safeStorageSetItem('buyonebd_price_alerts_v3', JSON.stringify(next));
       return next;
     });
     savePriceAlertToFirestore(newAlert).catch(() => {});
@@ -4713,7 +4835,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         savePriceAlertToFirestore(updated).catch(() => {});
         return updated;
       });
-      localStorage.setItem('buyonebd_price_alerts_v3', JSON.stringify(next));
+      safeStorageSetItem('buyonebd_price_alerts_v3', JSON.stringify(next));
       return next;
     });
     addToast('success', t('প্রাইস অ্যালার্ট আপডেট হয়েছে', 'Price Alert Updated'), '');
@@ -4723,7 +4845,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     lastLocalMutationAtRef.current = Date.now();
     setPriceAlerts((prev) => {
       const next = prev.filter((a) => a.id !== id);
-      localStorage.setItem('buyonebd_price_alerts_v3', JSON.stringify(next));
+      safeStorageSetItem('buyonebd_price_alerts_v3', JSON.stringify(next));
       return next;
     });
     deletePriceAlertFromFirestore(id).catch(() => {});
@@ -4749,7 +4871,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_waitlist_v1', JSON.stringify(waitlistEntries));
+      safeStorageSetItem('buyonebd_waitlist_v1', JSON.stringify(waitlistEntries));
     } catch {}
   }, [waitlistEntries]);
 
@@ -4829,7 +4951,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_WISHLIST, JSON.stringify(wishlist));
+    safeStorageSetItem(LOCAL_STORAGE_WISHLIST, JSON.stringify(wishlist));
   }, [wishlist]);
 
   const toggleWishlist = (productId: string) => {
@@ -4858,8 +4980,284 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_CART, JSON.stringify(cart));
+    safeStorageSetItem(LOCAL_STORAGE_CART, JSON.stringify(compactCartForStorage(cart)));
   }, [cart]);
+
+  // Synthesize rich, real Notification Center stream (Order Updates + Promotions + Price Drops)
+  const userNotifications = React.useMemo<UserNotification[]>(() => {
+    const dismissedSet = new Set(dismissedNotificationIds);
+    const readSet = new Set(readNotificationIds);
+    const map = new Map<string, UserNotification>();
+    const activePhoneDigits = String(customerProfile?.phone || '').replace(/[^0-9]/g, '').slice(-11);
+
+    const normalizeDigits = (raw?: string) => String(raw || '').replace(/[^0-9]/g, '').slice(-11);
+
+    // 1. Persisted event & admin-published notifications
+    for (const n of publishedNotifications) {
+      if (!n || !n.id || dismissedSet.has(n.id)) continue;
+      if (n.targetPhone && isCustomerLoggedIn && activePhoneDigits) {
+        const targetDigits = normalizeDigits(n.targetPhone);
+        if (targetDigits && targetDigits !== activePhoneDigits) continue;
+      }
+      map.set(n.id, n);
+    }
+
+    // 2. Real Order Status Updates from recent orders
+    const statusMap: Record<string, { en: string; bn: string }> = {
+      pending: { en: 'Order Received & Awaiting Confirmation', bn: 'অর্ডার গৃহীত হয়েছে (অপেক্ষমাণ)' },
+      ai_confirmed: { en: 'Order Confirmed', bn: 'অর্ডার কনফার্ম হয়েছে' },
+      processing: { en: 'Order Packing & Processing', bn: 'প্যাকিং ও প্রসেসিং চলছে' },
+      shipped: { en: 'Parcel Shipped via Courier', bn: 'কুরিয়ারে শিপড হয়েছে' },
+      delivered: { en: 'Order Delivered Successfully', bn: 'ডেলিভারি সম্পন্ন হয়েছে' },
+      cancelled: { en: 'Order Cancelled', bn: 'অর্ডার বাতিল করা হয়েছে' },
+      on_hold: { en: 'Order On Hold', bn: 'অর্ডার হোল্ড রয়েছে' }
+    };
+    const relevantOrders = (isCustomerLoggedIn && activePhoneDigits
+      ? orders.filter((o) => normalizeDigits(o.customer?.phone) === activePhoneDigits)
+      : orders
+    ).slice(0, 6);
+
+    relevantOrders.forEach((ord) => {
+      const id = `syn-ord-${ord.id}-${ord.status}`;
+      if (dismissedSet.has(id)) return;
+      const stInfo = statusMap[ord.status] || { en: ord.status, bn: ord.status };
+      const riderPart = ord.courier?.deliveryBoyName
+        ? ` • Rider: ${ord.courier.deliveryBoyName} (${ord.courier.deliveryBoyPhone || ''})`
+        : '';
+      const trackingCode = ord.courier?.trackingCode || ord.id;
+      map.set(id, {
+        id,
+        category: 'order_update',
+        title: `${stInfo.en} (#${ord.id})`,
+        titleBn: `${stInfo.bn} (#${ord.id})`,
+        message: `Total ৳${(ord.pricing?.total || 0).toLocaleString()} • Courier: ${(ord.courier?.provider || 'steadfast').toUpperCase()}${riderPart}`,
+        messageBn: `মোট ৳${(ord.pricing?.total || 0).toLocaleString()} • কুরিয়ার: ${(ord.courier?.provider || 'steadfast').toUpperCase()}${riderPart}`,
+        createdAt: ord.updatedAt || ord.createdAt || new Date().toISOString(),
+        actionType: 'track_order',
+        orderId: ord.id,
+        trackingCode,
+        badgeText: ord.status.replace('_', ' ').toUpperCase()
+      });
+    });
+
+    // 3. Real Price Drop Alerts (Triggered PriceAlerts + Live Store Discounts)
+    priceAlerts.forEach((al) => {
+      const id = `syn-pa-${al.id}-${al.status}`;
+      if (dismissedSet.has(id)) return;
+      const matchedProd = visibleStoreProducts.find((p) => p.id === al.productId);
+      const currPrice = matchedProd?.price ?? al.currentPrice;
+      const triggered = al.status === 'notified' || currPrice <= al.targetPrice;
+      if (!triggered) return;
+      map.set(id, {
+        id,
+        category: 'price_drop',
+        title: `Target Price Reached: ${al.productTitle || matchedProd?.title || 'Product'}`,
+        titleBn: `টার্গেট প্রাইস হিট: ${al.productTitleBn || matchedProd?.titleBn || 'পণ্য'}`,
+        message: `Your watched item is now ৳${currPrice.toLocaleString()} (Target was ৳${al.targetPrice.toLocaleString()}).`,
+        messageBn: `আপনার নির্বাচিত পণ্যটির দাম এখন ৳${currPrice.toLocaleString()} (টার্গেট: ৳${al.targetPrice.toLocaleString()})!`,
+        createdAt: new Date().toISOString(),
+        actionType: 'view_product',
+        productId: al.productId,
+        oldPrice: al.currentPrice > currPrice ? al.currentPrice : matchedProd?.originalPrice,
+        newPrice: currPrice,
+        badgeText: 'TARGET MET'
+      });
+    });
+
+    const discountedProducts = visibleStoreProducts
+      .filter((p) => (p.originalPrice && p.originalPrice > p.price) || p.isFlashSale)
+      .slice(0, 4);
+    discountedProducts.forEach((p) => {
+      const id = `syn-drop-${p.id}-${p.price}`;
+      if (dismissedSet.has(id)) return;
+      const oldP = p.originalPrice && p.originalPrice > p.price ? p.originalPrice : p.price;
+      const pct = oldP > p.price ? Math.round(((oldP - p.price) / oldP) * 100) : 0;
+      map.set(id, {
+        id,
+        category: 'price_drop',
+        title: pct > 0 ? `${pct}% Price Drop: ${p.title}` : `Flash Deal Live: ${p.title}`,
+        titleBn: pct > 0 ? `${pct}% মূল্য ছাড়: ${p.titleBn || p.title}` : `ফ্ল্যাশ ডিল: ${p.titleBn || p.title}`,
+        message:
+          pct > 0
+            ? `Save ৳${(oldP - p.price).toLocaleString()} now — reduced from ৳${oldP.toLocaleString()} to ৳${p.price.toLocaleString()}.`
+            : `Limited-time Flash Sale offer at ৳${p.price.toLocaleString()}.`,
+        messageBn:
+          pct > 0
+            ? `৳${oldP.toLocaleString()} থেকে কমে এখন মাত্র ৳${p.price.toLocaleString()} (${pct}% ছাড়)!`
+            : `সীমিত সময়ের ফ্ল্যাশ অফার — মাত্র ৳${p.price.toLocaleString()}!`,
+        createdAt: new Date(Date.now() - 3600 * 1000).toISOString(),
+        actionType: 'view_product',
+        productId: p.id,
+        oldPrice: oldP > p.price ? oldP : undefined,
+        newPrice: p.price,
+        badgeText: pct > 0 ? `-${pct}%` : 'FLASH'
+      });
+    });
+
+    // 4. Real Active Promotional Coupons, Flash Sale & Spin Bonus
+    const activeCoupons = (settings.promoCoupons || []).filter((c) => c.active && c.code).slice(0, 3);
+    activeCoupons.forEach((cpn, idx) => {
+      const id = `syn-cpn-${cpn.code}`;
+      if (dismissedSet.has(id)) return;
+      const discountDescEn =
+        cpn.discountType === 'free_shipping'
+          ? 'Free Nationwide Shipping'
+          : cpn.discountType === 'percent'
+          ? `${cpn.value}% Instant Off`
+          : `৳${cpn.value} Instant Discount`;
+      const discountDescBn =
+        cpn.discountType === 'free_shipping'
+          ? 'সারা বাংলাদেশে ফ্রি ডেলিভারি'
+          : cpn.discountType === 'percent'
+          ? `${cpn.value}% ইনস্ট্যান্ট ডিসকাউন্ট`
+          : `৳${cpn.value} টাকা সরাসরি ছাড়`;
+      map.set(id, {
+        id,
+        category: 'promo',
+        title: cpn.title || `Promo Offer: ${discountDescEn} (${cpn.code})`,
+        titleBn: cpn.title || `স্পেশাল প্রোমো অফার: ${discountDescBn}`,
+        message: `Use code "${cpn.code}" at checkout${cpn.minOrder > 0 ? ` on orders over ৳${cpn.minOrder}` : ''} for ${discountDescEn}.`,
+        messageBn: `চেকআউটে "${cpn.code}" কোড ব্যবহার করলেই পাচ্ছেন ${discountDescBn}${cpn.minOrder > 0 ? ` (সর্বনিম্ন অর্ডার ৳${cpn.minOrder})` : ''}।`,
+        createdAt: new Date(Date.now() - (idx + 1) * 7200 * 1000).toISOString(),
+        actionType: 'copy_coupon',
+        couponCode: cpn.code,
+        badgeText: cpn.code
+      });
+    });
+
+    if (settings.organicMarketing?.promoPopup?.enabled && settings.organicMarketing.promoPopup.couponCode) {
+      const popup = settings.organicMarketing.promoPopup;
+      const id = `syn-popup-promo-${popup.couponCode}`;
+      if (!dismissedSet.has(id)) {
+        map.set(id, {
+          id,
+          category: 'promo',
+          title: popup.headlineEn || 'Special Welcome Promo Alert',
+          titleBn: popup.headlineBn || 'বিশেষ প্রোমোশনাল ছাড়!',
+          message: `${popup.subtextEn || 'Claim your exclusive store offer'} — Code: ${popup.couponCode}`,
+          messageBn: `${popup.subtextBn || 'অর্ডার করলেই বিশেষ ছাড়'} — কোড: ${popup.couponCode}`,
+          createdAt: new Date(Date.now() - 5400 * 1000).toISOString(),
+          actionType: 'copy_coupon',
+          couponCode: popup.couponCode,
+          badgeText: popup.discountLabelEn || popup.couponCode
+        });
+      }
+    }
+
+    if (spinBonusBalance > 0) {
+      const id = `syn-spin-bonus-${spinBonusBalance}`;
+      if (!dismissedSet.has(id)) {
+        map.set(id, {
+          id,
+          category: 'promo',
+          title: `৳${spinBonusBalance.toLocaleString()} Spin Bonus Waiting in Wallet`,
+          titleBn: `ওয়ালেটে ৳${spinBonusBalance.toLocaleString()} স্পিন বোনাস জমা আছে`,
+          message: 'Apply your 48h Lucky Spin bonus at checkout before it expires.',
+          messageBn: 'মেয়াদ শেষ হওয়ার আগেই চেকআউটে আপনার ৪৮-ঘণ্টার স্পিন বোনাস ব্যবহার করুন।',
+          createdAt: new Date().toISOString(),
+          actionType: 'open_wallet',
+          badgeText: '48H BONUS'
+        });
+      }
+    }
+
+    return Array.from(map.values())
+      .map((item) => ({ ...item, isRead: readSet.has(item.id) }))
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }, [
+    publishedNotifications,
+    dismissedNotificationIds,
+    readNotificationIds,
+    orders,
+    visibleStoreProducts,
+    priceAlerts,
+    settings.promoCoupons,
+    settings.organicMarketing,
+    spinBonusBalance,
+    customerProfile?.phone,
+    isCustomerLoggedIn
+  ]);
+
+  const unreadNotificationsCount = React.useMemo(
+    () => userNotifications.filter((n) => !n.isRead).length,
+    [userNotifications]
+  );
+
+  const markNotificationRead = (id: string) => {
+    setReadNotificationIds((prev) => (prev.includes(id) ? prev : [id, ...prev].slice(0, 200)));
+  };
+
+  const markAllNotificationsRead = () => {
+    const allIds = userNotifications.map((n) => n.id);
+    setReadNotificationIds((prev) => Array.from(new Set([...allIds, ...prev])).slice(0, 250));
+    addToast('info', t('সব নোটিফিকেশন পঠিত হয়েছে', 'All notifications marked read'), '');
+  };
+
+  const dismissNotification = (id: string) => {
+    setDismissedNotificationIds((prev) => (prev.includes(id) ? prev : [id, ...prev].slice(0, 200)));
+  };
+
+  const publishPromotionalNotification = async (payload: {
+    category?: UserNotificationCategory;
+    title: string;
+    titleBn?: string;
+    message: string;
+    messageBn?: string;
+    couponCode?: string;
+    productId?: string;
+    badgeText?: string;
+    oldPrice?: number;
+    newPrice?: number;
+  }): Promise<UserNotification | null> => {
+    const cleanTitle = payload.title.trim();
+    const cleanMessage = payload.message.trim();
+    if (!cleanTitle) return null;
+    lastLocalMutationAtRef.current = Date.now();
+    const actionType: UserNotification['actionType'] = payload.couponCode
+      ? 'copy_coupon'
+      : payload.productId
+      ? 'view_product'
+      : 'none';
+    const localEntry = pushInternalNotification({
+      category: payload.category || 'promo',
+      title: cleanTitle,
+      titleBn: payload.titleBn?.trim() || cleanTitle,
+      message: cleanMessage,
+      messageBn: payload.messageBn?.trim() || cleanMessage,
+      actionType,
+      couponCode: payload.couponCode?.trim() || undefined,
+      productId: payload.productId || undefined,
+      badgeText: payload.badgeText?.trim() || undefined,
+      oldPrice: payload.oldPrice,
+      newPrice: payload.newPrice
+    });
+
+    try {
+      const res = await fetch('/api/notifications/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...localEntry })
+      });
+      const json = await safeParseJson<{ success?: boolean; notification?: UserNotification }>(res);
+      if (json?.success && json.notification) {
+        setPublishedNotifications((prev) => [
+          json.notification!,
+          ...prev.filter((n) => n.id !== json.notification!.id && n.id !== localEntry.id)
+        ]);
+        addToast('success', t('নোটিফিকেশন পাঠানো হয়েছে!', 'Notification Broadcast Sent!'), cleanTitle);
+        return json.notification;
+      }
+    } catch {}
+    addToast('success', t('নোটিফিকেশন প্রকাশিত হয়েছে!', 'Notification Published!'), cleanTitle);
+    return localEntry;
+  };
+
+  const deletePublishedNotification = (id: string) => {
+    lastLocalMutationAtRef.current = Date.now();
+    setPublishedNotifications((prev) => prev.filter((n) => n.id !== id));
+    fetch(`/api/notifications/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+    addToast('info', t('নোটিফিকেশন মুছে ফেলা হয়েছে', 'Notification Removed'), '');
+  };
 
   // UI & Catalog Routing state
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -4926,7 +5324,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const existing = localStorage.getItem('buyonebd_visitor_id_v1');
       if (existing) return existing;
       const fresh = `vis-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-      localStorage.setItem('buyonebd_visitor_id_v1', fresh);
+      safeStorageSetItem('buyonebd_visitor_id_v1', fresh);
       return fresh;
     } catch {
       return `vis-${Date.now().toString(36)}`;
@@ -5020,7 +5418,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch {}
     const generated = `chat-${visitorSessionId}`;
     try {
-      localStorage.setItem('buyonebd_active_chat_id_v1', generated);
+      safeStorageSetItem('buyonebd_active_chat_id_v1', generated);
     } catch {}
     return generated;
   });
@@ -5122,7 +5520,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (res?.event) {
         setServerPixelEvents((prev) => {
           const next = [res.event!, ...prev].slice(0, 100);
-          localStorage.setItem('buyonebd_pixel_events_v3', JSON.stringify(next));
+          safeStorageSetItem('buyonebd_pixel_events_v3', JSON.stringify(next));
           return next;
         });
         return res.event;
@@ -5158,7 +5556,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return prev;
       }
       const next = [ev, ...prev].slice(0, 120);
-      localStorage.setItem('buyonebd_browsing_logs_v3', JSON.stringify(next));
+      safeStorageSetItem('buyonebd_browsing_logs_v3', JSON.stringify(next));
       return next;
     });
 
@@ -5395,14 +5793,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (refCode && refCode.trim()) {
         const cleanRef = refCode.trim();
         try {
-          localStorage.setItem('buyonebd_ref_affiliate', JSON.stringify({ code: cleanRef, capturedAt: Date.now() }));
+          safeStorageSetItem('buyonebd_ref_affiliate', JSON.stringify({ code: cleanRef, capturedAt: Date.now() }));
         } catch {}
         setAttributedAffiliateCode(cleanRef);
         const clickSessionKey = `buyonebd_aff_clicked_${cleanRef.toUpperCase()}`;
         let alreadyClicked = false;
         try {
           alreadyClicked = sessionStorage.getItem(clickSessionKey) === '1';
-          if (!alreadyClicked) sessionStorage.setItem(clickSessionKey, '1');
+          if (!alreadyClicked) safeSessionSetItem(clickSessionKey, '1');
         } catch {}
         if (!alreadyClicked) {
           setAffiliates((prev) =>
@@ -5654,7 +6052,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (data.productViews && typeof data.productViews === 'object') {
             setProductViews(data.productViews);
             try {
-              localStorage.setItem('buyonebd_product_views_v1', JSON.stringify(data.productViews));
+              safeStorageSetItem('buyonebd_product_views_v1', JSON.stringify(data.productViews));
             } catch {}
           }
           if (typeof data.activeClients === 'number') {
@@ -5769,6 +6167,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
             if (Array.isArray(data.autoMarketingLogs)) {
               setAutoMarketingLogs(data.autoMarketingLogs);
+            }
+            if (Array.isArray(data.userNotifications)) {
+              setPublishedNotifications((prev) => {
+                const map = new Map(prev.map((n) => [n.id, n]));
+                data.userNotifications.forEach((n: UserNotification) => {
+                  if (n?.id) map.set(n.id, n);
+                });
+                return Array.from(map.values())
+                  .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+                  .slice(0, 100);
+              });
             }
           }
 
@@ -6384,6 +6793,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           expenses,
           aiTeamBriefings,
           autoMarketingLogs,
+          userNotifications: publishedNotifications,
           bulkSmsLogs,
           users,
           mediaLibrary
@@ -6417,6 +6827,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     expenses,
     aiTeamBriefings,
     autoMarketingLogs,
+    publishedNotifications,
     bulkSmsLogs,
     users
   ]);
@@ -6586,6 +6997,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (Array.isArray(msg.autoMarketingLogs)) {
             setAutoMarketingLogs(msg.autoMarketingLogs);
           }
+          if (Array.isArray(msg.userNotifications)) {
+            setPublishedNotifications((prev) => {
+              const map = new Map(prev.map((n) => [n.id, n]));
+              msg.userNotifications.forEach((n: UserNotification) => {
+                if (n?.id) map.set(n.id, n);
+              });
+              return Array.from(map.values())
+                .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+                .slice(0, 100);
+            });
+          }
           if (msg.productViews && typeof msg.productViews === 'object') {
             setProductViews(msg.productViews);
           }
@@ -6595,11 +7017,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return;
         }
 
+        if (msg.type === 'notifications:sync' && Array.isArray(msg.userNotifications)) {
+          setPublishedNotifications((prev) => {
+            const map = new Map(prev.map((n) => [n.id, n]));
+            msg.userNotifications.forEach((n: UserNotification) => {
+              if (n?.id) map.set(n.id, n);
+            });
+            return Array.from(map.values())
+              .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+              .slice(0, 100);
+          });
+          return;
+        }
+
         if (msg.type === 'views:sync') {
           if (msg.productViews && typeof msg.productViews === 'object') {
             setProductViews(msg.productViews);
             try {
-              localStorage.setItem('buyonebd_product_views_v1', JSON.stringify(msg.productViews));
+              safeStorageSetItem('buyonebd_product_views_v1', JSON.stringify(msg.productViews));
             } catch {}
           }
           if (typeof msg.activeClients === 'number') {
@@ -6611,7 +7046,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (msg.type === 'inquiries:sync' && Array.isArray(msg.chatInquiries)) {
           setChatInquiries(msg.chatInquiries);
           try {
-            localStorage.setItem('buyonebd_chat_inquiries_v1', JSON.stringify(msg.chatInquiries));
+            safeStorageSetItem('buyonebd_chat_inquiries_v1', JSON.stringify(msg.chatInquiries));
           } catch {}
           return;
         }
@@ -6619,7 +7054,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (msg.type === 'social:sync' && Array.isArray(msg.socialPosts)) {
           setSocialPosts(msg.socialPosts);
           try {
-            localStorage.setItem('buyonebd_social_posts_v1', JSON.stringify(msg.socialPosts));
+            safeStorageSetItem('buyonebd_social_posts_v1', JSON.stringify(msg.socialPosts));
           } catch {}
           return;
         }
@@ -6640,7 +7075,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (msg.type === 'whatsapp:sync' && Array.isArray(msg.whatsappMessages)) {
           setWhatsappMessages(msg.whatsappMessages);
           try {
-            localStorage.setItem('buyonebd_wa_messages_v1', JSON.stringify(msg.whatsappMessages));
+            safeStorageSetItem('buyonebd_wa_messages_v1', JSON.stringify(msg.whatsappMessages));
           } catch {}
           return;
         }
@@ -6648,7 +7083,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (msg.type === 'ai_queue:sync' && Array.isArray(msg.aiReviewQueue)) {
           setAiReviewQueue(msg.aiReviewQueue);
           try {
-            localStorage.setItem('buyonebd_ai_review_queue_v1', JSON.stringify(msg.aiReviewQueue));
+            safeStorageSetItem('buyonebd_ai_review_queue_v1', JSON.stringify(msg.aiReviewQueue));
           } catch {}
           return;
         }
@@ -6683,7 +7118,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const cleaned = sanitizeSupportChats(msg.supportChats);
           setSupportChats(cleaned);
           try {
-            localStorage.setItem('buyonebd_support_chats_v3', JSON.stringify(cleaned));
+            safeStorageSetItem('buyonebd_support_chats_v3', JSON.stringify(cleaned));
           } catch {}
           return;
         }
@@ -6691,7 +7126,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (msg.type === 'call:sync' && Array.isArray(msg.browserCalls)) {
           setBrowserCalls(msg.browserCalls);
           try {
-            localStorage.setItem('buyonebd_browser_calls_v3', JSON.stringify(msg.browserCalls));
+            safeStorageSetItem('buyonebd_browser_calls_v3', JSON.stringify(msg.browserCalls));
           } catch {}
 
           // If Admin placed a call to a customer, auto-ring the storefront modal on matching visitor or active storefront
@@ -6765,7 +7200,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const syncChatsToServer = (nextChats: SupportChatSession[]) => {
     try {
-      localStorage.setItem('buyonebd_support_chats_v3', JSON.stringify(nextChats));
+      safeStorageSetItem('buyonebd_support_chats_v3', JSON.stringify(nextChats));
     } catch {}
     fetch('/api/support/chat', {
       method: 'POST',
@@ -6776,7 +7211,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const syncCallsToServer = (nextCalls: BrowserCallSession[]) => {
     try {
-      localStorage.setItem('buyonebd_browser_calls_v3', JSON.stringify(nextCalls));
+      safeStorageSetItem('buyonebd_browser_calls_v3', JSON.stringify(nextCalls));
     } catch {}
     fetch('/api/support/call', {
       method: 'POST',
@@ -7706,7 +8141,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const deleteWhatsappLog = (id: string) => {
     setWhatsappLogs((prev) => {
       const next = prev.filter((l) => l.id !== id);
-      localStorage.setItem('buyonebd_wa_logs_v3', JSON.stringify(next));
+      safeStorageSetItem('buyonebd_wa_logs_v3', JSON.stringify(next));
       return next;
     });
     addToast('info', t('হোয়াটসঅ্যাপ লগ মুছে ফেলা হয়েছে', 'WhatsApp Log Removed'), '');
@@ -7723,7 +8158,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_wa_messages_v1', JSON.stringify(whatsappMessages));
+      safeStorageSetItem('buyonebd_wa_messages_v1', JSON.stringify(whatsappMessages));
     } catch {}
   }, [whatsappMessages]);
 
@@ -7784,7 +8219,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
       setWhatsappLogs((prev) => {
         const next = [logItem, ...prev].slice(0, 40);
-        localStorage.setItem('buyonebd_wa_logs_v3', JSON.stringify(next));
+        safeStorageSetItem('buyonebd_wa_logs_v3', JSON.stringify(next));
         return next;
       });
       if (data.success && data.threadMsg) {
@@ -8787,7 +9222,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (orderData.source !== 'pos') {
       const purchaseIso = new Date().toISOString();
       setWalletLastPurchaseAt(purchaseIso);
-      localStorage.setItem('buyonebd_wallet_last_purchase_v1', purchaseIso);
+      safeStorageSetItem('buyonebd_wallet_last_purchase_v1', purchaseIso);
       setCustomerProfile((cp) => {
         const activeDigits = String(cp.phone || '').replace(/[^0-9]/g, '').slice(-11);
         const matchesOrGuest = !custDigits || !activeDigits || activeDigits === custDigits;
@@ -8809,6 +9244,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!checkoutProduct) {
         clearCart();
       }
+    }
+
+    if (orderData.source !== 'pos') {
+      pushInternalNotification({
+        id: `notif-neword-${newOrderId}`,
+        category: 'order_update',
+        title: `Order Placed (#${newOrderId})`,
+        titleBn: `নতুন অর্ডার সম্পন্ন (#${newOrderId})`,
+        message: `We received your order #${newOrderId} (৳${total.toLocaleString()}). Tap to track delivery status.`,
+        messageBn: `আপনার অর্ডার #${newOrderId} (৳${total.toLocaleString()}) গৃহীত হয়েছে। যেকোনো সময় লাইভ ট্র্যাক করুন।`,
+        actionType: 'track_order',
+        orderId: newOrderId,
+        trackingCode: newOrder.courier?.trackingCode || newOrderId,
+        targetPhone: orderData.customer.phone
+      });
     }
 
     addToast(
@@ -8906,6 +9356,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return ord;
       })
     );
+    if (status) {
+      const targetOrd = ordersRef.current.find((o) => o.id === orderId);
+      const statusLabelMap: Record<string, { en: string; bn: string }> = {
+        ai_confirmed: { en: 'Order Confirmed', bn: 'অর্ডার কনফার্ম হয়েছে' },
+        processing: { en: 'Packing & Processing', bn: 'অর্ডার প্যাকিং চলছে' },
+        shipped: { en: 'Shipped via Courier', bn: 'কুরিয়ারে শিপড হয়েছে' },
+        delivered: { en: 'Delivered Successfully', bn: 'ডেলিভারি সম্পন্ন হয়েছে' },
+        cancelled: { en: 'Order Cancelled', bn: 'অর্ডার বাতিল হয়েছে' },
+        on_hold: { en: 'Order On Hold', bn: 'অর্ডার হোল্ড রয়েছে' }
+      };
+      const stInfo = statusLabelMap[status] || { en: status, bn: status };
+      pushInternalNotification({
+        id: `notif-ord-${orderId}-${status}`,
+        category: 'order_update',
+        title: `${stInfo.en} (#${orderId})`,
+        titleBn: `${stInfo.bn} (#${orderId})`,
+        message: `Order #${orderId} updated to "${stInfo.en}".`,
+        messageBn: `আপনার অর্ডার #${orderId} এখন "${stInfo.bn}" অবস্থায় আছে।`,
+        actionType: 'track_order',
+        orderId,
+        trackingCode: targetOrd?.courier?.trackingCode || orderId,
+        targetPhone: targetOrd?.customer?.phone
+      });
+    }
     addToast('info', t('অর্ডার স্ট্যাটাস আপডেট', 'Order Status Updated'), t(`অর্ডারটি '${status}' করা হয়েছে।`, `Status: '${status}'.`));
   };
 
@@ -8960,6 +9434,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return updatedOrder;
       })
     );
+    if (boy) {
+      const targetOrd = ordersRef.current.find((o) => o.id === orderId);
+      pushInternalNotification({
+        id: `notif-rider-${orderId}-${boy.id}`,
+        category: 'order_update',
+        title: `Rider Assigned for #${orderId}: ${boy.name}`,
+        titleBn: `অর্ডার #${orderId}-এ রাইডার অ্যাসাইন হয়েছে: ${boy.name}`,
+        message: `Delivery rider ${boy.name} (${boy.phone}) is assigned for ${boy.zone || 'your area'}.`,
+        messageBn: `ডেলিভারি রাইডার ${boy.name} (${boy.phone}) আপনার পার্সেল ডেলিভারির দায়িত্ব পেয়েছেন।`,
+        actionType: 'track_order',
+        orderId,
+        trackingCode: targetOrd?.courier?.trackingCode || orderId,
+        targetPhone: targetOrd?.customer?.phone
+      });
+    }
     addToast(
       boy ? 'success' : 'info',
       boy ? t(`রাইডার অ্যাসাইন: ${boy.name}`, `Assigned Rider: ${boy.name}`) : t('রাইডার সরানো হয়েছে', 'Delivery Boy Unassigned'),
@@ -10815,7 +11304,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     try {
-      localStorage.setItem('buyonebd_ai_review_queue_v1', JSON.stringify(aiReviewQueue));
+      safeStorageSetItem('buyonebd_ai_review_queue_v1', JSON.stringify(aiReviewQueue));
     } catch {}
   }, [aiReviewQueue]);
 
@@ -12370,6 +12859,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteCustomerLoyaltyPoints,
         isCustomerDashboardOpen,
         setIsCustomerDashboardOpen,
+        customerDashboardTab,
+        setCustomerDashboardTab,
+        openCustomerNotifications,
+        userNotifications,
+        unreadNotificationsCount,
+        markNotificationRead,
+        markAllNotificationsRead,
+        dismissNotification,
+        publishPromotionalNotification,
+        deletePublishedNotification,
+        publishedNotifications,
         selectedProductForPage,
         setSelectedProductForPage,
         toasts,

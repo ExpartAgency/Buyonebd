@@ -28,11 +28,16 @@ import {
   Send,
   RefreshCw,
   Share2,
-  BellRing
+  BellRing,
+  Bell,
+  Tag,
+  CheckCheck,
+  ExternalLink,
+  LogIn
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { BD_DISTRICTS } from '../../data/initialData';
-import { WalletTopUpMethod } from '../../types';
+import { WalletTopUpMethod, UserNotification, UserNotificationCategory } from '../../types';
 import { audioEngine } from '../../utils/soundEffects';
 import confetti from 'canvas-confetti';
 
@@ -40,6 +45,15 @@ export const CustomerDashboardModal: React.FC = () => {
   const {
     isCustomerDashboardOpen,
     setIsCustomerDashboardOpen,
+    customerDashboardTab: activeTab,
+    setCustomerDashboardTab: setActiveTab,
+    isCustomerLoggedIn,
+    setIsCustomerLoginOpen,
+    userNotifications,
+    unreadNotificationsCount,
+    markNotificationRead,
+    markAllNotificationsRead,
+    dismissNotification,
     customerProfile,
     updateCustomerProfile,
     customerWalletBalance,
@@ -68,7 +82,7 @@ export const CustomerDashboardModal: React.FC = () => {
     t
   } = useStore();
 
-  const [activeTab, setActiveTab] = useState<'wallet' | 'orders' | 'history' | 'alerts' | 'profile'>('wallet');
+  const [notifFilter, setNotifFilter] = useState<'all' | UserNotificationCategory>('all');
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [isAddBalanceOpen, setIsAddBalanceOpen] = useState(false);
@@ -175,14 +189,27 @@ export const CustomerDashboardModal: React.FC = () => {
         {/* Temu-Style Gradient Account Header */}
         <div className="relative bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 p-4 sm:p-6 text-white border-b border-slate-800 shrink-0">
           <div className="absolute top-3.5 right-3.5 flex items-center gap-2">
-            <button
-              onClick={logoutCustomer}
-              className="px-2.5 py-1.5 rounded-full bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-              title={t('সাইন আউট', 'Sign Out')}
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{t('লগআউট', 'Logout')}</span>
-            </button>
+            {isCustomerLoggedIn ? (
+              <button
+                onClick={logoutCustomer}
+                className="px-2.5 py-1.5 rounded-full bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                title={t('সাইন আউট', 'Sign Out')}
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{t('লগআউট', 'Logout')}</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setIsCustomerDashboardOpen(false);
+                  setIsCustomerLoginOpen(true);
+                }}
+                className="px-2.5 py-1.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>{t('লগইন / রেজিস্টার', 'Sign In')}</span>
+              </button>
+            )}
             <button
               onClick={() => setIsCustomerDashboardOpen(false)}
               className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
@@ -201,18 +228,26 @@ export const CustomerDashboardModal: React.FC = () => {
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <h2 className="text-lg sm:text-xl font-black text-white truncate">{customerProfile.name}</h2>
-                  {customerProfile.username && (
+                  <h2 className="text-lg sm:text-xl font-black text-white truncate">
+                    {isCustomerLoggedIn ? customerProfile.name : t('কাস্টমার অ্যাপ ড্যাশবোর্ড', 'Customer App Dashboard')}
+                  </h2>
+                  {isCustomerLoggedIn && customerProfile.username && (
                     <span className="text-[11px] font-mono text-emerald-300 bg-emerald-500/15 px-2 py-0.5 rounded-full border border-emerald-500/30">
                       @{customerProfile.username}
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-slate-400 flex items-center gap-2 mt-0.5 truncate">
-                  <Phone className="w-3 h-3 text-emerald-400 shrink-0" />
-                  <span>{customerProfile.phone}</span>
-                  <span>•</span>
-                  <span className="truncate">{customerProfile.district}</span>
+                  {isCustomerLoggedIn ? (
+                    <>
+                      <Phone className="w-3 h-3 text-emerald-400 shrink-0" />
+                      <span>{customerProfile.phone}</span>
+                      <span>•</span>
+                      <span className="truncate">{customerProfile.district}</span>
+                    </>
+                  ) : (
+                    <span>{t('অর্ডার আপডেট, প্রোমো অফার ও প্রাইস ড্রপ অ্যালার্ট', 'Order Status, Promotional Alerts & Price Drops')}</span>
+                  )}
                 </p>
               </div>
             </div>
@@ -281,8 +316,24 @@ export const CustomerDashboardModal: React.FC = () => {
           {/* Sub-Navigation Tabs */}
           <div className="flex items-center gap-1.5 mt-4 pt-3 border-t border-slate-800/80 overflow-x-auto scrollbar-none text-xs font-bold">
             <button
+              onClick={() => setActiveTab('notifications')}
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
+                activeTab === 'notifications'
+                  ? 'bg-emerald-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Bell className="w-3.5 h-3.5" />
+              <span>{t('নোটিফিকেশন', 'Notifications')}</span>
+              {unreadNotificationsCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black font-mono tabular-nums leading-none">
+                  {unreadNotificationsCount}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setActiveTab('wallet')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'wallet'
                   ? 'bg-emerald-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -293,7 +344,7 @@ export const CustomerDashboardModal: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('orders')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'orders'
                   ? 'bg-emerald-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -304,7 +355,7 @@ export const CustomerDashboardModal: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('history')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'history'
                   ? 'bg-emerald-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -315,7 +366,7 @@ export const CustomerDashboardModal: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('alerts')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'alerts'
                   ? 'bg-emerald-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -326,7 +377,7 @@ export const CustomerDashboardModal: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('profile')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'profile'
                   ? 'bg-emerald-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -340,9 +391,274 @@ export const CustomerDashboardModal: React.FC = () => {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50 dark:bg-slate-900/50 space-y-5">
+          {/* TAB 0: In-App Notification Center */}
+          {activeTab === 'notifications' && (() => {
+            const orderCount = userNotifications.filter((n) => n.category === 'order_update').length;
+            const promoCount = userNotifications.filter((n) => n.category === 'promo').length;
+            const dropCount = userNotifications.filter((n) => n.category === 'price_drop').length;
+            const filteredList = userNotifications.filter((n) => notifFilter === 'all' || n.category === notifFilter);
+
+            const handleNotificationAction = (n: UserNotification) => {
+              markNotificationRead(n.id);
+              if (n.actionType === 'track_order') {
+                handleTrackOrder(n.trackingCode || n.orderId || '');
+              } else if (n.actionType === 'view_product' && n.productId) {
+                const targetProd =
+                  visibleStoreProducts.find((p) => p.id === n.productId) ||
+                  products.find((p) => p.id === n.productId);
+                if (targetProd) {
+                  setIsCustomerDashboardOpen(false);
+                  setSelectedProductForPage(targetProd);
+                }
+              } else if (n.actionType === 'copy_coupon' && n.couponCode) {
+                copyCoupon(n.couponCode);
+              } else if (n.actionType === 'open_wallet') {
+                setActiveTab('wallet');
+              }
+            };
+
+            return (
+              <div className="space-y-4">
+                {/* Filter Strip & Bulk Mark-Read Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+                    {[
+                      { key: 'all' as const, label: t('সব', 'All'), count: userNotifications.length },
+                      { key: 'order_update' as const, label: t('অর্ডার আপডেট', 'Order Updates'), count: orderCount },
+                      { key: 'promo' as const, label: t('প্রোমো অফার', 'Promotions'), count: promoCount },
+                      { key: 'price_drop' as const, label: t('দাম কমেছে', 'Price Drops'), count: dropCount }
+                    ].map((tabItem) => (
+                      <button
+                        key={tabItem.key}
+                        type="button"
+                        onClick={() => setNotifFilter(tabItem.key)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                          notifFilter === tabItem.key
+                            ? 'bg-slate-900 dark:bg-emerald-600 text-white border-slate-900 dark:border-emerald-600'
+                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                        }`}
+                      >
+                        <span>{tabItem.label}</span>
+                        <span className="font-mono text-[10px] opacity-80 tabular-nums">({tabItem.count})</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {unreadNotificationsCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={markAllNotificationsRead}
+                      className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-emerald-700 dark:text-emerald-400 text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 self-start sm:self-auto"
+                    >
+                      <CheckCheck className="w-3.5 h-3.5" />
+                      <span>{t('সব পঠিত করুন', 'Mark all read')}</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Notifications List */}
+                {filteredList.length === 0 ? (
+                  <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+                    <Bell className="w-10 h-10 text-slate-400 mx-auto mb-2.5" />
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                      {t('এই বিভাগে কোনো নতুন নোটিফিকেশন নেই', 'No notifications in this category')}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {t('নতুন অর্ডার আপডেট, প্রোমো কোড বা দাম কমার তথ্য এখানে দেখাবে।', 'Order updates, promo offers, and price drops will appear here.')}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {filteredList.map((n) => {
+                      const catConfig =
+                        n.category === 'order_update'
+                          ? {
+                              label: t('অর্ডার আপডেট', 'Order Update'),
+                              icon: <Truck className="w-4 h-4 text-sky-600 dark:text-sky-400" />,
+                              iconBg: 'bg-sky-50 dark:bg-sky-950/50 border-sky-200 dark:border-sky-800',
+                              tagCls: 'text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/50 border-sky-200 dark:border-sky-800'
+                            }
+                          : n.category === 'price_drop'
+                          ? {
+                              label: t('মূল্য ছাড়', 'Price Drop'),
+                              icon: <TrendingDown className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />,
+                              iconBg: 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800',
+                              tagCls: 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800'
+                            }
+                          : {
+                              label: t('প্রোমো সতর্কতা', 'Promotion'),
+                              icon: <Tag className="w-4 h-4 text-amber-600 dark:text-amber-400" />,
+                              iconBg: 'bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-800',
+                              tagCls: 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-800'
+                            };
+
+                      const actionLabel =
+                        n.actionType === 'track_order'
+                          ? t('অর্ডার ট্র্যাক করুন', 'Track Order')
+                          : n.actionType === 'view_product'
+                          ? t('পণ্য দেখুন', 'View Deal')
+                          : n.actionType === 'copy_coupon' && n.couponCode
+                          ? copiedCode === n.couponCode
+                            ? t('কপি হয়েছে ✓', 'Copied ✓')
+                            : t(`কোড কপি (${n.couponCode})`, `Copy ${n.couponCode}`)
+                          : n.actionType === 'open_wallet'
+                          ? t('ওয়ালেট দেখুন', 'Open Wallet')
+                          : null;
+
+                      const formattedTime = (() => {
+                        try {
+                          return new Date(n.createdAt).toLocaleString(lang === 'bn' ? 'bn-BD' : 'en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          });
+                        } catch {
+                          return '';
+                        }
+                      })();
+
+                      return (
+                        <div
+                          key={n.id}
+                          onClick={() => {
+                            if (!n.isRead) markNotificationRead(n.id);
+                          }}
+                          className={`p-3.5 sm:p-4 rounded-2xl border transition-all flex items-start gap-3 ${
+                            !n.isRead
+                              ? 'bg-white dark:bg-slate-900 border-emerald-400/70 dark:border-emerald-500/40 shadow-xs'
+                              : 'bg-white/75 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 opacity-90'
+                          }`}
+                        >
+                          <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 mt-0.5 ${catConfig.iconBg}`}>
+                            {catConfig.icon}
+                          </div>
+
+                          <div className="flex-1 min-w-0 space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${catConfig.tagCls}`}>
+                                  {catConfig.label}
+                                </span>
+                                {n.badgeText && (
+                                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                    {n.badgeText}
+                                  </span>
+                                )}
+                                {!n.isRead && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 dark:text-rose-400">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                    {t('নতুন', 'New')}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="text-[10px] text-slate-400 font-mono tabular-nums whitespace-nowrap">
+                                  {formattedTime}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    dismissNotification(n.id);
+                                  }}
+                                  aria-label={t('সরান', 'Dismiss')}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <h4 className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white leading-snug">
+                              {lang === 'bn' ? n.titleBn || n.title : n.title}
+                            </h4>
+                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                              {lang === 'bn' ? n.messageBn || n.message : n.message}
+                            </p>
+
+                            {n.category === 'price_drop' && typeof n.newPrice === 'number' && (
+                              <div className="flex items-center gap-2 font-mono tabular-nums text-xs pt-0.5">
+                                {typeof n.oldPrice === 'number' && n.oldPrice > n.newPrice && (
+                                  <span className="line-through text-slate-400">৳{n.oldPrice.toLocaleString()}</span>
+                                )}
+                                <span className="font-black text-emerald-600 dark:text-emerald-400">
+                                  ৳{n.newPrice.toLocaleString()}
+                                </span>
+                              </div>
+                            )}
+
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                              {actionLabel && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleNotificationAction(n);
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-emerald-600 hover:opacity-90 text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                                >
+                                  {n.actionType === 'copy_coupon' ? (
+                                    <Copy className="w-3 h-3" />
+                                  ) : (
+                                    <ExternalLink className="w-3 h-3" />
+                                  )}
+                                  <span>{actionLabel}</span>
+                                </button>
+                              )}
+                              {!n.isRead && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    markNotificationRead(n.id);
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-[11px] font-bold cursor-pointer whitespace-nowrap"
+                                >
+                                  {t('পঠিত চিহ্নিত করুন', 'Mark read')}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* TAB 1: Spin-Only Gift Wallet, Saved Coupons & Loyalty Points */}
           {activeTab === 'wallet' && (
             <div className="space-y-5">
+              {unreadNotificationsCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('notifications')}
+                  className="w-full p-3 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-400/50 hover:border-emerald-500 flex items-center justify-between gap-2 text-left cursor-pointer transition-colors"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="p-2 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 shrink-0">
+                      <Bell className="w-4 h-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
+                        {t(
+                          `${unreadNotificationsCount}টি নতুন অর্ডার, প্রোমো ও প্রাইস ড্রপ আপডেট রয়েছে`,
+                          `${unreadNotificationsCount} unread order, promo & price drop alerts`
+                        )}
+                      </p>
+                      <p className="text-[11px] text-slate-500 truncate">
+                        {t('নোটিফিকেশন সেন্টারে ক্লিক করে দেখুন', 'Tap to open Notification Center')}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-bold shrink-0 whitespace-nowrap">
+                    {t('দেখুন →', 'View →')}
+                  </span>
+                </button>
+              )}
               {/* Lifetime Deposited Wallet + 48-Hour Expiring Spin Bonus */}
               <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 rounded-3xl p-5 text-white shadow-lg space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

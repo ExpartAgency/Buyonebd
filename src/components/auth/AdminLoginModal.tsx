@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../../context/StoreContext';
 import { Lock, Mail, Eye, EyeOff, ShieldCheck, Key, AlertCircle, X, Sparkles, ShieldAlert } from 'lucide-react';
+import { safeStorageSetItem } from '../../utils/safeStorage';
 
 interface AdminLoginModalProps {
   onSuccessNavigate?: () => void;
@@ -92,7 +93,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
     if (lockoutEnabled && nextFails >= maxAttempts) {
       const until = Date.now() + lockoutMinutes * 60 * 1000;
       setLockoutUntil(until);
-      localStorage.setItem(LOCKOUT_STORAGE_KEY, JSON.stringify({ failedCount: nextFails, lockoutUntil: until }));
+      safeStorageSetItem(LOCKOUT_STORAGE_KEY, JSON.stringify({ failedCount: nextFails, lockoutUntil: until }));
       addSecurityLog(
         'Brute-Force Lockout Triggered',
         `${nextFails} failed admin logins. Locked for ${lockoutMinutes} minutes.`,
@@ -105,7 +106,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
         )
       );
     } else {
-      localStorage.setItem(LOCKOUT_STORAGE_KEY, JSON.stringify({ failedCount: nextFails, lockoutUntil: 0 }));
+      safeStorageSetItem(LOCKOUT_STORAGE_KEY, JSON.stringify({ failedCount: nextFails, lockoutUntil: 0 }));
       const remaining = Math.max(1, maxAttempts - nextFails);
       setError(`${t(reasonBn, reasonEn)} (${t(`আরও ${remaining} বার সুযোগ`, `${remaining} attempts left`)})`);
     }
