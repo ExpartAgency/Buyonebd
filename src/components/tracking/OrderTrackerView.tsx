@@ -272,7 +272,7 @@ export const OrderTrackerView: React.FC = () => {
                     onClick={() => startAICall(selectedOrder)}
                     className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl shadow cursor-pointer transition-colors shrink-0 w-full sm:w-auto"
                   >
-                    {t('এখনই কল করুন (টেস্ট)', 'Call Now (Test)')}
+                    {t('এখনই কল করুন', 'Call Now (Test)')}
                   </button>
                 )}
               </div>
@@ -436,7 +436,9 @@ export const OrderTrackerView: React.FC = () => {
               </p>
               <a
                 href={`https://wa.me/${selectedOrder.customer.phone.replace(/[^0-9]/g, '').startsWith('88') ? selectedOrder.customer.phone.replace(/[^0-9]/g, '') : `88${selectedOrder.customer.phone.replace(/[^0-9]/g, '')}`}?text=${encodeURIComponent(
-                  `আসসালামু আলাইকুম ${selectedOrder.customer.name},\nBuyOne BD থেকে আপনার অর্ডার #${selectedOrder.id}-এর বর্তমান আপডেট:\nস্ট্যাটাস: ${selectedOrder.status.toUpperCase()}\nকুরিয়ার: ${selectedOrder.courier.provider} (${selectedOrder.courier.trackingCode})\nবর্তমান অবস্থান: ${selectedOrder.courier.currentLocation}\nমোট বিল: ৳${selectedOrder.pricing.total}\nধন্যবাদ!`
+                  lang === 'bn'
+                    ? `আসসালামু আলাইকুম ${selectedOrder.customer.name},\nBuyOne BD থেকে আপনার অর্ডার #${selectedOrder.id}-এর বর্তমান আপডেট:\nস্ট্যাটাস: ${selectedOrder.status.toUpperCase()}\nকুরিয়ার: ${selectedOrder.courier.provider} (${selectedOrder.courier.trackingCode})\nবর্তমান অবস্থান: ${selectedOrder.courier.currentLocation}\nমোট বিল: ৳${selectedOrder.pricing.total}\nধন্যবাদ!`
+                    : `Assalamu Alaikum ${selectedOrder.customer.name},\nLive update for your BuyOne BD Order #${selectedOrder.id}:\nStatus: ${selectedOrder.status.toUpperCase()}\nCourier: ${selectedOrder.courier.provider} (${selectedOrder.courier.trackingCode})\nCurrent Location: ${selectedOrder.courier.currentLocation}\nTotal Bill: ৳${selectedOrder.pricing.total}\nThank you!`
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -475,11 +477,13 @@ export const OrderTrackerView: React.FC = () => {
         <div id="buyone-print-root" className="hidden print:block bg-white text-slate-950 p-6 max-w-[780px] mx-auto">
           <div className="flex items-start justify-between border-b-2 border-slate-900 pb-4 mb-4">
             <div>
-              <h2 className="text-2xl font-black uppercase tracking-tight">{settings.storeName || 'BuyOne BD'}</h2>
+              <h2 className="text-2xl font-black uppercase tracking-tight">
+                {lang === 'bn' ? (settings.storeNameBn || settings.storeName || 'BuyOne BD') : (settings.storeName || 'BuyOne BD')}
+              </h2>
               <p className="text-xs text-slate-600">{settings.whatsappNumber} · {settings.supportEmail}</p>
             </div>
             <div className="text-right">
-              <p className="text-xs uppercase font-bold text-slate-500">Customer Invoice</p>
+              <p className="text-xs uppercase font-bold text-slate-500">{t('কাস্টমার ইনভয়েস', 'Customer Invoice')}</p>
               <p className="text-lg font-mono font-black">#{selectedOrder.id}</p>
               <p className="text-[11px] text-slate-600">{new Date(selectedOrder.createdAt).toLocaleDateString()}</p>
             </div>
@@ -487,26 +491,26 @@ export const OrderTrackerView: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-4 text-xs mb-5 p-3 border border-slate-300 rounded">
             <div>
-              <p className="font-black uppercase text-slate-500 text-[10px]">Bill To</p>
+              <p className="font-black uppercase text-slate-500 text-[10px]">{t('বিল গ্রহণকারী', 'Bill To')}</p>
               <p className="font-bold text-sm">{selectedOrder.customer.name}</p>
               <p className="font-mono font-bold">{selectedOrder.customer.phone}</p>
               <p>{selectedOrder.customer.address}, {selectedOrder.customer.thana}, {selectedOrder.customer.district}</p>
             </div>
             <div className="text-right">
-              <p className="font-black uppercase text-slate-500 text-[10px]">Shipping & Payment</p>
-              <p>Status: <strong className="uppercase">{selectedOrder.status}</strong></p>
-              <p>Method: <strong className="uppercase">{selectedOrder.payment.method}</strong></p>
-              <p>Courier: {selectedOrder.courier.provider} ({selectedOrder.courier.trackingCode || 'Pending'})</p>
+              <p className="font-black uppercase text-slate-500 text-[10px]">{t('শিপিং ও পেমেন্ট', 'Shipping & Payment')}</p>
+              <p>{t('অবস্থা:', 'Status:')} <strong className="uppercase">{selectedOrder.status}</strong></p>
+              <p>{t('পদ্ধতি:', 'Method:')} <strong className="uppercase">{selectedOrder.payment.method}</strong></p>
+              <p>{t('কুরিয়ার:', 'Courier:')} {selectedOrder.courier.provider} ({selectedOrder.courier.trackingCode || t('অপেক্ষমাণ', 'Pending')})</p>
             </div>
           </div>
 
           <table className="w-full text-xs border-collapse mb-4">
             <thead>
               <tr className="border-y border-slate-900 text-left">
-                <th className="py-2">Item</th>
-                <th className="py-2 text-center">Qty</th>
-                <th className="py-2 text-right">Unit</th>
-                <th className="py-2 text-right">Total</th>
+                <th className="py-2">{t('পণ্য', 'Item')}</th>
+                <th className="py-2 text-center">{t('পরিমাণ', 'Qty')}</th>
+                <th className="py-2 text-right">{t('একক মূল্য', 'Unit')}</th>
+                <th className="py-2 text-right">{t('মোট', 'Total')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -527,26 +531,29 @@ export const OrderTrackerView: React.FC = () => {
           </table>
 
           <div className="ml-auto max-w-xs space-y-1 text-xs font-mono border-t border-slate-900 pt-3">
-            <div className="flex justify-between"><span>Subtotal:</span><span>৳{selectedOrder.pricing.subtotal.toLocaleString()}</span></div>
-            <div className="flex justify-between"><span>Delivery Fee:</span><span>৳{selectedOrder.pricing.deliveryFee.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span>{t('পণ্যের মূল্য:', 'Subtotal:')}</span><span>৳{selectedOrder.pricing.subtotal.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span>{t('ডেলিভারি চার্জ:', 'Delivery Fee:')}</span><span>৳{selectedOrder.pricing.deliveryFee.toLocaleString()}</span></div>
             {selectedOrder.pricing.discount > 0 && (
-              <div className="flex justify-between"><span>Discount:</span><span>-৳{selectedOrder.pricing.discount.toLocaleString()}</span></div>
+              <div className="flex justify-between"><span>{t('ডিসকাউন্ট:', 'Discount:')}</span><span>-৳{selectedOrder.pricing.discount.toLocaleString()}</span></div>
             )}
             {(selectedOrder.pricing.advancePaid || 0) > 0 && (
-              <div className="flex justify-between"><span>Advance Paid:</span><span>৳{selectedOrder.pricing.advancePaid?.toLocaleString()}</span></div>
+              <div className="flex justify-between"><span>{t('অগ্রিম পরিশোধিত:', 'Advance Paid:')}</span><span>৳{selectedOrder.pricing.advancePaid?.toLocaleString()}</span></div>
             )}
             <div className="flex justify-between font-black text-sm border-t border-slate-300 pt-1">
-              <span>Grand Total:</span><span>৳{selectedOrder.pricing.total.toLocaleString()}</span>
+              <span>{t('সর্বমোট বিল:', 'Grand Total:')}</span><span>৳{selectedOrder.pricing.total.toLocaleString()}</span>
             </div>
             {(selectedOrder.payment.dueAmount || 0) > 0 && (
               <div className="flex justify-between font-bold text-rose-700">
-                <span>Balance Due (COD):</span><span>৳{selectedOrder.payment.dueAmount?.toLocaleString()}</span>
+                <span>{t('বকেয়া (COD):', 'Balance Due (COD):')}</span><span>৳{selectedOrder.payment.dueAmount?.toLocaleString()}</span>
               </div>
             )}
           </div>
 
           <p className="text-center text-[10px] text-slate-500 mt-8 border-t border-slate-200 pt-3">
-            Thank you for shopping with {settings.storeName || 'BuyOne BD'}!
+            {t(
+              `${settings.storeNameBn || settings.storeName || 'BuyOne BD'}-এর সাথে কেনাকাটার জন্য ধন্যবাদ!`,
+              `Thank you for shopping with ${settings.storeName || 'BuyOne BD'}!`
+            )}
           </p>
         </div>
       )}

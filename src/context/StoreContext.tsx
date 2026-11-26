@@ -77,17 +77,12 @@ import {
   STARTER_DEMO_PRODUCT_IDS
 } from '../data/initialData';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
-import { onSnapshot, getDoc } from 'firebase/firestore';
+import { getDoc } from 'firebase/firestore';
 import {
   db,
   auth,
   googleProvider,
-  collection,
   doc,
-  query,
-  where,
-  OperationType,
-  handleFirestoreError,
   extractFirestoreErrorReason,
   writeOrderToFirestore,
   updateOrderInFirestore,
@@ -99,37 +94,30 @@ import {
   deleteProductFromFirestore,
   saveReviewToFirestore,
   deleteReviewFromFirestore,
+  fetchApprovedReviewsFromFirestore,
   fetchAllReviewsFromFirestore,
-  mapFirestoreDocToReview,
   saveMediaItemToFirestore,
   deleteMediaItemFromFirestore,
   fetchMediaLibraryFromFirestore,
-  mapFirestoreDocToMedia,
   saveCustomerToFirestore,
   deleteCustomerFromFirestore,
   fetchCustomersFromFirestore,
-  mapFirestoreDocToCustomer,
   getCustomerFirestoreId,
   saveWalletTopUpToFirestore,
   deleteWalletTopUpFromFirestore,
   fetchWalletTopUpsFromFirestore,
-  mapFirestoreDocToWalletTopUp,
   saveAbandonedCartToFirestore,
   deleteAbandonedCartFromFirestore,
   fetchAbandonedCartsFromFirestore,
-  mapFirestoreDocToAbandonedCart,
   savePriceAlertToFirestore,
   deletePriceAlertFromFirestore,
   fetchPriceAlertsFromFirestore,
-  mapFirestoreDocToPriceAlert,
   saveWaitlistEntryToFirestore,
   fetchWaitlistFromFirestore,
   deleteWaitlistEntryFromFirestore,
-  mapFirestoreDocToWaitlist,
   saveStaffUserToFirestore,
   deleteStaffUserFromFirestore,
   fetchStaffUsersFromFirestore,
-  mapFirestoreDocToStaffUser,
   syncAllAdminDataToFirestore,
   runFirebaseDiagnostics,
   FirebaseDiagnosticStep,
@@ -141,6 +129,7 @@ import {
   deleteResellerFromFirestore,
   fetchResellersFromFirestore,
   saveResellerPayoutToFirestore,
+  fetchResellerPayoutsFromFirestore,
   deleteResellerPayoutFromFirestore,
   saveWholesalerToFirestore,
   deleteWholesalerFromFirestore,
@@ -1706,7 +1695,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const nextCats = [...categoriesRef.current, newCat];
     setCategories(nextCats);
     saveStorefrontSettingsToFirestore(settingsRef.current, nextCats, slidersRef.current).catch(() => {});
-    addToast('success', t('ক্যাটাগরি যোগ হয়েছে!', 'Category Added!'), `'${newCat.nameBn}' ক্যাটাগরি তৈরি হয়েছে।`);
+    addToast(
+      'success',
+      t('ক্যাটাগরি যোগ হয়েছে!', 'Category Added!'),
+      t(`'${newCat.nameBn}' ক্যাটাগরি তৈরি হয়েছে।`, `Category '${newCat.nameEn || newCat.nameBn}' created.`)
+    );
   };
 
   const updateCategory = (id: string, updates: Partial<Category>) => {
@@ -2041,13 +2034,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
 
-  // Orders
+  const DEMO_FAKE_ORDER_IDS = new Set(['BD-89210', 'BD-89211']);
+  const DEMO_FAKE_ABANDONED_CART_IDS = new Set(['cart-ab-01', 'cart-ab-02']);
+
+  // Orders (Real customer/POS orders only — never seed fake demo orders)
   const [orders, setOrders] = useState<Order[]>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_ORDERS);
-      return saved ? JSON.parse(saved) : INITIAL_ORDERS;
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed)
+        ? parsed.filter((o: any) => o && o.id && !DEMO_FAKE_ORDER_IDS.has(String(o.id)))
+        : [];
     } catch {
-      return INITIAL_ORDERS;
+      return [];
     }
   });
   const ordersRef = useRef<Order[]>(orders);
@@ -2057,13 +2056,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     safeStorageSetItem(LOCAL_STORAGE_ORDERS, JSON.stringify(compactOrdersForStorage(orders)));
   }, [orders]);
 
-  // Abandoned Carts
+  // Abandoned Carts (Real checkout leads only)
   const [abandonedCarts, setAbandonedCarts] = useState<AbandonedCart[]>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_ABANDONED);
-      return saved ? JSON.parse(saved) : INITIAL_ABANDONED_CARTS;
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed)
+        ? parsed.filter((c: any) => c && c.id && !DEMO_FAKE_ABANDONED_CART_IDS.has(String(c.id)))
+        : [];
     } catch {
-      return INITIAL_ABANDONED_CARTS;
+      return [];
     }
   });
   const abandonedCartsRef = useRef<AbandonedCart[]>(abandonedCarts);
@@ -2281,6 +2283,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     lastLocalMutationAtRef.current = Date.now();
     setReviews((prev) => [newRev, ...prev]);
     saveReviewToFirestore(newRev).catch(() => {});
+    fetch('/api/reviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newRev)
+    }).catch(() => {});
     addToast('success', t('রিভিউ জমা হয়েছে!', 'Review Submitted!'), t('আপনার মূল্যবান মতামতের জন্য ধন্যবাদ।', 'Thank you for your rating.'));
   };
 
@@ -3631,43 +3638,81 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch {}
   };
 
-  const getProductRealStats = (productId: string) => {
+  const productRealStatsMap = React.useMemo(() => {
     const nowMs = Date.now();
-    const productObj = productsRef.current.find((p) => p.id === productId);
-    let liveOrderSold = 0;
-    let soldLast24h = 0;
-    ordersRef.current.forEach((o) => {
+    const orderSoldByProduct = new Map<string, { total: number; last24h: number }>();
+    orders.forEach((o) => {
       if (o.status === 'cancelled') return;
       const createdMs = new Date(o.createdAt || 0).getTime();
       const isRecent = Number.isFinite(createdMs) && nowMs - createdMs <= 86400000;
       (o.items || []).forEach((it) => {
-        if (it.productId === productId) {
-          const q = Math.max(1, Number(it.quantity) || 1);
-          liveOrderSold += q;
-          if (isRecent) soldLast24h += q;
-        }
+        if (!it?.productId) return;
+        const q = Math.max(1, Number(it.quantity) || 1);
+        const cur = orderSoldByProduct.get(it.productId) || { total: 0, last24h: 0 };
+        cur.total += q;
+        if (isRecent) cur.last24h += q;
+        orderSoldByProduct.set(it.productId, cur);
       });
     });
 
-    const baseSold = Math.max(0, Number(productObj?.soldCount) || 0);
-    const soldCount = Math.max(500, baseSold + liveOrderSold);
+    const reviewsByProduct = new Map<string, ProductReview[]>();
+    reviews.forEach((r) => {
+      if (!r?.productId || r.isApproved === false) return;
+      const list = reviewsByProduct.get(r.productId) || [];
+      list.push(r);
+      reviewsByProduct.set(r.productId, list);
+    });
 
-    const approvedWritten = reviewsRef.current.filter((r) => r.productId === productId && r.isApproved !== false);
-    const newlySubmittedReviews = approvedWritten.filter((r) => !String(r.id || '').startsWith('rev-seed-'));
-    const baseReviews = Math.max(500, Number(productObj?.reviewsCount) || 0);
-    const reviewsCount = Math.max(approvedWritten.length, baseReviews + newlySubmittedReviews.length);
+    const map = new Map<
+      string,
+      { soldCount: number; soldLast24h: number; reviewsCount: number; averageRating: number }
+    >();
+    const isSeededReviewId = (id: string) => id.startsWith('rev-seed-') || id.startsWith('rev-bd-');
 
-    const baseRating = Number(productObj?.rating) > 0 ? Number(productObj!.rating) : 4.8;
-    const writtenAvg =
-      approvedWritten.length > 0
-        ? approvedWritten.reduce((s, r) => s + (Number(r.rating) || 0), 0) / approvedWritten.length
-        : baseRating;
-    const averageRating = Number(
-      (newlySubmittedReviews.length > 0 ? (baseRating * 4 + writtenAvg) / 5 : baseRating).toFixed(1)
-    );
+    products.forEach((productObj) => {
+      const orderStats = orderSoldByProduct.get(productObj.id) || { total: 0, last24h: 0 };
+      const baseSold = Math.max(0, Number(productObj.soldCount) || 0);
+      const soldCount = baseSold + orderStats.total;
 
-    return { soldCount, soldLast24h, reviewsCount, averageRating };
-  };
+      const approvedWritten = reviewsByProduct.get(productObj.id) || [];
+      const newlySubmittedReviews = approvedWritten.filter((r) => !isSeededReviewId(String(r.id || '')));
+      const baseReviews = Math.max(0, Number(productObj.reviewsCount) || 0);
+      const reviewsCount = Math.max(approvedWritten.length, baseReviews + newlySubmittedReviews.length);
+
+      const baseRating = Number(productObj.rating) > 0 ? Number(productObj.rating) : 4.8;
+      const writtenAvg =
+        approvedWritten.length > 0
+          ? approvedWritten.reduce((s, r) => s + (Number(r.rating) || 0), 0) / approvedWritten.length
+          : baseRating;
+      const averageRating = Number(
+        (newlySubmittedReviews.length > 0 ? (baseRating * 4 + writtenAvg) / 5 : baseRating).toFixed(1)
+      );
+
+      map.set(productObj.id, {
+        soldCount,
+        soldLast24h: orderStats.last24h,
+        reviewsCount,
+        averageRating
+      });
+    });
+
+    return map;
+  }, [products, orders, reviews]);
+
+  const getProductRealStats = React.useCallback(
+    (productId: string) => {
+      const hit = productRealStatsMap.get(productId);
+      if (hit) return hit;
+      const approvedWritten = reviewsRef.current.filter((r) => r.productId === productId && r.isApproved !== false);
+      return {
+        soldCount: 0,
+        soldLast24h: 0,
+        reviewsCount: approvedWritten.length,
+        averageRating: approvedWritten.length > 0 ? 4.8 : 0
+      };
+    },
+    [productRealStatsMap]
+  );
 
   const clearRecentlyViewed = () => {
     setRecentlyViewedIds([]);
@@ -5966,7 +6011,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const mergeRemoteOrders = (incomingOrders: Order[], deletedSet: Set<string>, notifyOnNew: boolean) => {
     if (!Array.isArray(incomingOrders)) return;
-    const brandNewRemoteOrders = incomingOrders.filter(
+    const effectiveDeletedSet = new Set<string>([...deletedSet, ...DEMO_FAKE_ORDER_IDS]);
+    const filteredIncoming = incomingOrders.filter((o: any) => o && o.id && !effectiveDeletedSet.has(String(o.id)));
+    const brandNewRemoteOrders = filteredIncoming.filter(
       (o: any) => o && o.id && !knownOrderIdsRef.current.has(o.id)
     );
 
@@ -6018,10 +6065,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setOrders((prev) => {
       const map = new Map<string, Order>();
       prev.forEach((o) => {
-        if (!deletedSet.has(o.id)) map.set(o.id, o);
+        if (!effectiveDeletedSet.has(o.id)) map.set(o.id, o);
       });
-      incomingOrders.forEach((o: Order) => {
-        if (o && o.id && !deletedSet.has(o.id)) {
+      filteredIncoming.forEach((o: Order) => {
+        if (o && o.id && !effectiveDeletedSet.has(o.id)) {
           map.set(o.id, mergePair(map.get(o.id), o));
         }
       });
@@ -6052,20 +6099,36 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const fetchStoreSnapshotFromServer = async (notifyOnNewOrders = false) => {
+  const lastFirestorePullAtRef = useRef<number>(0);
+  const isFirestorePullInFlightRef = useRef<boolean>(false);
+  const hasLoadedFirestoreAdminOrdersRef = useRef<boolean>(false);
+  const serverDataVersionRef = useRef<number>(0);
+
+  const fetchStoreSnapshotFromServer = async (notifyOnNewOrders = false, forceFirestore = false) => {
     try {
-      // 1. Pull from Express server snapshot if available
+      // 1. Pull from Express server snapshot if available (conditional sinceVersion for near-zero traffic)
       const isAdminSess = isAdminLoggedInRef.current;
-      const res = await fetch(`/api/store/sync?t=${Date.now()}`, {
+      const sinceParam =
+        !forceFirestore && hasHydratedFromServerRef.current && serverDataVersionRef.current > 0
+          ? `&sinceVersion=${serverDataVersionRef.current}`
+          : '';
+      const res = await fetch(`/api/store/sync?t=${Date.now()}${sinceParam}`, {
         cache: 'no-store',
         headers: isAdminSess ? { 'x-admin-session': 'buyone-admin-verified' } : undefined
       });
       if (res.ok) {
-        const json = await safeParseJson<{ data?: any }>(res);
+        const json = await safeParseJson<{ data?: any; unchanged?: boolean; activeClients?: number; storeDataVersion?: number }>(res);
+        if (json?.unchanged) {
+          if (typeof json.activeClients === 'number') {
+            setActiveLiveViewers(Math.max(1, json.activeClients));
+          }
+          if (!forceFirestore) return;
+        }
         const data = json?.data;
 
         if (data && typeof data === 'object') {
           if (data.storeDataVersion) {
+            serverDataVersionRef.current = Number(data.storeDataVersion) || serverDataVersionRef.current;
             syncWithServerDataVersion(data.storeDataVersion).catch(() => {});
           }
           if (data.productViews && typeof data.productViews === 'object') {
@@ -6216,6 +6279,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (Array.isArray(data.affiliateConversions)) setAffiliateConversions(data.affiliateConversions);
             if (Array.isArray(data.affiliatePayouts)) setAffiliatePayouts(data.affiliatePayouts);
           } else {
+            if (Array.isArray(data.reviews) && data.reviews.length > 0 && !isRecentlyMutatedLocally) setReviews(data.reviews);
             if (Array.isArray(data.blogs) && data.blogs.length > 0 && !isRecentlyMutatedLocally) setBlogs(data.blogs);
             if (Array.isArray(data.resellerTopUps) && !isRecentlyMutatedLocally) setResellerTopUps(data.resellerTopUps);
             if (Array.isArray(data.affiliates) && data.affiliates.length > 0 && !isRecentlyMutatedLocally) setAffiliates(data.affiliates);
@@ -6295,65 +6359,375 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     } catch {}
 
-    // 3. Also pull from Firestore directly so static hosts (e.g. Vercel) & multi-device deployments stay synced
-    try {
-      const cfgData = await fetchStorefrontSettingsFromFirestore();
-      if (cfgData && Date.now() - lastLocalMutationAtRef.current >= 3000 && !hasUnsavedSettingsRef.current) {
-        const mergedCfg = mergeSettings({ ...committedSettingsRef.current, ...cfgData });
-        setSettings(mergedCfg);
-        setCommittedSettings(mergedCfg);
-      }
-      const fsProducts = await fetchProductsFromFirestore();
-      if (fsProducts.length > 0 && Date.now() - lastLocalMutationAtRef.current >= 3000) {
-        fsProducts.filter((p) => isRemovedTestProduct(p)).forEach((tp) => {
-          deletedProductIdsRef.current.add(tp.id);
-          if (auth.currentUser) deleteProductFromFirestore(tp.id).catch(() => {});
-        });
-        setProducts((prev) => {
-          const map = new Map(prev.filter((p) => !deletedProductIdsRef.current.has(p.id) && !isRemovedTestProduct(p)).map((p) => [p.id, p]));
-          fsProducts
-            .filter((p) => !deletedProductIdsRef.current.has(p.id) && !isRemovedTestProduct(p))
-            .forEach((p) => map.set(p.id, p));
-          return Array.from(map.values());
-        });
-      }
-      const fsBlogs = await fetchBlogPostsFromFirestore(true).catch(() => []);
-      if (fsBlogs.length > 0 && Date.now() - lastLocalMutationAtRef.current >= 3000) {
-        setBlogs((prev) => {
-          const map = new Map(prev.map((b) => [b.id, b]));
-          fsBlogs.forEach((b) => map.set(b.id, b));
-          return Array.from(map.values());
-        });
-      }
-      if (isFirebaseAdminConnectedRef.current) {
-        const fsOrders = await fetchOrdersFromFirestore();
-        if (fsOrders.length > 0) {
-          mergeRemoteOrders(fsOrders, new Set(), notifyOnNewOrders);
+    // 3. Also pull from Firestore directly using stateless getDoc/getDocs (avoids persistent Watch/onSnapshot internal assertion crashes)
+    const shouldPullFirestore =
+      !isFirestorePullInFlightRef.current &&
+      (forceFirestore ||
+        lastFirestorePullAtRef.current === 0 ||
+        Date.now() - lastFirestorePullAtRef.current >= 25000);
+
+    if (shouldPullFirestore) {
+      isFirestorePullInFlightRef.current = true;
+      lastFirestorePullAtRef.current = Date.now();
+      try {
+        const [cfgRes, prodRes, mediaRes, blogRes, pubRevRes] = await Promise.allSettled([
+          fetchStorefrontSettingsFromFirestore(),
+          fetchProductsFromFirestore(),
+          fetchMediaLibraryFromFirestore(),
+          fetchBlogPostsFromFirestore(true),
+          isFirebaseAdminConnectedRef.current
+            ? Promise.resolve<ProductReview[] | null>(null)
+            : fetchApprovedReviewsFromFirestore()
+        ]);
+
+        const recentlyMutated = Date.now() - lastLocalMutationAtRef.current < 3000;
+
+        if (
+          cfgRes.status === 'fulfilled' &&
+          cfgRes.value &&
+          !recentlyMutated &&
+          !hasUnsavedSettingsRef.current
+        ) {
+          const cfgData = cfgRes.value;
+          const mergedCfg = mergeSettings({ ...committedSettingsRef.current, ...cfgData });
+          setSettings(mergedCfg);
+          setCommittedSettings(mergedCfg);
+          if (Array.isArray(cfgData.categories) && cfgData.categories.length > 0) {
+            setCategories(cfgData.categories);
+          }
+          if (Array.isArray(cfgData.sliders) && cfgData.sliders.length > 0) {
+            setSliders(cfgData.sliders);
+          }
         }
-        setLastCloudSyncAt(new Date().toLocaleTimeString());
-        setCloudSyncError(null);
-      }
-    } catch (err) {
-      if (isFirebaseAdminConnectedRef.current) {
-        setCloudSyncError(extractFirestoreErrorReason(err));
+
+        if (
+          prodRes.status === 'fulfilled' &&
+          Array.isArray(prodRes.value) &&
+          prodRes.value.length > 0 &&
+          !recentlyMutated
+        ) {
+          const fsProducts = prodRes.value;
+          fsProducts
+            .filter((p) => isRemovedTestProduct(p))
+            .forEach((tp) => {
+              deletedProductIdsRef.current.add(tp.id);
+              if (auth.currentUser) deleteProductFromFirestore(tp.id).catch(() => {});
+            });
+          setProducts((prev) => {
+            const map = new Map(
+              prev
+                .filter((p) => !deletedProductIdsRef.current.has(p.id) && !isRemovedTestProduct(p))
+                .map((p) => [p.id, p])
+            );
+            fsProducts
+              .filter((p) => !deletedProductIdsRef.current.has(p.id) && !isRemovedTestProduct(p))
+              .forEach((p) => map.set(p.id, p));
+            return Array.from(map.values());
+          });
+        }
+
+        if (
+          mediaRes.status === 'fulfilled' &&
+          Array.isArray(mediaRes.value) &&
+          mediaRes.value.length > 0 &&
+          !recentlyMutated
+        ) {
+          const remoteMedia = mediaRes.value;
+          setMediaLibrary((prev) => {
+            const map = new Map(prev.map((m) => [m.id, m]));
+            remoteMedia.forEach((m) => map.set(m.id, m));
+            return Array.from(map.values());
+          });
+        }
+
+        if (
+          blogRes.status === 'fulfilled' &&
+          Array.isArray(blogRes.value) &&
+          blogRes.value.length > 0 &&
+          !recentlyMutated
+        ) {
+          const fsBlogs = blogRes.value;
+          setBlogs((prev) => {
+            const map = new Map(prev.map((b) => [b.id, b]));
+            fsBlogs.forEach((b) => map.set(b.id, b));
+            return Array.from(map.values());
+          });
+        }
+
+        if (
+          pubRevRes.status === 'fulfilled' &&
+          Array.isArray(pubRevRes.value) &&
+          pubRevRes.value.length > 0 &&
+          !recentlyMutated
+        ) {
+          const remoteRevs = pubRevRes.value;
+          setReviews((prev) => {
+            const map = new Map(prev.map((r) => [r.id, r]));
+            remoteRevs.forEach((r) => map.set(r.id, r));
+            return Array.from(map.values());
+          });
+        }
+
+        if (isFirebaseAdminConnectedRef.current && auth.currentUser) {
+          const [
+            privRes,
+            ordRes,
+            adminRevRes,
+            custRes,
+            topUpRes,
+            cartRes,
+            alertRes,
+            waitRes,
+            staffRes,
+            resellerRes,
+            payoutRes,
+            wholesalerRes
+          ] = await Promise.allSettled([
+            fetchAdminPrivateConfigFromFirestore(),
+            fetchOrdersFromFirestore(),
+            fetchAllReviewsFromFirestore(),
+            fetchCustomersFromFirestore(),
+            fetchWalletTopUpsFromFirestore(),
+            fetchAbandonedCartsFromFirestore(),
+            fetchPriceAlertsFromFirestore(),
+            fetchWaitlistFromFirestore(),
+            fetchStaffUsersFromFirestore(),
+            fetchResellersFromFirestore(),
+            fetchResellerPayoutsFromFirestore(),
+            fetchWholesalersFromFirestore()
+          ]);
+
+          const mutatedNow = Date.now() - lastLocalMutationAtRef.current < 3000;
+
+          if (
+            privRes.status === 'fulfilled' &&
+            privRes.value &&
+            !mutatedNow &&
+            !hasUnsavedSettingsRef.current
+          ) {
+            const priv = privRes.value;
+            const merged = mergeSettings({
+              ...committedSettingsRef.current,
+              ...(priv.smtpSettings ? { smtpSettings: priv.smtpSettings } : {}),
+              ...(priv.courierSettings ? { courierSettings: priv.courierSettings } : {}),
+              ...(priv.marketingSettings ? { marketingSettings: priv.marketingSettings } : {}),
+              ...(priv.aiSettings ? { aiSettings: priv.aiSettings } : {}),
+              ...(Array.isArray(priv.aiKeywordRules) ? { aiKeywordRules: priv.aiKeywordRules } : {})
+            });
+            setSettings(merged);
+            setCommittedSettings(merged);
+          }
+
+          if (ordRes.status === 'fulfilled' && Array.isArray(ordRes.value)) {
+            const fsOrders = ordRes.value.filter((o) => {
+              if (DEMO_FAKE_ORDER_IDS.has(o.id)) {
+                deleteOrderFromFirestore(o.id).catch(() => {});
+                return false;
+              }
+              return true;
+            });
+            mergeRemoteOrders(
+              fsOrders,
+              new Set(),
+              notifyOnNewOrders && hasLoadedFirestoreAdminOrdersRef.current
+            );
+            hasLoadedFirestoreAdminOrdersRef.current = true;
+            setLastCloudSyncAt(new Date().toLocaleTimeString());
+            setCloudSyncError(null);
+          } else if (ordRes.status === 'rejected') {
+            setCloudSyncError(extractFirestoreErrorReason(ordRes.reason));
+          } else if (privRes.status === 'rejected') {
+            setCloudSyncError(extractFirestoreErrorReason(privRes.reason));
+          }
+
+          if (
+            adminRevRes.status === 'fulfilled' &&
+            Array.isArray(adminRevRes.value) &&
+            adminRevRes.value.length > 0 &&
+            !mutatedNow
+          ) {
+            const remoteRevs = adminRevRes.value;
+            setReviews((prev) => {
+              const map = new Map(prev.map((r) => [r.id, r]));
+              remoteRevs.forEach((r) => map.set(r.id, r));
+              return Array.from(map.values());
+            });
+          }
+
+          if (
+            custRes.status === 'fulfilled' &&
+            Array.isArray(custRes.value) &&
+            custRes.value.length > 0 &&
+            !mutatedNow
+          ) {
+            const remoteCusts = custRes.value;
+            setCustomerAccounts((prev) => {
+              const map = new Map(prev.map((c) => [getCustomerFirestoreId(c), c]));
+              remoteCusts.forEach((rc) => {
+                const key = getCustomerFirestoreId(rc);
+                const existing = map.get(key);
+                map.set(key, existing ? { ...rc, password: existing.password, checkIn: existing.checkIn } : rc);
+              });
+              return Array.from(map.values());
+            });
+          }
+
+          if (
+            topUpRes.status === 'fulfilled' &&
+            Array.isArray(topUpRes.value) &&
+            topUpRes.value.length > 0 &&
+            !mutatedNow
+          ) {
+            const remoteTopUps = topUpRes.value;
+            setWalletTopUps((prev) => {
+              const map = new Map(prev.map((w) => [w.id, w]));
+              remoteTopUps.forEach((w) => map.set(w.id, w));
+              return Array.from(map.values()).sort(
+                (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+              );
+            });
+          }
+
+          if (
+            cartRes.status === 'fulfilled' &&
+            Array.isArray(cartRes.value) &&
+            cartRes.value.length > 0 &&
+            !mutatedNow
+          ) {
+            const remoteCarts = cartRes.value.filter((c) => {
+              if (DEMO_FAKE_ABANDONED_CART_IDS.has(c.id)) {
+                deleteAbandonedCartFromFirestore(c.id).catch(() => {});
+                return false;
+              }
+              return true;
+            });
+            setAbandonedCarts((prev) => {
+              const map = new Map(prev.map((c) => [c.id, c]));
+              remoteCarts.forEach((c) => map.set(c.id, c));
+              return Array.from(map.values());
+            });
+          }
+
+          if (
+            alertRes.status === 'fulfilled' &&
+            Array.isArray(alertRes.value) &&
+            alertRes.value.length > 0 &&
+            !mutatedNow
+          ) {
+            const remoteAlerts = alertRes.value;
+            setPriceAlerts((prev) => {
+              const map = new Map(prev.map((a) => [a.id, a]));
+              remoteAlerts.forEach((a) => map.set(a.id, a));
+              return Array.from(map.values());
+            });
+          }
+
+          if (
+            waitRes.status === 'fulfilled' &&
+            Array.isArray(waitRes.value) &&
+            waitRes.value.length > 0 &&
+            !mutatedNow
+          ) {
+            const remoteWait = waitRes.value;
+            setWaitlistEntries((prev) => {
+              const map = new Map(prev.map((w) => [w.id, w]));
+              remoteWait.forEach((w) => map.set(w.id, w));
+              return Array.from(map.values()).sort(
+                (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+              );
+            });
+          }
+
+          if (
+            staffRes.status === 'fulfilled' &&
+            Array.isArray(staffRes.value) &&
+            staffRes.value.length > 0 &&
+            !mutatedNow
+          ) {
+            const remoteStaff = staffRes.value;
+            setUsers((prev) => {
+              const map = new Map(prev.map((u) => [u.id, u]));
+              remoteStaff.forEach((u) => map.set(u.id, u));
+              return Array.from(map.values());
+            });
+          }
+
+          if (
+            resellerRes.status === 'fulfilled' &&
+            Array.isArray(resellerRes.value) &&
+            resellerRes.value.length > 0 &&
+            !mutatedNow
+          ) {
+            const remoteResellers = resellerRes.value;
+            setResellers((prev) => {
+              const map = new Map(prev.map((r) => [r.id, r]));
+              remoteResellers.forEach((rr) => {
+                const existing = map.get(rr.id);
+                map.set(rr.id, existing?.password ? { ...rr, password: existing.password } : rr);
+              });
+              return Array.from(map.values()).sort(
+                (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+              );
+            });
+          }
+
+          if (
+            payoutRes.status === 'fulfilled' &&
+            Array.isArray(payoutRes.value) &&
+            payoutRes.value.length > 0 &&
+            !mutatedNow
+          ) {
+            const remotePayouts = payoutRes.value;
+            setResellerPayouts((prev) => {
+              const map = new Map(prev.map((p) => [p.id, p]));
+              remotePayouts.forEach((p) => map.set(p.id, p));
+              return Array.from(map.values()).sort(
+                (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+              );
+            });
+          }
+
+          if (
+            wholesalerRes.status === 'fulfilled' &&
+            Array.isArray(wholesalerRes.value) &&
+            wholesalerRes.value.length > 0 &&
+            !mutatedNow
+          ) {
+            const remoteWholesalers = wholesalerRes.value;
+            setWholesalers((prev) => {
+              const map = new Map(prev.map((w) => [w.id, w]));
+              remoteWholesalers.forEach((rw) => {
+                const existing = map.get(rw.id);
+                map.set(rw.id, existing?.password ? { ...rw, password: existing.password } : rw);
+              });
+              return Array.from(map.values());
+            });
+          }
+        }
+      } catch (err) {
+        if (isFirebaseAdminConnectedRef.current) {
+          setCloudSyncError(extractFirestoreErrorReason(err));
+        }
+      } finally {
+        isFirestorePullInFlightRef.current = false;
       }
     }
   };
 
   useEffect(() => {
-    fetchStoreSnapshotFromServer(false);
+    fetchStoreSnapshotFromServer(false, true);
 
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === 'visible') {
-        fetchStoreSnapshotFromServer(true);
+        fetchStoreSnapshotFromServer(true, true);
       }
     };
     window.addEventListener('focus', handleVisibilityOrFocus);
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
 
     const pollInterval = setInterval(
-      () => fetchStoreSnapshotFromServer(true),
-      activeView === 'admin' ? 3000 : 6000
+      () => fetchStoreSnapshotFromServer(true, false),
+      activeView === 'admin' ? 8000 : 15000
     );
 
     return () => {
@@ -6363,415 +6737,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, [activeView]);
 
-  // Real-time Firestore Listeners for Storefront Public Config, Categories, Sliders, Catalog, Media & Approved Reviews
+  // Immediately pull protected Firestore collections when Firebase Admin connects
   useEffect(() => {
-    const unsubSettings = onSnapshot(
-      doc(db, 'storefront', 'public'),
-      (snap) => {
-        if (!snap.exists()) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000 || hasUnsavedSettingsRef.current) return;
-        const remote = snap.data();
-        if (remote) {
-          const merged = mergeSettings({ ...committedSettingsRef.current, ...remote });
-          setSettings(merged);
-          setCommittedSettings(merged);
-          if (Array.isArray(remote.categories) && remote.categories.length > 0) {
-            setCategories(remote.categories);
-          }
-          if (Array.isArray(remote.sliders) && remote.sliders.length > 0) {
-            setSliders(remote.sliders);
-          }
-        }
-      },
-      (err) => {
-        try {
-          handleFirestoreError(err, OperationType.GET, 'storefront/public');
-        } catch (wrappedErr) {
-          console.error(wrappedErr);
-        }
-      }
-    );
-
-    const unsubProducts = onSnapshot(
-      collection(db, 'products'),
-      (snap) => {
-        if (snap.empty) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
-        const removedIds = new Set(
-          snap.docChanges().filter((c) => c.type === 'removed').map((c) => c.doc.id)
-        );
-        const remoteList = snap.docs.map((d) => ({ ...d.data(), id: d.id } as Product));
-        remoteList.filter((p) => isRemovedTestProduct(p)).forEach((tp) => {
-          deletedProductIdsRef.current.add(tp.id);
-          if (auth.currentUser) deleteProductFromFirestore(tp.id).catch(() => {});
-        });
-        setProducts((prev) => {
-          const map = new Map(prev.filter((p) => !deletedProductIdsRef.current.has(p.id) && !isRemovedTestProduct(p)).map((p) => [p.id, p]));
-          removedIds.forEach((id) => map.delete(id));
-          remoteList
-            .filter((p) => !deletedProductIdsRef.current.has(p.id) && !isRemovedTestProduct(p))
-            .forEach((p) => map.set(p.id, p));
-          return Array.from(map.values());
-        });
-      },
-      (err) => {
-        try {
-          handleFirestoreError(err, OperationType.LIST, 'products');
-        } catch (wrappedErr) {
-          console.error(wrappedErr);
-        }
-      }
-    );
-
-    const unsubMedia = onSnapshot(
-      collection(db, 'media_library'),
-      (snap) => {
-        if (snap.empty) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
-        const removedIds = new Set(
-          snap.docChanges().filter((c) => c.type === 'removed').map((c) => c.doc.id)
-        );
-        const remoteList = snap.docs.map((d) => mapFirestoreDocToMedia(d.id, d.data()));
-        setMediaLibrary((prev) => {
-          const map = new Map(prev.map((m) => [m.id, m]));
-          removedIds.forEach((id) => map.delete(id));
-          remoteList.forEach((m) => map.set(m.id, m));
-          return Array.from(map.values());
-        });
-      },
-      () => {}
-    );
-
-    const approvedReviewsQuery = query(collection(db, 'reviews'), where('isApproved', '==', true));
-    const unsubPublicReviews = onSnapshot(
-      approvedReviewsQuery,
-      (snap) => {
-        if (isFirebaseAdminConnectedRef.current) return;
-        if (snap.empty) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
-        const remoteRevs = snap.docs.map((d) => mapFirestoreDocToReview(d.id, d.data()));
-        setReviews((prev) => {
-          const map = new Map(prev.map((r) => [r.id, r]));
-          remoteRevs.forEach((r) => map.set(r.id, r));
-          return Array.from(map.values());
-        });
-      },
-      () => {}
-    );
-
-    return () => {
-      unsubSettings();
-      unsubProducts();
-      unsubMedia();
-      unsubPublicReviews();
-    };
-  }, []);
-
-  // Real-time Firestore Listeners when authenticated as Firebase Admin (ALL Dashboard Modules Live Sync)
-  useEffect(() => {
-    if (!isFirebaseAdminConnected) return;
-    let isInitialOrderBatch = true;
-
-    const unsubPrivateConfig = onSnapshot(
-      doc(db, 'admin_config', 'private'),
-      (snap) => {
-        if (!snap.exists()) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000 || hasUnsavedSettingsRef.current) return;
-        const priv = snap.data();
-        if (priv) {
-          const merged = mergeSettings({
-            ...committedSettingsRef.current,
-            ...(priv.smtpSettings ? { smtpSettings: priv.smtpSettings } : {}),
-            ...(priv.courierSettings ? { courierSettings: priv.courierSettings } : {}),
-            ...(priv.marketingSettings ? { marketingSettings: priv.marketingSettings } : {}),
-            ...(priv.aiSettings ? { aiSettings: priv.aiSettings } : {}),
-            ...(Array.isArray(priv.aiKeywordRules) ? { aiKeywordRules: priv.aiKeywordRules } : {})
-          });
-          setSettings(merged);
-          setCommittedSettings(merged);
-          setLastCloudSyncAt(new Date().toLocaleTimeString());
-        }
-      },
-      (err) => {
-        setCloudSyncError(extractFirestoreErrorReason(err));
-      }
-    );
-
-    const unsubOrders = onSnapshot(
-      collection(db, 'orders'),
-      (snap) => {
-        const removedIds = new Set(
-          snap.docChanges().filter((c) => c.type === 'removed').map((c) => c.doc.id)
-        );
-        const fsOrders = snap.docs.map((d) => ({ ...d.data(), id: d.id } as Order));
-        mergeRemoteOrders(fsOrders, removedIds, !isInitialOrderBatch);
-        setLastCloudSyncAt(new Date().toLocaleTimeString());
-        setCloudSyncError(null);
-        isInitialOrderBatch = false;
-      },
-      (err) => {
-        setCloudSyncError(extractFirestoreErrorReason(err));
-        try {
-          handleFirestoreError(err, OperationType.LIST, 'orders');
-        } catch (wrappedErr) {
-          console.error(wrappedErr);
-        }
-      }
-    );
-
-    const unsubAdminReviews = onSnapshot(
-      collection(db, 'reviews'),
-      (snap) => {
-        if (snap.empty) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
-        const removedIds = new Set(
-          snap.docChanges().filter((c) => c.type === 'removed').map((c) => c.doc.id)
-        );
-        const remoteList = snap.docs.map((d) => mapFirestoreDocToReview(d.id, d.data()));
-        setReviews((prev) => {
-          const map = new Map(prev.map((r) => [r.id, r]));
-          removedIds.forEach((id) => map.delete(id));
-          remoteList.forEach((r) => map.set(r.id, r));
-          return Array.from(map.values());
-        });
-      },
-      () => {}
-    );
-
-    const unsubCustomers = onSnapshot(
-      collection(db, 'customers'),
-      (snap) => {
-        if (snap.empty) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
-        const remoteList = snap.docs.map((d) => mapFirestoreDocToCustomer(d.data()));
-        setCustomerAccounts((prev) => {
-          const map = new Map(prev.map((c) => [getCustomerFirestoreId(c), c]));
-          remoteList.forEach((rc) => {
-            const key = getCustomerFirestoreId(rc);
-            const existing = map.get(key);
-            map.set(key, existing ? { ...rc, password: existing.password, checkIn: existing.checkIn } : rc);
-          });
-          return Array.from(map.values());
-        });
-      },
-      () => {}
-    );
-
-    const unsubTopUps = onSnapshot(
-      collection(db, 'wallet_topups'),
-      (snap) => {
-        if (snap.empty) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
-        const remoteList = snap.docs.map((d) => mapFirestoreDocToWalletTopUp(d.id, d.data()));
-        setWalletTopUps((prev) => {
-          const map = new Map(prev.map((w) => [w.id, w]));
-          remoteList.forEach((w) => map.set(w.id, w));
-          return Array.from(map.values()).sort(
-            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-          );
-        });
-      },
-      () => {}
-    );
-
-    const unsubCarts = onSnapshot(
-      collection(db, 'abandoned_carts'),
-      (snap) => {
-        if (snap.empty) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
-        const remoteList = snap.docs.map((d) => mapFirestoreDocToAbandonedCart(d.id, d.data()));
-        setAbandonedCarts((prev) => {
-          const map = new Map(prev.map((c) => [c.id, c]));
-          remoteList.forEach((c) => map.set(c.id, c));
-          return Array.from(map.values());
-        });
-      },
-      () => {}
-    );
-
-    const unsubAlerts = onSnapshot(
-      collection(db, 'price_alerts'),
-      (snap) => {
-        if (snap.empty) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
-        const remoteList = snap.docs.map((d) => mapFirestoreDocToPriceAlert(d.id, d.data()));
-        setPriceAlerts((prev) => {
-          const map = new Map(prev.map((a) => [a.id, a]));
-          remoteList.forEach((a) => map.set(a.id, a));
-          return Array.from(map.values());
-        });
-      },
-      () => {}
-    );
-
-    const unsubWaitlist = onSnapshot(
-      collection(db, 'Waitlist'),
-      (snap) => {
-        if (snap.empty) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
-        const removedIds = new Set(
-          snap.docChanges().filter((c) => c.type === 'removed').map((c) => c.doc.id)
-        );
-        const remoteList = snap.docs.map((d) => mapFirestoreDocToWaitlist(d.id, d.data()));
-        setWaitlistEntries((prev) => {
-          const map = new Map(prev.map((w) => [w.id, w]));
-          removedIds.forEach((id) => map.delete(id));
-          remoteList.forEach((w) => map.set(w.id, w));
-          return Array.from(map.values()).sort(
-            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-          );
-        });
-      },
-      () => {}
-    );
-
-    const unsubStaff = onSnapshot(
-      collection(db, 'staff_users'),
-      (snap) => {
-        if (snap.empty) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
-        const removedIds = new Set(
-          snap.docChanges().filter((c) => c.type === 'removed').map((c) => c.doc.id)
-        );
-        const remoteList = snap.docs.map((d) => mapFirestoreDocToStaffUser(d.id, d.data()));
-        setUsers((prev) => {
-          const map = new Map(prev.map((u) => [u.id, u]));
-          removedIds.forEach((id) => map.delete(id));
-          remoteList.forEach((u) => map.set(u.id, u));
-          return Array.from(map.values());
-        });
-      },
-      () => {}
-    );
-
-    const unsubResellers = onSnapshot(
-      collection(db, 'resellers'),
-      (snap) => {
-        if (snap.empty) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
-        const remoteList = snap.docs.map((d) => {
-          const data = d.data();
-          const createdTs = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : undefined;
-          return {
-            id: data.id || d.id,
-            name: String(data.name || ''),
-            phone: String(data.phone || ''),
-            email: data.email ? String(data.email) : undefined,
-            district: String(data.district || 'Dhaka - Inside City'),
-            address: data.address ? String(data.address) : undefined,
-            fbPageUrl: data.fbPageUrl ? String(data.fbPageUrl) : undefined,
-            bkashNumber: data.bkashNumber ? String(data.bkashNumber) : undefined,
-            nagadNumber: data.nagadNumber ? String(data.nagadNumber) : undefined,
-            bankDetails: data.bankDetails ? String(data.bankDetails) : undefined,
-            resellerCode: String(data.resellerCode || ''),
-            commissionPercent: Number(data.commissionPercent) || 18,
-            walletBalance: Number(data.walletBalance) || 0,
-            totalEarnings: Number(data.totalEarnings) || 0,
-            totalOrders: Number(data.totalOrders) || 0,
-            status: (data.status || 'pending') as ResellerAccount['status'],
-            createdAt: createdTs || String(data.createdAt || new Date().toISOString())
-          } as ResellerAccount;
-        });
-        setResellers((prev) => {
-          const map = new Map(prev.map((r) => [r.id, r]));
-          remoteList.forEach((rr) => {
-            const existing = map.get(rr.id);
-            map.set(rr.id, existing?.password ? { ...rr, password: existing.password } : rr);
-          });
-          return Array.from(map.values()).sort(
-            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-          );
-        });
-      },
-      () => {}
-    );
-
-    const unsubResellerPayouts = onSnapshot(
-      collection(db, 'reseller_payouts'),
-      (snap) => {
-        if (snap.empty) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
-        const remoteList = snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: data.id || d.id,
-            resellerId: String(data.resellerId || ''),
-            resellerName: String(data.resellerName || ''),
-            resellerPhone: String(data.resellerPhone || ''),
-            method: (data.method || 'bkash') as ResellerPayoutRequest['method'],
-            accountNumber: String(data.accountNumber || ''),
-            amount: Number(data.amount) || 0,
-            status: (data.status || 'pending') as ResellerPayoutRequest['status'],
-            trxId: data.trxId ? String(data.trxId) : undefined,
-            note: data.note ? String(data.note) : undefined,
-            createdAt: String(data.submittedAt || new Date().toISOString()),
-            processedAt: data.processedAt ? String(data.processedAt) : undefined
-          } as ResellerPayoutRequest;
-        });
-        setResellerPayouts((prev) => {
-          const map = new Map(prev.map((p) => [p.id, p]));
-          remoteList.forEach((p) => map.set(p.id, p));
-          return Array.from(map.values()).sort(
-            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-          );
-        });
-      },
-      () => {}
-    );
-
-    const unsubWholesalers = onSnapshot(
-      collection(db, 'wholesalers'),
-      (snap) => {
-        if (snap.empty) return;
-        if (Date.now() - lastLocalMutationAtRef.current < 3000) return;
-        const remoteList = snap.docs.map((d) => {
-          const data = d.data();
-          const createdTs = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : undefined;
-          return {
-            id: data.id || d.id,
-            contactName: String(data.contactName || ''),
-            companyName: String(data.companyName || ''),
-            phone: String(data.phone || ''),
-            email: data.email ? String(data.email) : undefined,
-            tradeLicenseNo: data.tradeLicenseNo ? String(data.tradeLicenseNo) : undefined,
-            nidNumber: data.nidNumber ? String(data.nidNumber) : undefined,
-            district: String(data.district || 'Dhaka - Inside City'),
-            address: String(data.address || ''),
-            businessType: (data.businessType || 'Retail Shop') as WholesaleAccount['businessType'],
-            monthlyVolumeEstimate: data.monthlyVolumeEstimate ? String(data.monthlyVolumeEstimate) : undefined,
-            tier: (data.tier || 'Silver') as WholesaleAccount['tier'],
-            extraDiscountPercent: Number(data.extraDiscountPercent) || 5,
-            creditLimitBdt: data.creditLimitBdt !== undefined ? Number(data.creditLimitBdt) : undefined,
-            status: (data.status || 'pending') as WholesaleAccount['status'],
-            createdAt: createdTs || String(data.createdAt || new Date().toISOString())
-          } as WholesaleAccount;
-        });
-        setWholesalers((prev) => {
-          const map = new Map(prev.map((w) => [w.id, w]));
-          remoteList.forEach((rw) => {
-            const existing = map.get(rw.id);
-            map.set(rw.id, existing?.password ? { ...rw, password: existing.password } : rw);
-          });
-          return Array.from(map.values());
-        });
-      },
-      () => {}
-    );
-
-    return () => {
-      unsubPrivateConfig();
-      unsubOrders();
-      unsubAdminReviews();
-      unsubCustomers();
-      unsubTopUps();
-      unsubCarts();
-      unsubAlerts();
-      unsubWaitlist();
-      unsubStaff();
-      unsubResellers();
-      unsubResellerPayouts();
-      unsubWholesalers();
-    };
+    if (!isFirebaseAdminConnected) {
+      hasLoadedFirestoreAdminOrdersRef.current = false;
+      return;
+    }
+    void fetchStoreSnapshotFromServer(false, true);
   }, [isFirebaseAdminConnected]);
 
   // Push committed store snapshot updates AFTER initial server hydration completes (never pushes unsaved draft settings)
@@ -7593,8 +7565,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         text: `Today's Top Deals:\n${topProducts.map((p, i) => `${i + 1}. ${p.title} - ৳${p.price}`).join('\n')}`,
         textBn: `আজকের সেরা অফারসমূহ:\n${topProducts.map((p, i) => `${i + 1}. ${p.titleBn} - ৳${p.price}`).join('\n')}`,
         time,
+        attachedProducts: topProducts.map((p) => ({
+          id: p.id,
+          title: p.title,
+          titleBn: p.titleBn,
+          price: p.price,
+          originalPrice: p.originalPrice,
+          image: p.images?.[0],
+          stock: p.stock
+        })),
         quickActions: topProducts.map((p) => ({
-          label: `🛒 ${p.titleBn.slice(0, 14)}...`,
+          label: `🛒 ${(lang === 'bn' ? p.titleBn || p.title : p.title).slice(0, 14)}...`,
           action: p.stock > 0 ? `buy_${p.id}` : `view_${p.id}`
         }))
       });
@@ -7616,6 +7597,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             title: p.title,
             titleBn: p.titleBn,
             price: p.price,
+            originalPrice: p.originalPrice,
+            images: p.images?.slice(0, 1) || [],
             stock: p.stock,
             category: p.category,
             brand: p.brand,
@@ -7631,16 +7614,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
       const data = await safeParseJson<any>(res);
       if (res.ok && data?.reply) {
+        const fallbackCards = matchedProducts.map((p) => ({
+          id: p.id,
+          title: p.title,
+          titleBn: p.titleBn,
+          price: p.price,
+          originalPrice: p.originalPrice,
+          image: p.images?.[0],
+          stock: p.stock
+        }));
         appendBotMsg({
           id: `bot-${Date.now()}`,
           sender: 'bot',
           text: data.reply,
           textBn: data.reply,
           time,
+          attachedProducts:
+            Array.isArray(data.attachedProducts) && data.attachedProducts.length > 0
+              ? data.attachedProducts
+              : fallbackCards.length > 0
+              ? fallbackCards
+              : undefined,
           quickActions: Array.isArray(data.quickActions) && data.quickActions.length > 0
             ? data.quickActions
             : matchedProducts.map((p) => ({
-                label: p.stock > 0 ? `⚡ 1-Click Order: ${p.titleBn.slice(0, 14)}` : `🔔 স্টক অ্যালার্ট`,
+                label:
+                  p.stock > 0
+                    ? `${t('⚡ ১-ক্লিক অর্ডার:', '⚡ 1-Click Order:')} ${(lang === 'bn' ? p.titleBn || p.title : p.title).slice(0, 14)}`
+                    : t('🔔 স্টক অ্যালার্ট', '🔔 Notify Me'),
                 action: p.stock > 0 ? `buy_${p.id}` : `view_${p.id}`
               }))
         });
@@ -7656,8 +7657,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         text: `Matching products:\n${matchedProducts.map((p, i) => `${i + 1}. ${p.title} - ৳${p.price}`).join('\n')}`,
         textBn: `আপনার পছন্দের পণ্যসমূহ:\n${matchedProducts.map((p, i) => `${i + 1}. ${p.titleBn} - ৳${p.price}`).join('\n')}`,
         time,
+        attachedProducts: matchedProducts.map((p) => ({
+          id: p.id,
+          title: p.title,
+          titleBn: p.titleBn,
+          price: p.price,
+          originalPrice: p.originalPrice,
+          image: p.images?.[0],
+          stock: p.stock
+        })),
         quickActions: matchedProducts.map((p) => ({
-          label: p.stock > 0 ? `⚡ ১-ক্লিক অর্ডার: ${p.titleBn.slice(0, 14)}` : `🔔 স্টক অ্যালার্ট`,
+          label:
+            p.stock > 0
+              ? `${t('⚡ ১-ক্লিক অর্ডার:', '⚡ 1-Click Order:')} ${(lang === 'bn' ? p.titleBn || p.title : p.title).slice(0, 14)}`
+              : t('🔔 স্টক অ্যালার্ট', '🔔 Notify Me'),
           action: p.stock > 0 ? `buy_${p.id}` : `view_${p.id}`
         }))
       });
@@ -8949,10 +8962,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const courierProviders: CourierProvider[] = ['Steadfast', 'Pathao', 'RedX'];
     const chosenCourier = courierProviders[0];
-    const trackingCode = orderData.source === 'pos' ? `POS-INVOICE-${orderIdNum}` : `STDF-BD-${orderIdNum}`;
+    const trackingCode = orderData.source === 'pos' ? `POS-INVOICE-${orderIdNum}` : newOrderId;
 
-    const phoneSum = orderData.customer.phone.split('').reduce((s, c) => s + (parseInt(c, 10) || 0), 0);
-    const rate = phoneSum % 5 === 0 ? 55 : 94;
+    const cleanCustPhone = String(orderData.customer.phone || '').replace(/[^0-9]/g, '').slice(-11);
+    const priorCustOrders = cleanCustPhone
+      ? ordersRef.current.filter(
+          (o) => String(o.customer?.phone || '').replace(/[^0-9]/g, '').slice(-11) === cleanCustPhone
+        )
+      : [];
+    const priorDelivered = priorCustOrders.filter((o) => o.status === 'delivered').length;
+    const priorCancelled = priorCustOrders.filter((o) => o.status === 'cancelled').length;
+    const priorTotal = priorCustOrders.length;
+    const rate =
+      priorTotal > 0
+        ? Math.max(15, Math.min(100, Math.round(((priorTotal - priorCancelled) / priorTotal) * 100)))
+        : 100;
     const nowIso = new Date().toISOString();
 
     const dueAmountCalc =
@@ -9043,11 +9067,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       fraudCheck: {
         checked: true,
         successRate: rate,
-        totalOrders: 12,
-        deliveredCount: Math.round((12 * rate) / 100),
-        cancelledCount: 12 - Math.round((12 * rate) / 100),
-        riskLevel: rate >= 80 ? 'safe' : 'moderate',
-        message: rate >= 80 ? 'নিরাপদ গ্রাহক।' : 'রিটার্ন ঝুঁকি রয়েছে।'
+        totalOrders: priorTotal,
+        deliveredCount: priorDelivered,
+        cancelledCount: priorCancelled,
+        riskLevel: rate >= 80 ? 'safe' : rate >= 55 ? 'moderate' : 'high_risk',
+        message:
+          priorTotal === 0
+            ? 'নতুন গ্রাহক (প্রথম রিয়েল অর্ডার)।'
+            : rate >= 80
+            ? `পূর্ববর্তী ${priorTotal}টি অর্ডারের ভিত্তিতে নিরাপদ গ্রাহক (${rate}% সফলতা)।`
+            : `পূর্ববর্তী ${priorTotal}টি অর্ডারের মধ্যে ${priorCancelled}টি বাতিল — কল করে যাচাই করুন।`
       },
       source: orderData.source || 'online',
       partnerType: resolvedPartnerType,
@@ -9243,8 +9272,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           body: JSON.stringify({
             smtp: settings.smtpSettings,
             to: targetEmail,
-            subject: `Order Confirmed #${newOrderId} - ${settings.storeName}`,
-            text: `Assalamu Alaikum ${orderData.customer.name},\n\nYour order #${newOrderId} for ৳${total} has been placed successfully!\nDelivery Address: ${orderData.customer.address}, ${orderData.customer.district}\nPayment: ${orderData.paymentMethod.toUpperCase()}\n\nThank you for shopping with ${settings.storeName}.`
+            subject:
+              lang === 'bn'
+                ? `অর্ডার কনফার্মড #${newOrderId} - ${settings.storeNameBn || settings.storeName}`
+                : `Order Confirmed #${newOrderId} - ${settings.storeName}`,
+            text:
+              lang === 'bn'
+                ? `আসসালামু আলাইকুম ${orderData.customer.name},\n\nআপনার অর্ডার #${newOrderId} (মোট ৳${total}) সফলভাবে সম্পন্ন হয়েছে!\nডেলিভারি ঠিকানা: ${orderData.customer.address}, ${orderData.customer.district}\nপেমেন্ট: ${orderData.paymentMethod.toUpperCase()}\n\n${settings.storeNameBn || settings.storeName}-এর সাথে থাকার জন্য ধন্যবাদ।`
+                : `Assalamu Alaikum ${orderData.customer.name},\n\nYour order #${newOrderId} for ৳${total} has been placed successfully!\nDelivery Address: ${orderData.customer.address}, ${orderData.customer.district}\nPayment: ${orderData.paymentMethod.toUpperCase()}\n\nThank you for shopping with ${settings.storeName}.`
           })
         }).catch(() => {});
       }

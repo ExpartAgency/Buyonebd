@@ -146,7 +146,7 @@ export const WaitlistModal: React.FC<WaitlistModalProps> = ({ product, onClose }
               className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-black text-xs rounded-xl shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2 cursor-pointer transition-all"
             >
               <BellRing className="w-4 h-4" />
-              <span>{t('স্টকে এলে আমাকে জানান (Notify Me)', 'Notify Me When Available')}</span>
+              <span>{t('স্টকে এলে আমাকে জানান', 'Notify Me When Available')}</span>
             </button>
           </form>
         )}

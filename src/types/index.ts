@@ -463,6 +463,15 @@ export interface SupportChatMessage {
   textBn?: string;
   time: string;
   quickActions?: { label: string; action: string }[];
+  attachedProducts?: {
+    id: string;
+    title: string;
+    titleBn: string;
+    price: number;
+    originalPrice?: number;
+    image?: string;
+    stock: number;
+  }[];
 }
 
 export interface SupportChatSession {

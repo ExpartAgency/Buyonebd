@@ -5,11 +5,12 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { WebSocketServer, WebSocket } from 'ws';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import nodemailer from 'nodemailer';
 import mysql from 'mysql2/promise';
 
@@ -25,7 +26,7 @@ if (!fs.existsSync(GENERATED_MEDIA_DIR)) {
 
 const app = express();
 app.disable('x-powered-by');
-app.use('/generated-media', express.static(GENERATED_MEDIA_DIR, { maxAge: '7d' }));
+app.use('/generated-media', express.static(GENERATED_MEDIA_DIR, { maxAge: '30d', immutable: true }));
 const port = parseInt(process.env.PORT || '3000', 10);
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -42,6 +43,29 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: '15mb' }));
+
+// Lightweight native gzip compression for /api JSON payloads >= 1KB
+app.use('/api', (req, res, next) => {
+  const acceptEnc = String(req.headers['accept-encoding'] || '');
+  if (!acceptEnc.includes('gzip')) return next();
+  const origJson = res.json.bind(res);
+  res.json = ((body: any) => {
+    try {
+      const jsonStr = JSON.stringify(body);
+      if (jsonStr.length < 1024) {
+        return origJson(body);
+      }
+      const compressed = zlib.gzipSync(Buffer.from(jsonStr, 'utf-8'));
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Encoding', 'gzip');
+      res.setHeader('Vary', 'Accept-Encoding');
+      return res.send(compressed);
+    } catch {
+      return origJson(body);
+    }
+  }) as any;
+  next();
+});
 
 // Recursive XSS / Script Sanitizer Helper for public form & inquiry payloads
 function sanitizeInput<T>(value: T): T {
@@ -92,23 +116,22 @@ function createRateLimiter(bucketName: string, maxRequests: number, windowMs: nu
   };
 }
 
-// Strict no-store cache headers + IP Firewall Middleware for all /api routes
+// Strict no-store cache headers + O(1) In-Memory IP Firewall Middleware for /api routes
+let inMemoryStoreCache: any = null;
+let inMemoryBlockedIps = new Set<string>();
+
 app.use('/api', (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
   if (req.method === 'GET' && !req.path.startsWith('/admin')) return next();
   try {
-    if (fs.existsSync(path.join(__dirname, 'data', 'store.json'))) {
-      const raw = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'store.json'), 'utf-8'));
-      const blockedIps: string[] = raw?.settings?.securitySettings?.blockedIps || [];
-      const ip = getClientIp(req);
-      if (blockedIps.includes(ip)) {
-        return res.status(403).json({
-          success: false,
-          error: 'Access denied by store IP firewall.'
-        });
-      }
+    const ip = getClientIp(req);
+    if (inMemoryBlockedIps.has(ip)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied by store IP firewall.'
+      });
     }
   } catch {}
   next();
@@ -146,11 +169,48 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+function externalizeBase64ImageString(val: string, prefix = 'asset'): string {
+  if (typeof val !== 'string' || !val.startsWith('data:image/')) return val;
+  const match = val.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
+  if (!match) return val;
+  try {
+    const rawExt = match[1].toLowerCase().replace('jpeg', 'jpg').replace('svg+xml', 'svg');
+    const ext = ['png', 'jpg', 'webp', 'gif', 'svg'].includes(rawExt) ? rawExt : 'png';
+    const buf = Buffer.from(match[2], 'base64');
+    const hash = crypto.createHash('sha1').update(buf).digest('hex').slice(0, 16);
+    const filename = `${prefix}-${hash}.${ext}`;
+    const outPath = path.join(GENERATED_MEDIA_DIR, filename);
+    if (!fs.existsSync(outPath)) {
+      fs.writeFileSync(outPath, buf);
+    }
+    return `/generated-media/${filename}`;
+  } catch {
+    return val;
+  }
+}
+
+function externalizeStoreMediaDeep(node: any, prefix = 'media'): any {
+  if (typeof node === 'string') return externalizeBase64ImageString(node, prefix);
+  if (Array.isArray(node)) return node.map((item) => externalizeStoreMediaDeep(item, prefix));
+  if (node && typeof node === 'object') {
+    for (const k of Object.keys(node)) {
+      node[k] = externalizeStoreMediaDeep(node[k], prefix);
+    }
+  }
+  return node;
+}
+
 function loadStoreData() {
+  if (inMemoryStoreCache) {
+    return inMemoryStoreCache;
+  }
   try {
     if (fs.existsSync(STORE_FILE)) {
       const raw = fs.readFileSync(STORE_FILE, 'utf-8');
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      inMemoryStoreCache = parsed;
+      inMemoryBlockedIps = new Set<string>(parsed?.settings?.securitySettings?.blockedIps || []);
+      return parsed;
     }
   } catch (err) {
     console.error('Error reading store data:', err);
@@ -160,7 +220,9 @@ function loadStoreData() {
 
 function saveStoreData(data: any) {
   try {
-    const serialized = JSON.stringify(data, null, 2);
+    inMemoryStoreCache = data;
+    inMemoryBlockedIps = new Set<string>(data?.settings?.securitySettings?.blockedIps || []);
+    const serialized = JSON.stringify(data);
     fs.writeFileSync(STORE_FILE, serialized, 'utf-8');
     // Maintain a rolling non-empty backup snapshot ("Not data delete, please")
     const hasCoreData =
@@ -511,11 +573,21 @@ function buildSmartLocalChatReply(params: {
         ? [{ label: isEn ? `⚡ 1-Click Order: ${p.title.slice(0, 18)}` : `⚡ ১-ক্লিক অর্ডার: ${(p.titleBn || p.title).slice(0, 18)}`, action: `buy_${p.id}` }]
         : [{ label: isEn ? `🔔 Notify Stock: ${p.title.slice(0, 16)}` : `🔔 স্টক অ্যালার্ট`, action: `view_${p.id}` }]
     );
+    const attachedProducts = matchedProducts.map((p: any) => ({
+      id: p.id,
+      title: p.title,
+      titleBn: p.titleBn || p.title,
+      price: Number(p.price) || 0,
+      originalPrice: Number(p.originalPrice) || undefined,
+      image: Array.isArray(p.images) ? p.images[0] : undefined,
+      stock: Number(p.stock) || 0
+    }));
     return {
       reply: isEn
-        ? `Here are top matching products at ${storeName}:\n${lines}\nTap a button below for instant 1-click checkout!`
-        : `${storeName}-এ আপনার পছন্দের সেরা পণ্যসমূহ:\n${lines}\nনিচের বাটনে ক্লিক করে সরাসরি ১-ক্লিক অর্ডার সম্পন্ন করুন!`,
-      quickActions
+        ? `Here are top matching products at ${storeName}:\n${lines}\nTap a product card below to view details or buy in 1-click!`
+        : `${storeName}-এ আপনার পছন্দের সেরা পণ্যসমূহ:\n${lines}\nনিচের প্রোডাক্ট কার্ড থেকে বিস্তারিত দেখুন অথবা ১-ক্লিক অর্ডার করুন!`,
+      quickActions,
+      attachedProducts
     };
   }
 
@@ -625,14 +697,6 @@ Be helpful, concise, and guide customers smoothly from browsing to 1-click check
     ];
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-4-hydrogen',
-        contents,
-        config: {
-          systemInstruction
-        }
-      });
-
       const localHints = buildSmartLocalChatReply({
         message: String(message),
         lang,
@@ -643,9 +707,21 @@ Be helpful, concise, and guide customers smoothly from browsing to 1-click check
         assistantDraft
       });
 
+      const response = await Promise.race([
+        ai.models.generateContent({
+          model: 'gemini-4-hydrogen',
+          contents,
+          config: {
+            systemInstruction
+          }
+        }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('chat_timeout')), 3500))
+      ]);
+
       return res.json({
-        reply: sanitizeCustomerFacingReply(response.text || localHints.reply),
+        reply: sanitizeCustomerFacingReply((response as any)?.text || localHints.reply),
         quickActions: localHints.quickActions,
+        attachedProducts: (localHints as any).attachedProducts || [],
         mode: 'gemini_live'
       });
     } catch {
@@ -717,8 +793,11 @@ function mergeSingleOrder(existing: any, incoming: any) {
   };
 }
 
+const DEMO_FAKE_ORDER_IDS = new Set(['BD-89210', 'BD-89211']);
+const DEMO_FAKE_ABANDONED_CART_IDS = new Set(['cart-ab-01', 'cart-ab-02']);
+
 function mergeOrdersById(primary: any[] = [], secondary: any[] = [], deletedIds: string[] = []) {
-  const deletedSet = new Set(deletedIds || []);
+  const deletedSet = new Set([...(deletedIds || []), ...DEMO_FAKE_ORDER_IDS]);
   const map = new Map<string, any>();
   [...secondary, ...primary].forEach((ord) => {
     if (ord && ord.id && !deletedSet.has(ord.id)) {
@@ -1859,21 +1938,119 @@ function redactSensitiveSettingsForPublic(rawData: any) {
   return clone;
 }
 
+function stripAdminOnlyBlobsForStorefront(data: any) {
+  if (!data || typeof data !== 'object') return data;
+  const {
+    socialPosts: _socialPosts,
+    mediaLibrary: _mediaLibrary,
+    visitorLogs: _visitorLogs,
+    bulkSmsLogs: _bulkSmsLogs,
+    aiTeamBriefings: _aiTeamBriefings,
+    autoMarketingLogs: _autoMarketingLogs,
+    expenses: _expenses,
+    customerAccounts: _customerAccounts,
+    abandonedCarts: _abandonedCarts,
+    walletTopUps: _walletTopUps,
+    resellerPayouts: _resellerPayouts,
+    resellerTopUps: _resellerTopUps,
+    wholesaleQuotes: _wholesaleQuotes,
+    affiliateConversions: _affiliateConversions,
+    affiliatePayouts: _affiliatePayouts,
+    aiReviewQueue: _aiReviewQueue,
+    chatInquiries: _chatInquiries,
+    whatsappMessages: _whatsappMessages,
+    ...storefrontCore
+  } = data;
+  return storefrontCore;
+}
+
 app.get('/api/store/sync', (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   const data = loadStoreData();
+  const activeClients = Math.max(1, activeWsClients.size);
+  const sinceVersion = Number(req.query?.sinceVersion || 0);
+  const currentVersion = Number(data?.storeDataVersion || 0);
+  if (sinceVersion > 0 && currentVersion > 0 && sinceVersion === currentVersion) {
+    return res.json({
+      success: true,
+      unchanged: true,
+      storeDataVersion: currentVersion,
+      activeClients
+    });
+  }
   const isAdminSession = req.headers['x-admin-session'] === 'buyone-admin-verified';
   const shouldMask = data?.settings?.securitySettings?.maskPublicSecrets !== false;
-  const responseData = !isAdminSession && shouldMask ? redactSensitiveSettingsForPublic(data) : data;
+  let responseData = !isAdminSession && shouldMask ? redactSensitiveSettingsForPublic(data) : data;
+  if (!isAdminSession) {
+    responseData = stripAdminOnlyBlobsForStorefront(responseData);
+  }
+  const cleanOrders = Array.isArray(responseData?.orders)
+    ? responseData.orders.filter((o: any) => o && o.id && !DEMO_FAKE_ORDER_IDS.has(String(o.id)))
+    : [];
+  const cleanAbandoned = Array.isArray(responseData?.abandonedCarts)
+    ? responseData.abandonedCarts.filter((c: any) => c && c.id && !DEMO_FAKE_ABANDONED_CART_IDS.has(String(c.id)))
+    : [];
   return res.json({
     success: true,
     data: {
       ...(responseData || {}),
+      orders: cleanOrders,
+      abandonedCarts: isAdminSession ? cleanAbandoned : [],
       productViews: data?.productViews || {},
       storeDataVersion: data?.storeDataVersion || Date.now(),
-      activeClients: Math.max(1, activeWsClients.size)
+      activeClients
     }
   });
+});
+
+// Backend Product Reviews API (Unique per-product verified reviews persisted on server)
+app.get('/api/reviews', (req, res) => {
+  const saved = loadStoreData() || {};
+  const productId = String(req.query?.productId || '').trim();
+  const allReviews = Array.isArray(saved.reviews) ? saved.reviews : [];
+  const filtered = productId
+    ? allReviews.filter((r: any) => r && r.productId === productId && r.isApproved !== false)
+    : allReviews.filter((r: any) => r && r.isApproved !== false);
+  const prod = productId ? (saved.products || []).find((p: any) => p.id === productId) : null;
+  return res.json({
+    success: true,
+    reviews: filtered,
+    reviewsCount: prod ? Number(prod.reviewsCount) || filtered.length : filtered.length,
+    soldCount: prod ? Number(prod.soldCount) || 0 : undefined
+  });
+});
+
+app.post('/api/reviews', (req, res) => {
+  try {
+    const clean = sanitizeInput(req.body || {});
+    const productId = String(clean.productId || '').trim();
+    const customerName = String(clean.customerName || '').trim().slice(0, 120);
+    const comment = String(clean.comment || '').trim().slice(0, 1500);
+    const rating = Math.min(5, Math.max(1, Math.round(Number(clean.rating) || 5)));
+    if (!productId || !customerName || !comment) {
+      return res.status(400).json({ success: false, error: 'productId, customerName, and comment are required.' });
+    }
+    const saved = loadStoreData() || {};
+    const newReview = {
+      id: clean.id || `rev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      productId,
+      customerName,
+      rating,
+      comment,
+      date: clean.date || new Date().toLocaleDateString(),
+      verifiedPurchase: true,
+      isApproved: true
+    };
+    const prevReviews = Array.isArray(saved.reviews) ? saved.reviews : [];
+    saved.reviews = [newReview, ...prevReviews.filter((r: any) => r?.id !== newReview.id)];
+    saved.storeDataVersion = Date.now();
+    saved.lastUpdated = new Date().toISOString();
+    saveStoreData(saved);
+    broadcastWs({ type: 'cache:purge', dataVersion: saved.storeDataVersion, reason: 'review_added' });
+    return res.json({ success: true, review: newReview, storeDataVersion: saved.storeDataVersion });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to save review' });
+  }
 });
 
 app.post('/api/store/sync', (req, res) => {
@@ -2025,10 +2202,19 @@ app.post('/api/store/sync', (req, res) => {
     ? current.products.filter((p: any) => p && !deletedProductSet.has(String(p.id || '')) && !isLiteralTestProduct(p))
     : current.products;
 
-  const updated = {
+  const externalizedProducts = Array.isArray(sanitizedIncomingProducts)
+    ? sanitizedIncomingProducts.map((p: any) => ({
+        ...p,
+        images: Array.isArray(p?.images)
+          ? p.images.map((im: string) => externalizeBase64ImageString(im, `prod-${String(p.id || 'item').replace(/[^a-z0-9]/gi, '')}`))
+          : p?.images
+      }))
+    : sanitizedIncomingProducts;
+
+  const updated = externalizeStoreMediaDeep({
     ...current,
     deletedProductIds: Array.from(deletedProductSet).slice(0, 200),
-    products: preserveNonEmpty(sanitizedIncomingProducts, sanitizedCurrentProducts),
+    products: preserveNonEmpty(externalizedProducts, sanitizedCurrentProducts),
     orders: mergedOrders,
     settings: mergedSettings,
     spinRewards: preserveNonEmpty(spinRewards, current.spinRewards),
@@ -2036,7 +2222,9 @@ app.post('/api/store/sync', (req, res) => {
     sliders: preserveNonEmpty(sliders, current.sliders),
     customerAccounts: preserveNonEmpty(customerAccounts, current.customerAccounts),
     walletTopUps: walletTopUps !== undefined ? walletTopUps : current.walletTopUps,
-    abandonedCarts: abandonedCarts !== undefined ? abandonedCarts : current.abandonedCarts,
+    abandonedCarts: (abandonedCarts !== undefined ? abandonedCarts : current.abandonedCarts || []).filter(
+      (c: any) => c && c.id && !DEMO_FAKE_ABANDONED_CART_IDS.has(String(c.id))
+    ),
     reviews: preserveNonEmpty(reviews, current.reviews),
     priceAlerts: priceAlerts !== undefined ? priceAlerts : current.priceAlerts,
     waitlist: waitlist !== undefined ? waitlist : current.waitlist,
@@ -2097,7 +2285,7 @@ app.post('/api/store/sync', (req, res) => {
     productViews: current.productViews || {},
     storeDataVersion: Date.now(),
     lastUpdated: new Date().toISOString()
-  };
+  }, 'sync');
   saveStoreData(updated);
   broadcastWs({
     type: 'cache:purge',
@@ -2106,7 +2294,8 @@ app.post('/api/store/sync', (req, res) => {
   });
   const isAdminSession = req.headers['x-admin-session'] === 'buyone-admin-verified';
   const shouldMask = updated?.settings?.securitySettings?.maskPublicSecrets !== false;
-  const payloadOut = !isAdminSession && shouldMask ? redactSensitiveSettingsForPublic(updated) : updated;
+  let payloadOut = !isAdminSession && shouldMask ? redactSensitiveSettingsForPublic(updated) : updated;
+  if (!isAdminSession) payloadOut = stripAdminOnlyBlobsForStorefront(payloadOut);
   return res.json({
     success: true,
     message: 'Store synchronized',
@@ -2871,27 +3060,25 @@ app.post('/api/fraud-check', (req, res) => {
   );
   const delivered = customerHistory.filter((o) => o.status === 'delivered').length;
   const cancelled = customerHistory.filter((o) => o.status === 'cancelled').length;
-  const totalOrders = Math.max(customerHistory.length, 1);
-  let successRate = 92;
-  if (customerHistory.length > 0) {
-    const completedOrActive = totalOrders - cancelled;
-    successRate = Math.max(15, Math.min(100, Math.round((completedOrActive / totalOrders) * 100)));
-  } else {
-    const sum = cleanPhone.split('').reduce((a, b) => a + (parseInt(b, 10) || 0), 0);
-    successRate = sum % 7 === 0 ? 64 : 96;
-  }
+  const totalOrders = customerHistory.length;
+  const successRate =
+    totalOrders > 0
+      ? Math.max(15, Math.min(100, Math.round(((totalOrders - cancelled) / totalOrders) * 100)))
+      : 100;
   const riskLevel = successRate >= 80 ? 'safe' : successRate >= 55 ? 'moderate' : 'high_risk';
   return res.json({
     success: true,
     checked: true,
     successRate,
-    totalOrders: customerHistory.length || 1,
-    deliveredCount: delivered || (riskLevel === 'safe' ? 1 : 0),
+    totalOrders,
+    deliveredCount: delivered,
     cancelledCount: cancelled,
     riskLevel,
     message:
-      riskLevel === 'safe'
-        ? `সফলতা ${successRate}% — বিশ্বস্ত ক্রেতা (নিরাপদ COD অর্ডার)।`
+      totalOrders === 0
+        ? 'নতুন গ্রাহক নম্বর — পূর্ববর্তী কোনো বাতিল অর্ডার রেকর্ড নেই।'
+        : riskLevel === 'safe'
+        ? `পূর্ববর্তী ${totalOrders}টি রিয়েল অর্ডারে সফলতা ${successRate}% — নিরাপদ COD অর্ডার।`
         : riskLevel === 'moderate'
         ? `সফলতা ${successRate}% — কল করে ঠিকানা যাচাই বা আংশিক অগ্রিম নেওয়া উত্তম।`
         : `সফলতা ${successRate}% — উচ্চ বাতিলের ঝুঁকি! অগ্রিম ডেলিভারি চার্জ নিন।`
@@ -7503,8 +7690,8 @@ async function startServer() {
       }
       const prodReviews = (saved.reviews || []).filter((r: any) => r.productId === product.id);
       const avgRating = Number(product.rating) || 4.8;
-      const revCount = Math.max(500, Number(product.reviewsCount) || 520);
-      const soldCount = Math.max(500, Number(product.soldCount) || 540);
+      const revCount = Math.max(prodReviews.length, Number(product.reviewsCount) || prodReviews.length);
+      const soldCount = Math.max(0, Number(product.soldCount) || 0);
       const highlights = (lang === 'bn' ? product.featuresBn || product.features : product.features || product.featuresBn) || [];
 
       let answer =
@@ -7626,6 +7813,317 @@ async function startServer() {
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, ok: false, error: err?.message || 'Admin insights failed' });
+    }
+  });
+
+  // AI-Driven Related Products (category + subcategory + tags matching with gemini-4-hydrogen)
+  const relatedProductsCache = new Map<string, { expiresAt: number; payload: any }>();
+
+  app.post('/api/ai/related-products', async (req, res) => {
+    try {
+      const { productId = '', category = '', subcategory = '', tags = [], lang = 'en', limit = 4 } = req.body || {};
+      const maxItems = Math.max(1, Math.min(8, Number(limit) || 4));
+      const saved = loadStoreData() || {};
+      const catalog = getVisibleCatalogProducts(saved);
+      const target = catalog.find((p: any) => String(p.id) === String(productId));
+
+      const targetCategory = String(target?.category || category || '').trim().toLowerCase();
+      const targetSubcategory = String(target?.subcategory || subcategory || '').trim().toLowerCase();
+      const rawTags: string[] = Array.isArray(target?.tags) && target.tags.length > 0
+        ? target.tags
+        : Array.isArray(tags)
+        ? tags
+        : [];
+      const targetTags = new Set(rawTags.map((t) => String(t).trim().toLowerCase()).filter(Boolean));
+      const targetWords = new Set(
+        `${target?.title || ''} ${target?.titleBn || ''} ${targetSubcategory} ${Array.from(targetTags).join(' ')}`
+          .toLowerCase()
+          .split(/[\s,./|_-]+/)
+          .filter((w) => w.length >= 3)
+      );
+      const targetPrice = Number(target?.price) || 0;
+      const targetBrand = String(target?.brand || '').trim().toLowerCase();
+
+      const others = catalog.filter((p: any) => String(p.id) !== String(productId));
+      if (others.length === 0) {
+        return res.json({ success: true, ok: true, products: [], productIds: [], reasonEn: '', reasonBn: '', source: 'empty' });
+      }
+
+      const scored = others
+        .map((cand: any) => {
+          let score = 0;
+          const candCat = String(cand.category || '').trim().toLowerCase();
+          const candSub = String(cand.subcategory || '').trim().toLowerCase();
+          const candTags = new Set((Array.isArray(cand.tags) ? cand.tags : []).map((t: any) => String(t).trim().toLowerCase()));
+          const candBrand = String(cand.brand || '').trim().toLowerCase();
+
+          if (targetSubcategory && candSub && candSub === targetSubcategory) score += 16;
+          if (targetCategory && candCat && candCat === targetCategory) score += 10;
+
+          let sharedTagCount = 0;
+          targetTags.forEach((tg) => {
+            if (candTags.has(tg)) sharedTagCount += 1;
+          });
+          score += sharedTagCount * 7;
+
+          const candText = `${cand.title || ''} ${cand.titleBn || ''} ${candSub} ${Array.from(candTags).join(' ')}`.toLowerCase();
+          let wordHits = 0;
+          targetWords.forEach((w) => {
+            if (candText.includes(w)) wordHits += 1;
+          });
+          score += Math.min(8, wordHits * 2);
+
+          if (targetBrand && candBrand && targetBrand === candBrand) score += 3;
+          if (targetPrice > 0 && Number(cand.price) > 0) {
+            const ratio = Math.abs(Number(cand.price) - targetPrice) / targetPrice;
+            if (ratio <= 0.45) score += 2.5;
+          }
+          if (Number(cand.stock || 0) > 0) score += 2;
+          score += Math.min(2, (Number(cand.rating) || 4.8) * 0.3) + Math.min(2, (Number(cand.soldCount) || 0) / 800);
+
+          return { cand, score };
+        })
+        .sort((a, b) => b.score - a.score);
+
+      const cacheKey = `${productId}:${targetCategory}:${targetSubcategory}:${Array.from(targetTags).sort().join(',')}:${maxItems}:${catalog.length}`;
+      const cached = relatedProductsCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return res.json({
+          ...cached.payload,
+          reason: lang === 'bn' ? cached.payload.reasonBn : cached.payload.reasonEn
+        });
+      }
+
+      const topFallback = scored.slice(0, maxItems).map((x) => x.cand);
+      let finalProducts = topFallback;
+      let reasonEn = targetSubcategory || targetTags.size > 0
+        ? 'Matched by category, subcategory, and product tags for a cohesive setup.'
+        : 'Selected from the same department based on popularity and buyer fit.';
+      let reasonBn = targetSubcategory || targetTags.size > 0
+        ? 'একই ক্যাটাগরি, সাব-ক্যাটাগরি এবং পণ্যের ট্যাগের সাথে সামঞ্জস্য রেখে সেরা বিকল্পগুলো বাছাই করা হয়েছে।'
+        : 'একই বিভাগের জনপ্রিয়তা ও ক্রেতাদের পছন্দ অনুযায়ী মানানসই পণ্যগুলো বাছাই করা হয়েছে।';
+      let source: 'ai' | 'smart_match' = 'smart_match';
+
+      if (process.env.GEMINI_API_KEY && scored.length > 0) {
+        try {
+          const candidatePool = scored.slice(0, 10).map(({ cand, score }) => ({
+            id: cand.id,
+            title: cand.title || cand.titleBn,
+            category: cand.category,
+            subcategory: cand.subcategory || '',
+            tags: cand.tags || [],
+            price: cand.price,
+            stock: cand.stock,
+            rating: cand.rating,
+            heuristicScore: Number(score.toFixed(1))
+          }));
+
+          const targetSummary = {
+            id: target?.id || productId,
+            title: target?.title || target?.titleBn || '',
+            category: targetCategory,
+            subcategory: targetSubcategory,
+            tags: Array.from(targetTags),
+            price: targetPrice
+          };
+
+          const aiPromise = ai.models.generateContent({
+            model: 'gemini-4-hydrogen',
+            contents: `Select the ${maxItems} most relevant related or complementary e-commerce products from candidates for the viewed product. Prioritize shared subcategory, tags, category, and complementary usage.\nTarget Product: ${JSON.stringify(targetSummary)}\nCandidates: ${JSON.stringify(candidatePool)}\nKeep reasonEn in crisp pure English (1 short sentence, max 18 words) and reasonBn in natural pure Bengali (1 short sentence, no mixed English parentheses).`,
+            config: {
+              thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  productIds: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING }
+                  },
+                  reasonEn: { type: Type.STRING },
+                  reasonBn: { type: Type.STRING }
+                },
+                required: ['productIds', 'reasonEn', 'reasonBn']
+              }
+            }
+          });
+
+          const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 4500));
+          const aiResp: any = await Promise.race([aiPromise, timeoutPromise]);
+
+          if (aiResp?.text) {
+            const parsed = JSON.parse(aiResp.text);
+            const validIds = new Set(others.map((p: any) => String(p.id)));
+            const pickedIds: string[] = [];
+            (Array.isArray(parsed.productIds) ? parsed.productIds : []).forEach((rawId: any) => {
+              const idStr = String(rawId || '');
+              if (validIds.has(idStr) && !pickedIds.includes(idStr)) {
+                pickedIds.push(idStr);
+              }
+            });
+            for (const x of scored) {
+              if (pickedIds.length >= maxItems) break;
+              if (!pickedIds.includes(String(x.cand.id))) {
+                pickedIds.push(String(x.cand.id));
+              }
+            }
+            const byId = new Map(others.map((p: any) => [String(p.id), p]));
+            const ordered = pickedIds.slice(0, maxItems).map((id) => byId.get(id)).filter(Boolean);
+            if (ordered.length > 0) {
+              finalProducts = ordered;
+              if (typeof parsed.reasonEn === 'string' && parsed.reasonEn.trim()) {
+                reasonEn = sanitizeCustomerFacingReply(parsed.reasonEn.trim());
+              }
+              if (typeof parsed.reasonBn === 'string' && parsed.reasonBn.trim()) {
+                reasonBn = sanitizeCustomerFacingReply(parsed.reasonBn.trim());
+              }
+              source = 'ai';
+            }
+          }
+        } catch {}
+      }
+
+      const payload = {
+        success: true,
+        ok: true,
+        products: finalProducts,
+        productIds: finalProducts.map((p: any) => p.id),
+        reasonEn,
+        reasonBn,
+        reason: lang === 'bn' ? reasonBn : reasonEn,
+        source
+      };
+
+      relatedProductsCache.set(cacheKey, { expiresAt: Date.now() + 10 * 60 * 1000, payload });
+      if (relatedProductsCache.size > 120) {
+        const firstKey = relatedProductsCache.keys().next().value;
+        if (firstKey) relatedProductsCache.delete(firstKey);
+      }
+
+      return res.json(payload);
+    } catch (err: any) {
+      return res.status(500).json({ success: false, ok: false, error: err?.message || 'Related products error' });
+    }
+  });
+
+  // Bilingual AI Product Description & Highlights Generator (separate pure English & pure Bangla sections)
+  app.post('/api/ai/product-description', async (req, res) => {
+    try {
+      const {
+        title = '',
+        titleBn = '',
+        category = '',
+        categoryBn = '',
+        subcategory = '',
+        brand = '',
+        brandBn = '',
+        price = 0,
+        tags = [],
+        existingDescription = '',
+        existingDescriptionBn = ''
+      } = req.body || {};
+
+      const cleanTitleEn = String(title || titleBn || 'Premium Product').trim();
+      const cleanTitleBn = String(titleBn || title || 'প্রিমিয়াম পণ্য').trim();
+
+      let description = `${cleanTitleEn} delivers dependable everyday performance with verified original build quality${brand ? ` from ${brand}` : ''}. Backed by nationwide Cash on Delivery across all 64 districts of Bangladesh and a 7-day replacement guarantee.`;
+      let descriptionBn = `${cleanTitleBn} — ১০০% অরিজিনাল ও দীর্ঘস্থায়ী মানের একটি নির্ভরযোগ্য পণ্য। সারা বাংলাদেশের ৬৪ জেলায় দ্রুত হোম ডেলিভারি, ক্যাশ অন ডেলিভারি এবং ৭ দিনের সহজ রিপ্লেসমেন্ট সুবিধাসহ পাচ্ছেন সেরা মূল্যে।`;
+      let features = [
+        '100% Authentic & Quality Checked',
+        'Nationwide Cash on Delivery Available',
+        '7-Day Easy Replacement Guarantee',
+        'Secure Protective Packaging'
+      ];
+      let featuresBn = [
+        '১০০% অরিজিনাল ও মানসম্মত পণ্য',
+        'সমগ্র বাংলাদেশে ক্যাশ অন ডেলিভারি সুবিধা',
+        '৭ দিনের সহজ রিপ্লেসমেন্ট গ্যারান্টি',
+        'নিরাপদ প্যাকেজিং ও দ্রুত ডিসপ্যাচ'
+      ];
+      let warrantyInfo = '7-day replacement guarantee';
+      let warrantyInfoBn = '৭ দিনের রিপ্লেসমেন্ট ওয়ারেন্টি';
+      let source: 'ai' | 'template' = 'template';
+
+      if (process.env.GEMINI_API_KEY) {
+        try {
+          const prompt = `Write two clean, distinct e-commerce product descriptions for an online store in Bangladesh:
+1. "description": PURE ENGLISH ONLY (2-3 persuasive sentences highlighting specs, benefits, and reliability. ZERO Bengali words/characters).
+2. "descriptionBn": PURE BENGALI ONLY (2-3 natural persuasive Bengali sentences. No awkward English parentheticals).
+3. "features": 4 short bullet points in pure English.
+4. "featuresBn": 4 short bullet points in pure Bengali.
+5. "warrantyInfo": short pure English warranty line.
+6. "warrantyInfoBn": short pure Bengali warranty line.
+
+Product info:
+Title EN: ${cleanTitleEn}
+Title BN: ${cleanTitleBn}
+Category: ${categoryBn || category} / Subcategory: ${subcategory}
+Brand: ${brandBn || brand}
+Price: ৳${price || 0}
+Tags: ${Array.isArray(tags) ? tags.join(', ') : ''}
+Existing EN draft: ${String(existingDescription || '').slice(0, 300)}
+Existing BN draft: ${String(existingDescriptionBn || '').slice(0, 300)}`;
+
+          const aiPromise = ai.models.generateContent({
+            model: 'gemini-4-hydrogen',
+            contents: prompt,
+            config: {
+              thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  description: { type: Type.STRING },
+                  descriptionBn: { type: Type.STRING },
+                  features: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  featuresBn: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  warrantyInfo: { type: Type.STRING },
+                  warrantyInfoBn: { type: Type.STRING }
+                },
+                required: ['description', 'descriptionBn', 'features', 'featuresBn', 'warrantyInfo', 'warrantyInfoBn']
+              }
+            }
+          });
+          const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000));
+          const aiResp: any = await Promise.race([aiPromise, timeoutPromise]);
+          if (aiResp?.text) {
+            const parsed = JSON.parse(aiResp.text);
+            if (typeof parsed.description === 'string' && parsed.description.trim()) {
+              description = sanitizeCustomerFacingReply(parsed.description.trim());
+            }
+            if (typeof parsed.descriptionBn === 'string' && parsed.descriptionBn.trim()) {
+              descriptionBn = sanitizeCustomerFacingReply(parsed.descriptionBn.trim());
+            }
+            if (Array.isArray(parsed.features) && parsed.features.length > 0) {
+              features = parsed.features.map((f: any) => String(f).trim()).filter(Boolean).slice(0, 5);
+            }
+            if (Array.isArray(parsed.featuresBn) && parsed.featuresBn.length > 0) {
+              featuresBn = parsed.featuresBn.map((f: any) => String(f).trim()).filter(Boolean).slice(0, 5);
+            }
+            if (typeof parsed.warrantyInfo === 'string' && parsed.warrantyInfo.trim()) {
+              warrantyInfo = parsed.warrantyInfo.trim();
+            }
+            if (typeof parsed.warrantyInfoBn === 'string' && parsed.warrantyInfoBn.trim()) {
+              warrantyInfoBn = parsed.warrantyInfoBn.trim();
+            }
+            source = 'ai';
+          }
+        } catch {}
+      }
+
+      return res.json({
+        success: true,
+        ok: true,
+        description,
+        descriptionBn,
+        features,
+        featuresBn,
+        warrantyInfo,
+        warrantyInfoBn,
+        source
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, ok: false, error: err?.message || 'Description generation failed' });
     }
   });
 

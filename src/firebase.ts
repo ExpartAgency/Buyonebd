@@ -3,7 +3,7 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import {
   getFirestore,
   initializeFirestore,
-  enableNetwork,
+  memoryLocalCache,
   doc,
   getDoc,
   getDocs,
@@ -49,17 +49,26 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 function createFirestoreInstance(): Firestore {
   const dbId = firebaseConfig.firestoreDatabaseId;
   if (typeof window !== 'undefined') {
+    const g = globalThis as unknown as { __buyoneFirestoreDb?: Firestore };
+    if (g.__buyoneFirestoreDb) {
+      return g.__buyoneFirestoreDb;
+    }
     try {
-      return initializeFirestore(
+      const instance = initializeFirestore(
         app,
         {
-          experimentalForceLongPolling: true,
+          experimentalAutoDetectLongPolling: true,
+          localCache: memoryLocalCache(),
           ignoreUndefinedProperties: true
         },
         dbId
       );
+      g.__buyoneFirestoreDb = instance;
+      return instance;
     } catch {
-      return getFirestore(app, dbId);
+      const fallback = getFirestore(app, dbId);
+      g.__buyoneFirestoreDb = fallback;
+      return fallback;
     }
   }
   return getFirestore(app, dbId);
@@ -128,30 +137,17 @@ export function handleFirestoreError(
 async function testFirestoreConnection() {
   if (typeof window === 'undefined') return;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  const g = globalThis as unknown as { __buyoneFsTested?: boolean };
+  if (g.__buyoneFsTested) return;
+  g.__buyoneFsTested = true;
   try {
     await getDocFromServer(doc(db, 'storefront', 'public'));
-  } catch (error) {
-    const msg = error instanceof Error ? error.message.toLowerCase() : String(error || '').toLowerCase();
-    if (msg.includes('the client is offline') || msg.includes('unavailable') || msg.includes('could not reach')) {
-      try {
-        await enableNetwork(db).catch(() => {});
-        await new Promise((resolve) => setTimeout(resolve, 1200));
-        await getDocFromServer(doc(db, 'storefront', 'public'));
-        return;
-      } catch (retryError) {
-        const retryMsg = retryError instanceof Error ? retryError.message.toLowerCase() : '';
-        if (retryMsg.includes('the client is offline')) {
-          console.error('Please check your Firebase configuration.');
-        }
-      }
-    }
+  } catch {
+    // Graceful fallback: store sync continues via Express API + offline cache when Firestore network is blocked/offline
   }
 }
 
 if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => {
-    enableNetwork(db).catch(() => {});
-  });
   void testFirestoreConnection();
 }
 
@@ -1401,6 +1397,32 @@ export async function saveResellerPayoutToFirestore(payout: ResellerPayoutReques
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function fetchResellerPayoutsFromFirestore(): Promise<ResellerPayoutRequest[]> {
+  if (!auth.currentUser) return [];
+  try {
+    const snap = await getDocs(collection(db, 'reseller_payouts'));
+    return snap.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: data.id || d.id,
+        resellerId: String(data.resellerId || ''),
+        resellerName: String(data.resellerName || ''),
+        resellerPhone: String(data.resellerPhone || ''),
+        method: (data.method || 'bkash') as ResellerPayoutRequest['method'],
+        accountNumber: String(data.accountNumber || ''),
+        amount: Number(data.amount) || 0,
+        status: (data.status || 'pending') as ResellerPayoutRequest['status'],
+        trxId: data.trxId ? String(data.trxId) : undefined,
+        note: data.note ? String(data.note) : undefined,
+        createdAt: String(data.submittedAt || new Date().toISOString()),
+        processedAt: data.processedAt ? String(data.processedAt) : undefined
+      } as ResellerPayoutRequest;
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'reseller_payouts');
   }
 }
 

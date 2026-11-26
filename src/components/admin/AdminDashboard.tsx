@@ -533,6 +533,9 @@ export const AdminDashboard: React.FC = () => {
   const [customerConsoleTab, setCustomerConsoleTab] = useState<'call' | 'chat' | 'orders' | 'inquiries'>('call');
   const [deskQueueTab, setDeskQueueTab] = useState<'customers' | 'chats' | 'inquiries'>('customers');
   const [customerChatDraft, setCustomerChatDraft] = useState('');
+  const [chatQueueSearch, setChatQueueSearch] = useState('');
+  const [chatQueueFilter, setChatQueueFilter] = useState<'all' | 'unread' | 'open' | 'resolved'>('all');
+  const adminChatEndRef = useRef<HTMLDivElement>(null);
   const [isGeneratingCustomerChatAi, setIsGeneratingCustomerChatAi] = useState(false);
   const [selectedDeskQuickProductId, setSelectedDeskQuickProductId] = useState('');
   const [visitorTargetProductId, setVisitorTargetProductId] = useState('');
@@ -734,7 +737,8 @@ export const AdminDashboard: React.FC = () => {
   // Product modal
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
-  const [colorsDraft, setColorsDraft] = useState('Black (কালো), Silver (সিলভার)');
+  const [isGeneratingProductDesc, setIsGeneratingProductDesc] = useState(false);
+  const [colorsDraft, setColorsDraft] = useState('Black, Silver');
   const [sizesDraft, setSizesDraft] = useState('Standard Set');
   const [newAttrName, setNewAttrName] = useState('');
   const [newAttrNameBn, setNewAttrNameBn] = useState('');
@@ -1337,6 +1341,17 @@ export const AdminDashboard: React.FC = () => {
 
   const activeChatObj =
     supportChats.find((c) => c.id === selectedChatId) || supportChats[0] || null;
+
+  useEffect(() => {
+    if (activeTab === 'support_desk' && customerConsoleTab === 'chat') {
+      if (activeChatObj && (activeChatObj.unreadByAdmin || 0) > 0) {
+        markChatRead(activeChatObj.id);
+      }
+      setTimeout(() => {
+        adminChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 60);
+    }
+  }, [activeTab, customerConsoleTab, activeChatObj?.id, activeChatObj?.messages?.length, activeChatObj?.unreadByAdmin]);
 
   // Group all distinct customers by normalized phone across browserCalls, orders, and supportChats
   const normalizePhoneKey = (phone?: string) => (phone || '').replace(/[^0-9]/g, '').slice(-11);
@@ -2375,11 +2390,16 @@ export const AdminDashboard: React.FC = () => {
                             setDeskQueueTab('chats');
                             setCustomerConsoleTab('chat');
                           }}
-                          className={`px-2 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap truncate ${
+                          className={`px-2 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap truncate flex items-center justify-center gap-1 ${
                             deskQueueTab === 'chats' ? 'bg-slate-800 text-sky-300' : 'text-slate-400 hover:text-slate-200'
                           }`}
                         >
-                          {at('চ্যাট', 'Chats')} ({supportChats.length})
+                          <span>{at('চ্যাট', 'Chats')} ({supportChats.length})</span>
+                          {unreadThreadsCount > 0 && (
+                            <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[9px] font-black leading-tight tabular-nums">
+                              {unreadThreadsCount}
+                            </span>
+                          )}
                         </button>
                         <button
                           type="button"
@@ -2431,18 +2451,52 @@ export const AdminDashboard: React.FC = () => {
                       )}
 
                       {deskQueueTab === 'chats' && (
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[11px] text-slate-400 font-mono">
-                            {at(`${unreadThreadsCount} অপঠিত`, `${unreadThreadsCount} unread`)}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setIsNewManualChatOpen((v) => !v)}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                          >
-                            <Plus className="w-3 h-3" />
-                            <span>{at('নতুন চ্যাট', 'New Thread')}</span>
-                          </button>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-slate-400 font-mono tabular-nums">
+                              {at(`${unreadThreadsCount} অপঠিত`, `${unreadThreadsCount} unread`)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setIsNewManualChatOpen((v) => !v)}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>{at('নতুন চ্যাট', 'New Thread')}</span>
+                            </button>
+                          </div>
+                          <div className="relative">
+                            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="text"
+                              value={chatQueueSearch}
+                              onChange={(e) => setChatQueueSearch(e.target.value)}
+                              placeholder={at('নাম, ফোন বা মেসেজ খুঁজুন...', 'Search name, phone, message...')}
+                              className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1 text-[10px] font-bold overflow-x-auto scrollbar-none">
+                            {(['all', 'unread', 'open', 'resolved'] as const).map((flt) => (
+                              <button
+                                key={flt}
+                                type="button"
+                                onClick={() => setChatQueueFilter(flt)}
+                                className={`px-2 py-1 rounded-md border cursor-pointer transition-colors whitespace-nowrap ${
+                                  chatQueueFilter === flt
+                                    ? 'bg-sky-600 text-white border-sky-500'
+                                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                                }`}
+                              >
+                                {flt === 'all'
+                                  ? at('সকল', 'All')
+                                  : flt === 'unread'
+                                  ? at('অপঠিত', 'Unread')
+                                  : flt === 'open'
+                                  ? at('চলমান', 'Open')
+                                  : at('সমাধান', 'Resolved')}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2602,50 +2656,76 @@ export const AdminDashboard: React.FC = () => {
                           })
                         )
                       ) : deskQueueTab === 'chats' ? (
-                        supportChats.length === 0 ? (
-                          <div className="p-8 text-center text-xs text-slate-500">
-                            {at('এখনো কোনো চ্যাট থ্রেড নেই', 'No chat threads yet')}
-                          </div>
-                        ) : (
-                          supportChats.map((chat) => {
-                            const isSelected = (activeCustomerChatSession?.id || activeChatObj?.id) === chat.id;
-                            const lastMsg = chat.messages[chat.messages.length - 1];
-                            return (
-                              <button
-                                key={chat.id}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedChatId(chat.id);
-                                  const pKey = normalizePhoneKey(chat.customerPhone);
-                                  if (pKey) setSelectedCustomerPhone(pKey);
-                                  markChatRead(chat.id);
-                                  setCustomerConsoleTab('chat');
-                                }}
-                                className={`w-full text-left p-3 cursor-pointer transition-colors ${
-                                  isSelected ? 'bg-slate-800/75' : 'hover:bg-slate-900/80'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="text-xs font-bold text-white truncate">{chat.customerName}</span>
-                                  <div className="flex items-center gap-2 shrink-0 text-[10px] font-mono">
-                                    <span className={chat.manualMode ? 'text-amber-300' : 'text-emerald-400'}>
-                                      {chat.manualMode ? 'MANUAL' : 'AI'}
-                                    </span>
-                                    {chat.unreadByAdmin > 0 && (
-                                      <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white font-bold tabular-nums">
-                                        {chat.unreadByAdmin}
+                        (() => {
+                          const cq = chatQueueSearch.trim().toLowerCase();
+                          const filteredChats = supportChats
+                            .filter((chat) => {
+                              if (chatQueueFilter === 'unread' && (chat.unreadByAdmin || 0) <= 0) return false;
+                              if (chatQueueFilter === 'open' && chat.status === 'resolved') return false;
+                              if (chatQueueFilter === 'resolved' && chat.status !== 'resolved') return false;
+                              if (!cq) return true;
+                              const lastM = chat.messages[chat.messages.length - 1]?.text || '';
+                              return (
+                                (chat.customerName || '').toLowerCase().includes(cq) ||
+                                (chat.customerPhone || '').toLowerCase().includes(cq) ||
+                                lastM.toLowerCase().includes(cq)
+                              );
+                            })
+                            .sort((a, b) => {
+                              const ua = a.unreadByAdmin > 0 ? 1 : 0;
+                              const ub = b.unreadByAdmin > 0 ? 1 : 0;
+                              if (ub !== ua) return ub - ua;
+                              return new Date(b.lastUpdated || 0).getTime() - new Date(a.lastUpdated || 0).getTime();
+                            });
+
+                          return filteredChats.length === 0 ? (
+                            <div className="p-8 text-center text-xs text-slate-500">
+                              {supportChats.length === 0
+                                ? at('এখনো কোনো চ্যাট থ্রেড নেই', 'No chat threads yet')
+                                : at('কোনো ম্যাচিং চ্যাট পাওয়া যায়নি', 'No matching chats')}
+                            </div>
+                          ) : (
+                            filteredChats.map((chat) => {
+                              const isSelected = (activeCustomerChatSession?.id || activeChatObj?.id) === chat.id;
+                              const lastMsg = chat.messages[chat.messages.length - 1];
+                              return (
+                                <button
+                                  key={chat.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedChatId(chat.id);
+                                    const pKey = normalizePhoneKey(chat.customerPhone);
+                                    if (pKey) setSelectedCustomerPhone(pKey);
+                                    markChatRead(chat.id);
+                                    setCustomerConsoleTab('chat');
+                                  }}
+                                  className={`w-full text-left p-3 cursor-pointer transition-colors ${
+                                    isSelected ? 'bg-slate-800/75 border-l-2 border-sky-500' : 'hover:bg-slate-900/80'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-xs font-bold text-white truncate">{chat.customerName}</span>
+                                    <div className="flex items-center gap-1.5 shrink-0 text-[10px] font-mono">
+                                      <span className={chat.manualMode ? 'text-amber-300' : 'text-emerald-400'}>
+                                        {chat.manualMode ? 'MANUAL' : 'AI'}
                                       </span>
-                                    )}
+                                      {chat.unreadByAdmin > 0 && (
+                                        <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white font-bold tabular-nums">
+                                          {chat.unreadByAdmin}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
-                                </div>
-                                <p className="text-[11px] text-slate-400 line-clamp-1 mt-1">{lastMsg?.text || '...'}</p>
-                                <div className="text-[10px] text-slate-500 font-mono mt-1 tabular-nums">
-                                  {chat.customerPhone || 'Visitor'} · {new Date(chat.lastUpdated).toLocaleTimeString()}
-                                </div>
-                              </button>
-                            );
-                          })
-                        )
+                                  <p className="text-[11px] text-slate-400 line-clamp-1 mt-1">{lastMsg?.text || '...'}</p>
+                                  <div className="text-[10px] text-slate-500 font-mono mt-1 tabular-nums flex items-center justify-between gap-2">
+                                    <span className="truncate">{chat.customerPhone || 'Visitor'}</span>
+                                    <span>{new Date(chat.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                  </div>
+                                </button>
+                              );
+                            })
+                          );
+                        })()
                       ) : (
                         <div className="p-4 text-xs text-slate-400 space-y-2">
                           <p className="font-bold text-white">
@@ -2969,7 +3049,7 @@ export const AdminDashboard: React.FC = () => {
                               </div>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto space-y-2.5 max-h-[300px] pr-1">
+                            <div className="flex-1 overflow-y-auto space-y-2.5 min-h-[340px] max-h-[440px] pr-1">
                               {targetThread.messages.length === 0 ? (
                                 <p className="text-center text-xs text-slate-500 py-10">
                                   {at('প্রথম মেসেজ পাঠিয়ে সরাসরি কথোপকথন শুরু করুন...', 'Send the first direct message to this customer...')}
@@ -2997,10 +3077,24 @@ export const AdminDashboard: React.FC = () => {
                                         <span className="font-mono">{m.time}</span>
                                       </div>
                                       <p>{m.text}</p>
+                                      {Array.isArray(m.attachedProducts) && m.attachedProducts.length > 0 && (
+                                        <div className="mt-2 pt-1.5 border-t border-white/15 space-y-1">
+                                          {m.attachedProducts.slice(0, 3).map((ap) => (
+                                            <div key={`${m.id}-${ap.id}`} className="flex items-center gap-2 text-[10px] bg-black/20 rounded-lg px-2 py-1">
+                                              {ap.image && (
+                                                <img src={ap.image} alt={ap.title} className="w-6 h-6 rounded object-cover shrink-0" />
+                                              )}
+                                              <span className="truncate flex-1 font-semibold">{ap.titleBn || ap.title}</span>
+                                              <span className="font-mono font-bold shrink-0">৳{ap.price}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 ))
                               )}
+                              <div ref={adminChatEndRef} />
                             </div>
 
                             <div className="pt-2.5 border-t border-slate-800 space-y-2">
@@ -18196,49 +18290,88 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
 
               <button
                 type="button"
-                onClick={() => {
-                  const title = productForm.titleBn || productForm.title || 'প্রিমিয়াম পণ্য';
-                  const aiDescBn = `${title} - প্রিমিয়াম কোয়ালিটির আসল পণ্য। ১০০% জেনুইন ব্র্যান্ড কোয়ালিটি ও লং-লাস্টিং পারফরম্যান্স। সারা বাংলাদেশে দ্রুততম হোম ডেলিভারি ও ক্যাশ অন ডেলিভারি সুবিধা সহ পাচ্ছেন স্পেশাল ডিসকাউন্ট।`;
-                  const aiDescEn = `${productForm.title || 'Premium product'} - 100% authentic quality with fast nationwide cash on delivery.`;
-                  const aiFeatures = [
-                    '১০০% প্রিমিয়াম ও অরিজিনাল কোয়ালিটি নিশ্চিত',
-                    'সারাদেশে ক্যাশ অন ডেলিভারি সুবিধা',
-                    '৭ দিনের রিপ্লেসমেন্ট গ্যারান্টি',
-                    'স্মার্ট বিল্ড কোয়ালিটি ও দীর্ঘস্থায়ী কার্যক্ষমতা'
-                  ];
-                  setProductForm({
-                    ...productForm,
-                    descriptionBn: aiDescBn,
-                    description: aiDescEn,
-                    features: aiFeatures
-                  });
-                  addToast('success', 'এআই কপিরাইটার সক্রিয়!', 'পণ্যের আকর্ষণীয় বিবরণ ও ফিচার স্বয়ংক্রিয়ভাবে তৈরি হয়েছে।');
+                disabled={isGeneratingProductDesc}
+                onClick={async () => {
+                  setIsGeneratingProductDesc(true);
+                  try {
+                    const res = await fetch('/api/ai/product-description', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        title: productForm.title,
+                        titleBn: productForm.titleBn,
+                        category: productForm.category,
+                        categoryBn: productForm.categoryBn,
+                        subcategory: productForm.subcategory,
+                        brand: productForm.brand,
+                        brandBn: productForm.brandBn,
+                        price: productForm.price,
+                        tags: productForm.tags,
+                        existingDescription: productForm.description,
+                        existingDescriptionBn: productForm.descriptionBn
+                      })
+                    });
+                    const data = await res.json();
+                    if (data?.ok) {
+                      setProductForm((prev) => ({
+                        ...prev,
+                        description: data.description || prev.description,
+                        descriptionBn: data.descriptionBn || prev.descriptionBn,
+                        features: Array.isArray(data.features) && data.features.length > 0 ? data.features : prev.features,
+                        featuresBn: Array.isArray(data.featuresBn) && data.featuresBn.length > 0 ? data.featuresBn : prev.featuresBn,
+                        warrantyInfo: prev.warrantyInfo || data.warrantyInfo,
+                        warrantyInfoBn: prev.warrantyInfoBn || data.warrantyInfoBn
+                      }));
+                      addToast(
+                        'success',
+                        at('এআই দ্বিভাষিক বিবরণ তৈরি সম্পন্ন!', 'AI Bilingual Copy Generated!'),
+                        at('ইংরেজি ও বাংলা দুই সেকশনেই পণ্যের বিবরণ যুক্ত হয়েছে।', 'English and Bangla descriptions & features have been filled.')
+                      );
+                    }
+                  } catch {
+                    const fallbackEn = `${productForm.title || 'Premium Product'} — 100% authentic quality with nationwide Cash on Delivery and 7-day replacement guarantee.`;
+                    const fallbackBn = `${productForm.titleBn || productForm.title || 'প্রিমিয়াম পণ্য'} — ১০০% অরিজিনাল কোয়ালিটি, সারাদেশে ক্যাশ অন ডেলিভারি এবং ৭ দিনের রিপ্লেসমেন্ট সুবিধা।`;
+                    setProductForm((prev) => ({
+                      ...prev,
+                      description: fallbackEn,
+                      descriptionBn: fallbackBn
+                    }));
+                  } finally {
+                    setIsGeneratingProductDesc(false);
+                  }
                 }}
-                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-md cursor-pointer"
+                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-60 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-md cursor-pointer"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                <span>{at('এআই দিয়ে বিবরণ তৈরি করুন', 'Generate with AI')}</span>
+                <span>
+                  {isGeneratingProductDesc
+                    ? at('তৈরি হচ্ছে...', 'Generating...')
+                    : at('এআই দিয়ে ইংরেজি ও বাংলা বিবরণ তৈরি করুন', 'AI Generate EN & BN Descriptions')}
+                </span>
               </button>
             </div>
 
             <form onSubmit={handleSaveProduct} className="space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-slate-300 font-bold mb-1">পণ্যের বাংলা নাম *</label>
+                  <label className="block text-slate-300 font-bold mb-1">{at('পণ্যের বাংলা নাম *', 'Product Title (Bangla) *')}</label>
                   <input
                     type="text"
                     required
                     value={productForm.titleBn}
                     onChange={(e) => setProductForm({ ...productForm, titleBn: e.target.value })}
+                    placeholder="উদা: প্রিমিয়াম স্মার্টওয়াচ"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 font-bold mb-1">পণ্যের ইংরেজি নাম</label>
+                  <label className="block text-slate-300 font-bold mb-1">{at('পণ্যের ইংরেজি নাম *', 'Product Title (English) *')}</label>
                   <input
                     type="text"
+                    required
                     value={productForm.title}
                     onChange={(e) => setProductForm({ ...productForm, title: e.target.value })}
+                    placeholder="e.g. Premium Smartwatch Pro"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
                   />
                 </div>
@@ -18823,15 +18956,121 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                 </div>
               </div>
 
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">বিস্তারিত বিবরণ (বাংলা)</label>
-                <textarea
-                  rows={3}
-                  required
-                  value={productForm.descriptionBn}
-                  onChange={(e) => setProductForm({ ...productForm, descriptionBn: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
-                />
+              {/* Two Separate Bilingual Product Description Sections (English + Bangla) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Section 1: Pure English Product Description */}
+                <div className="p-4 rounded-2xl bg-slate-950 border border-sky-500/30 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span className="font-bold text-sky-400">
+                      {at('১. ইংরেজি পণ্যের বিবরণ', '1. English Product Description')}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      {(productForm.description || '').length} chars
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">
+                      {at('ইংরেজি বিস্তারিত বিবরণ *', 'English Description *')}
+                    </label>
+                    <textarea
+                      rows={4}
+                      required
+                      value={productForm.description || ''}
+                      onChange={(e) => setProductForm({ ...productForm, description: e.target.value })}
+                      placeholder="Write complete product specifications, materials, and benefits in English..."
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white placeholder-slate-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1">
+                      {at('ইংরেজি মূল বৈশিষ্ট্য (প্রতি লাইনে ১টি)', 'English Key Features (one per line)')}
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={(productForm.features || []).join('\n')}
+                      onChange={(e) =>
+                        setProductForm({
+                          ...productForm,
+                          features: e.target.value.split('\n').map((l) => l.trim()).filter(Boolean)
+                        })
+                      }
+                      placeholder="100% Authentic Build&#10;7-Day Easy Replacement&#10;Cash on Delivery"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white placeholder-slate-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1">
+                      {at('ইংরেজি ওয়ারেন্টি তথ্য', 'English Warranty Info')}
+                    </label>
+                    <input
+                      type="text"
+                      value={productForm.warrantyInfo || ''}
+                      onChange={(e) => setProductForm({ ...productForm, warrantyInfo: e.target.value })}
+                      placeholder="7-day replacement guarantee"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white placeholder-slate-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Section 2: Pure Bangla Product Description */}
+                <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/30 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span className="font-bold text-emerald-400">
+                      {at('২. বাংলা পণ্যের বিবরণ', '2. Bangla Product Description')}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      {(productForm.descriptionBn || '').length} chars
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">
+                      {at('বাংলা বিস্তারিত বিবরণ *', 'Bangla Description *')}
+                    </label>
+                    <textarea
+                      rows={4}
+                      required
+                      value={productForm.descriptionBn || ''}
+                      onChange={(e) => setProductForm({ ...productForm, descriptionBn: e.target.value })}
+                      placeholder="পণ্যটির মান, ব্যবহারবিধি ও সুবিধাসমূহ বাংলায় বিস্তারিত লিখুন..."
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white placeholder-slate-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1">
+                      {at('বাংলা মূল বৈশিষ্ট্য (প্রতি লাইনে ১টি)', 'Bangla Key Features (one per line)')}
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={(productForm.featuresBn || []).join('\n')}
+                      onChange={(e) =>
+                        setProductForm({
+                          ...productForm,
+                          featuresBn: e.target.value.split('\n').map((l) => l.trim()).filter(Boolean)
+                        })
+                      }
+                      placeholder="১০০% আসল ও মানসম্মত পণ্য&#10;৭ দিনের সহজ রিপ্লেসমেন্ট&#10;সারাদেশে ক্যাশ অন ডেলিভারি"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white placeholder-slate-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1">
+                      {at('বাংলা ওয়ারেন্টি তথ্য', 'Bangla Warranty Info')}
+                    </label>
+                    <input
+                      type="text"
+                      value={productForm.warrantyInfoBn || ''}
+                      onChange={(e) => setProductForm({ ...productForm, warrantyInfoBn: e.target.value })}
+                      placeholder="৭ দিনের রিপ্লেসমেন্ট ওয়ারেন্টি"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white placeholder-slate-500"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Per-Product SEO & Robots Settings */}

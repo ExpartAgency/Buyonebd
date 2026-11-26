@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Star, ShoppingCart, BellRing, Flame, Eye } from 'lucide-react';
+import { Star, ShoppingCart, BellRing, Flame, Eye, Heart, Scale } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
 import { WaitlistModal } from '../common/WaitlistModal';
@@ -7,16 +7,27 @@ import { WaitlistModal } from '../common/WaitlistModal';
 interface ProductCardProps {
   product: Product;
   onViewDetails: (product: Product) => void;
+  onQuickView?: (product: Product) => void;
   onNotifyWaitlist?: (product: Product) => void;
 }
 
-export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails, onNotifyWaitlist }) => {
+export const ProductCard: React.FC<ProductCardProps> = React.memo(({
+  product,
+  onViewDetails,
+  onQuickView,
+  onNotifyWaitlist
+}) => {
   const {
     openOneClickCheckout,
     addToCart,
     getPartnerPriceInfo,
     getProductViewCount,
     getProductRealStats,
+    toggleWishlist,
+    isWishlisted,
+    toggleCompare,
+    isComparing,
+    categories,
     settings,
     lang,
     t
@@ -45,8 +56,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
     settings.singleProductCms?.notifyMeBtnEn || 'Notify Me'
   );
 
-  const titleText = lang === 'bn' ? product.titleBn || product.title : product.title || product.titleBn;
-  const categoryText = lang === 'bn' ? product.categoryBn || product.category : product.category || product.categoryBn;
+  const hasBangla = (txt?: string) => Boolean(txt && /[\u0981-\u09F2\u09F4-\u09FF]/.test(txt));
+  const titleText =
+    lang === 'bn'
+      ? product.titleBn || product.title
+      : !hasBangla(product.title) && product.title?.trim()
+      ? product.title
+      : product.titleBn;
+  const catObj = categories.find((c) => c.slug === product.category);
+  const categoryText =
+    lang === 'bn'
+      ? catObj?.nameBn || product.categoryBn || product.category
+      : catObj?.nameEn || (!hasBangla(product.category) ? product.category : product.categoryBn);
+
+  const wishlisted = isWishlisted(product.id);
+  const comparing = isComparing(product.id);
 
   // Strictly real order + review stats from live store data
   const realStats = getProductRealStats(product.id);
@@ -59,7 +83,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
 
   const highlightPrefix =
     soldNum >= 5
-      ? t('বেস্ট সেলিং', 'Best-Selling Item')
+      ? t('বেস্ট সেলিং', 'Best-Selling')
       : reviewsDisplayCount >= 2 && realRating >= 4.5
       ? t('টপ রেটেড', 'Top Rated')
       : null;
@@ -113,6 +137,58 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
               </span>
             )
           )}
+
+          {/* Crisp Top-Right Utility Controls (Wishlist, Compare, Quick View) */}
+          <div className="absolute top-2 right-2 flex flex-col gap-1.5 z-10">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleWishlist(product.id);
+              }}
+              aria-label={t('পছন্দের তালিকায় রাখুন', 'Save to Wishlist')}
+              title={t('পছন্দের তালিকায় রাখুন', 'Save to Wishlist')}
+              className={`w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-sm border shadow-xs transition-all cursor-pointer ${
+                wishlisted
+                  ? 'bg-rose-600 border-rose-500 text-white'
+                  : 'bg-white/90 dark:bg-slate-900/85 border-slate-200/80 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-rose-600'
+              }`}
+            >
+              <Heart className={`w-3.5 h-3.5 ${wishlisted ? 'fill-white' : ''}`} />
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleCompare(product.id);
+              }}
+              aria-label={t('তুলনায় যোগ করুন', 'Compare Product')}
+              title={t('তুলনায় যোগ করুন', 'Compare Product')}
+              className={`w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-sm border shadow-xs transition-all cursor-pointer ${
+                comparing
+                  ? 'bg-emerald-600 border-emerald-500 text-white'
+                  : 'bg-white/90 dark:bg-slate-900/85 border-slate-200/80 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-emerald-600 opacity-90 sm:opacity-0 sm:group-hover:opacity-100'
+              }`}
+            >
+              <Scale className="w-3.5 h-3.5" />
+            </button>
+
+            {onQuickView && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onQuickView(product);
+                }}
+                aria-label={t('দ্রুত দেখুন', 'Quick View')}
+                title={t('দ্রুত দেখুন', 'Quick View')}
+                className="w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-sm border shadow-xs bg-white/90 dark:bg-slate-900/85 border-slate-200/80 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-emerald-600 transition-all cursor-pointer opacity-90 sm:opacity-0 sm:group-hover:opacity-100"
+              >
+                <Eye className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Compact Marketplace Body */}
@@ -167,7 +243,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
               {highlightPrefix ? (
                 <>
                   <span className="font-semibold text-amber-600 dark:text-amber-400">{highlightPrefix}</span>{' '}
-                  <span>{t('ক্যাটাগরি:', 'in')} {categoryText}</span>
+                  <span>{t('·', 'in')} {categoryText}</span>
                 </>
               ) : (
                 <span>{categoryText}</span>
@@ -211,7 +287,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
             )}
             {partnerPrice.mode === 'wholesale' && (
               <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 tabular-nums truncate">
-                {t('হোলসেল MOQ', 'B2B MOQ')} {partnerPrice.minQty || 10} pcs
+                {t('পাইকারি ন্যূনতম', 'B2B MOQ')} {partnerPrice.minQty || 10} {t('পিস', 'pcs')}
               </p>
             )}
           </div>
@@ -255,4 +331,4 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetails
       )}
     </>
   );
-};
+});

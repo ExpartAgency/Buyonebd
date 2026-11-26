@@ -118,7 +118,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
     setError(null);
 
     if (pinRequired && securityPin.trim() !== String(secCfg?.adminPin || '').trim()) {
-      recordFailure('ভুল সিকিউরিটি পিন (PIN)!', 'Invalid Admin Security PIN!');
+      recordFailure('ভুল সিকিউরিটি পিন!', 'Invalid Admin Security PIN!');
       addSecurityLog('Admin PIN Failed', `Incorrect 2nd-step PIN entered for ${email || 'admin'}`, 'warning');
       return;
     }
@@ -260,7 +260,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
             {pinRequired && (
               <div>
                 <label className="block text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-1.5">
-                  {t('২-ধাপ সিকিউরিটি পিন (PIN)', '2-Step Security PIN')}
+                  {t('২-ধাপ সিকিউরিটি পিন', '2-Step Security PIN')}
                 </label>
                 <input
                   type="password"
@@ -315,7 +315,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ onSuccessNavig
             <div className="text-center">
               <span className="text-[11px] text-slate-400 dark:text-slate-500">
                 {t(
-                  'সুরক্ষিত সেশন • Brute-Force লক প্রটেকশন চালু',
+                  'সুরক্ষিত সেশন • ব্রুট-ফোর্স লক প্রটেকশন চালু',
                   'Protected Session • Brute-Force Shield Active'
                 )}
               </span>

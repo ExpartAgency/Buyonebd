@@ -319,7 +319,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
               if (activeView !== 'store') setActiveView('store');
               if (storeSubView === 'about') openAllProductsPage();
             }}
-            placeholder={t('পণ্য খুঁজুন "Products"', 'Search "Products"')}
+            placeholder={t('পণ্য খুঁজুন...', 'Search Products...')}
             aria-label={t('পণ্য খুঁজুন', 'Search Products')}
             className="flex-1 bg-transparent px-2.5 text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none min-w-0"
           />
@@ -426,7 +426,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
               if (activeView !== 'store') setActiveView('store');
               if (storeSubView === 'about') openAllProductsPage();
             }}
-            placeholder={t('পণ্য খুঁজুন "Products"', 'Search "Products"')}
+            placeholder={t('পণ্য খুঁজুন...', 'Search Products...')}
             aria-label={t('পণ্য খুঁজুন', 'Search Products')}
             className="flex-1 bg-transparent px-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none min-w-0"
           />

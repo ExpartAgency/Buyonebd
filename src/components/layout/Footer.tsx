@@ -193,7 +193,7 @@ export const Footer: React.FC = () => {
                   onClick={openBlogsPage}
                   className="hover:text-emerald-400 cursor-pointer transition-colors text-left"
                 >
-                  {t('শপিং ব্লগ ও গাইড (Blogs)', 'Shopping Guides & Blogs')}
+                  {t('শপিং ব্লগ ও গাইড', 'Shopping Guides & Blogs')}
                 </button>
               </li>
               <li>
@@ -202,7 +202,7 @@ export const Footer: React.FC = () => {
                   onClick={() => openPartnerPortal('reseller')}
                   className="hover:text-emerald-400 cursor-pointer transition-colors text-left"
                 >
-                  {t('রিসেলার প্রোগ্রাম (Reseller)', 'Reseller Program')}
+                  {t('রিসেলার প্রোগ্রাম', 'Reseller Program')}
                 </button>
               </li>
               <li>
@@ -211,7 +211,7 @@ export const Footer: React.FC = () => {
                   onClick={() => openPartnerPortal('wholesale')}
                   className="hover:text-emerald-400 cursor-pointer transition-colors text-left"
                 >
-                  {t('হোলসেল / B2B ট্রেড', 'Wholesale B2B')}
+                  {t('হোলসেল ও B2B ট্রেড', 'Wholesale B2B')}
                 </button>
               </li>
               <li>
@@ -220,7 +220,7 @@ export const Footer: React.FC = () => {
                   onClick={() => openPartnerPortal('affiliate')}
                   className="hover:text-emerald-400 cursor-pointer transition-colors text-left"
                 >
-                  {t('অ্যাফিলিয়েট প্রোগ্রাম (Affiliate)', 'Affiliate Program')}
+                  {t('অ্যাফিলিয়েট প্রোগ্রাম', 'Affiliate Program')}
                 </button>
               </li>
             </ul>
@@ -260,16 +260,16 @@ export const Footer: React.FC = () => {
             {footer?.showPaymentBadges !== false && (
               <div className="flex flex-wrap gap-1.5 pt-1">
                 <span className="px-2 py-1 bg-pink-950/80 border border-pink-700/60 text-pink-300 text-[10px] font-bold rounded-md">
-                  bKash বিকাশ
+                  {t('বিকাশ', 'bKash')}
                 </span>
                 <span className="px-2 py-1 bg-orange-950/80 border border-orange-700/60 text-orange-300 text-[10px] font-bold rounded-md">
-                  Nagad নগদ
+                  {t('নগদ', 'Nagad')}
                 </span>
                 <span className="px-2 py-1 bg-purple-950/80 border border-purple-700/60 text-purple-300 text-[10px] font-bold rounded-md">
-                  Rocket রকেট
+                  {t('রকেট', 'Rocket')}
                 </span>
                 <span className="px-2 py-1 bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 text-[10px] font-bold rounded-md">
-                  💵 Cash on Delivery
+                  💵 {t('ক্যাশ অন ডেলিভারি', 'Cash on Delivery')}
                 </span>
                 <span className="px-2 py-1 bg-blue-950/80 border border-blue-700/60 text-blue-300 text-[10px] font-bold rounded-md">
                   Steadfast

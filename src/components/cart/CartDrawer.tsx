@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Trash2, ShoppingBag, Zap, ArrowRight, ShieldCheck, Sparkles, Plus } from 'lucide-react';
+import { X, Trash2, ShoppingBag, Zap, ArrowRight, ShieldCheck, Sparkles, Plus, Copy, Tag } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { Product } from '../../types';
 
@@ -18,6 +18,7 @@ export const CartDrawer: React.FC = () => {
     getPartnerPriceInfo,
     visibleStoreProducts,
     settings,
+    addToast,
     lang,
     t
   } = useStore();
@@ -180,12 +181,12 @@ export const CartDrawer: React.FC = () => {
                               </span>
                               {pInfo.mode === 'reseller' && (
                                 <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
-                                  Reseller · Profit ৳{((pInfo.estimatedProfitPerUnit || 0) * item.quantity).toLocaleString()}
+                                  {t('রিসেলার · লাভ', 'Reseller · Profit')} ৳{((pInfo.estimatedProfitPerUnit || 0) * item.quantity).toLocaleString()}
                                 </span>
                               )}
                               {pInfo.mode === 'wholesale' && (
                                 <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
-                                  B2B ৳{pInfo.unitPrice.toLocaleString()}/pc · MOQ {pInfo.minQty}
+                                  {t('হোলসেল', 'B2B')} ৳{pInfo.unitPrice.toLocaleString()}{t('/পিস', '/pc')} · MOQ {pInfo.minQty}
                                 </span>
                               )}
                             </div>
@@ -312,9 +313,41 @@ export const CartDrawer: React.FC = () => {
                   </div>
                 )}
 
+                {/* Active Promo Coupons Strip (1-Click Copy) */}
+                {(settings.promoCoupons || []).filter((c) => c.active !== false).length > 0 && (
+                  <div className="p-2.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-800 dark:text-amber-300">
+                      <Tag className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span>{t('কুপন কোড (চেকআউটে ব্যবহার করুন):', 'Available Coupons (Copy for Checkout):')}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(settings.promoCoupons || [])
+                        .filter((c) => c.active !== false)
+                        .slice(0, 3)
+                        .map((cpn) => (
+                          <button
+                            key={cpn.id}
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(cpn.code);
+                              } catch {}
+                              addToast('success', t('কুপন কোড কপি হয়েছে!', 'Coupon Code Copied!'), cpn.code);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-[10px] font-mono font-bold text-amber-900 dark:text-amber-200 hover:border-amber-500 cursor-pointer"
+                            title={cpn.code}
+                          >
+                            <span>{cpn.code}</span>
+                            <Copy className="w-2.5 h-2.5 text-amber-600" />
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-1.5 text-xs">
                   <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                    <span>{t('পণ্যের মূল্য (Subtotal):', 'Subtotal:')}</span>
+                    <span>{t('পণ্যের মূল্য:', 'Subtotal:')}</span>
                     <span className="font-bold text-slate-900 dark:text-white">৳ {cartTotal.toLocaleString()}</span>
                   </div>
                   {bundleOff > 0 && (
@@ -347,7 +380,7 @@ export const CartDrawer: React.FC = () => {
                   className="w-full hover:opacity-95 text-white font-extrabold text-xs sm:text-sm py-3.5 px-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
                 >
                   <Zap className="w-4 h-4 text-amber-300 shrink-0" />
-                  <span>{t('১ ক্লিকে চেকআউট করুন (ক্যাশ অন ডেলিভারি)', '1-Click Cash on Delivery Checkout')}</span>
+                  <span>{t('১ ক্লিকে ক্যাশ অন ডেলিভারি অর্ডার', '1-Click Cash on Delivery Checkout')}</span>
                   <ArrowRight className="w-4 h-4 shrink-0" />
                 </button>
 

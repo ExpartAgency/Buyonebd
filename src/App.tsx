@@ -6,23 +6,38 @@ import { MobileBottomNav } from './components/layout/MobileBottomNav';
 import { MobileCategoryDrawer } from './components/layout/MobileCategoryDrawer';
 import { HeroBanner } from './components/home/HeroBanner';
 import { ProductCard } from './components/home/ProductCard';
-import { ProductDetailModal } from './components/home/ProductDetailModal';
 import { CartDrawer } from './components/cart/CartDrawer';
 import { OneClickCheckoutModal } from './components/checkout/OneClickCheckoutModal';
-import { OrderTrackerView } from './components/tracking/OrderTrackerView';
 import { AdminLoginModal } from './components/auth/AdminLoginModal';
 import { CustomerLoginModal } from './components/auth/CustomerLoginModal';
 import { ToastContainer } from './components/common/ToastContainer';
+import { LuckySpinLeftLauncher } from './components/spin/LuckySpinLauncher';
 import { WaitlistModal } from './components/common/WaitlistModal';
-import { PartnerPortalModal } from './components/partner/PartnerPortalModal';
-import { LuckySpinLeftLauncher } from './components/spin/LuckySpinModal';
-import { SingleProductView } from './components/home/SingleProductView';
-import { AboutView } from './components/home/AboutView';
-import { BlogView } from './components/home/BlogView';
 import { Product } from './types';
-import { Flame, PackageSearch, Clock, Sparkles, X, Copy, Gift, History, Trash2 } from 'lucide-react';
+import { Flame, PackageSearch, Clock, Sparkles, X, Copy, Gift, History, Trash2, Heart, Scale } from 'lucide-react';
 import { safeStorageSetItem, safeSessionSetItem, healOversizedLocalStorageOnBoot } from './utils/safeStorage';
 
+const ProductDetailModal = React.lazy(() =>
+  import('./components/home/ProductDetailModal').then((m) => ({ default: m.ProductDetailModal }))
+);
+const ProductCompareModal = React.lazy(() =>
+  import('./components/compare/ProductCompareModal').then((m) => ({ default: m.ProductCompareModal }))
+);
+const OrderTrackerView = React.lazy(() =>
+  import('./components/tracking/OrderTrackerView').then((m) => ({ default: m.OrderTrackerView }))
+);
+const PartnerPortalModal = React.lazy(() =>
+  import('./components/partner/PartnerPortalModal').then((m) => ({ default: m.PartnerPortalModal }))
+);
+const SingleProductView = React.lazy(() =>
+  import('./components/home/SingleProductView').then((m) => ({ default: m.SingleProductView }))
+);
+const AboutView = React.lazy(() =>
+  import('./components/home/AboutView').then((m) => ({ default: m.AboutView }))
+);
+const BlogView = React.lazy(() =>
+  import('./components/home/BlogView').then((m) => ({ default: m.BlogView }))
+);
 const AdminDashboard = React.lazy(() =>
   import('./components/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard }))
 );
@@ -38,6 +53,59 @@ const AIVoiceCallModal = React.lazy(() =>
 const LuckySpinModal = React.lazy(() =>
   import('./components/spin/LuckySpinModal').then((m) => ({ default: m.LuckySpinModal }))
 );
+
+const parseFlashDateMs = (raw?: string): number => {
+  if (!raw) return NaN;
+  const trimmed = String(raw).trim();
+  const dmy = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
+  if (dmy) {
+    const [, dd, mm, yyyy, hh = '23', min = '59'] = dmy;
+    return new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(min), 59).getTime();
+  }
+  return new Date(trimmed).getTime();
+};
+
+const computeFlashTimeLeft = (endsAtIso?: string) => {
+  const targetMs = parseFlashDateMs(endsAtIso);
+  const diffMs = Number.isFinite(targetMs) ? Math.max(0, targetMs - Date.now()) : 6 * 3600 * 1000;
+  const totalSeconds = Math.floor(diffMs / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  return {
+    days,
+    hours,
+    minutes: Math.floor((totalSeconds % 3600) / 60),
+    seconds: totalSeconds % 60
+  };
+};
+
+const FlashSaleCountdown = React.memo(({ endsAt }: { endsAt?: string }) => {
+  const [flashTimeLeft, setFlashTimeLeft] = useState(() => computeFlashTimeLeft(endsAt));
+  useEffect(() => {
+    setFlashTimeLeft(computeFlashTimeLeft(endsAt));
+    const timer = setInterval(() => {
+      setFlashTimeLeft(computeFlashTimeLeft(endsAt));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [endsAt]);
+
+  return (
+    <div className="flex items-center gap-1.5 text-xs font-mono font-black text-white bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 tabular-nums">
+      <Clock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+      {flashTimeLeft.days > 0 && (
+        <>
+          <span>{flashTimeLeft.days}d</span>
+          <span className="text-rose-400">:</span>
+        </>
+      )}
+      <span>{flashTimeLeft.hours.toString().padStart(2, '0')}h</span>
+      <span className="text-rose-400">:</span>
+      <span>{flashTimeLeft.minutes.toString().padStart(2, '0')}m</span>
+      <span className="text-rose-400">:</span>
+      <span className="text-rose-400">{flashTimeLeft.seconds.toString().padStart(2, '0')}s</span>
+    </div>
+  );
+});
 
 function StoreMainContent() {
   const {
@@ -76,38 +144,25 @@ function StoreMainContent() {
     setStoreSortBy: setSortBy,
     getProductRealStats,
     productViews,
+    wishlist,
+    isWishlisted,
+    compareList,
+    clearCompare,
+    setIsCompareModalOpen,
+    openOneClickCheckout,
     addToast
   } = useStore();
 
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [waitlistProduct, setWaitlistProduct] = useState<Product | null>(null);
+  const [showWishlistOnly, setShowWishlistOnly] = useState(false);
 
-  const parseFlashDateMs = (raw?: string): number => {
-    if (!raw) return NaN;
-    const trimmed = String(raw).trim();
-    const dmy = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
-    if (dmy) {
-      const [, dd, mm, yyyy, hh = '23', min = '59'] = dmy;
-      return new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(min), 59).getTime();
+  useEffect(() => {
+    if (wishlist.length === 0 && showWishlistOnly) {
+      setShowWishlistOnly(false);
     }
-    return new Date(trimmed).getTime();
-  };
+  }, [wishlist.length, showWishlistOnly]);
 
-  const computeFlashTimeLeft = (endsAtIso?: string) => {
-    const targetMs = parseFlashDateMs(endsAtIso);
-    const diffMs = Number.isFinite(targetMs) ? Math.max(0, targetMs - Date.now()) : 6 * 3600 * 1000;
-    const totalSeconds = Math.floor(diffMs / 1000);
-    const days = Math.floor(totalSeconds / 86400);
-    const hours = Math.floor((totalSeconds % 86400) / 3600);
-    return {
-      days,
-      hours,
-      minutes: Math.floor((totalSeconds % 3600) / 60),
-      seconds: totalSeconds % 60
-    };
-  };
-
-  const [flashTimeLeft, setFlashTimeLeft] = useState(() => computeFlashTimeLeft(settings.flashSale?.endsAt));
   const [isPromoPopupVisible, setIsPromoPopupVisible] = useState(false);
   const [referralBannerCode, setReferralBannerCode] = useState<string | null>(null);
 
@@ -143,14 +198,6 @@ function StoreMainContent() {
     script.src = `https://www.clarity.ms/tag/${encodeURIComponent(projectId)}`;
     document.head.appendChild(script);
   }, [settings.marketingSettings?.clarity?.enabled, settings.marketingSettings?.clarity?.projectId]);
-
-  useEffect(() => {
-    setFlashTimeLeft(computeFlashTimeLeft(settings.flashSale?.endsAt));
-    const timer = setInterval(() => {
-      setFlashTimeLeft(computeFlashTimeLeft(settings.flashSale?.endsAt));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [settings.flashSale?.endsAt]);
 
   // Organic Referral URL detection (?ref=CODE) & UTM Campaign Attribution (?utm_source=...)
   useEffect(() => {
@@ -194,31 +241,18 @@ function StoreMainContent() {
     const intervalMs = Math.max(8, Number(fomoCfg.intervalSeconds) || 18) * 1000;
     const showNext = () => {
       const realPool = orders.filter((o) => o?.items?.[0] && products.some((vp) => vp.id === o.items[0].productId));
-      if (realPool.length > 0 && (fomoCfg.showRealOrdersOnly || Math.random() > 0.35)) {
-        const pick = realPool[Math.floor(Math.random() * Math.min(realPool.length, 10))];
-        const item = pick.items[0];
-        const prod = products.find((p) => p.id === item.productId);
-        setFomoToastData({
-          buyer: (pick.customer?.name || 'Customer').split(' ')[0],
-          city: pick.customer?.district?.split(' - ')[0] || 'Dhaka',
-          productTitle: lang === 'bn' ? item.productTitleBn || item.productTitle : item.productTitle,
-          productId: prod?.id,
-          image: item.image || prod?.images?.[0] || '',
-          ago: lang === 'bn' ? 'এইমাত্র অর্ডার করেছেন' : 'just ordered'
-        });
-      } else if (!fomoCfg.showRealOrdersOnly && products.length > 0) {
-        const prod = products[Math.floor(Math.random() * products.length)];
-        const names = ['তানভীর', 'সাদিয়া', 'মাহমুদ', 'নুসরাত', 'রাকিব', 'ফারহানা'];
-        const cities = ['ঢাকা', 'চট্টগ্রাম', 'সিলেট', 'রাজশাহী', 'খুলনা', 'কুমিল্লা'];
-        setFomoToastData({
-          buyer: names[Math.floor(Math.random() * names.length)],
-          city: cities[Math.floor(Math.random() * cities.length)],
-          productTitle: lang === 'bn' ? prod.titleBn : prod.title,
-          productId: prod.id,
-          image: prod.images?.[0] || '',
-          ago: lang === 'bn' ? 'অর্ডার কনফার্ম করেছেন' : 'verified COD order'
-        });
-      }
+      if (realPool.length === 0) return;
+      const pick = realPool[Math.floor(Math.random() * Math.min(realPool.length, 10))];
+      const item = pick.items[0];
+      const prod = products.find((p) => p.id === item.productId);
+      setFomoToastData({
+        buyer: (pick.customer?.name || 'Customer').split(' ')[0],
+        city: pick.customer?.district?.split(' - ')[0] || 'Dhaka',
+        productTitle: lang === 'bn' ? item.productTitleBn || item.productTitle : item.productTitle,
+        productId: prod?.id,
+        image: item.image || prod?.images?.[0] || '',
+        ago: lang === 'bn' ? 'এইমাত্র অর্ডার করেছেন' : 'just ordered'
+      });
       setTimeout(() => setFomoToastData(null), 5500);
     };
     const startTimer = setTimeout(showNext, 4500);
@@ -325,7 +359,10 @@ function StoreMainContent() {
       const matchesSub =
         !selectedSubcategory || p.subcategory === selectedSubcategory;
 
-      return matchesSearch && matchesCat && matchesSub;
+      const matchesWishlist =
+        !showWishlistOnly || isWishlisted(p.id);
+
+      return matchesSearch && matchesCat && matchesSub && matchesWishlist;
     });
 
     if (sortBy === 'best_selling') {
@@ -366,7 +403,7 @@ function StoreMainContent() {
       );
     }
     return list;
-  }, [products, searchQuery, selectedCategory, selectedSubcategory, sortBy, productViews, orders]);
+  }, [products, searchQuery, selectedCategory, selectedSubcategory, showWishlistOnly, wishlist, isWishlisted, sortBy, productViews, getProductRealStats]);
 
   // Last 5 clicked products tracked in localStorage
   const recentlyViewedProducts = useMemo(
@@ -429,7 +466,9 @@ function StoreMainContent() {
           onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
         />
         <main className="flex-1 w-full max-w-full overflow-x-clip">
-          <OrderTrackerView />
+          <Suspense fallback={<div className="p-8 text-center text-xs text-slate-500">Loading...</div>}>
+            <OrderTrackerView />
+          </Suspense>
         </main>
         <Footer />
         <OneClickCheckoutModal />
@@ -439,11 +478,11 @@ function StoreMainContent() {
           <WhatsAppAgentModal />
           <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
           <CustomerDashboardModal />
+          <PartnerPortalModal />
         </Suspense>
         <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
         <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
         <CustomerLoginModal />
-        <PartnerPortalModal />
         <MobileCategoryDrawer
           isOpen={isMobileCategoryDrawerOpen}
           onClose={() => setIsMobileCategoryDrawerOpen(false)}
@@ -465,21 +504,55 @@ function StoreMainContent() {
           onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
         />
         <main className="flex-1 w-full max-w-full overflow-x-clip">
-          <SingleProductView
-            product={selectedProductForPage}
-            onBack={goHome}
-          />
+          <Suspense fallback={<div className="p-8 text-center text-xs text-slate-500">Loading product...</div>}>
+            <SingleProductView
+              product={selectedProductForPage}
+              onBack={goHome}
+            />
+          </Suspense>
         </main>
         <Footer />
         <OneClickCheckoutModal />
         <CartDrawer />
         <Suspense fallback={null}>
+          <ProductCompareModal
+            onSelectProduct={(p) => openProductPage(p)}
+            onInstantBuy={(p) => openOneClickCheckout(p)}
+          />
           <AIVoiceCallModal />
           <WhatsAppAgentModal />
           <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
           <CustomerDashboardModal />
+          <PartnerPortalModal />
         </Suspense>
         <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
+        {compareList.length > 0 && (
+          <div className="fixed bottom-20 sm:bottom-5 left-1/2 -translate-x-1/2 z-40 max-w-md w-[calc(100%-1.5rem)] bg-slate-900/95 backdrop-blur-md text-white border border-emerald-500/40 shadow-2xl rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <Scale className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="text-xs font-bold truncate tabular-nums">
+                {t(`তুলনা তালিকা (${compareList.length}/৩)`, `Compare Queue (${compareList.length}/3)`)}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsCompareModalOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer transition-colors"
+              >
+                {t('তুলনা দেখুন', 'Compare Now')}
+              </button>
+              <button
+                type="button"
+                onClick={clearCompare}
+                aria-label={t('মুছুন', 'Clear Compare')}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
         <CustomerLoginModal />
         <MobileCategoryDrawer
           isOpen={isMobileCategoryDrawerOpen}
@@ -488,7 +561,6 @@ function StoreMainContent() {
           onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
         />
         <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
-        <PartnerPortalModal />
         <ToastContainer />
         <MobileBottomNav onOpenCategories={() => setIsMobileCategoryDrawerOpen(true)} />
       </div>
@@ -504,7 +576,9 @@ function StoreMainContent() {
           onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
         />
         <main className="flex-1 w-full max-w-full overflow-x-clip">
-          <AboutView />
+          <Suspense fallback={<div className="p-8 text-center text-xs text-slate-500">Loading...</div>}>
+            <AboutView />
+          </Suspense>
         </main>
         <Footer />
         <OneClickCheckoutModal />
@@ -514,6 +588,7 @@ function StoreMainContent() {
           <WhatsAppAgentModal />
           <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
           <CustomerDashboardModal />
+          <PartnerPortalModal />
         </Suspense>
         <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
         <CustomerLoginModal />
@@ -524,7 +599,6 @@ function StoreMainContent() {
           onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
         />
         <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
-        <PartnerPortalModal />
         <ToastContainer />
         <MobileBottomNav onOpenCategories={() => setIsMobileCategoryDrawerOpen(true)} />
       </div>
@@ -540,7 +614,9 @@ function StoreMainContent() {
           onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
         />
         <main className="flex-1 w-full max-w-full overflow-x-clip">
-          <BlogView />
+          <Suspense fallback={<div className="p-8 text-center text-xs text-slate-500">Loading...</div>}>
+            <BlogView />
+          </Suspense>
         </main>
         <Footer />
         <OneClickCheckoutModal />
@@ -550,6 +626,7 @@ function StoreMainContent() {
           <WhatsAppAgentModal />
           <LuckySpinModal isOpen={isSpinOpen} onClose={() => setIsSpinOpen(false)} />
           <CustomerDashboardModal />
+          <PartnerPortalModal />
         </Suspense>
         <LuckySpinLeftLauncher onOpen={() => setIsSpinOpen(true)} />
         <CustomerLoginModal />
@@ -560,7 +637,6 @@ function StoreMainContent() {
           onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
         />
         <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
-        <PartnerPortalModal />
         <ToastContainer />
         <MobileBottomNav onOpenCategories={() => setIsMobileCategoryDrawerOpen(true)} />
       </div>
@@ -741,20 +817,7 @@ function StoreMainContent() {
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-1.5 text-xs font-mono font-black text-white bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 tabular-nums">
-                  <Clock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                  {flashTimeLeft.days > 0 && (
-                    <>
-                      <span>{flashTimeLeft.days}d</span>
-                      <span className="text-rose-400">:</span>
-                    </>
-                  )}
-                  <span>{flashTimeLeft.hours.toString().padStart(2, '0')}h</span>
-                  <span className="text-rose-400">:</span>
-                  <span>{flashTimeLeft.minutes.toString().padStart(2, '0')}m</span>
-                  <span className="text-rose-400">:</span>
-                  <span className="text-rose-400">{flashTimeLeft.seconds.toString().padStart(2, '0')}s</span>
-                </div>
+                <FlashSaleCountdown endsAt={settings.flashSale?.endsAt} />
 
                 <button
                   type="button"
@@ -774,6 +837,7 @@ function StoreMainContent() {
                   key={`flash-${prod.id}`}
                   product={prod}
                   onViewDetails={(p) => openProductPage(p)}
+                  onQuickView={(p) => setDetailProduct(p)}
                   onNotifyWaitlist={(p) => setWaitlistProduct(p)}
                 />
               ))}
@@ -837,6 +901,7 @@ function StoreMainContent() {
                     key={`recent-${prod.id}`}
                     product={prod}
                     onViewDetails={(p) => openProductPage(p)}
+                    onQuickView={(p) => setDetailProduct(p)}
                     onNotifyWaitlist={(p) => setWaitlistProduct(p)}
                   />
                 ))}
@@ -854,7 +919,7 @@ function StoreMainContent() {
                   : sortBy === 'rating'
                   ? t('৫-স্টার রেটেড ও রিভিউড পণ্য', '5-Star Rated Products')
                   : sortBy === 'new_in'
-                  ? t('নতুন কালেকশন (New In)', 'New In Arrivals')
+                  ? t('নতুন কালেকশন', 'New In Arrivals')
                   : storeSubView === 'products'
                   ? t('সকল পণ্য ক্যাটালগ', 'Complete Product Catalog')
                   : t(
@@ -879,6 +944,22 @@ function StoreMainContent() {
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
+            {wishlist.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowWishlistOnly((prev) => !prev)}
+                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-colors cursor-pointer whitespace-nowrap ${
+                  showWishlistOnly
+                    ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:border-rose-400'
+                }`}
+              >
+                <Heart className={`w-3.5 h-3.5 ${showWishlistOnly ? 'fill-white text-white' : 'text-rose-500 fill-rose-500'}`} />
+                <span>{t('পছন্দের তালিকা', 'Saved')}</span>
+                <span className="font-mono text-[11px] tabular-nums">({wishlist.length})</span>
+              </button>
+            )}
+
             {searchQuery && (
               <div className="bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 w-fit">
                 <span>
@@ -899,9 +980,9 @@ function StoreMainContent() {
               className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold px-3 py-2 rounded-xl shadow-xs cursor-pointer hover:border-slate-300 focus:outline-none"
             >
               <option value="default">{t('সাজান: ডিফল্ট', 'Sort: Default')}</option>
-              <option value="best_selling">{t('সর্বোচ্চ বিক্রিত (Best-Selling)', 'Best-Selling Items')}</option>
+              <option value="best_selling">{t('সর্বোচ্চ বিক্রিত', 'Best-Selling Items')}</option>
               <option value="rating">{t('৫-স্টার রেটিং ও রিভিউ', '5-Star Rated & Reviews')}</option>
-              <option value="new_in">{t('নতুন কালেকশন (New In)', 'New In Arrivals')}</option>
+              <option value="new_in">{t('নতুন কালেকশন', 'New In Arrivals')}</option>
               <option value="price_asc">{t('দাম: কম থেকে বেশি', 'Price: Low to High')}</option>
               <option value="price_desc">{t('দাম: বেশি থেকে কম', 'Price: High to Low')}</option>
               <option value="discount">{t('সর্বোচ্চ ডিসকাউন্ট %', 'Biggest Discount')}</option>
@@ -917,6 +998,7 @@ function StoreMainContent() {
                 key={prod.id}
                 product={prod}
                 onViewDetails={(p) => openProductPage(p)}
+                onQuickView={(p) => setDetailProduct(p)}
                 onNotifyWaitlist={(p) => setWaitlistProduct(p)}
               />
             ))}
@@ -949,13 +1031,24 @@ function StoreMainContent() {
 
       {/* Global Modals & Drawers */}
       <CustomerLoginModal />
-      <ProductDetailModal
-        product={detailProduct}
-        onClose={() => setDetailProduct(null)}
-      />
       <OneClickCheckoutModal />
       <CartDrawer />
+      {waitlistProduct && (
+        <WaitlistModal product={waitlistProduct} onClose={() => setWaitlistProduct(null)} />
+      )}
       <Suspense fallback={null}>
+        {detailProduct && (
+          <ProductDetailModal
+            product={detailProduct}
+            onClose={() => setDetailProduct(null)}
+            onSelectProduct={(nextProd) => setDetailProduct(nextProd)}
+          />
+        )}
+        <ProductCompareModal
+          onSelectProduct={(p) => openProductPage(p)}
+          onInstantBuy={(p) => openOneClickCheckout(p)}
+        />
+        <PartnerPortalModal />
         <CustomerDashboardModal />
         <AIVoiceCallModal />
         <WhatsAppAgentModal />
@@ -964,6 +1057,35 @@ function StoreMainContent() {
           onClose={() => setIsSpinOpen(false)}
         />
       </Suspense>
+
+      {/* Sticky Compare Bar when 1+ products queued for comparison */}
+      {compareList.length > 0 && (
+        <div className="fixed bottom-20 sm:bottom-5 left-1/2 -translate-x-1/2 z-40 max-w-md w-[calc(100%-1.5rem)] bg-slate-900/95 backdrop-blur-md text-white border border-emerald-500/40 shadow-2xl rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Scale className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="text-xs font-bold truncate tabular-nums">
+              {t(`তুলনা তালিকা (${compareList.length}/৩)`, `Compare Queue (${compareList.length}/3)`)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsCompareModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer transition-colors"
+            >
+              {t('তুলনা দেখুন', 'Compare Now')}
+            </button>
+            <button
+              type="button"
+              onClick={clearCompare}
+              aria-label={t('মুছুন', 'Clear Compare')}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
       <MobileCategoryDrawer
         isOpen={isMobileCategoryDrawerOpen}
         onClose={() => setIsMobileCategoryDrawerOpen(false)}
@@ -971,8 +1093,6 @@ function StoreMainContent() {
         onSelectCategory={(cat, sub) => selectCategoryFilter(cat, sub || null)}
       />
       <AdminLoginModal onSuccessNavigate={() => setActiveView('admin')} />
-      <PartnerPortalModal />
-      <WaitlistModal product={waitlistProduct} onClose={() => setWaitlistProduct(null)} />
       <ToastContainer />
 
       {/* Organic Discount Promo Popup (Admin Controlled) */}

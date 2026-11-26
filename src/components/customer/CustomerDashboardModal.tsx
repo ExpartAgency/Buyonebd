@@ -1273,7 +1273,7 @@ export const CustomerDashboardModal: React.FC = () => {
               <div className="space-y-2.5">
                 <h3 className="font-black text-sm text-slate-900 dark:text-white flex items-center gap-2">
                   <Eye className="w-4 h-4 text-emerald-600" />
-                  <span>{t('সম্প্রতি দেখা পণ্য (Browsing History)', 'Recently Viewed')}</span>
+                  <span>{t('সম্প্রতি দেখা পণ্য', 'Recently Viewed')}</span>
                 </h3>
                 {recentlyViewedProducts.length === 0 ? (
                   <p className="text-xs text-slate-500 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
@@ -1322,7 +1322,7 @@ export const CustomerDashboardModal: React.FC = () => {
               <div className="space-y-2.5">
                 <h3 className="font-black text-sm text-slate-900 dark:text-white flex items-center gap-2">
                   <Heart className="w-4 h-4 text-rose-500 fill-rose-500" />
-                  <span>{t('পছন্দের তালিকা (Wishlist)', 'Saved Wishlist')} ({wishlistedProducts.length})</span>
+                  <span>{t('পছন্দের তালিকা', 'Saved Wishlist')} ({wishlistedProducts.length})</span>
                 </h3>
                 {wishlistedProducts.length === 0 ? (
                   <p className="text-xs text-slate-500 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">

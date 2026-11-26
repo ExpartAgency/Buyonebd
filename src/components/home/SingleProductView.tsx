@@ -24,10 +24,14 @@ import {
   Tag,
   MessageCircle,
   Eye,
-  Sparkles
+  Sparkles,
+  Heart,
+  Scale,
+  MapPin
 } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
+import { BD_DISTRICTS } from '../../data/initialData';
 import { ProductCard } from './ProductCard';
 import { WaitlistModal } from '../common/WaitlistModal';
 
@@ -35,6 +39,82 @@ interface SingleProductViewProps {
   product: Product;
   onBack: () => void;
 }
+
+const parseSingleFlashDateMs = (raw?: string): number => {
+  if (!raw) return NaN;
+  const trimmed = String(raw).trim();
+  const dmy = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
+  if (dmy) {
+    const [, dd, mm, yyyy, hh = '23', min = '59'] = dmy;
+    return new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(min), 59).getTime();
+  }
+  return new Date(trimmed).getTime();
+};
+
+const computeSingleFlashTimeLeft = (endsAtIso?: string) => {
+  const targetMs = parseSingleFlashDateMs(endsAtIso);
+  const diffMs = Number.isFinite(targetMs) ? Math.max(0, targetMs - Date.now()) : 6 * 3600 * 1000;
+  const totalSeconds = Math.floor(diffMs / 1000);
+  return {
+    days: Math.floor(totalSeconds / 86400),
+    hours: Math.floor((totalSeconds % 86400) / 3600),
+    minutes: Math.floor((totalSeconds % 3600) / 60),
+    seconds: totalSeconds % 60
+  };
+};
+
+const SingleProductCountdown = React.memo(({ endsAt, variant = 'boxes' }: { endsAt?: string; variant?: 'boxes' | 'inline' | 'badge' }) => {
+  const [timeLeft, setTimeLeft] = useState(() => computeSingleFlashTimeLeft(endsAt));
+  useEffect(() => {
+    setTimeLeft(computeSingleFlashTimeLeft(endsAt));
+    const timer = setInterval(() => {
+      setTimeLeft(computeSingleFlashTimeLeft(endsAt));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [endsAt]);
+
+  if (variant === 'inline') {
+    return (
+      <span>
+        {timeLeft.hours.toString().padStart(2, '0')}:{timeLeft.minutes.toString().padStart(2, '0')}:{timeLeft.seconds.toString().padStart(2, '0')}
+      </span>
+    );
+  }
+
+  if (variant === 'badge') {
+    return (
+      <span className="text-xs font-mono font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-md tabular-nums">
+        {timeLeft.days > 0 ? `${timeLeft.days}d:` : ''}
+        {timeLeft.hours.toString().padStart(2, '0')}:{timeLeft.minutes.toString().padStart(2, '0')}:
+        {timeLeft.seconds.toString().padStart(2, '0')}
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1 font-mono font-black">
+      {timeLeft.days > 0 && (
+        <>
+          <span className="px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-white">
+            {timeLeft.days}d
+          </span>
+          <span className="text-rose-400">:</span>
+        </>
+      )}
+      <span className="px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-white">
+        {timeLeft.hours.toString().padStart(2, '0')}h
+      </span>
+      <span className="text-rose-400">:</span>
+      <span className="px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-white">
+        {timeLeft.minutes.toString().padStart(2, '0')}m
+      </span>
+      <span className="text-rose-400">:</span>
+      <span className="px-2 py-1 rounded-lg bg-rose-600 text-white">
+        {timeLeft.seconds.toString().padStart(2, '0')}s
+      </span>
+    </div>
+  );
+});
 
 export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, onBack }) => {
   const {
@@ -55,10 +135,35 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
     goHome,
     getPartnerPriceInfo,
     getProductCanonicalUrl,
+    toggleWishlist,
+    isWishlisted,
+    toggleCompare,
+    isComparing,
+    categories,
     lang,
     t,
     addToast
   } = useStore();
+
+  const hasBangla = (txt?: string) => Boolean(txt && /[\u0981-\u09F2\u09F4-\u09FF]/.test(txt));
+  const wishlisted = isWishlisted(product.id);
+  const comparing = isComparing(product.id);
+  const catObj = categories.find((c) => c.slug === product.category);
+  const subObj = catObj?.subcategories?.find((s) => s.slug === product.subcategory);
+  const displayCategory =
+    lang === 'bn'
+      ? catObj?.nameBn || product.categoryBn || product.category
+      : catObj?.nameEn || (!hasBangla(product.category) ? product.category : product.categoryBn);
+  const displaySubcategory =
+    lang === 'bn'
+      ? subObj?.nameBn || product.subcategory
+      : subObj?.nameEn || product.subcategory;
+  const displayTitle =
+    lang === 'bn'
+      ? product.titleBn || product.title
+      : !hasBangla(product.title) && product.title?.trim()
+      ? product.title
+      : product.titleBn;
 
   useEffect(() => {
     recordProductView(product.id);
@@ -100,12 +205,21 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
   const [reviewerName, setReviewerName] = useState('');
   const [reviewerRating, setReviewerRating] = useState(5);
   const [reviewerComment, setReviewerComment] = useState('');
+  const [showAllReviews, setShowAllReviews] = useState(false);
 
   // AI Product Q&A & Review Summary
   const [qaQuestion, setQaQuestion] = useState('');
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaHighlights, setQaHighlights] = useState<string[]>([]);
   const [qaLoading, setQaLoading] = useState(false);
+
+  // District Delivery Fee Estimator
+  const [estDistrictName, setEstDistrictName] = useState('Dhaka - Inside City');
+
+  // AI-Driven Related Products (Category + Subcategory + Tags)
+  const [aiRelatedIds, setAiRelatedIds] = useState<string[]>([]);
+  const [aiRelatedReason, setAiRelatedReason] = useState<string>('');
+  const [aiRelatedLoading, setAiRelatedLoading] = useState<boolean>(false);
 
   useEffect(() => {
     setQaQuestion('');
@@ -143,39 +257,6 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
 
-  const parseFlashDateMs = (raw?: string): number => {
-    if (!raw) return NaN;
-    const trimmed = String(raw).trim();
-    const dmy = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
-    if (dmy) {
-      const [, dd, mm, yyyy, hh = '23', min = '59'] = dmy;
-      return new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(min), 59).getTime();
-    }
-    return new Date(trimmed).getTime();
-  };
-
-  // Live Flash Sale Countdown Timer computed from Admin settings.flashSale.endsAt
-  const computeFlashTimeLeft = (endsAtIso?: string) => {
-    const targetMs = parseFlashDateMs(endsAtIso);
-    const diffMs = Number.isFinite(targetMs) ? Math.max(0, targetMs - Date.now()) : 6 * 3600 * 1000;
-    const totalSeconds = Math.floor(diffMs / 1000);
-    return {
-      days: Math.floor(totalSeconds / 86400),
-      hours: Math.floor((totalSeconds % 86400) / 3600),
-      minutes: Math.floor((totalSeconds % 3600) / 60),
-      seconds: totalSeconds % 60
-    };
-  };
-
-  const [timeLeft, setTimeLeft] = useState(() => computeFlashTimeLeft(settings.flashSale?.endsAt));
-  useEffect(() => {
-    setTimeLeft(computeFlashTimeLeft(settings.flashSale?.endsAt));
-    const timer = setInterval(() => {
-      setTimeLeft(computeFlashTimeLeft(settings.flashSale?.endsAt));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [settings.flashSale?.endsAt]);
-
   const discountPercent =
     product.originalPrice > product.price
       ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
@@ -200,11 +281,70 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
     return list.length > 0 ? list.slice(0, 4) : products.filter((p) => p.isFlashSale).slice(0, 4);
   }, [products, product.id]);
 
-  // Related products from same category
-  const relatedProducts = useMemo(
-    () => products.filter((p) => p.category === product.category && p.id !== product.id).slice(0, 4),
-    [products, product.category, product.id]
-  );
+  // AI-Driven Related Products backed by /api/ai/related-products + tag/subcategory ranking fallback
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    setAiRelatedLoading(true);
+    setAiRelatedReason('');
+    fetch('/api/ai/related-products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        productId: product.id,
+        category: product.category,
+        subcategory: product.subcategory || '',
+        tags: product.tags || [],
+        lang,
+        limit: 4
+      }),
+      signal: controller.signal
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.ok || !Array.isArray(data.relatedProducts)) return;
+        const ids = data.relatedProducts.map((p: Product) => p.id).filter(Boolean);
+        setAiRelatedIds(ids);
+        if (typeof data.reason === 'string' && data.reason.trim()) {
+          setAiRelatedReason(data.reason.trim());
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setAiRelatedLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [product.id, product.category, product.subcategory, lang]);
+
+  const relatedProducts = useMemo(() => {
+    const others = products.filter((p) => p.id !== product.id);
+    if (aiRelatedIds.length > 0) {
+      const byId = new Map(others.map((p) => [p.id, p]));
+      const ordered = aiRelatedIds
+        .map((id) => byId.get(id))
+        .filter((p): p is Product => Boolean(p));
+      if (ordered.length >= 2) return ordered.slice(0, 4);
+    }
+    const baseTags = new Set((product.tags || []).map((tg) => String(tg).toLowerCase().trim()).filter(Boolean));
+    return [...others]
+      .map((cand) => {
+        let score = 0;
+        if (product.subcategory && cand.subcategory && cand.subcategory === product.subcategory) score += 15;
+        if (cand.category === product.category) score += 9;
+        for (const tg of cand.tags || []) {
+          if (baseTags.has(String(tg).toLowerCase().trim())) score += 6;
+        }
+        if (product.brand && cand.brand && cand.brand.toLowerCase() === product.brand.toLowerCase()) score += 3;
+        return { cand, score };
+      })
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map((x) => x.cand)
+      .slice(0, 4);
+  }, [products, product.id, product.category, product.subcategory, product.tags, product.brand, aiRelatedIds]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -308,7 +448,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
               onClick={() => selectCategoryFilter(product.category, null)}
               className="text-emerald-600 dark:text-emerald-400 font-bold hover:underline cursor-pointer truncate"
             >
-              {lang === 'bn' ? product.categoryBn : product.category}
+              {displayCategory}
             </button>
             {product.subcategory && (
               <>
@@ -318,13 +458,13 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   onClick={() => selectCategoryFilter(product.category, product.subcategory || null)}
                   className="hover:text-emerald-600 font-semibold cursor-pointer truncate"
                 >
-                  {product.subcategory}
+                  {displaySubcategory}
                 </button>
               </>
             )}
             <span>/</span>
             <span className="text-slate-600 dark:text-slate-300 font-semibold truncate max-w-[240px]">
-              {lang === 'bn' ? product.titleBn : product.title}
+              {displayTitle}
             </span>
           </nav>
         </div>
@@ -386,27 +526,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
               <span className="text-[11px] text-slate-300 font-semibold">
                 {t('অফার শেষ:', 'Ends in:')}
               </span>
-              <div className="flex items-center gap-1 font-mono font-black">
-                {timeLeft.days > 0 && (
-                  <>
-                    <span className="px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-white">
-                      {timeLeft.days}d
-                    </span>
-                    <span className="text-rose-400">:</span>
-                  </>
-                )}
-                <span className="px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-white">
-                  {timeLeft.hours.toString().padStart(2, '0')}h
-                </span>
-                <span className="text-rose-400">:</span>
-                <span className="px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-white">
-                  {timeLeft.minutes.toString().padStart(2, '0')}m
-                </span>
-                <span className="text-rose-400">:</span>
-                <span className="px-2 py-1 rounded-lg bg-rose-600 text-white">
-                  {timeLeft.seconds.toString().padStart(2, '0')}s
-                </span>
-              </div>
+              <SingleProductCountdown endsAt={settings.flashSale?.endsAt} />
             </div>
           </div>
         )}
@@ -567,7 +687,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     onClick={() => selectCategoryFilter(product.category, null)}
                     className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 cursor-pointer"
                   >
-                    {lang === 'bn' ? product.categoryBn : product.category}
+                    {displayCategory}
                   </button>
                   {product.subcategory && (
                     <button
@@ -575,14 +695,14 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                       onClick={() => selectCategoryFilter(product.category, product.subcategory || null)}
                       className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg cursor-pointer hover:text-emerald-600"
                     >
-                      {product.subcategory}
+                      {displaySubcategory}
                     </button>
                   )}
                   {(product.brand || product.brandBn) && (
                     <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
                       <Tag className="w-3 h-3 text-emerald-500" />
                       <span>{t(cms?.brandLabelBn || 'ব্র্যান্ড', cms?.brandLabelEn || 'Brand')}:</span>
-                      <span>{lang === 'bn' ? product.brandBn || product.brand : product.brand || product.brandBn}</span>
+                      <span>{lang === 'bn' ? product.brandBn || product.brand : !hasBangla(product.brand) ? product.brand : product.brandBn}</span>
                     </span>
                   )}
                 </div>
@@ -621,7 +741,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
               {/* Product Title (Compact & Scannable) */}
               <div>
                 <h1 className="font-display text-base sm:text-xl font-bold text-slate-900 dark:text-white leading-snug tracking-tight line-clamp-2">
-                  {lang === 'bn' ? product.titleBn : product.title}
+                  {displayTitle}
                 </h1>
                 {settings.viewerCounter?.enabled !== false &&
                   settings.viewerCounter?.showOnSingleProduct !== false && (
@@ -639,8 +759,8 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 {(() => {
                   const shortDesc =
                     lang === 'bn'
-                      ? (product.descriptionBn?.trim() || product.description?.trim())
-                      : (product.description?.trim() || product.descriptionBn?.trim());
+                      ? (product.descriptionBn?.trim() || (hasBangla(product.description) ? product.description?.trim() : ''))
+                      : (!hasBangla(product.description) ? product.description?.trim() : '');
                   if (!shortDesc) return null;
                   return (
                     <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed max-w-xl">
@@ -674,7 +794,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 {partnerPrice.mode === 'reseller' && (
                   <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex flex-wrap items-center justify-between gap-2 text-xs tabular-nums">
                     <span className="font-bold text-emerald-700 dark:text-emerald-300">
-                      {t('রিসেলার মূল্য', 'Reseller Rate')}: ৳{effectiveUnitPrice.toLocaleString()} / {t('পিস', 'unit')} (Retail ৳{product.price.toLocaleString()})
+                      {t('রিসেলার মূল্য', 'Reseller Rate')}: ৳{effectiveUnitPrice.toLocaleString()} / {t('পিস', 'unit')} ({t('খুচরা', 'Retail')} ৳{product.price.toLocaleString()})
                     </span>
                     <span className="font-bold text-slate-900 dark:text-white">
                       {t('প্রতি পিসে লাভ', 'Margin')}: ৳{(partnerPrice.estimatedProfitPerUnit || 0).toLocaleString()}
@@ -685,8 +805,8 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 {partnerPrice.mode === 'wholesale' && (
                   <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 space-y-1.5 text-xs tabular-nums">
                     <div className="flex items-center justify-between font-bold text-emerald-800 dark:text-emerald-300">
-                      <span>{t('হোলসেল B2B ট্রেড রেট', 'Wholesale B2B Rate')}: ৳{effectiveUnitPrice.toLocaleString()}/unit</span>
-                      <span>MOQ {partnerPrice.minQty || 10} pcs</span>
+                      <span>{t('হোলসেল B2B ট্রেড রেট', 'Wholesale B2B Rate')}: ৳{effectiveUnitPrice.toLocaleString()}/{t('পিস', 'unit')}</span>
+                      <span>MOQ {partnerPrice.minQty || 10} {t('পিস', 'pcs')}</span>
                     </div>
                     {product.wholesaleTiers && product.wholesaleTiers.length > 0 && (
                       <div className="flex flex-wrap gap-2 pt-1">
@@ -697,7 +817,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                             onClick={() => setQuantity(tier.minQty)}
                             className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200 cursor-pointer hover:border-emerald-500"
                           >
-                            {tier.minQty}+ pcs → ৳{tier.unitPrice.toLocaleString()}
+                            {tier.minQty}+ {t('পিস', 'pcs')} → ৳{tier.unitPrice.toLocaleString()}
                           </button>
                         ))}
                       </div>
@@ -813,9 +933,9 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 </div>
               )}
 
-              {/* Quantity Stepper + Live Call Question CTA */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                <div className="flex items-center gap-3">
+              {/* Quantity Stepper + Wishlist + Compare + Live Call CTA */}
+              <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+                <div className="flex items-center gap-2.5">
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                     {t('পরিমাণ:', 'Qty:')}
                   </span>
@@ -840,14 +960,42 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => initiateCustomerBrowserCall()}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold cursor-pointer hover:bg-emerald-100 transition-colors"
-                >
-                  <PhoneCall className="w-3.5 h-3.5" />
-                  <span>{t('কল করে জানুন', 'Call Assistant')}</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => toggleWishlist(product.id)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer transition-colors ${
+                      wishlisted
+                        ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-300 dark:border-rose-700 text-rose-600 dark:text-rose-400'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-rose-400'
+                    }`}
+                  >
+                    <Heart className={`w-3.5 h-3.5 ${wishlisted ? 'fill-rose-500 text-rose-500' : ''}`} />
+                    <span>{wishlisted ? t('সেভড', 'Saved') : t('পছন্দ', 'Save')}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleCompare(product.id)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer transition-colors ${
+                      comparing
+                        ? 'bg-emerald-600 border-emerald-600 text-white'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-emerald-500'
+                    }`}
+                  >
+                    <Scale className="w-3.5 h-3.5" />
+                    <span>{comparing ? t('তুলনায় যুক্ত', 'Comparing') : t('তুলনা', 'Compare')}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => initiateCustomerBrowserCall()}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold cursor-pointer hover:bg-emerald-100 transition-colors"
+                  >
+                    <PhoneCall className="w-3.5 h-3.5" />
+                    <span>{t('কল করে জানুন', 'Call Assistant')}</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -936,7 +1084,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                       {urg?.showCountdown !== false && (
                         <span className="font-mono font-black text-rose-700 dark:text-rose-300">
                           {t('অফার শেষ:', 'Deal ends:')}{' '}
-                          {timeLeft.hours.toString().padStart(2, '0')}:{timeLeft.minutes.toString().padStart(2, '0')}:{timeLeft.seconds.toString().padStart(2, '0')}
+                          <SingleProductCountdown endsAt={settings.flashSale?.endsAt} variant="inline" />
                         </span>
                       )}
                     </div>
@@ -957,7 +1105,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     <BellRing className="w-5 h-5 shrink-0" />
                     <span>
                       {t(
-                        cms?.notifyMeBtnBn || 'স্টকে এলে আমাকে জানান (Notify Me)',
+                        cms?.notifyMeBtnBn || 'স্টকে এলে আমাকে জানান',
                         cms?.notifyMeBtnEn || 'Notify Me When Available'
                       )}
                     </span>
@@ -999,16 +1147,18 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
               {(() => {
                 const canonicalUrl = getProductCanonicalUrl(product);
                 const variantParts = [
-                  selectedColor ? `Color: ${selectedColor}` : '',
-                  selectedSize ? `Size: ${selectedSize}` : '',
+                  selectedColor ? `${t('রং', 'Color')}: ${selectedColor}` : '',
+                  selectedSize ? `${t('সাইজ', 'Size')}: ${selectedSize}` : '',
                   ...Object.entries(selectedAttributes || {}).map(([k, v]) => `${k}: ${v}`)
                 ].filter(Boolean);
                 const variantSummary = variantParts.join(', ');
                 const rawWaDigits = String(settings.whatsappNumber || '+8801917942662').replace(/[^0-9]/g, '');
                 const fmtWa = rawWaDigits.startsWith('88') ? rawWaDigits : `88${rawWaDigits}`;
-                const orderViaWaHref = `https://wa.me/${fmtWa}?text=${encodeURIComponent(
-                  `আসসালামু আলাইকুম BuyOne BD,\nআমি এই পণ্যটি অর্ডার করতে চাই (Order Via WhatsApp):\nপণ্য: ${lang === 'bn' ? product.titleBn : product.title}\nSKU: ${product.sku}\n${variantSummary ? `ভ্যারিয়েন্ট: ${variantSummary}\n` : ''}পরিমাণ: ${quantity} পিস\nমোট মূল্য: ৳${totalPayable.toLocaleString()}\nলিংক: ${canonicalUrl}\n\nআমার নাম ও ঠিকানা:`
-                )}`;
+                const waBody =
+                  lang === 'bn'
+                    ? `আসসালামু আলাইকুম BuyOne BD,\nআমি WhatsApp-এ এই পণ্যটি অর্ডার করতে চাই:\nপণ্য: ${displayTitle}\nSKU: ${product.sku}\n${variantSummary ? `ভ্যারিয়েন্ট: ${variantSummary}\n` : ''}পরিমাণ: ${quantity} পিস\nমোট মূল্য: ৳${totalPayable.toLocaleString()}\nলিংক: ${canonicalUrl}\n\nআমার নাম ও ঠিকানা:`
+                    : `Assalamu Alaikum BuyOne BD,\nI would like to order this product via WhatsApp:\nProduct: ${displayTitle}\nSKU: ${product.sku}\n${variantSummary ? `Variant: ${variantSummary}\n` : ''}Quantity: ${quantity} pcs\nTotal Price: ৳${totalPayable.toLocaleString()}\nLink: ${canonicalUrl}\n\nMy Name & Delivery Address:`;
+                const orderViaWaHref = `https://wa.me/${fmtWa}?text=${encodeURIComponent(waBody)}`;
 
                 return (
                   <a
@@ -1130,7 +1280,55 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 </div>
               )}
 
-              {/* 64-District Quick Courier & Service Matrix (Fully Editable via Product & CMS) */}
+              {/* Interactive District Delivery Fee Estimator + Courier Matrix */}
+              {(() => {
+                const estDistObj = BD_DISTRICTS.find((d) => d.name === estDistrictName) || BD_DISTRICTS[0];
+                const estZoneFee =
+                  estDistObj.zone === 'dhaka_inside'
+                    ? dhakaFee
+                    : estDistObj.zone === 'dhaka_sub'
+                    ? subDhakaFee
+                    : outsideFee;
+                const estEta =
+                  estDistObj.zone === 'dhaka_inside'
+                    ? t('২৪ ঘন্টা', '24 Hours')
+                    : estDistObj.zone === 'dhaka_sub'
+                    ? t('২৪-৩৬ ঘন্টা', '24–36 Hours')
+                    : t('৪৮-৭২ ঘন্টা', '48–72 Hours');
+                return (
+                  <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 space-y-2 text-[11px] tabular-nums">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>{t('আপনার জেলা অনুযায়ী ডেলিভারি হিসাব:', 'Check Delivery Fee by District:')}</span>
+                      </span>
+                      <select
+                        value={estDistrictName}
+                        onChange={(e) => setEstDistrictName(e.target.value)}
+                        className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
+                      >
+                        {BD_DISTRICTS.map((d) => (
+                          <option key={d.name} value={d.name}>
+                            {lang === 'bn' ? d.nameBn : d.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200/70 dark:border-slate-700/70 text-slate-600 dark:text-slate-300">
+                      <span>
+                        {t('ডেলিভারি চার্জ:', 'Delivery Fee:')}{' '}
+                        <strong className="font-mono text-emerald-600 dark:text-emerald-400">
+                          {estZoneFee === 0 ? t('ফ্রি', 'FREE') : `৳${estZoneFee}`}
+                        </strong>
+                      </span>
+                      <span>
+                        {t('সম্ভাব্য সময়:', 'ETA:')} <strong>{estEta}</strong>
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {cms?.showDeliveryMatrix !== false && (
               <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] font-bold text-slate-600 dark:text-slate-400 tabular-nums">
                 <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 flex flex-col gap-0.5">
@@ -1139,7 +1337,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     <span className="truncate">{t(cms?.dhakaCityLabelBn || 'ঢাকা সিটি', cms?.dhakaCityLabelEn || 'Dhaka City')}</span>
                   </div>
                   <span className="text-slate-900 dark:text-white font-mono">
-                    {dhakaFee === 0 ? t('ফ্রি (FREE)', 'FREE (৳0)') : `৳${dhakaFee}`} ({t(cms?.dhakaEtaBn || '২৪ ঘন্টা', cms?.dhakaEtaEn || '24h')})
+                    {dhakaFee === 0 ? t('ফ্রি', 'FREE') : `৳${dhakaFee}`} ({t(cms?.dhakaEtaBn || '২৪ ঘন্টা', cms?.dhakaEtaEn || '24h')})
                   </span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 flex flex-col gap-0.5">
@@ -1148,7 +1346,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     <span className="truncate">{t(cms?.nationwideLabelBn || 'সারাদেশে', cms?.nationwideLabelEn || 'Nationwide')}</span>
                   </div>
                   <span className="text-slate-900 dark:text-white font-mono">
-                    {outsideFee === 0 ? t('ফ্রি (FREE)', 'FREE (৳0)') : `৳${outsideFee}`} ({t(cms?.nationwideEtaBn || '৪৮ ঘন্টা', cms?.nationwideEtaEn || '48h')})
+                    {outsideFee === 0 ? t('ফ্রি', 'FREE') : `৳${outsideFee}`} ({t(cms?.nationwideEtaBn || '৪৮ ঘন্টা', cms?.nationwideEtaEn || '48h')})
                   </span>
                 </div>
                 {cms?.showWarrantyBadge !== false && (
@@ -1160,7 +1358,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   <span className="text-slate-900 dark:text-white truncate">
                     {lang === 'bn'
                       ? product.warrantyInfoBn || cms?.warrantyBadgeValueBn || '৭ দিন রিপ্লেস'
-                      : product.warrantyInfo || cms?.warrantyBadgeValueEn || '7-Day Replace'}
+                      : (!hasBangla(product.warrantyInfo) ? product.warrantyInfo : '') || cms?.warrantyBadgeValueEn || '7-Day Replace'}
                   </span>
                 </div>
                 )}
@@ -1213,11 +1411,17 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
               {(() => {
                 const fullDescription =
                   lang === 'bn'
-                    ? (product.descriptionBn?.trim() || product.description?.trim())
-                    : (product.description?.trim() || product.descriptionBn?.trim());
+                    ? (product.descriptionBn?.trim() || (hasBangla(product.description) ? product.description?.trim() : ''))
+                    : (!hasBangla(product.description) ? product.description?.trim() : '');
+                const cleanBrand = lang === 'bn'
+                  ? (product.brandBn || product.brand)
+                  : (!hasBangla(product.brand) ? product.brand : '');
+                const cleanWarranty = lang === 'bn'
+                  ? (product.warrantyInfoBn || product.warrantyInfo || '৭ দিনের সহজ রিপ্লেসমেন্ট ওয়ারেন্টি')
+                  : (!hasBangla(product.warrantyInfo) && product.warrantyInfo ? product.warrantyInfo : '7-day easy replacement warranty');
                 const fallbackOverview = lang === 'bn'
-                  ? `${product.titleBn || product.title} — ${product.categoryBn || product.category} ক্যাটাগরির প্রিমিয়াম ও ১০০% অরিজিনাল পণ্য। ${product.brandBn || product.brand ? `ব্র্যান্ড: ${product.brandBn || product.brand}। ` : ''}সারা বাংলাদেশে ক্যাশ অন ডেলিভারি এবং ${product.warrantyInfoBn || product.warrantyInfo || '৭ দিনের সহজ রিপ্লেসমেন্ট ওয়ারেন্টি'} সুবিধা সহ নিশ্চিন্তে অর্ডার করুন।`
-                  : `${product.title || product.titleBn} — Authentic, quality-checked item in ${product.category || product.categoryBn}. ${product.brand ? `Brand: ${product.brand}. ` : ''}Available across all 64 districts in Bangladesh with Cash on Delivery and ${product.warrantyInfo || '7-day easy replacement warranty'}.`;
+                  ? `${displayTitle} — ${displayCategory} ক্যাটাগরির প্রিমিয়াম ও ১০০% অরিজিনাল পণ্য। ${cleanBrand ? `ব্র্যান্ড: ${cleanBrand}। ` : ''}সারা বাংলাদেশে ক্যাশ অন ডেলিভারি এবং ${cleanWarranty} সুবিধা সহ নিশ্চিন্তে অর্ডার করুন।`
+                  : `${displayTitle} — Authentic, quality-checked item in ${displayCategory}. ${cleanBrand ? `Brand: ${cleanBrand}. ` : ''}Available across all 64 districts in Bangladesh with Cash on Delivery and ${cleanWarranty}.`;
 
                 return (
                   <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">
@@ -1226,10 +1430,15 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                 );
               })()}
 
-              {(lang === 'bn' ? product.featuresBn || product.features : product.features) && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {(lang === 'bn' ? product.featuresBn || product.features || [] : product.features || []).map(
-                    (feat, idx) => (
+              {(() => {
+                const rawFeatures =
+                  lang === 'bn'
+                    ? (product.featuresBn && product.featuresBn.length > 0 ? product.featuresBn : product.features || [])
+                    : (product.features || []).filter((f) => !hasBangla(f));
+                if (!rawFeatures || rawFeatures.length === 0) return null;
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {rawFeatures.map((feat, idx) => (
                       <div
                         key={idx}
                         className="flex items-center gap-2.5 p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200"
@@ -1237,10 +1446,10 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                         <Check className="w-4 h-4 text-emerald-500 shrink-0" />
                         <span>{feat}</span>
                       </div>
-                    )
-                  )}
-                </div>
-              )}
+                    ))}
+                  </div>
+                );
+              })()}
 
               {/* Full Attributes & Product Specifications Table */}
               {((product.brand || product.brandBn) || (product.attributes && product.attributes.length > 0)) && (
@@ -1273,20 +1482,28 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
 
           {activeDetailTab === 'reviews' && (() => {
             const realStats = getProductRealStats(product.id);
+            const displayedReviews = showAllReviews ? productReviews : productReviews.slice(0, 6);
+            const starCounts = [5, 4, 3, 2, 1].map((s) => ({
+              stars: s,
+              count: productReviews.filter((r) => Math.round(r.rating) === s).length
+            }));
             return (
             <div className="space-y-4 animate-fade-in">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3 tabular-nums">
-                  <span className="text-3xl font-black text-slate-900 dark:text-white font-mono">
-                    {realStats.averageRating}
-                  </span>
+              <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
+                <div className="flex items-center gap-4 tabular-nums">
+                  <div>
+                    <span className="text-3xl font-black text-slate-900 dark:text-white font-mono">
+                      {realStats.averageRating}
+                    </span>
+                    <span className="text-xs text-slate-400 font-semibold">/5</span>
+                  </div>
                   <div>
                     <div className="flex items-center gap-0.5 text-amber-400">
                       {[1, 2, 3, 4, 5].map((s) => (
                         <Star key={s} className="w-3.5 h-3.5 fill-amber-400" />
                       ))}
                     </div>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-[11px] text-slate-500 mt-0.5">
                       {t(
                         `${realStats.reviewsCount.toLocaleString()} যাচাইকৃত রেটিং · ${realStats.soldCount.toLocaleString()}+ বিক্রি · ${productReviews.length} লিখিত রিভিউ`,
                         `${realStats.reviewsCount.toLocaleString()} verified ratings · ${realStats.soldCount.toLocaleString()}+ sold · ${productReviews.length} written reviews`
@@ -1294,6 +1511,23 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     </p>
                   </div>
                 </div>
+
+                {productReviews.length > 0 && (
+                  <div className="flex-1 min-w-[180px] max-w-xs space-y-1">
+                    {starCounts.slice(0, 3).map((row) => {
+                      const pct = Math.round((row.count / productReviews.length) * 100);
+                      return (
+                        <div key={row.stars} className="flex items-center gap-2 text-[10px] tabular-nums">
+                          <span className="w-6 font-bold text-slate-600 dark:text-slate-300">{row.stars}★</span>
+                          <div className="flex-1 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                            <div className="h-full bg-amber-400 rounded-full" style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="w-7 text-right text-slate-500">{pct}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 <div className="flex items-center gap-2">
                   <button
@@ -1363,14 +1597,21 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     {t('এখনও কোনো লিখিত রিভিউ নেই। প্রথম রিভিউ দিন!', 'No written reviews yet. Be the first to review!')}
                   </p>
                 ) : (
-                  productReviews.map((rev) => (
+                  displayedReviews.map((rev) => (
                     <div
                       key={rev.id}
                       className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-1.5"
                     >
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-slate-900 dark:text-white">{rev.customerName}</span>
-                        <span className="text-[10px] text-emerald-600 font-semibold">{rev.date}</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-bold text-slate-900 dark:text-white truncate">{rev.customerName}</span>
+                          {rev.verifiedPurchase && (
+                            <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">
+                              ✓ {t('যাচাইকৃত', 'Verified')}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium shrink-0">{rev.date}</span>
                       </div>
                       <div className="flex items-center gap-0.5 text-amber-400">
                         {Array.from({ length: rev.rating }).map((_, idx) => (
@@ -1382,6 +1623,20 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   ))
                 )}
               </div>
+
+              {productReviews.length > 6 && (
+                <div className="text-center pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowAllReviews((prev) => !prev)}
+                    className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-emerald-500 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer transition-colors"
+                  >
+                    {showAllReviews
+                      ? t('কম রিভিউ দেখুন', 'Show Fewer Reviews')
+                      : t(`সব ${productReviews.length}টি লিখিত রিভিউ দেখুন`, `Show all ${productReviews.length} written reviews`)}
+                  </button>
+                </div>
+              )}
             </div>
             );
           })()}
@@ -1534,11 +1789,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                       settings.flashSale?.headlineEn || 'Active Flash Sale Deals'
                     )}
                   </span>
-                  <span className="text-xs font-mono font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-md tabular-nums">
-                    {timeLeft.days > 0 ? `${timeLeft.days}d:` : ''}
-                    {timeLeft.hours.toString().padStart(2, '0')}:{timeLeft.minutes.toString().padStart(2, '0')}:
-                    {timeLeft.seconds.toString().padStart(2, '0')}
-                  </span>
+                  <SingleProductCountdown endsAt={settings.flashSale?.endsAt} variant="badge" />
                 </h2>
                 <p className="text-xs text-slate-400">
                   {t(
@@ -1572,13 +1823,21 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
         </section>
       )}
 
-      {/* Related Products Rail */}
+      {/* AI-Driven Related Products Rail */}
       {relatedProducts.length > 0 && (
         <div className="space-y-4 pt-2">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
-              {t('একই ক্যাটাগরির আরও পণ্য', 'More From This Category')}
-            </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="font-display text-lg sm:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-500 shrink-0" />
+                <span>{t('এআই প্রস্তাবিত অনুরূপ পণ্য', 'AI-Driven Related Products')}</span>
+              </h2>
+              {(aiRelatedReason || aiRelatedLoading) && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {aiRelatedReason || t('ক্যাটাগরি ও ট্যাগ অনুযায়ী সেরা মিল খুঁজছে...', 'Matching similar products by category & tags...')}
+                </p>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => selectCategoryFilter(product.category, null)}

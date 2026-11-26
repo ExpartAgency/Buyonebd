@@ -321,8 +321,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     brand: 'BuyOne Tech',
     brandBn: 'বাইওয়ান টেক',
     rating: 4.9,
-    reviewsCount: 1420,
-    soldCount: 3840,
+    reviewsCount: 418,
+    soldCount: 790,
     isFlashSale: true,
     colors: ['Titanium Silver (সিলভার)', 'Matte Black (কালো)', 'Deep Orange (কমলা)'],
     sizes: ['49mm Standard'],
@@ -362,8 +362,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     ],
     sku: 'T9-TRIMMER-GLD',
     rating: 4.8,
-    reviewsCount: 1180,
-    soldCount: 3120,
+    reviewsCount: 256,
+    soldCount: 590,
     isFlashSale: true,
     colors: ['Vintage Golden (স্বর্ণালী)', 'Classic Bronze (ব্রোঞ্জ)', 'Silver Metallic (রুপালি)'],
     sizes: ['Standard'],
@@ -396,8 +396,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     ],
     sku: 'PANJABI-ROYAL-03',
     rating: 4.9,
-    reviewsCount: 890,
-    soldCount: 2150,
+    reviewsCount: 184,
+    soldCount: 345,
     isFlashSale: false,
     colors: ['Navy Blue (নেভি ব্লু)', 'Snow White (সাদা)', 'Olive Green (অলিভ গ্রিন)', 'Jet Black (কালো)'],
     sizes: ['40 (M)', '42 (L)', '44 (XL)', '46 (XXL)'],
@@ -429,8 +429,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     ],
     sku: 'M10-TWS-BLK',
     rating: 4.7,
-    reviewsCount: 1650,
-    soldCount: 4480,
+    reviewsCount: 512,
+    soldCount: 840,
     isFlashSale: true,
     colors: ['Glossy Black (কালো)'],
     sizes: ['Standard'],
@@ -462,8 +462,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     ],
     sku: 'HONEY-SUNDAR-1KG',
     rating: 5.0,
-    reviewsCount: 740,
-    soldCount: 1920,
+    reviewsCount: 215,
+    soldCount: 430,
     isFlashSale: false,
     colors: ['Pure Golden Amber'],
     sizes: ['1 Kg Glass Jar (১ কেজি)', '500g Glass Jar (৫০০ গ্রাম)'],
@@ -495,8 +495,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     ],
     sku: 'CHOPPER-14IN1',
     rating: 4.8,
-    reviewsCount: 960,
-    soldCount: 2740,
+    reviewsCount: 320,
+    soldCount: 615,
     isFlashSale: true,
     colors: ['Emerald Green & Grey'],
     sizes: ['Standard Set'],
@@ -528,8 +528,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     ],
     sku: 'ATTAR-JANNAT-12ML',
     rating: 4.9,
-    reviewsCount: 1090,
-    soldCount: 2890,
+    reviewsCount: 280,
+    soldCount: 520,
     isFlashSale: false,
     colors: ['Amber Crystal Glass Bottle'],
     sizes: ['12ml Roll-On (১২ মিলি)', '6ml Pocket (৬ মিলি)'],
@@ -561,8 +561,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     ],
     sku: 'CLEANSER-RICE-150',
     rating: 4.8,
-    reviewsCount: 830,
-    soldCount: 1980,
+    reviewsCount: 142,
+    soldCount: 265,
     isFlashSale: false,
     colors: ['Milky White'],
     sizes: ['150ml'],
@@ -578,172 +578,9 @@ export const INITIAL_PRODUCTS: Product[] = [
   }
 ];
 
-export const INITIAL_ORDERS: Order[] = [
-  {
-    id: 'BD-89210',
-    customer: {
-      name: 'তানভীর আহমেদ',
-      phone: '01711223344',
-      address: 'বাড়ি #১২, রোড #০৫, ব্লক #সি, বনশ্রী',
-      district: 'ঢাকা (সিটি কর্পোরেশন)',
-      thana: 'Rampura',
-      note: 'কল করে ডেলিভারি দিবেন'
-    },
-    items: [
-      {
-        productId: 'prod-001',
-        productTitle: 'Ultra Watch 9 Pro AMOLED Display Smartwatch',
-        productTitleBn: 'আল্ট্রা ওয়াচ ৯ প্রো এমোলেড ডিসপ্লে স্মার্টওয়াচ',
-        price: 1850,
-        quantity: 1,
-        selectedColor: 'Titanium Silver (সিলভার)',
-        selectedSize: '49mm Standard',
-        image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600'
-      }
-    ],
-    pricing: {
-      subtotal: 1850,
-      deliveryFee: 70,
-      discount: 100,
-      total: 1820
-    },
-    payment: {
-      method: 'cod',
-      status: 'pending'
-    },
-    deliveryZone: 'dhaka_inside',
-    status: 'ai_confirmed',
-    aiCallStatus: {
-      called: true,
-      callTimestamp: 'Today 10:15 AM',
-      confirmedByCustomer: true,
-      durationSeconds: 38,
-      notes: 'Customer confirmed order verbally via automated voice prompt (pressed 1)',
-      transcript: [
-        { speaker: 'ai', text: 'Assalamu Alaikum Tanvir bhai, calling from BuyOne BD...', textBn: 'আসসালামু আলাইকুম তানভীর ভাই, BuyOne BD থেকে বলছি...', time: '00:02' },
-        { speaker: 'customer', text: 'Pressed [1] - Confirmed Order', textBn: '[১] চেপে অর্ডার কনফার্ম করলেন', time: '00:22' }
-      ]
-    },
-    courier: {
-      provider: 'Steadfast',
-      trackingCode: 'STDF-89210',
-      status: 'in_transit',
-      currentLocation: 'Steadfast Central Hub, Tejgaon, Dhaka',
-      estimatedDelivery: 'Tomorrow Afternoon',
-      riderName: 'জাহিদুল ইসলাম',
-      riderPhone: '01888990011',
-      consignmentId: '109842',
-      history: [
-        { status: 'Order Placed', time: '10:12 AM', location: 'Website', note: 'Customer placed 1-click order' },
-        { status: 'AI Call Confirmed', time: '10:15 AM', location: 'System', note: 'Order verified by AI Agent Sumana' },
-        { status: 'Steadfast Consignment Booked', time: '11:00 AM', location: 'Tejgaon Hub', note: 'Handed over to Steadfast courier rider' }
-      ]
-    },
-    fraudCheck: {
-      checked: true,
-      successRate: 98,
-      totalOrders: 24,
-      deliveredCount: 23,
-      cancelledCount: 1,
-      riskLevel: 'safe',
-      message: 'গ্রাহকের পূর্ববর্তী ডেলিভারি সফলতা ৯৮%! ১০০% নিরাপদ অর্ডার।'
-    },
-    createdAt: '2026-11-10T04:12:00Z'
-  },
-  {
-    id: 'BD-89211',
-    customer: {
-      name: 'রাফসান কবির',
-      phone: '01899001122',
-      address: 'গ্রাম: চরকালিয়া, ডাকঘর: মির্জাপুর',
-      district: 'টাঙ্গাইল',
-      thana: 'Mirzapur'
-    },
-    items: [
-      {
-        productId: 'prod-002',
-        productTitle: 'T9 Vintage Professional Hair Trimmer',
-        productTitleBn: 'T9 ভিন্টেজ প্রফেশনাল মেটাল হেয়ার ট্রিমার',
-        price: 790,
-        quantity: 1,
-        selectedColor: 'Vintage Golden',
-        selectedSize: 'Standard',
-        image: 'https://images.unsplash.com/photo-1621607512214-68297480165e?w=600'
-      }
-    ],
-    pricing: {
-      subtotal: 790,
-      deliveryFee: 130,
-      discount: 0,
-      total: 920
-    },
-    payment: {
-      method: 'cod',
-      status: 'pending'
-    },
-    deliveryZone: 'dhaka_outside',
-    status: 'pending',
-    aiCallStatus: {
-      called: false
-    },
-    courier: {
-      provider: 'Steadfast',
-      trackingCode: 'STDF-89211',
-      status: 'booked',
-      currentLocation: 'Awaiting AI Voice Call',
-      estimatedDelivery: 'Within 48-72 hours',
-      history: [
-        { status: 'Order Received', time: 'Just now', location: 'Website', note: 'Awaiting automated phone confirmation' }
-      ]
-    },
-    fraudCheck: {
-      checked: true,
-      successRate: 85,
-      totalOrders: 6,
-      deliveredCount: 5,
-      cancelledCount: 1,
-      riskLevel: 'safe',
-      message: 'স্বাভাবিক নিয়মিত ক্রেতা।'
-    },
-    createdAt: '2026-11-10T05:05:00Z'
-  }
-];
+export const INITIAL_ORDERS: Order[] = [];
 
-export const INITIAL_ABANDONED_CARTS: AbandonedCart[] = [
-  {
-    id: 'cart-ab-01',
-    customerName: 'মেহরাব হোসেন',
-    customerPhone: '01911445566',
-    customerDistrict: 'চট্টগ্রাম',
-    items: [
-      {
-        product: INITIAL_PRODUCTS[0],
-        quantity: 1,
-        selectedColor: 'Titanium Silver'
-      }
-    ],
-    total: 1920,
-    createdAt: '2026-11-10T03:30:00Z',
-    recovered: false,
-    whatsappSent: false
-  },
-  {
-    id: 'cart-ab-02',
-    customerName: 'নাসরিন সুলতানা',
-    customerPhone: '01722889900',
-    customerDistrict: 'ঢাকা (সিটি কর্পোরেশন)',
-    items: [
-      {
-        product: INITIAL_PRODUCTS[4],
-        quantity: 2
-      }
-    ],
-    total: 2370,
-    createdAt: '2026-11-10T02:15:00Z',
-    recovered: false,
-    whatsappSent: true
-  }
-];
+export const INITIAL_ABANDONED_CARTS: AbandonedCart[] = [];
 
 export const INITIAL_USERS: UserStaff[] = [
   {
@@ -1259,7 +1096,7 @@ export const INITIAL_SETTINGS: StoreSettings = {
     socialProofFomo: {
       enabled: true,
       intervalSeconds: 18,
-      showRealOrdersOnly: false
+      showRealOrdersOnly: true
     },
     checkoutGuard: {
       honeypotEnabled: true,

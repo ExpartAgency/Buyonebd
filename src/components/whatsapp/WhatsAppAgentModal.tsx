@@ -9,16 +9,13 @@ import {
   ShoppingBag,
   Truck,
   HelpCircle,
-  Gift,
-  Flame,
   Volume2,
-  Zap,
-  Sparkles,
   Headphones,
   MessageSquareText,
   Copy,
   Check,
-  Link2
+  Link2,
+  ClipboardList
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { speakClearText } from '../../utils/voiceAudio';
@@ -36,12 +33,11 @@ export const WhatsAppAgentModal: React.FC = () => {
     setActiveView,
     navigateToPath,
     setIsSpinOpen,
-    remainingSpinsToday,
-    spinRewards,
     startAICall,
     initiateCustomerBrowserCall,
     supportChats,
     activeChatSessionId,
+    selectedProductForPage,
     sendCustomerChatMessage,
     toggleChatManualMode,
     requestDirectDeskSupport,
@@ -64,9 +60,10 @@ export const WhatsAppAgentModal: React.FC = () => {
     t
   } = useStore();
 
-  const [activeTab, setActiveTab] = useState<'chat' | 'whatsapp' | 'call' | 'spin' | 'flash'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'whatsapp' | 'call'>('chat');
   const [inputMessage, setInputMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [unreadReplyCount, setUnreadReplyCount] = useState(0);
   const [callerName, setCallerName] = useState(customerProfile?.name || '');
   const [callerPhone, setCallerPhone] = useState(customerProfile?.phone || '');
   const [waName, setWaName] = useState(customerProfile?.name || '');
@@ -75,7 +72,7 @@ export const WhatsAppAgentModal: React.FC = () => {
   const [isSendingWaInquiry, setIsSendingWaInquiry] = useState(false);
   const [waSentReceipt, setWaSentReceipt] = useState(false);
   const [copiedProductUrl, setCopiedProductUrl] = useState(false);
-  const [showInquiryForm, setShowInquiryForm] = useState(true);
+  const [showInquiryForm, setShowInquiryForm] = useState(false);
   const [leadName, setLeadName] = useState(customerProfile?.name || '');
   const [leadCountryCode, setLeadCountryCode] = useState('+880');
   const [leadPhone, setLeadPhone] = useState(customerProfile?.phone || '');
@@ -86,7 +83,9 @@ export const WhatsAppAgentModal: React.FC = () => {
   const leadNameRef = useRef<HTMLInputElement>(null);
   const leadPhoneRef = useRef<HTMLInputElement>(null);
   const leadQueryRef = useRef<HTMLTextAreaElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const prevNonCustomerCountRef = useRef<number>(0);
 
   useEffect(() => {
     if (customerProfile?.name) {
@@ -167,10 +166,24 @@ export const WhatsAppAgentModal: React.FC = () => {
   const sessionMessages = currentSession?.messages || [];
 
   useEffect(() => {
+    const nonCustCount = sessionMessages.filter((m) => m.sender !== 'customer').length;
+    if (isWhatsAppOpen) {
+      setUnreadReplyCount(0);
+    } else if (nonCustCount > prevNonCustomerCountRef.current) {
+      setUnreadReplyCount((prev) => prev + (nonCustCount - prevNonCustomerCountRef.current));
+    }
+    prevNonCustomerCountRef.current = nonCustCount;
+  }, [sessionMessages.length, isWhatsAppOpen]);
+
+  useEffect(() => {
+    if (isWhatsAppOpen && activeTab === 'chat' && !showInquiryForm) {
+      setTimeout(() => chatInputRef.current?.focus(), 80);
+    }
+  }, [isWhatsAppOpen, activeTab, showInquiryForm]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [sessionMessages.length, isSending, activeTab]);
-
-  const flashSaleProducts = products.filter((p) => p.isFlashSale);
 
   const handleSend = async (textToSend?: string) => {
     const query = (textToSend || inputMessage).trim();
@@ -205,13 +218,15 @@ export const WhatsAppAgentModal: React.FC = () => {
     } else if (action === 'delivery') {
       handleSend(lang === 'bn' ? 'ডেলিভারি চার্জ কত?' : 'Delivery charges?');
     } else if (action === 'open_spin') {
-      setActiveTab('spin');
+      setIsWhatsAppOpen(false);
+      setIsSpinOpen(true);
     } else if (action === 'tab_call') {
       setActiveTab('call');
     } else if (action === 'tab_whatsapp') {
       setActiveTab('whatsapp');
     } else if (action === 'tab_flash') {
-      setActiveTab('flash');
+      setActiveTab('chat');
+      handleSend(lang === 'bn' ? 'আজকের সেরা অফার কি কি?' : 'What are today hot deals?');
     } else if (action === 'request_human' || action === 'request_specialist') {
       requestDirectDeskSupport(currentSession?.id);
     } else if (action === 'open_tracking') {
@@ -335,15 +350,26 @@ export const WhatsAppAgentModal: React.FC = () => {
       {!isWhatsAppOpen && (
         <button
           type="button"
-          onClick={() => setIsWhatsAppOpen(true)}
+          onClick={() => {
+            setUnreadReplyCount(0);
+            setIsWhatsAppOpen(true);
+          }}
           className="fixed bottom-20 md:bottom-6 right-3 sm:right-6 z-40 bg-emerald-700 hover:bg-emerald-800 active:scale-95 text-white px-4 h-12 rounded-full shadow-xl shadow-emerald-950/25 flex items-center gap-2 transition-all duration-200 cursor-pointer border border-emerald-500/30"
-          title={t('সাপোর্ট ও WhatsApp চ্যাট', 'Support & WhatsApp Chat')}
-          aria-label="Open Support & WhatsApp Chat"
+          title={t('সাপোর্ট ও লাইভ চ্যাট', 'Live Chat & Support')}
+          aria-label="Open Live Support & WhatsApp Chat"
         >
-          <MessageCircle className="w-5 h-5" />
-          <span className="text-xs font-semibold hidden sm:inline tracking-wide whitespace-nowrap">
-            {t('সাপোর্ট ও WhatsApp', 'Support & WhatsApp')}
+          <span className="relative">
+            <MessageCircle className="w-5 h-5" />
+            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-300 ring-2 ring-emerald-700" />
           </span>
+          <span className="text-xs font-semibold hidden sm:inline tracking-wide whitespace-nowrap">
+            {t('লাইভ সাপোর্ট', 'Live Chat')}
+          </span>
+          {unreadReplyCount > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black leading-none tabular-nums">
+              {unreadReplyCount}
+            </span>
+          )}
         </button>
       )}
 
@@ -353,17 +379,18 @@ export const WhatsAppAgentModal: React.FC = () => {
           {/* Header */}
           <div className="bg-slate-900 px-4 py-3.5 text-white flex items-center justify-between gap-3 shrink-0 border-b border-slate-800">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-emerald-600/20 border border-emerald-500/35 flex items-center justify-center text-emerald-400 shrink-0">
+              <div className="relative w-9 h-9 rounded-xl bg-emerald-600/20 border border-emerald-500/35 flex items-center justify-center text-emerald-400 shrink-0">
                 <Headphones className="w-4 h-4" />
+                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-slate-900" />
               </div>
               <div className="min-w-0">
                 <h4 className="text-sm font-bold text-white truncate tracking-tight">
-                  {settings.storeName} {t('সাপোর্ট ও WhatsApp', 'Support & WhatsApp')}
+                  {settings.storeName} {t('লাইভ সাপোর্ট ডেস্ক', 'Support Desk')}
                 </h4>
-                <p className="text-[11px] text-slate-400 truncate">
+                <p className="text-[11px] text-emerald-300/90 truncate">
                   {currentSession?.manualMode
                     ? t('সরাসরি সাপোর্ট বিশেষজ্ঞ যুক্ত আছেন', 'Connected with Live Support Specialist')
-                    : t('লাইভ চ্যাট, WhatsApp, ভয়েস কল ও ট্র্যাকিং', 'Live Chat, WhatsApp, Voice Call & Tracking')}
+                    : t('অনলাইন · তাৎক্ষণিক উত্তর ও অর্ডার সহায়তা', 'Online · Instant Product & Order Assistance')}
                 </p>
               </div>
             </div>
@@ -390,24 +417,24 @@ export const WhatsAppAgentModal: React.FC = () => {
             </div>
           </div>
 
-          {/* 5 Navigation Tabs */}
-          <div className="grid grid-cols-5 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-[11px] font-semibold shrink-0">
+          {/* 3 Clean Primary Navigation Tabs */}
+          <div className="grid grid-cols-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-xs font-semibold shrink-0">
             <button
               type="button"
               onClick={() => setActiveTab('chat')}
-              className={`py-2.5 px-1 flex items-center justify-center gap-1 cursor-pointer border-b-2 transition-colors whitespace-nowrap ${
+              className={`py-2.5 px-2 flex items-center justify-center gap-1.5 cursor-pointer border-b-2 transition-colors whitespace-nowrap ${
                 activeTab === 'chat'
                   ? 'border-emerald-700 text-emerald-700 dark:text-emerald-400 dark:border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
                   : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <MessageSquareText className="w-3.5 h-3.5 shrink-0" />
-              <span>{t('চ্যাট', 'Chat')}</span>
+              <span>{t('লাইভ চ্যাট', 'Live Chat')}</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('whatsapp')}
-              className={`py-2.5 px-1 flex items-center justify-center gap-1 cursor-pointer border-b-2 transition-colors whitespace-nowrap ${
+              className={`py-2.5 px-2 flex items-center justify-center gap-1.5 cursor-pointer border-b-2 transition-colors whitespace-nowrap ${
                 activeTab === 'whatsapp'
                   ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400 dark:border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
                   : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -419,53 +446,29 @@ export const WhatsAppAgentModal: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab('call')}
-              className={`py-2.5 px-1 flex items-center justify-center gap-1 cursor-pointer border-b-2 transition-colors whitespace-nowrap ${
+              className={`py-2.5 px-2 flex items-center justify-center gap-1.5 cursor-pointer border-b-2 transition-colors whitespace-nowrap ${
                 activeTab === 'call'
                   ? 'border-emerald-700 text-emerald-700 dark:text-emerald-400 dark:border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
                   : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <PhoneCall className="w-3.5 h-3.5 shrink-0" />
-              <span>{t('কল', 'Call')}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('spin')}
-              className={`py-2.5 px-1 flex items-center justify-center gap-1 cursor-pointer border-b-2 transition-colors whitespace-nowrap ${
-                activeTab === 'spin'
-                  ? 'border-emerald-700 text-emerald-700 dark:text-emerald-400 dark:border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Gift className="w-3.5 h-3.5 shrink-0" />
-              <span>{t('অফার', 'Spin')}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('flash')}
-              className={`py-2.5 px-1 flex items-center justify-center gap-1 cursor-pointer border-b-2 transition-colors whitespace-nowrap ${
-                activeTab === 'flash'
-                  ? 'border-emerald-700 text-emerald-700 dark:text-emerald-400 dark:border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Flame className="w-3.5 h-3.5 shrink-0" />
-              <span>{t('ডিলস', 'Deals')}</span>
+              <span>{t('কল ডেস্ক', 'Call Desk')}</span>
             </button>
           </div>
 
-          {/* TAB 1: LIVE SUPPORT CHAT & INQUIRY FORM */}
+          {/* TAB 1: LIVE SUPPORT CHAT & OPTIONAL CALLBACK FORM */}
           {activeTab === 'chat' && (
             <>
-              <div className="bg-slate-50 dark:bg-slate-950/70 px-4 py-2 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 text-[11px] shrink-0">
+              <div className="bg-slate-50 dark:bg-slate-950/70 px-3.5 py-2 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 text-[11px] shrink-0">
                 <span className="font-medium text-slate-600 dark:text-slate-300 truncate flex items-center gap-1.5">
-                  <MessageSquareText className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${currentSession?.manualMode ? 'bg-amber-500' : 'bg-emerald-500'}`} />
                   <span className="truncate">
                     {showInquiryForm
-                      ? t('কাস্টমার সহায়তা ফর্ম', 'Customer Support Inquiry Form')
+                      ? t('কলব্যাক ফর্ম', 'Callback Request Form')
                       : currentSession?.manualMode
-                      ? t('সরাসরি সাপোর্ট ডেস্ক সক্রিয়', 'Direct Support Desk Active')
-                      : t('স্মার্ট শপিং অ্যাসিস্ট্যান্ট সক্রিয়', 'Smart Shopping Assistant Active')}
+                      ? t('সরাসরি সাপোর্ট ডেস্ক সক্রিয়', 'Live Support Agent Active')
+                      : t('স্মার্ট শপিং চ্যাট', 'Instant Smart Support')}
                   </span>
                 </span>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -475,9 +478,10 @@ export const WhatsAppAgentModal: React.FC = () => {
                       setShowInquiryForm((v) => !v);
                       setLeadSubmittedOk(false);
                     }}
-                    className="px-2.5 py-1 rounded-md font-semibold text-[11px] cursor-pointer transition-colors border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-emerald-600 whitespace-nowrap"
+                    className="px-2 py-1 rounded-md font-semibold text-[11px] cursor-pointer transition-colors border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-emerald-600 flex items-center gap-1 whitespace-nowrap"
                   >
-                    {showInquiryForm ? t('লাইভ চ্যাট', 'Open Live Chat') : t('ইনকোয়ারি ফর্ম', 'Inquiry Form')}
+                    <ClipboardList className="w-3 h-3 shrink-0" />
+                    <span>{showInquiryForm ? t('চ্যাটে ফিরুন', 'Back to Chat') : t('কলব্যাক', 'Callback')}</span>
                   </button>
                   {!showInquiryForm && (
                     <button
@@ -677,7 +681,40 @@ export const WhatsAppAgentModal: React.FC = () => {
               ) : (
                 <>
 
-              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50/70 dark:bg-slate-950 text-xs">
+              <div className="flex-1 p-3.5 overflow-y-auto space-y-3 bg-slate-50/70 dark:bg-slate-950 text-xs">
+                {selectedProductForPage && (
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/70 flex items-center gap-2.5 shadow-2xs">
+                    {selectedProductForPage.images?.[0] && (
+                      <img
+                        src={selectedProductForPage.images[0]}
+                        alt={selectedProductForPage.title}
+                        className="w-10 h-10 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-bold text-slate-900 dark:text-white truncate">
+                        {lang === 'bn' ? selectedProductForPage.titleBn || selectedProductForPage.title : selectedProductForPage.title}
+                      </p>
+                      <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                        ৳{selectedProductForPage.price.toLocaleString()}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSend(
+                          lang === 'bn'
+                            ? `${selectedProductForPage.titleBn || selectedProductForPage.title} এর দাম ও ডেলিভারি সম্পর্কে জানান`
+                            : `Tell me price and delivery for ${selectedProductForPage.title}`
+                        )
+                      }
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold shrink-0 cursor-pointer whitespace-nowrap"
+                    >
+                      {t('জিজ্ঞাসা করুন', 'Ask Info')}
+                    </button>
+                  </div>
+                )}
+
                 {sessionMessages.length === 0 && !isSending && (
                   <div className="flex flex-col items-start">
                     <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1 px-0.5">
@@ -686,13 +723,14 @@ export const WhatsAppAgentModal: React.FC = () => {
                     <div className="max-w-[88%] rounded-2xl rounded-bl-sm px-3.5 py-2.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-800 shadow-xs">
                       <p className="leading-relaxed text-[12.5px]">
                         {t(
-                          `আসসালামু আলাইকুম! ${settings.storeNameBn || settings.storeName} লাইভ সাপোর্টে স্বাগতম। পণ্য, ডেলিভারি চার্জ বা অর্ডার ট্র্যাকিং সম্পর্কে লিখুন — সরাসরি আমাদের সাপোর্ট টিম বা স্মার্ট অ্যাসিস্ট্যান্ট উত্তর দেবে।`,
-                          `Assalamu Alaikum! Welcome to ${settings.storeName} Live Support. Ask about any product, delivery fee, or Order ID — our team or assistant will respond immediately.`
+                          `আসসালামু আলাইকুম! ${settings.storeNameBn || settings.storeName} লাইভ সাপোর্টে স্বাগতম। পণ্য খুঁজতে, ডেলিভারি চার্জ জানতে বা অর্ডার ট্র্যাক করতে সরাসরি মেসেজ করুন।`,
+                          `Assalamu Alaikum! Welcome to ${settings.storeName} Live Support. Ask about any product, delivery fee, or Order ID — instant replies with direct order cards.`
                         )}
                       </p>
                     </div>
                   </div>
                 )}
+
                 {sessionMessages.map((msg, idx) => {
                   const isCust = msg.sender === 'customer';
                   const prevSender = idx > 0 ? sessionMessages[idx - 1].sender : null;
@@ -714,7 +752,7 @@ export const WhatsAppAgentModal: React.FC = () => {
                         </span>
                       )}
                       <div
-                        className={`max-w-[84%] rounded-2xl px-3.5 py-2.5 shadow-xs ${
+                        className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 shadow-xs ${
                           isCust
                             ? 'bg-emerald-700 text-white rounded-br-sm'
                             : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-bl-sm border border-slate-200 dark:border-slate-800'
@@ -723,8 +761,68 @@ export const WhatsAppAgentModal: React.FC = () => {
                         <p className="whitespace-pre-line leading-relaxed text-[12.5px]">
                           {displayBody}
                         </p>
+
+                        {!isCust && Array.isArray(msg.attachedProducts) && msg.attachedProducts.length > 0 && (
+                          <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                            {msg.attachedProducts.slice(0, 3).map((ap) => {
+                              const fullProd = products.find((p) => p.id === ap.id);
+                              const titleShow = lang === 'bn' ? ap.titleBn || ap.title : ap.title;
+                              return (
+                                <div
+                                  key={`${msg.id}-ap-${ap.id}`}
+                                  className="p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center gap-2.5"
+                                >
+                                  {ap.image ? (
+                                    <img
+                                      src={ap.image}
+                                      alt={titleShow}
+                                      className="w-11 h-11 rounded-lg object-cover shrink-0 border border-slate-200 dark:border-slate-700"
+                                    />
+                                  ) : (
+                                    <div className="w-11 h-11 rounded-lg bg-slate-200 dark:bg-slate-800 shrink-0" />
+                                  )}
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[11px] font-bold text-slate-900 dark:text-white truncate">{titleShow}</p>
+                                    <div className="flex items-baseline gap-1.5 tabular-nums mt-0.5">
+                                      <span className="text-xs font-extrabold text-emerald-700 dark:text-emerald-400">
+                                        ৳{Number(ap.price || 0).toLocaleString()}
+                                      </span>
+                                      {ap.originalPrice && ap.originalPrice > ap.price && (
+                                        <span className="text-[10px] text-slate-400 line-through">
+                                          ৳{ap.originalPrice.toLocaleString()}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    {fullProd && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          openProductPage(fullProd);
+                                          setIsWhatsAppOpen(false);
+                                        }}
+                                        className="px-2 py-1 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-500 cursor-pointer"
+                                      >
+                                        {t('দেখুন', 'View')}
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleQuickAction(ap.stock > 0 ? `buy_${ap.id}` : `view_${ap.id}`)}
+                                      className="px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold cursor-pointer"
+                                    >
+                                      {ap.stock > 0 ? t('অর্ডার', 'Buy') : t('বিস্তারিত', 'Check')}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
                         {!isCust && safeActions.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                          <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                             {safeActions.map((qa, qaIdx) => (
                               <button
                                 key={`${msg.id}-qa-${qaIdx}`}
@@ -771,8 +869,13 @@ export const WhatsAppAgentModal: React.FC = () => {
                 })}
 
                 {isSending && (
-                  <div className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 text-[11px] px-3.5 py-2 rounded-2xl rounded-bl-sm border border-slate-200 dark:border-slate-800">
-                    <span>{t('উত্তর তৈরি হচ্ছে...', 'Writing reply...')}</span>
+                  <div className="inline-flex items-center gap-2 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 text-[11px] px-3.5 py-2.5 rounded-2xl rounded-bl-sm border border-slate-200 dark:border-slate-800 shadow-2xs">
+                    <span className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </span>
+                    <span className="font-medium">{t('উত্তর তৈরি হচ্ছে...', 'Typing reply...')}</span>
                   </div>
                 )}
                 <div ref={messagesEndRef} />
@@ -782,18 +885,11 @@ export const WhatsAppAgentModal: React.FC = () => {
               <div className="bg-white dark:bg-slate-900 px-3 py-2 border-t border-slate-200 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px] shrink-0">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('whatsapp')}
-                  className="whitespace-nowrap bg-emerald-600 text-white hover:bg-emerald-500 px-2.5 py-1 rounded-lg font-semibold cursor-pointer flex items-center gap-1 transition-colors"
-                >
-                  <MessageCircle className="w-3 h-3" />
-                  <span>WhatsApp Chat</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickAction('confirm_pending')}
+                  onClick={() => handleQuickAction('deals')}
                   className="whitespace-nowrap bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 px-2.5 py-1 rounded-lg font-medium cursor-pointer flex items-center gap-1 transition-colors"
                 >
-                  <span>{t('অর্ডার কনফার্ম', 'Confirm Order')}</span>
+                  <ShoppingBag className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                  <span>{t('সেরা অফার', 'Hot Deals')}</span>
                 </button>
                 <button
                   type="button"
@@ -801,15 +897,14 @@ export const WhatsAppAgentModal: React.FC = () => {
                   className="whitespace-nowrap bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-2.5 py-1 rounded-lg font-medium cursor-pointer flex items-center gap-1 transition-colors"
                 >
                   <Truck className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                  <span>{t('ট্র্যাক অর্ডার', 'Track')}</span>
+                  <span>{t('ট্র্যাক অর্ডার', 'Track Order')}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleQuickAction('deals')}
+                  onClick={() => handleQuickAction('confirm_pending')}
                   className="whitespace-nowrap bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-2.5 py-1 rounded-lg font-medium cursor-pointer flex items-center gap-1 transition-colors"
                 >
-                  <ShoppingBag className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                  <span>{t('অফার', 'Deals')}</span>
+                  <span>{t('অর্ডার কনফার্ম', 'Confirm Order')}</span>
                 </button>
                 <button
                   type="button"
@@ -817,7 +912,7 @@ export const WhatsAppAgentModal: React.FC = () => {
                   className="whitespace-nowrap bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-2.5 py-1 rounded-lg font-medium cursor-pointer flex items-center gap-1 transition-colors"
                 >
                   <HelpCircle className="w-3 h-3 text-slate-500 dark:text-slate-400" />
-                  <span>{t('ডেলিভারি', 'Delivery')}</span>
+                  <span>{t('ডেলিভারি চার্জ', 'Delivery')}</span>
                 </button>
                 <button
                   type="button"
@@ -832,6 +927,7 @@ export const WhatsAppAgentModal: React.FC = () => {
               {/* Composer */}
               <div className="bg-white dark:bg-slate-900 px-3 py-2.5 flex items-center gap-2 border-t border-slate-200 dark:border-slate-800 shrink-0">
                 <input
+                  ref={chatInputRef}
                   type="text"
                   placeholder={t('পণ্য, ডেলিভারি বা অর্ডার আইডি লিখুন...', 'Ask about a product, delivery, or Order ID...')}
                   value={inputMessage}
@@ -988,7 +1084,7 @@ export const WhatsAppAgentModal: React.FC = () => {
 
                 <div>
                   <label className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
-                    {t('বার্তা (পণ্যের URL সহ)', 'Message (Includes Product URL)')}
+                    {t('বার্তা (পণ্যের লিংকসহ)', 'Message (Includes Product URL)')}
                   </label>
                   <textarea
                     rows={3}
@@ -1136,121 +1232,6 @@ export const WhatsAppAgentModal: React.FC = () => {
                       </div>
                     </div>
                   ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 4: REWARDS / SPIN */}
-          {activeTab === 'spin' && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/70 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
-              <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-2.5 border border-slate-800">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-emerald-400 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5" /> {t('লাকি স্পিন অফার', 'Daily Rewards Wheel')}
-                  </span>
-                  <span className="font-mono text-slate-300 tabular-nums">
-                    {t(`বাকি: ${remainingSpinsToday} বার`, `Left: ${remainingSpinsToday}`)}
-                  </span>
-                </div>
-                <h4 className="font-bold text-sm">
-                  {t('স্পিন ঘুরিয়ে গিফট ওয়ালেট ক্যাশ ও ডিসকাউন্ট জিতুন', 'Spin to Unlock Instant Coupons & Wallet Credit')}
-                </h4>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsWhatsAppOpen(false);
-                    setIsSpinOpen(true);
-                  }}
-                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer transition-colors"
-                >
-                  {t('স্পিন হুইল ওপেন করুন', 'Open Rewards Wheel')}
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                  {t('পুরস্কার তালিকা:', 'Available Rewards:')}
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  {spinRewards.slice(0, 6).map((r) => (
-                    <div key={r.id} className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
-                      <span className="font-bold text-emerald-700 dark:text-emerald-400 block">{lang === 'bn' ? r.labelBn : r.labelEn}</span>
-                      <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400">{r.code}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 5: FLASH DEALS */}
-          {activeTab === 'flash' && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-2.5 bg-slate-50/70 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                  <Flame className="w-4 h-4 text-rose-500" />
-                  {t(`ফ্ল্যাশ সেল পণ্য (${flashSaleProducts.length})`, `Featured Deals (${flashSaleProducts.length})`)}
-                </span>
-              </div>
-
-              {flashSaleProducts.length === 0 ? (
-                <p className="text-xs text-slate-500 dark:text-slate-400 text-center py-8">
-                  {t('বর্তমানে কোনো ফ্ল্যাশ সেল পণ্য সক্রিয় নেই।', 'No active flash deals right now.')}
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {flashSaleProducts.map((p) => {
-                    const disc = Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100);
-                    return (
-                      <div key={p.id} className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center gap-3">
-                        {p.images?.[0]?.trim() ? (
-                          <img
-                            src={p.images[0]}
-                            alt={p.title}
-                            referrerPolicy="no-referrer"
-                            onClick={() => {
-                              openProductPage(p);
-                              setIsWhatsAppOpen(false);
-                            }}
-                            className="w-14 h-14 rounded-lg object-cover shrink-0 cursor-pointer border border-slate-200 dark:border-slate-700"
-                          />
-                        ) : (
-                          <div className="w-14 h-14 rounded-lg bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p
-                            onClick={() => {
-                              openProductPage(p);
-                              setIsWhatsAppOpen(false);
-                            }}
-                            className="text-xs font-semibold text-slate-900 dark:text-white truncate cursor-pointer hover:text-emerald-700 dark:hover:text-emerald-400"
-                          >
-                            {lang === 'bn' ? p.titleBn : p.title}
-                          </p>
-                          <div className="flex items-center gap-2 mt-0.5 tabular-nums">
-                            <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 font-mono">৳{p.price}</span>
-                            {disc > 0 && (
-                              <span className="text-[10px] font-semibold text-rose-600 dark:text-rose-400">
-                                -{disc}%
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            openOneClickCheckout(p);
-                            setIsWhatsAppOpen(false);
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-semibold flex items-center gap-1 cursor-pointer shrink-0"
-                        >
-                          <Zap className="w-3 h-3" />
-                          <span>{t('অর্ডার', 'Order')}</span>
-                        </button>
-                      </div>
-                    );
-                  })}
                 </div>
               )}
             </div>

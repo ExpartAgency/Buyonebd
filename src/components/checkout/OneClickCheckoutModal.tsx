@@ -519,7 +519,9 @@ export const OneClickCheckoutModal: React.FC = () => {
             <div className="space-y-2 pt-1">
               <a
                 href={`https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(
-                  `আসসালামু আলাইকুম BuyOne BD,\nআমার নতুন অর্ডার আইডি: #${placedOrder.id}\nগ্রাহকের নাম: ${placedOrder.customer.name}\nমোবাইল: ${placedOrder.customer.phone}\nমোট বিল: ৳${placedOrder.pricing.total} (${placedOrder.payment.method.toUpperCase()})\nঠিকানা: ${placedOrder.customer.address}, ${placedOrder.customer.district}\n\nঅনুগ্রহ করে অর্ডারটি দ্রুত পাঠিয়ে দিন। ধন্যবাদ!`
+                  lang === 'bn'
+                    ? `আসসালামু আলাইকুম BuyOne BD,\nআমার নতুন অর্ডার আইডি: #${placedOrder.id}\nগ্রাহকের নাম: ${placedOrder.customer.name}\nমোবাইল: ${placedOrder.customer.phone}\nমোট বিল: ৳${placedOrder.pricing.total} (${placedOrder.payment.method.toUpperCase()})\nঠিকানা: ${placedOrder.customer.address}, ${placedOrder.customer.district}\n\nঅনুগ্রহ করে অর্ডারটি দ্রুত পাঠিয়ে দিন। ধন্যবাদ!`
+                    : `Assalamu Alaikum BuyOne BD,\nMy new Order ID: #${placedOrder.id}\nCustomer Name: ${placedOrder.customer.name}\nPhone: ${placedOrder.customer.phone}\nTotal Bill: ৳${placedOrder.pricing.total} (${placedOrder.payment.method.toUpperCase()})\nAddress: ${placedOrder.customer.address}, ${placedOrder.customer.district}\n\nPlease dispatch my order soon. Thank you!`
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -766,7 +768,19 @@ export const OneClickCheckoutModal: React.FC = () => {
                   >
                     {BD_DISTRICTS.map((dist) => (
                       <option key={dist.name} value={dist.name}>
-                        {lang === 'bn' ? dist.nameBn : dist.name} ({dist.zone === 'dhaka_inside' ? 'ঢাকা সিটি' : dist.zone === 'dhaka_sub' ? 'ঢাকা উপশহর' : 'ঢাকার বাইরে'})
+                        {lang === 'bn' ? dist.nameBn : dist.name} (
+                        {lang === 'bn'
+                          ? dist.zone === 'dhaka_inside'
+                            ? 'ঢাকা সিটি'
+                            : dist.zone === 'dhaka_sub'
+                            ? 'ঢাকা উপশহর'
+                            : 'ঢাকার বাইরে'
+                          : dist.zone === 'dhaka_inside'
+                          ? 'Dhaka City'
+                          : dist.zone === 'dhaka_sub'
+                          ? 'Sub-Dhaka'
+                          : 'Outside Dhaka'}
+                        )
                       </option>
                     ))}
                   </select>
@@ -791,7 +805,7 @@ export const OneClickCheckoutModal: React.FC = () => {
                       type="text"
                       value={thana}
                       onChange={(e) => setThana(e.target.value)}
-                      placeholder="থানা / এলাকার নাম"
+                      placeholder={t('থানা / এলাকার নাম', 'Thana / Area name')}
                       className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
                     />
                   )}
@@ -829,7 +843,10 @@ export const OneClickCheckoutModal: React.FC = () => {
                     min={subtotal}
                     value={customerQuotedPrice}
                     onChange={(e) => setCustomerQuotedPrice(e.target.value)}
-                    placeholder={`Min ৳${subtotal.toLocaleString()} (Optional custom customer price)`}
+                    placeholder={t(
+                      `সর্বনিম্ন ৳${subtotal.toLocaleString()} (ঐচ্ছিক কাস্টম মূল্য)`,
+                      `Min ৳${subtotal.toLocaleString()} (Optional custom customer price)`
+                    )}
                     className="w-full px-3 py-1.5 rounded-lg border border-emerald-300 bg-white text-xs font-mono font-bold text-slate-900"
                   />
                 </div>
@@ -841,7 +858,7 @@ export const OneClickCheckoutModal: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
                   <Tag className="w-3.5 h-3.5 text-amber-600" />
-                  {t('ডিসকাউন্ট কুপন ভাউচার (Coupon Code):', 'Discount Coupon Code:')}
+                  {t('ডিসকাউন্ট কুপন কোড:', 'Discount Coupon Code:')}
                 </span>
                 {appliedCoupon && (
                   <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.2 rounded-full">
@@ -914,10 +931,10 @@ export const OneClickCheckoutModal: React.FC = () => {
                     paymentMethod === 'bkash' ? 'border-pink-500 bg-pink-50 ring-1 ring-pink-500' : 'border-slate-200 bg-white'
                   }`}
                 >
-                  <span className="font-extrabold text-pink-600 text-[11px]">bKash বিকাশ</span>
+                  <span className="font-extrabold text-pink-600 text-[11px]">{t('বিকাশ', 'bKash')}</span>
                   <div className="mt-1">
                     <p className="text-[11px] font-bold text-slate-900">{t('বিকাশ পেমেন্ট', 'bKash')}</p>
-                    <p className="text-[9px] text-slate-500">{t('Send Money', 'Instant Pay')}</p>
+                    <p className="text-[9px] text-slate-500">{t('সেন্ড মানি', 'Instant Pay')}</p>
                   </div>
                 </button>
 
@@ -929,10 +946,10 @@ export const OneClickCheckoutModal: React.FC = () => {
                     paymentMethod === 'nagad' ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-500' : 'border-slate-200 bg-white'
                   }`}
                 >
-                  <span className="font-extrabold text-orange-600 text-[11px]">Nagad নগদ</span>
+                  <span className="font-extrabold text-orange-600 text-[11px]">{t('নগদ', 'Nagad')}</span>
                   <div className="mt-1">
                     <p className="text-[11px] font-bold text-slate-900">{t('নগদ পেমেন্ট', 'Nagad')}</p>
-                    <p className="text-[9px] text-slate-500">{t('Send Money', 'Instant Pay')}</p>
+                    <p className="text-[9px] text-slate-500">{t('সেন্ড মানি', 'Instant Pay')}</p>
                   </div>
                 </button>
 
@@ -944,10 +961,10 @@ export const OneClickCheckoutModal: React.FC = () => {
                     paymentMethod === 'rocket' ? 'border-purple-500 bg-purple-50 ring-1 ring-purple-500' : 'border-slate-200 bg-white'
                   }`}
                 >
-                  <span className="font-extrabold text-purple-600 text-[11px]">Rocket রকেট</span>
+                  <span className="font-extrabold text-purple-600 text-[11px]">{t('রকেট', 'Rocket')}</span>
                   <div className="mt-1">
                     <p className="text-[11px] font-bold text-slate-900">{t('রকেট মোবাইল', 'Rocket')}</p>
-                    <p className="text-[9px] text-slate-500">{t('DBBL', 'Fast Pay')}</p>
+                    <p className="text-[9px] text-slate-500">{t('ডাচ-বাংলা রকেট', 'Fast Pay')}</p>
                   </div>
                 </button>
               </div>
@@ -975,7 +992,7 @@ export const OneClickCheckoutModal: React.FC = () => {
                         : 'bg-white text-slate-700 border-slate-200 hover:bg-emerald-50'
                     }`}
                   >
-                    {t('আংশিক অ্যাডভান্স ও বকেয়া (Partial)', 'Partial Advance + Due COD')}
+                    {t('আংশিক অ্যাডভান্স ও বকেয়া', 'Partial Advance + Due COD')}
                   </button>
                 </div>
 
@@ -1016,14 +1033,14 @@ export const OneClickCheckoutModal: React.FC = () => {
                         onChange={(e) => setPartialChannel(e.target.value as any)}
                         className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-slate-900"
                       >
-                        <option value="bkash">bKash Advance</option>
-                        <option value="nagad">Nagad Advance</option>
-                        <option value="rocket">Rocket Advance</option>
+                        <option value="bkash">{t('বিকাশ অ্যাডভান্স', 'bKash Advance')}</option>
+                        <option value="nagad">{t('নগদ অ্যাডভান্স', 'Nagad Advance')}</option>
+                        <option value="rocket">{t('রকেট অ্যাডভান্স', 'Rocket Advance')}</option>
                       </select>
                     </div>
                     <p className="text-[11px] font-semibold text-emerald-700 tabular-nums">
                       {t(
-                        `এখন অ্যাডভান্স: ৳${effectiveAdvance.toLocaleString()} · ডেলিভারিতে বাকি (Due): ৳${payableOnDelivery.toLocaleString()}`,
+                        `এখন অ্যাডভান্স: ৳${effectiveAdvance.toLocaleString()} · ডেলিভারিতে বাকি: ৳${payableOnDelivery.toLocaleString()}`,
                         `Advance Now: ৳${effectiveAdvance.toLocaleString()} · Due on Delivery: ৳${payableOnDelivery.toLocaleString()}`
                       )}
                     </p>
@@ -1064,7 +1081,7 @@ export const OneClickCheckoutModal: React.FC = () => {
                     <input
                       type="text"
                       required
-                      placeholder={t('ট্রানজেকশন আইডি (TrxID) লিখুন...', 'Enter TrxID...')}
+                      placeholder={t('ট্রানজেকশন আইডি লিখুন...', 'Enter TrxID...')}
                       value={trxId}
                       onChange={(e) => setTrxId(e.target.value.toUpperCase())}
                       className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white font-mono text-xs uppercase"
@@ -1234,11 +1251,11 @@ export const OneClickCheckoutModal: React.FC = () => {
               {effectiveAdvance > 0 && (
                 <div className="pt-1 border-t border-slate-200/70 space-y-0.5 text-[11px] font-bold">
                   <div className="flex justify-between text-emerald-700">
-                    <span>{t('অগ্রিম পেমেন্ট (Advance):', 'Advance Paid Now:')}</span>
+                    <span>{t('অগ্রিম পেমেন্ট:', 'Advance Paid Now:')}</span>
                     <span className="font-mono">৳ {effectiveAdvance.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between text-amber-700">
-                    <span>{t('ডেলিভারিতে বাকি (Due COD):', 'Remaining Due on Delivery:')}</span>
+                    <span>{t('ডেলিভারিতে বাকি:', 'Remaining Due on Delivery:')}</span>
                     <span className="font-mono">৳ {payableOnDelivery.toLocaleString()}</span>
                   </div>
                 </div>
@@ -1276,7 +1293,9 @@ export const OneClickCheckoutModal: React.FC = () => {
                     ? `${lang === 'bn' ? checkoutProduct.titleBn : checkoutProduct.title} x${quantity}${selectedColor ? ` (${selectedColor})` : ''}${selectedSize ? ` [${selectedSize}]` : ''}\nURL: ${getProductCanonicalUrl(checkoutProduct)}`
                     : cart.map((c) => `${lang === 'bn' ? c.product.titleBn : c.product.title} x${c.quantity}`).join(', ');
                   return `https://wa.me/${fmtWa}?text=${encodeURIComponent(
-                    `আসসালামু আলাইকুম BuyOne BD,\nআমি WhatsApp-এর মাধ্যমে অর্ডার করতে চাই:\n${itemsSummary}\nগ্রাহকের নাম: ${name || '-'}\nফোন: ${phone || '-'}\nঠিকানা: ${address || '-'}, ${thana}, ${selectedDistrictName}\nমোট বিল: ৳${grandTotal.toLocaleString()}${effectiveAdvance > 0 ? ` (Advance ৳${effectiveAdvance}, Due ৳${payableOnDelivery})` : ' (COD)'}`
+                    lang === 'bn'
+                      ? `আসসালামু আলাইকুম BuyOne BD,\nআমি WhatsApp-এর মাধ্যমে অর্ডার করতে চাই:\n${itemsSummary}\nগ্রাহকের নাম: ${name || '-'}\nফোন: ${phone || '-'}\nঠিকানা: ${address || '-'}, ${thana}, ${selectedDistrictName}\nমোট বিল: ৳${grandTotal.toLocaleString()}${effectiveAdvance > 0 ? ` (অ্যাডভান্স ৳${effectiveAdvance}, বাকি ৳${payableOnDelivery})` : ' (ক্যাশ অন ডেলিভারি)'}`
+                      : `Assalamu Alaikum BuyOne BD,\nI would like to order via WhatsApp:\n${itemsSummary}\nCustomer Name: ${name || '-'}\nPhone: ${phone || '-'}\nAddress: ${address || '-'}, ${thana}, ${selectedDistrictName}\nTotal Bill: ৳${grandTotal.toLocaleString()}${effectiveAdvance > 0 ? ` (Advance ৳${effectiveAdvance}, Due ৳${payableOnDelivery})` : ' (COD)'}`
                   )}`;
                 })()}
                 target="_blank"

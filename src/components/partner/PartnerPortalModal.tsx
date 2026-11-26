@@ -703,7 +703,9 @@ export const PartnerPortalModal: React.FC = () => {
   const supportWaDigits = String(settings.whatsappNumber || '+8801917942662').replace(/[^0-9]/g, '');
   const supportWaHref = activeReseller
     ? `https://wa.me/${supportWaDigits.startsWith('88') ? supportWaDigits : `88${supportWaDigits}`}?text=${encodeURIComponent(
-        `আসসালামু আলাইকুম, আমি রিসেলার ${activeReseller.name} (${activeReseller.resellerCode})। আমার রিসেলার একাউন্ট/অর্ডার বিষয়ে সহায়তা প্রয়োজন।`
+        lang === 'bn'
+          ? `আসসালামু আলাইকুম, আমি রিসেলার ${activeReseller.name} (${activeReseller.resellerCode})। আমার রিসেলার একাউন্ট বা অর্ডার বিষয়ে সহায়তা প্রয়োজন।`
+          : `Assalamu Alaikum, I am Reseller ${activeReseller.name} (${activeReseller.resellerCode}). I need assistance with my reseller account or orders.`
       )}`
     : `https://wa.me/${supportWaDigits.startsWith('88') ? supportWaDigits : `88${supportWaDigits}`}`;
 
@@ -1649,11 +1651,11 @@ export const PartnerPortalModal: React.FC = () => {
                         >
                           <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                             <CreditCard className="w-4 h-4 text-sky-600" />
-                            <span>{t('ওয়ালেটে ব্যালেন্স যোগ করুন (Add Balance)', 'Add Reseller Wallet Balance')}</span>
+                            <span>{t('ওয়ালেটে ব্যালেন্স যোগ করুন', 'Add Reseller Wallet Balance')}</span>
                           </h4>
                           <p className="text-[11px] text-slate-500">
                             {t(
-                              `মার্চেন্ট/পার্সোনাল (${settings.paymentSettings?.bkashMerchant || settings.whatsappNumber}) নম্বরে Send Money করে TrxID দিন — অনুমোদনের পর ওয়ালেটে যুক্ত হবে।`,
+                              `মার্চেন্ট/পার্সোনাল (${settings.paymentSettings?.bkashMerchant || settings.whatsappNumber}) নম্বরে সেন্ড মানি করে TrxID দিন — অনুমোদনের পর ওয়ালেটে যুক্ত হবে।`,
                               `Send Money to ${settings.paymentSettings?.bkashMerchant || settings.whatsappNumber} and enter TrxID below to top up your reseller wallet.`
                             )}
                           </p>
@@ -2594,13 +2596,15 @@ export const PartnerPortalModal: React.FC = () => {
                                       <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 shrink-0" />
                                     )}
                                     <div className="min-w-0">
-                                      <p className="font-bold text-slate-900 dark:text-white truncate">{p.title}</p>
+                                      <p className="font-bold text-slate-900 dark:text-white truncate">
+                                        {lang === 'bn' ? (p.titleBn || p.title) : p.title}
+                                      </p>
                                       <p className="text-[11px] text-slate-500">
-                                        MOQ: {minQ} pcs ·{' '}
+                                        MOQ: {minQ} {t('পিস', 'pcs')} ·{' '}
                                         <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                                          B2B ৳{info.unitPrice.toLocaleString()}/unit
+                                          B2B ৳{info.unitPrice.toLocaleString()}{t('/পিস', '/unit')}
                                         </span>{' '}
-                                        (Retail ৳{p.price.toLocaleString()} · Stock {p.stock})
+                                        ({t(`খুচরা ৳${p.price.toLocaleString()} · স্টক ${p.stock}`, `Retail ৳${p.price.toLocaleString()} · Stock ${p.stock}`)})
                                       </p>
                                     </div>
                                   </div>
@@ -3564,17 +3568,26 @@ export const PartnerPortalModal: React.FC = () => {
                       {
                         id: 'fb-hook',
                         title: t('ফেসবুক পেজ ও গ্রুপ পোস্ট ক্যাপশন', 'Facebook Feed & Groups Promo Hook'),
-                        text: `🔥 অরিজিনাল ${pTitle} এখন মাত্র ${pPrice}!\n✅ ১ টাকাও অগ্রিম ছাড়াই ৬৪ জেলায় ক্যাশ অন ডেলিভারি।\n✅ প্রোডাক্ট হাতে পেয়ে চেক করে পেমেন্ট করুন।\n👉 সরাসরি অর্ডার করতে লিংকে ক্লিক করুন:\n${link}`
+                        text:
+                          lang === 'bn'
+                            ? `🔥 অরিজিনাল ${pTitle} এখন মাত্র ${pPrice}!\n✅ ১ টাকাও অগ্রিম ছাড়াই ৬৪ জেলায় ক্যাশ অন ডেলিভারি।\n✅ প্রোডাক্ট হাতে পেয়ে চেক করে পেমেন্ট করুন।\n👉 সরাসরি অর্ডার করতে লিংকে ক্লিক করুন:\n${link}`
+                            : `🔥 Original ${pTitle} now only ${pPrice}!\n✅ Cash on Delivery across all 64 districts of Bangladesh.\n✅ Check the product before paying at your doorstep.\n👉 Order directly via my verified link:\n${link}`
                       },
                       {
                         id: 'yt-tt',
                         title: t('TikTok ও YouTube Shorts পিনড কমেন্ট / বায়ো', 'YouTube / TikTok Video Pinned Link Script'),
-                        text: `Original ${picked?.title || 'Gadget'} (${pPrice}) with 64-District Cash on Delivery in Bangladesh!\nOrder fast using my verified partner link: ${link}\n#BuyOneBD #BangladeshShopping #COD`
+                        text:
+                          lang === 'bn'
+                            ? `অরিজিনাল ${pTitle} (${pPrice}) এখন বাংলাদেশের ৬৪ জেলায় ক্যাশ অন ডেলিভারিতে পাওয়া যাচ্ছে!\nআমার ভেরিফাইড পার্টনার লিংক থেকে অর্ডার করুন: ${link}\n#BuyOneBD #BangladeshShopping #COD`
+                            : `Original ${picked?.title || 'Gadget'} (${pPrice}) with 64-District Cash on Delivery in Bangladesh!\nOrder fast using my verified partner link: ${link}\n#BuyOneBD #BangladeshShopping #COD`
                       },
                       {
                         id: 'wa-status',
                         title: t('WhatsApp স্ট্যাটাস ও ইনবক্স মেসেজ', 'WhatsApp Status & Friend Share Copy'),
-                        text: `ভাইয়া/আপু, ${pTitle} নিতে চাইলে সরাসরি এই ভেরিফাইড লিংক থেকে নিতে পারেন — দাম মাত্র ${pPrice} আর ডেলিভারি একদম ফাস্ট (COD আছে): ${link}`
+                        text:
+                          lang === 'bn'
+                            ? `ভাইয়া/আপু, ${pTitle} নিতে চাইলে সরাসরি এই ভেরিফাইড লিংক থেকে নিতে পারেন — দাম মাত্র ${pPrice} আর ডেলিভারি একদম ফাস্ট (COD আছে): ${link}`
+                            : `Hi! Check out ${pTitle} at ${pPrice} with fast nationwide Cash on Delivery in Bangladesh: ${link}`
                       }
                     ];
                     return (
