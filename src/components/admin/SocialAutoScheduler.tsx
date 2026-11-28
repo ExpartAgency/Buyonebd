@@ -35,6 +35,8 @@ import { useStore } from '../../context/StoreContext';
 import { SocialPlatform, SocialScheduledPost, SocialChannelConfig } from '../../types';
 import { BulkSectionShell, BulkCommandBar } from './BulkSectionShell';
 import { SocialSetupVideoPlayer } from './SocialSetupVideoPlayer';
+import { getAdminAuthHeaders } from '../../utils/adminAuth';
+import { safeHref } from '../../utils/safeUrl';
 
 const PLATFORMS: {
   id: SocialPlatform;
@@ -236,7 +238,7 @@ export const SocialAutoScheduler: React.FC = () => {
     try {
       const res = await fetch('/api/social/test-channel', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({ platform: pl, config: socialCfg[pl] })
       });
       const data = await res.json().catch(() => ({}));
@@ -256,7 +258,7 @@ export const SocialAutoScheduler: React.FC = () => {
     try {
       const res = await fetch('/api/social/run-cycle-now', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({ channelsOverride: socialCfg })
       });
       const data = await res.json().catch(() => ({}));
@@ -288,7 +290,7 @@ export const SocialAutoScheduler: React.FC = () => {
         : [selectedPlatform];
       const res = await fetch('/api/ai/viral-autopilot-post', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({
           productIds: targetIds,
           platforms: targetPlatforms,
@@ -329,7 +331,7 @@ export const SocialAutoScheduler: React.FC = () => {
     try {
       const res = await fetch('/api/n8n/test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({ n8nAutomation: n8nCfg })
       });
       const data = await res.json().catch(() => ({}));
@@ -349,7 +351,7 @@ export const SocialAutoScheduler: React.FC = () => {
     try {
       const res = await fetch('/api/n8n/trigger-all', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({ n8nAutomation: n8nCfg })
       });
       const data = await res.json().catch(() => ({}));
@@ -368,7 +370,9 @@ export const SocialAutoScheduler: React.FC = () => {
 
   const handleCopyN8nWorkflowJson = async () => {
     try {
-      const res = await fetch('/api/n8n/workflow.json');
+      const res = await fetch('/api/n8n/workflow.json', {
+        headers: getAdminAuthHeaders()
+      });
       const txt = await res.text();
       await navigator.clipboard?.writeText(txt);
       addToast(
@@ -411,7 +415,7 @@ export const SocialAutoScheduler: React.FC = () => {
             : rawUrl;
           const res = await fetch('/api/ai/social-caption', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAdminAuthHeaders(),
             body: JSON.stringify({
               platform: plat,
               product: {
@@ -935,7 +939,7 @@ export const SocialAutoScheduler: React.FC = () => {
               />
               {n8nCfg.n8nInstanceUrl && /^https?:\/\//i.test(n8nCfg.n8nInstanceUrl) && (
                 <a
-                  href={n8nCfg.n8nInstanceUrl}
+                  href={safeHref(n8nCfg.n8nInstanceUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-orange-300 flex items-center"
@@ -991,14 +995,32 @@ export const SocialAutoScheduler: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <a
-            href="/api/n8n/workflow.json?download=1"
-            download="buyonebd-n8n-social-autopilot.json"
-            className="px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black flex items-center gap-1.5"
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const res = await fetch('/api/n8n/workflow.json?download=1', {
+                  headers: getAdminAuthHeaders()
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'buyonebd-n8n-social-autopilot.json';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+              } catch {
+                addToast('error', at('ডাউনলোড ব্যর্থ', 'Download Failed'), at('n8n Workflow ডাউনলোড করতে অনুগ্রহ করে এডমিন সেশন যাচাই করুন।', 'Admin authentication required to download n8n workflow.'));
+              }
+            }}
+            className="px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black flex items-center gap-1.5 cursor-pointer"
           >
             <Download className="w-4 h-4" />
             <span>{at('n8n Workflow JSON ডাউনলোড করুন', 'Download Ready n8n Workflow (.json)')}</span>
-          </a>
+          </button>
           <button
             type="button"
             onClick={handleCopyN8nWorkflowJson}
@@ -1313,7 +1335,7 @@ export const SocialAutoScheduler: React.FC = () => {
                     <p className="text-[10px] font-bold text-slate-300">1080×1080 Ad Banner (FB/IG/TG)</p>
                     <img src={kit.squareBannerUrl} alt={kit.productTitle} className="w-full aspect-square object-cover rounded-lg border border-slate-700" />
                     <a
-                      href={kit.squareBannerUrl}
+                      href={safeHref(kit.squareBannerUrl)}
                       download
                       target="_blank"
                       rel="noopener noreferrer"
@@ -1326,7 +1348,7 @@ export const SocialAutoScheduler: React.FC = () => {
                     <p className="text-[10px] font-bold text-slate-300">1080×1920 Reels/TikTok Cover</p>
                     <img src={kit.verticalBannerUrl} alt={kit.productTitle} className="w-full aspect-square object-contain bg-slate-950 rounded-lg border border-slate-700" />
                     <a
-                      href={kit.verticalBannerUrl}
+                      href={safeHref(kit.verticalBannerUrl)}
                       download
                       target="_blank"
                       rel="noopener noreferrer"
@@ -1340,7 +1362,7 @@ export const SocialAutoScheduler: React.FC = () => {
                       <p className="text-[10px] font-bold text-rose-300">720×1280 Viral Reel Video (.mp4)</p>
                       <video src={kit.videoUrl} controls muted loop playsInline className="w-full aspect-square object-contain bg-black rounded-lg border border-slate-700" />
                       <a
-                        href={kit.videoUrl}
+                        href={safeHref(kit.videoUrl)}
                         download
                         target="_blank"
                         rel="noopener noreferrer"
@@ -1617,12 +1639,12 @@ export const SocialAutoScheduler: React.FC = () => {
                           {new Date(post.scheduledAt).toLocaleString()}
                         </span>
                         {post.bannerUrl && (
-                          <a href={post.bannerUrl} target="_blank" rel="noopener noreferrer" className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold text-[10px]">
+                          <a href={safeHref(post.bannerUrl)} target="_blank" rel="noopener noreferrer" className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold text-[10px]">
                             PNG BANNER
                           </a>
                         )}
                         {post.videoUrl && (
-                          <a href={post.videoUrl} target="_blank" rel="noopener noreferrer" className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold text-[10px]">
+                          <a href={safeHref(post.videoUrl)} target="_blank" rel="noopener noreferrer" className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold text-[10px]">
                             MP4 REEL
                           </a>
                         )}

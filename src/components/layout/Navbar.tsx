@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ShoppingBag, User, Menu, Globe, ChevronDown, ChevronRight, Layers, Sparkles, Search, X, ThumbsUp, Bell } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
+import { safeHref } from '../../utils/safeUrl';
 
 interface NavbarProps {
   onOpenMobileCategories?: () => void;
@@ -82,7 +83,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
             : ann.textEn || 'Nationwide Fast Home Delivery with Cash on Delivery';
         const helpline = ann.helpline?.trim();
         const showHelpline = helpline && !mainText.includes(helpline);
-        const linkHref = ann.linkUrl?.trim();
+        const linkHref = ann.linkUrl?.trim() ? safeHref(ann.linkUrl.trim(), '') : '';
 
         return (
           <div
@@ -93,7 +94,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileCategories, onSelect
             className="text-[10px] sm:text-[11px] font-medium py-1.5 px-3 text-center overflow-hidden border-b border-black/15"
           >
             <div className="max-w-7xl mx-auto flex items-center justify-center gap-2 truncate">
-              {linkHref ? (
+              {linkHref && linkHref !== '#' ? (
                 <a
                   href={linkHref}
                   onClick={(e) => {

@@ -137,6 +137,7 @@ import { BlogAdminView } from './BlogAdminView';
 import { AffiliateAdminView } from './AffiliateAdminView';
 import { SocialAutoScheduler } from './SocialAutoScheduler';
 import { AITeamWorkspace } from './AITeamWorkspace';
+import { getAdminAuthHeaders } from '../../utils/adminAuth';
 
 const parseJsonSafe = async (res: Response): Promise<any> => {
   const txt = await res.text();
@@ -664,7 +665,7 @@ export const AdminDashboard: React.FC = () => {
     try {
       const res = await fetch('/api/ai/admin-insights', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({ lang: adminLang })
       });
       const data = await parseJsonSafe(res);
@@ -807,7 +808,9 @@ export const AdminDashboard: React.FC = () => {
   const loadVisitorTelemetry = async () => {
     try {
       setIsLoadingVisitors(true);
-      const res = await fetch('/api/analytics/visitors');
+      const res = await fetch('/api/analytics/visitors', {
+        headers: getAdminAuthHeaders()
+      });
       const data = await parseJsonSafe(res);
       if (data?.ok && Array.isArray(data.visitors)) {
         setVisitorTelemetry(data.visitors);
@@ -7474,7 +7477,7 @@ export const AdminDashboard: React.FC = () => {
                         try {
                           const res = await fetch('/api/steadfast/balance', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: getAdminAuthHeaders(),
                             body: JSON.stringify({
                               apiKey: settings.courierSettings?.steadfast?.apiKey || '',
                               secretKey: settings.courierSettings?.steadfast?.secretKey || '',
@@ -8832,7 +8835,7 @@ export const AdminDashboard: React.FC = () => {
                         try {
                           const res = await fetch('/api/tracking/pixel', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: getAdminAuthHeaders(),
                             body: JSON.stringify({
                               eventName: 'PageView',
                               eventId: `test_${Date.now()}`,
@@ -9799,7 +9802,7 @@ export const AdminDashboard: React.FC = () => {
                         try {
                           const res = await fetch('/api/email/send', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: getAdminAuthHeaders(),
                             body: JSON.stringify({
                               smtp: settings.smtpSettings,
                               to: recipients,
@@ -14939,7 +14942,7 @@ export const AdminDashboard: React.FC = () => {
                       try {
                         const res = await fetch('/api/email/test', {
                           method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
+                          headers: getAdminAuthHeaders(),
                           body: JSON.stringify({
                             smtp: settings.smtpSettings,
                             testTo: smtpTestEmail.trim() || settings.supportEmail || undefined
@@ -15505,7 +15508,10 @@ export const AdminDashboard: React.FC = () => {
                       type="button"
                       onClick={async () => {
                         try {
-                          const r = await fetch(`/api/store/sync?t=${Date.now()}`, { cache: 'no-store' });
+                          const r = await fetch(`/api/store/sync?t=${Date.now()}`, {
+                            cache: 'no-store',
+                            headers: getAdminAuthHeaders()
+                          });
                           setHostingStatusInfo({ checked: true, expressActive: r.ok });
                         } catch {
                           setHostingStatusInfo({ checked: true, expressActive: false });
@@ -15874,7 +15880,7 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                       };
                       let resp = await fetch(`/api/database/hostinger/${endpoint}`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: getAdminAuthHeaders(),
                         body: JSON.stringify(bodyPayload)
                       });
                       let data = await parseJsonSafe(resp);
@@ -16634,7 +16640,7 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                             updateSec({ blockedIps: nextIps });
                             await fetch('/api/security/block-ip', {
                               method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
+                              headers: getAdminAuthHeaders(),
                               body: JSON.stringify({ ip, action: 'block' })
                             }).catch(() => {});
                             addSecurityLog('IP Blocked', `Blocked IP ${ip}`, 'blocked');
@@ -16659,7 +16665,7 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                                 updateSec({ blockedIps: (sec.blockedIps || []).filter((x) => x !== ip) });
                                 await fetch('/api/security/block-ip', {
                                   method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
+                                  headers: getAdminAuthHeaders(),
                                   body: JSON.stringify({ ip, action: 'unblock' })
                                 }).catch(() => {});
                               }}
@@ -17172,15 +17178,13 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                           className="w-4 h-4 accent-emerald-500"
                         />
                       </label>
-                      <label className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between cursor-pointer">
-                        <span className="font-bold text-slate-200">{at('অটো-অ্যাপ্রুভ', 'Auto-Approve Top-Ups')}</span>
-                        <input
-                          type="checkbox"
-                          checked={wCfg.autoApprove}
-                          onChange={(e) => updateWalletCfg({ autoApprove: e.target.checked })}
-                          className="w-4 h-4 accent-emerald-500"
-                        />
-                      </label>
+                      <div className="p-3 rounded-xl bg-slate-950 border border-emerald-500/30 flex items-center justify-between">
+                        <span className="font-bold text-slate-200">{at('অনুমোদন নীতি', 'Approval Policy')}</span>
+                        <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 font-bold text-[11px] flex items-center gap-1">
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>{at('অ্যাডমিন অনুমোদন বাধ্যতামূলক', 'Manual Admin Approval Only')}</span>
+                        </span>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-3 gap-2.5 text-xs">
@@ -18296,7 +18300,7 @@ echo json_encode(['success' => false, 'error' => 'Unknown action']);
                   try {
                     const res = await fetch('/api/ai/product-description', {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: getAdminAuthHeaders(),
                       body: JSON.stringify({
                         title: productForm.title,
                         titleBn: productForm.titleBn,

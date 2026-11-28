@@ -30,6 +30,7 @@ import QRCode from 'qrcode';
 import { useStore } from '../../context/StoreContext';
 import { BulkSmsCampaignLog, UserNotificationCategory } from '../../types';
 import { BulkSectionShell } from './BulkSectionShell';
+import { getAdminAuthHeaders } from '../../utils/adminAuth';
 
 export const GlobalMarketingHub: React.FC = () => {
   const {
@@ -424,7 +425,7 @@ export const GlobalMarketingHub: React.FC = () => {
     try {
       const res = await fetch('/api/ai/marketing/campaign', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({
           goal: rfmGoal,
           orders,
@@ -505,7 +506,7 @@ export const GlobalMarketingHub: React.FC = () => {
       const prodUrl = getProductCanonicalUrl(freeProduct);
       const res = await fetch('/api/ai/free-social-blitz', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({
           product: freeProduct,
           storeName: settings.storeName || 'BuyOne BD',
@@ -607,7 +608,7 @@ export const GlobalMarketingHub: React.FC = () => {
           : Math.max(1, Number((prod.price / rateFromBdtPerUnit).toFixed(2)));
       const res = await fetch('/api/ai/marketing', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({
           mode: adFormat === 'tiktok' ? 'reel_script' : adFormat,
           productTitle: prod.title,
@@ -673,7 +674,7 @@ export const GlobalMarketingHub: React.FC = () => {
       const prodUrl = getProductCanonicalUrl(freeProduct);
       const res = await fetch('/api/ai/free-channel-pack', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({
           product: {
             title: freeProduct.title,
@@ -707,7 +708,7 @@ export const GlobalMarketingHub: React.FC = () => {
     try {
       const res = await fetch('/api/ai/bd-free-channels-autopost', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({
           productId: freeProduct.id,
           dispatchImmediately: true,

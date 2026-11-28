@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { Product } from '../../types';
+import { getAdminAuthHeaders } from '../../utils/adminAuth';
 
 type CreativeFormat = 'banner' | 'post' | 'portrait' | 'reel' | 'landscape';
 type TransitionStyle = 'crossfade' | 'slide' | 'ken_burns';
@@ -1343,7 +1344,7 @@ const AICampaignCopyGenerator: React.FC<{
     try {
       const res = await fetch('/api/ai/marketing', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({
           mode,
           productTitle: product.titleBn || product.title,

@@ -79,6 +79,12 @@ import {
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getDoc } from 'firebase/firestore';
 import {
+  setAdminAuthToken,
+  getAdminAuthToken,
+  clearAdminAuthToken,
+  getAdminAuthHeaders
+} from '../utils/adminAuth';
+import {
   db,
   auth,
   googleProvider,
@@ -371,9 +377,10 @@ interface StoreContextType {
     amount: number;
     senderNumber: string;
     trxId: string;
-  }) => { success: boolean; status: 'pending' | 'approved' };
-  approveWalletTopUp: (requestId: string) => void;
-  rejectWalletTopUp: (requestId: string, note?: string) => void;
+  }) => Promise<{ success: boolean; status: 'pending' }>;
+  approveWalletTopUp: (requestId: string) => Promise<void>;
+  rejectWalletTopUp: (requestId: string, note?: string) => Promise<void>;
+  hydrateCustomerAccountData: (phoneOverride?: string) => Promise<void>;
   editWalletTopUp: (requestId: string, updates: Partial<WalletTopUpRequest>) => void;
   deleteWalletTopUp: (requestId: string) => void;
   bulkActionWalletTopUps: (requestIds: string[], action: 'approve' | 'reject' | 'delete') => void;
@@ -649,7 +656,8 @@ interface StoreContextType {
   setIsAdminLoginOpen: (open: boolean) => void;
   adminSessionRemainingSec: number;
   lockAdminSessionNow: () => void;
-  loginAdmin: (email: string, pass: string) => boolean;
+  loginAdmin: (email: string, pass: string, pin?: string) => Promise<boolean>;
+  claimAdminCredentials: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logoutAdmin: () => void;
   firebaseAdminUserEmail: string | null;
   isFirebaseAdminConnected: boolean;
@@ -957,9 +965,7 @@ const LOCAL_STORAGE_SLIDERS = 'buyonebd_sliders_v3';
 const LOCAL_STORAGE_ABANDONED = 'buyonebd_abandoned_v3';
 const LOCAL_STORAGE_USERS = 'buyonebd_users_v3';
 const LOCAL_STORAGE_REVIEWS = 'buyonebd_reviews_v3';
-const LOCAL_STORAGE_ADMIN_AUTH = 'buyonebd_admin_auth_v3';
 const LOCAL_STORAGE_ADMIN_LAST_ACTIVITY = 'buyonebd_admin_last_activity';
-const LOCAL_STORAGE_ADMIN_TOKEN = 'buyonebd_admin_token_v1';
 const LOCAL_STORAGE_SPIN_STATS = 'buyonebd_spin_stats_v3';
 const LOCAL_STORAGE_LANG = 'buyonebd_lang_v3';
 const LOCAL_STORAGE_RECENTLY_VIEWED = 'buyonebd_recently_viewed_v1';
@@ -1984,7 +1990,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     deleteProductFromFirestore(id).catch(() => {});
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'product', ids: [id] })
     }).catch(() => {});
     addToast('info', lang === 'bn' ? 'পণ্য মুছে ফেলা হয়েছে' : 'Product Deleted', '');
@@ -2014,7 +2020,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     ids.forEach((id) => deleteProductFromFirestore(id).catch(() => {}));
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'product', ids })
     }).catch(() => {});
     addToast('info', t(`${ids.length}টি পণ্য মুছে ফেলা হয়েছে`, `${ids.length} Products Deleted`), '');
@@ -2415,7 +2421,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     addToast('info', t('ইউজার সরানো হয়েছে', 'User Removed'), '');
   };
 
-  // Admin Auth (Hossain login: hossain@gmail.com / Hossain777@#$)
+  // Admin Auth (server-verified HMAC Bearer session stored only in JS memory)
   const isHossainPathInitial = () => {
     if (typeof window === 'undefined') return false;
     const norm = window.location.pathname.replace(/\/+$/, '').toLowerCase();
@@ -2423,46 +2429,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return norm === '/hossain' || norm.startsWith('/hossain/') || h === '#hossain';
   };
 
-  // Keep admin authenticated across page reloads on /hossain until explicit logout OR 1-hour inactivity expiration
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    try {
-      const isAuthed = localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true';
-      if (!isAuthed) return false;
-      const lastActRaw = localStorage.getItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY);
-      if (lastActRaw) {
-        const elapsedMs = Date.now() - Number(lastActRaw);
-        let idleLimitMin = 60;
-        try {
-          const savedCfg = localStorage.getItem(LOCAL_STORAGE_SETTINGS);
-          if (savedCfg) {
-            const parsedCfg = JSON.parse(savedCfg);
-            if (parsedCfg?.securitySettings?.idleLogoutMinutes) {
-              idleLimitMin = Math.max(5, Number(parsedCfg.securitySettings.idleLogoutMinutes) || 60);
-            }
-          }
-        } catch {}
-        if (Number.isFinite(elapsedMs) && elapsedMs >= idleLimitMin * 60 * 1000) {
-          localStorage.removeItem(LOCAL_STORAGE_ADMIN_AUTH);
-          localStorage.removeItem(LOCAL_STORAGE_ADMIN_TOKEN);
-          localStorage.removeItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY);
-          return false;
-        }
-      } else {
-        safeStorageSetItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
-      }
-      return true;
-    } catch {
-      return false;
-    }
-  });
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => Boolean(getAdminAuthToken()));
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
-    let persisted = false;
-    try {
-      persisted = localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true';
-    } catch {}
-    return isHossainPathInitial() && !persisted;
+    return isHossainPathInitial() && !Boolean(getAdminAuthToken());
   });
   const [adminSessionRemainingSec, setAdminSessionRemainingSec] = useState<number>(3600);
   const [firebaseAdminUserEmail, setFirebaseAdminUserEmail] = useState<string | null>(() => {
@@ -2766,9 +2736,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setAffiliatePayouts(nextAffPayouts);
       setUsers(nextUsers);
 
-      fetch('/api/store/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      if (getAdminAuthToken()) {
+        fetch('/api/store/sync', {
+          method: 'POST',
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           settings: nextSettings,
           categories: nextCategories,
@@ -2788,7 +2759,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           affiliatePayouts: nextAffPayouts,
           users: nextUsers
         })
-      }).catch(() => {});
+        }).catch(() => {});
+      }
 
       if (pushToCloud && auth.currentUser) {
         setIsSyncingCloudAll(true);
@@ -2836,6 +2808,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (user?.email) {
         setFirebaseAdminUserEmail(user.email);
         const isBootstrappedEmail = user.email.toLowerCase() === 'buyonebd@gmail.com' && user.emailVerified;
+        let allowed = isBootstrappedEmail;
         if (isBootstrappedEmail) {
           setIsFirebaseAdminConnected(true);
           setCloudSyncError(null);
@@ -2843,7 +2816,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         } else {
           try {
             const admSnap = await getDoc(doc(db, 'admins', user.uid));
-            const allowed = admSnap.exists();
+            allowed = admSnap.exists();
             setIsFirebaseAdminConnected(allowed);
             if (!allowed) {
               setCloudSyncError(
@@ -2859,6 +2832,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             setIsFirebaseAdminConnected(false);
             setCloudSyncError(extractFirestoreErrorReason(err));
           }
+        }
+        if (allowed && !getAdminAuthToken()) {
+          try {
+            const idToken = await user.getIdToken();
+            const sessRes = await fetch('/api/admin/auth/firebase-session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ idToken })
+            });
+            const sessJson = await safeParseJson<{ success?: boolean; token?: string }>(sessRes);
+            if (sessRes.ok && sessJson?.token) {
+              setAdminAuthToken(sessJson.token);
+              setIsAdminLoggedIn(true);
+              safeStorageSetItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
+              if (isHossainPathInitial()) {
+                setActiveView('admin');
+                setIsAdminLoginOpen(false);
+              }
+            }
+          } catch {}
         }
       } else {
         setFirebaseAdminUserEmail(null);
@@ -2886,16 +2879,28 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       if (isAuthorizedAdmin) {
+        try {
+          const idToken = await cred.user.getIdToken();
+          const sessRes = await fetch('/api/admin/auth/firebase-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken })
+          });
+          const sessJson = await safeParseJson<{ success?: boolean; token?: string }>(sessRes);
+          if (sessRes.ok && sessJson?.token) {
+            setAdminAuthToken(sessJson.token);
+          }
+        } catch {}
+
         setIsFirebaseAdminConnected(true);
         setIsAdminLoggedIn(true);
-        safeStorageSetItem(LOCAL_STORAGE_ADMIN_AUTH, 'true');
+        safeStorageSetItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
         setIsAdminLoginOpen(false);
         setActiveView('admin');
         setCloudSyncError(null);
 
         let cloudCount = 0;
         try {
-          // Check if public storefront or private admin vault is uninitialized yet; if so, bootstrap ALL local dashboard settings & modules up to Firebase
           const [pubSnap, privSnap, fsProds, fsOrders] = await Promise.all([
             fetchStorefrontSettingsFromFirestore().catch(() => null),
             fetchAdminPrivateConfigFromFirestore().catch(() => null),
@@ -2971,56 +2976,76 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch {}
   };
 
-  const loginAdmin = (email: string, pass: string): boolean => {
-    if (
-      email.trim().toLowerCase() === 'hossain@gmail.com' &&
-      pass === 'Hossain777@#$'
-    ) {
-      setIsAdminLoggedIn(true);
-      safeStorageSetItem(LOCAL_STORAGE_ADMIN_AUTH, 'true');
-      safeStorageSetItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
-      setIsAdminLoginOpen(false);
-      setActiveView('admin');
-      if (window.location.pathname !== '/hossain') {
-        window.history.pushState({}, '', '/hossain');
+  const claimAdminCredentials = async (
+    email: string,
+    password: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const res = await fetch('/api/admin/auth/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, password })
+      });
+      const json = await safeParseJson<{ success?: boolean; token?: string; error?: string }>(res);
+      if (res.ok && json?.success && json?.token) {
+        setAdminAuthToken(json.token);
+        setIsAdminLoggedIn(true);
+        safeStorageSetItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
+        setIsAdminLoginOpen(false);
+        setActiveView('admin');
+        if (window.location.pathname !== '/hossain') {
+          window.history.pushState({}, '', '/hossain');
+        }
+        addSecurityLog('Admin Setup Complete', `Claimed admin credentials for ${cleanEmail}`, 'info');
+        addToast('success', t('অ্যাডমিন সেটআপ সম্পন্ন!', 'Admin Account Configured!'), cleanEmail);
+        void fetchStoreSnapshotFromServer(false, true);
+        return { success: true };
       }
-      fetch('/api/admin/auth/login', {
+      return { success: false, error: json?.error || 'Could not configure admin credentials.' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error configuring admin.' };
+    }
+  };
+
+  const loginAdmin = async (email: string, pass: string, pin?: string): Promise<boolean> => {
+    const cleanEmail = email.trim().toLowerCase();
+    try {
+      const r = await fetch('/api/admin/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: email.trim().toLowerCase(),
+          email: cleanEmail,
           password: pass,
-          pin: settingsRef.current.securitySettings?.adminPin || ''
+          pin: pin ?? settingsRef.current.securitySettings?.adminPin ?? ''
         })
-      })
-        .then((r) => safeParseJson<any>(r))
-        .then((res) => {
-          if (res?.token) {
-            try {
-              safeStorageSetItem(LOCAL_STORAGE_ADMIN_TOKEN, res.token);
-            } catch {}
-          }
-        })
-        .catch(() => {});
-      addSecurityLog('Admin Login Success', `Authenticated as ${email.trim().toLowerCase()}`, 'info');
-      addToast('success', t('অ্যাডমিন লগইন সফল!', 'Admin Logged In!'), t('স্বাগতম হোসেন ভাই, ড্যাশবোর্ডে প্রবেশের অনুমতি দেওয়া হয়েছে।', 'Welcome Hossain, dashboard unlocked.'));
-      return true;
-    }
-    fetch('/api/admin/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim(), password: pass })
-    }).catch(() => {});
-    addSecurityLog('Admin Login Failed', `Rejected attempt for ${email.trim() || 'unknown'}`, 'warning');
+      });
+      const res = await safeParseJson<{ success?: boolean; token?: string; error?: string; claimRequired?: boolean }>(r);
+      if (r.ok && res?.success && res?.token) {
+        setAdminAuthToken(res.token);
+        setIsAdminLoggedIn(true);
+        safeStorageSetItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY, String(Date.now()));
+        setIsAdminLoginOpen(false);
+        setActiveView('admin');
+        if (window.location.pathname !== '/hossain') {
+          window.history.pushState({}, '', '/hossain');
+        }
+        addSecurityLog('Admin Login Success', `Authenticated as ${cleanEmail}`, 'info');
+        addToast('success', t('অ্যাডমিন লগইন সফল!', 'Admin Logged In!'), t('ড্যাশবোর্ডে প্রবেশের অনুমতি দেওয়া হয়েছে।', 'Dashboard unlocked.'));
+        void fetchStoreSnapshotFromServer(false, true);
+        return true;
+      }
+    } catch {}
+
+    addSecurityLog('Admin Login Failed', `Rejected attempt for ${cleanEmail || 'unknown'}`, 'warning');
     addToast('error', t('ভুল ইমেইল বা পাসওয়ার্ড', 'Invalid Credentials'), t('দয়া করে সঠিক ইমেইল ও পাসওয়ার্ড প্রদান করুন।', 'Please provide correct credentials.'));
     return false;
   };
 
   const logoutAdmin = (reason?: string) => {
+    clearAdminAuthToken();
     setIsAdminLoggedIn(false);
-    localStorage.removeItem(LOCAL_STORAGE_ADMIN_AUTH);
     localStorage.removeItem(LOCAL_STORAGE_ADMIN_LAST_ACTIVITY);
-    localStorage.removeItem(LOCAL_STORAGE_ADMIN_TOKEN);
     setActiveView('store');
     window.history.pushState({}, '', '/');
     addToast(
@@ -3384,6 +3409,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       safeStorageSetItem('buyonebd_customer_auth_v3', 'true');
       setIsCustomerLoginOpen(false);
       setIsCustomerDashboardOpen(true);
+      void hydrateCustomerAccountData(matched.phone);
       addToast('success', t('লগইন সফল হয়েছে!', 'Welcome Back!'), matched.name);
       return true;
     }
@@ -3438,6 +3464,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     safeStorageSetItem('buyonebd_customer_auth_v3', 'true');
     setIsCustomerLoginOpen(false);
     setIsCustomerDashboardOpen(true);
+    void hydrateCustomerAccountData(newAcc.phone);
     addToast('success', t('রেজিস্ট্রেশন সম্পন্ন!', 'Account Created!'), newAcc.name);
     return true;
   };
@@ -3447,6 +3474,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   ): Promise<{ success: boolean; otpCode?: string; customerName?: string; contactLabel?: string; error?: string }> => {
     const cleanId = identifier.trim().toLowerCase();
     const cleanDigits = identifier.replace(/[^0-9]/g, '');
+    fetch('/api/customer/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: identifier.trim() })
+    }).catch(() => {});
+
     const matched = customerAccounts.find(
       (acc) =>
         (acc.username && acc.username.toLowerCase() === cleanId) ||
@@ -3463,18 +3496,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
     }
     const otpCode = String(Math.floor(100000 + Math.random() * 900000));
-    if (matched.email && matched.email.includes('@') && settings.smtpSettings?.enabled) {
-      fetch('/api/email/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          smtp: settings.smtpSettings,
-          to: matched.email,
-          subject: `${settings.storeName} Password Reset Code: ${otpCode}`,
-          text: `Assalamu Alaikum ${matched.name},\n\nYour password reset verification code is: ${otpCode}\n\nIf you did not request this, please ignore this email.`
-        })
-      }).catch(() => {});
-    }
     return {
       success: true,
       otpCode,
@@ -3627,7 +3648,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const res = await fetch('/api/analytics/product-view/set', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ productId, count: clean })
       });
       const json = await safeParseJson<any>(res);
@@ -4144,7 +4165,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     deleteCustomerFromFirestore(matchedCustomer).catch(() => {});
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         type: 'customerAccount',
         ids: [
@@ -4242,12 +4263,57 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return true;
   };
 
-  const requestWalletTopUp = (payload: {
+  const hydrateCustomerAccountData = async (phoneOverride?: string): Promise<void> => {
+    const rawPhone = String(phoneOverride || customerProfile.phone || '').trim();
+    const digits = rawPhone.replace(/[^0-9]/g, '').slice(-11);
+    if (digits.length < 10) return;
+    try {
+      const [ordRes, topRes] = await Promise.all([
+        fetch(`/api/orders/track?phone=${encodeURIComponent(digits)}`, { cache: 'no-store' }).catch(() => null),
+        fetch(`/api/wallet/topups?phone=${encodeURIComponent(digits)}`, { cache: 'no-store' }).catch(() => null)
+      ]);
+      if (ordRes && ordRes.ok) {
+        const oJson = await safeParseJson<{ success?: boolean; orders?: Order[] }>(ordRes);
+        if (oJson?.success && Array.isArray(oJson.orders)) {
+          mergeRemoteOrders(oJson.orders, new Set(), false);
+        }
+      }
+      if (topRes && topRes.ok) {
+        const wJson = await safeParseJson<{
+          success?: boolean;
+          topUps?: WalletTopUpRequest[];
+          walletBalance?: number;
+          lifetimeWalletBalance?: number;
+        }>(topRes);
+        if (wJson?.success) {
+          if (Array.isArray(wJson.topUps)) {
+            setWalletTopUps((prev) => {
+              const map = new Map(prev.map((w) => [w.id, w]));
+              wJson.topUps!.forEach((w) => {
+                if (w?.id) map.set(w.id, w);
+              });
+              return Array.from(map.values()).sort(
+                (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+              );
+            });
+          }
+          const serverBal = Number(wJson.lifetimeWalletBalance ?? wJson.walletBalance);
+          if (Number.isFinite(serverBal)) {
+            setCustomerWalletBalance(serverBal);
+            safeStorageSetItem('buyonebd_customer_wallet_v3', String(serverBal));
+            setCustomerProfile((cp) => ({ ...cp, walletBalance: serverBal }));
+          }
+        }
+      }
+    } catch {}
+  };
+
+  const requestWalletTopUp = async (payload: {
     method: WalletTopUpMethod;
     amount: number;
     senderNumber: string;
     trxId: string;
-  }): { success: boolean; status: 'pending' | 'approved' } => {
+  }): Promise<{ success: boolean; status: 'pending' }> => {
     const wCfg = settings.walletSettings;
     if (wCfg && !wCfg.enabled) {
       addToast('error', t('ওয়ালেট রিচার্জ বন্ধ আছে', 'Top-Up Disabled'), t('অ্যাডমিন প্যানেল থেকে ব্যালেন্স অ্যাড অপশন বন্ধ রয়েছে।', 'Balance top-up is currently disabled by admin.'));
@@ -4264,147 +4330,189 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return { success: false, status: 'pending' };
     }
 
-    const isAutoApprove = Boolean(wCfg?.autoApprove);
-    const nowIso = new Date().toISOString();
-    const newReq: WalletTopUpRequest = {
-      id: `TOPUP-${Math.floor(1000 + Math.random() * 9000)}`,
-      customerName: customerProfile.name || t('গ্রাহক', 'Customer'),
-      customerPhone: customerProfile.phone || payload.senderNumber,
-      method: payload.method,
-      amount: payload.amount,
-      senderNumber: payload.senderNumber.trim(),
-      trxId: payload.trxId.trim(),
-      status: isAutoApprove ? 'approved' : 'pending',
-      createdAt: nowIso,
-      processedAt: isAutoApprove ? nowIso : undefined
-    };
+    const customerPhone = customerProfile.phone || payload.senderNumber.trim();
+    const customerName = customerProfile.name || t('গ্রাহক', 'Customer');
+    try {
+      const res = await fetch('/api/wallet/topup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerPhone,
+          customerName,
+          method: payload.method,
+          amount: payload.amount,
+          senderNumber: payload.senderNumber.trim(),
+          trxId: payload.trxId.trim()
+        })
+      });
+      const json = await safeParseJson<{ success?: boolean; topUp?: WalletTopUpRequest; error?: string }>(res);
+      if (!res.ok || !json?.success || !json.topUp) {
+        addToast(
+          'error',
+          t('রিকোয়েস্ট জমা হয়নি', 'Top-Up Request Rejected'),
+          json?.error || t('দয়া করে সঠিক TrxID ও তথ্য দিয়ে আবার চেষ্টা করুন।', 'Please check your TrxID and sender number.')
+        );
+        return { success: false, status: 'pending' };
+      }
 
-    lastLocalMutationAtRef.current = Date.now();
-    setWalletTopUps((prev) => [newReq, ...prev]);
-    saveWalletTopUpToFirestore(newReq).catch(() => {});
+      const newReq: WalletTopUpRequest = { ...json.topUp, status: 'pending' };
+      lastLocalMutationAtRef.current = Date.now();
+      setWalletTopUps((prev) => [newReq, ...prev.filter((r) => r.id !== newReq.id)]);
+      saveWalletTopUpToFirestore(newReq).catch(() => {});
 
-    if (isAutoApprove) {
-      addToWallet(
-        payload.amount,
-        t(`${payload.method.toUpperCase()} ৳${payload.amount} অটো-অ্যাপ্রুভড!`, `${payload.method.toUpperCase()} ৳${payload.amount} Auto-Credited!`)
+      addToast(
+        'info',
+        t('ব্যালেন্স রিকোয়েস্ট জমা হয়েছে!', 'Top-Up Request Submitted!'),
+        t(
+          `TrxID: ${newReq.trxId} যাচাইয়ের পর অ্যাডমিন ড্যাশবোর্ড থেকে ৳${payload.amount} অনুমোদন করা হবে।`,
+          `Your ৳${payload.amount} (${newReq.trxId}) request is awaiting manual admin verification.`
+        )
       );
-      return { success: true, status: 'approved' };
+      return { success: true, status: 'pending' };
+    } catch {
+      addToast('error', t('নেটওয়ার্ক ত্রুটি', 'Network Error'), t('সার্ভারের সাথে সংযোগ স্থাপন করা যায়নি।', 'Could not reach server.'));
+      return { success: false, status: 'pending' };
     }
-
-    addToast(
-      'info',
-      t('ব্যালেন্স রিকোয়েস্ট জমা হয়েছে!', 'Top-Up Request Submitted!'),
-      t(
-        `TrxID: ${newReq.trxId} যাচাইয়ের পর অ্যাডমিন ড্যাশবোর্ড থেকে ৳${payload.amount} অনুমোদন করা হবে।`,
-        `Your ৳${payload.amount} (${newReq.trxId}) request is awaiting backend admin approval.`
-      )
-    );
-    return { success: true, status: 'pending' };
   };
 
-  const approveWalletTopUp = (requestId: string) => {
-    const req = walletTopUps.find((r) => r.id === requestId);
-    if (!req || req.status === 'approved') return;
-    const nowIso = new Date().toISOString();
-    lastLocalMutationAtRef.current = Date.now();
+  const approveWalletTopUp = async (requestId: string): Promise<void> => {
+    const req = walletTopUpsRef.current.find((r) => r.id === requestId) || walletTopUps.find((r) => r.id === requestId);
+    if (!req || req.status !== 'pending') return;
 
-    setWalletTopUps((prev) =>
-      prev.map((r) => {
-        if (r.id !== requestId) return r;
-        const nextLog = [
-          {
-            time: nowIso,
-            actor: 'Admin',
-            action: 'Approved',
-            note: `Credited ৳${r.amount} via ${r.method.toUpperCase()}`
-          },
-          ...(r.activityLog || [])
-        ].slice(0, 30);
-        const next = { ...r, status: 'approved' as const, processedAt: nowIso, activityLog: nextLog };
-        saveWalletTopUpToFirestore(next).catch(() => {});
-        return next;
-      })
-    );
+    try {
+      const apiRes = await fetch(`/api/wallet/topup/${encodeURIComponent(requestId)}/decision`, {
+        method: 'POST',
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ decision: 'approved' })
+      });
+      const json = await safeParseJson<{ success?: boolean; topUp?: WalletTopUpRequest; walletBalance?: number; error?: string }>(apiRes);
+      if (!apiRes.ok || !json?.success) {
+        addToast('error', t('অনুমোদন ব্যর্থ', 'Approval Failed'), json?.error || `HTTP ${apiRes.status}`);
+        return;
+      }
 
-    const reqPhone = req.customerPhone.replace(/[^0-9]/g, '');
-    const currPhone = (customerProfile.phone || '').replace(/[^0-9]/g, '');
+      const nowIso = new Date().toISOString();
+      lastLocalMutationAtRef.current = Date.now();
 
-    if (!currPhone || reqPhone === currPhone || customerAccounts.length <= 1) {
-      addToWallet(
-        req.amount,
-        t(`${req.method.toUpperCase()} রিচার্জ অনুমোদিত (+৳${req.amount})`, `Top-Up Approved (+৳${req.amount})`)
+      setWalletTopUps((prev) =>
+        prev.map((r) => {
+          if (r.id !== requestId) return r;
+          const nextLog = [
+            {
+              time: nowIso,
+              actor: 'Admin',
+              action: 'Approved',
+              note: `Credited ৳${r.amount} via ${r.method.toUpperCase()}`
+            },
+            ...(r.activityLog || [])
+          ].slice(0, 30);
+          const next: WalletTopUpRequest = {
+            ...r,
+            ...(json.topUp || {}),
+            status: 'approved',
+            processedAt: json.topUp?.decidedAt || nowIso,
+            activityLog: nextLog
+          };
+          saveWalletTopUpToFirestore(next).catch(() => {});
+          return next;
+        })
       );
+
+      const reqPhone = req.customerPhone.replace(/[^0-9]/g, '').slice(-11);
+      const currPhone = (customerProfile.phone || '').replace(/[^0-9]/g, '').slice(-11);
+
+      if (reqPhone && currPhone && reqPhone === currPhone) {
+        if (typeof json.walletBalance === 'number') {
+          setCustomerWalletBalance(json.walletBalance);
+          safeStorageSetItem('buyonebd_customer_wallet_v3', String(json.walletBalance));
+          setCustomerProfile((cp) => ({
+            ...cp,
+            walletBalance: json.walletBalance!,
+            lastWalletCreditAt: cp.lastWalletCreditAt || nowIso
+          }));
+        } else {
+          addToWallet(req.amount, t(`${req.method.toUpperCase()} রিচার্জ অনুমোদিত (+৳${req.amount})`, `Top-Up Approved (+৳${req.amount})`));
+        }
+      }
+
       setCustomerAccounts((prev) =>
         prev.map((acc) => {
-          if (acc.phone.replace(/[^0-9]/g, '') !== reqPhone && prev.length > 1) return acc;
+          if (acc.phone.replace(/[^0-9]/g, '').slice(-11) !== reqPhone) return acc;
+          const nextBal = typeof json.walletBalance === 'number' ? json.walletBalance : (acc.walletBalance || 0) + req.amount;
           const updated = {
             ...acc,
-            walletBalance: (acc.walletBalance || 0) + req.amount,
+            walletBalance: nextBal,
             lastWalletCreditAt: acc.lastWalletCreditAt || nowIso
           };
           saveCustomerToFirestore(updated).catch(() => {});
           return updated;
         })
       );
-    } else {
-      setCustomerAccounts((prev) =>
-        prev.map((acc) => {
-          if (acc.phone.replace(/[^0-9]/g, '') !== reqPhone) return acc;
-          const updated = {
-            ...acc,
-            walletBalance: (acc.walletBalance || 0) + req.amount,
-            lastWalletCreditAt: acc.lastWalletCreditAt || nowIso
-          };
-          saveCustomerToFirestore(updated).catch(() => {});
-          return updated;
-        })
-      );
+
       addToast(
         'success',
         t('রিচার্জ অনুমোদিত!', 'Top-Up Approved!'),
         t(`${req.customerName}-এর অ্যাকাউন্টে ৳${req.amount} যোগ হয়েছে।`, `৳${req.amount} credited to ${req.customerName}.`)
       );
-    }
 
-    pushInternalNotification({
-      id: `notif-topup-${requestId}`,
-      category: 'promo',
-      title: `Wallet Credited: +৳${req.amount.toLocaleString()}`,
-      titleBn: `ওয়ালেটে ৳${req.amount.toLocaleString()} যোগ হয়েছে!`,
-      message: `Your ${req.method.toUpperCase()} wallet top-up (TrxID: ${req.trxId}) was approved and added to your lifetime balance.`,
-      messageBn: `আপনার ${req.method.toUpperCase()} রিচার্জ (TrxID: ${req.trxId}) অনুমোদিত হয়ে ওয়ালেটে জমা হয়েছে।`,
-      actionType: 'open_wallet',
-      targetPhone: req.customerPhone
-    });
+      pushInternalNotification({
+        id: `notif-topup-${requestId}`,
+        category: 'promo',
+        title: `Wallet Credited: +৳${req.amount.toLocaleString()}`,
+        titleBn: `ওয়ালেটে ৳${req.amount.toLocaleString()} যোগ হয়েছে!`,
+        message: `Your ${req.method.toUpperCase()} wallet top-up (TrxID: ${req.trxId}) was approved and added to your lifetime balance.`,
+        messageBn: `আপনার ${req.method.toUpperCase()} রিচার্জ (TrxID: ${req.trxId}) অনুমোদিত হয়ে ওয়ালেটে জমা হয়েছে।`,
+        actionType: 'open_wallet',
+        targetPhone: req.customerPhone
+      });
+    } catch (err: any) {
+      addToast('error', t('অনুমোদন ব্যর্থ', 'Approval Failed'), err?.message || 'Network error');
+    }
   };
 
-  const rejectWalletTopUp = (requestId: string, note?: string) => {
-    const nowIso = new Date().toISOString();
-    lastLocalMutationAtRef.current = Date.now();
-    setWalletTopUps((prev) =>
-      prev.map((r) => {
-        if (r.id !== requestId) return r;
-        const nextLog = [
-          {
-            time: nowIso,
-            actor: 'Admin',
-            action: 'Rejected',
-            note: note || 'Invalid TrxID'
-          },
-          ...(r.activityLog || [])
-        ].slice(0, 30);
-        const next = {
-          ...r,
-          status: 'rejected' as const,
-          adminNote: note || 'Invalid TrxID',
-          processedAt: nowIso,
-          activityLog: nextLog
-        };
-        saveWalletTopUpToFirestore(next).catch(() => {});
-        return next;
-      })
-    );
-    addToast('info', t('রিচার্জ রিকোয়েস্ট বাতিল হয়েছে', 'Top-Up Request Rejected'), '');
+  const rejectWalletTopUp = async (requestId: string, note?: string): Promise<void> => {
+    try {
+      const apiRes = await fetch(`/api/wallet/topup/${encodeURIComponent(requestId)}/decision`, {
+        method: 'POST',
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ decision: 'rejected', reason: note || 'Invalid TrxID' })
+      });
+      const json = await safeParseJson<{ success?: boolean; topUp?: WalletTopUpRequest; error?: string }>(apiRes);
+      if (!apiRes.ok || !json?.success) {
+        addToast('error', t('বাতিল ব্যর্থ', 'Rejection Failed'), json?.error || `HTTP ${apiRes.status}`);
+        return;
+      }
+
+      const nowIso = new Date().toISOString();
+      lastLocalMutationAtRef.current = Date.now();
+      setWalletTopUps((prev) =>
+        prev.map((r) => {
+          if (r.id !== requestId) return r;
+          const nextLog = [
+            {
+              time: nowIso,
+              actor: 'Admin',
+              action: 'Rejected',
+              note: note || 'Invalid TrxID'
+            },
+            ...(r.activityLog || [])
+          ].slice(0, 30);
+          const next = {
+            ...r,
+            ...(json.topUp || {}),
+            status: 'rejected' as const,
+            adminNote: note || 'Invalid TrxID',
+            processedAt: nowIso,
+            activityLog: nextLog
+          };
+          saveWalletTopUpToFirestore(next).catch(() => {});
+          return next;
+        })
+      );
+      addToast('info', t('রিচার্জ রিকোয়েস্ট বাতিল হয়েছে', 'Top-Up Request Rejected'), '');
+    } catch (err: any) {
+      addToast('error', t('বাতিল ব্যর্থ', 'Rejection Failed'), err?.message || 'Network error');
+    }
   };
 
   const editWalletTopUp = (requestId: string, updates: Partial<WalletTopUpRequest>) => {
@@ -4452,11 +4560,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
     if (action === 'approve') {
-      requestIds.forEach((id) => approveWalletTopUp(id));
+      void (async () => {
+        for (const id of requestIds) await approveWalletTopUp(id);
+      })();
       return;
     }
     if (action === 'reject') {
-      requestIds.forEach((id) => rejectWalletTopUp(id, 'Bulk rejected by Admin'));
+      void (async () => {
+        for (const id of requestIds) await rejectWalletTopUp(id, 'Bulk rejected by Admin');
+      })();
     }
   };
 
@@ -4897,6 +5009,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return next;
     });
     savePriceAlertToFirestore(newAlert).catch(() => {});
+    fetch('/api/price-alerts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        productId: alertData.productId,
+        contact: alertData.contact,
+        targetPrice: alertData.targetPrice
+      })
+    }).catch(() => {});
     addToast(
       'success',
       lang === 'bn' ? 'প্রাইস অ্যালার্ট সেট হয়েছে!' : 'Price Alert Activated!',
@@ -4931,7 +5052,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     deletePriceAlertFromFirestore(id).catch(() => {});
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'priceAlert', ids: [id] })
     }).catch(() => {});
     addToast('info', t('প্রাইস অ্যালার্ট মোছা হয়েছে', 'Price Alert Deleted'), '');
@@ -5315,7 +5436,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const res = await fetch('/api/notifications/publish', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ ...localEntry })
       });
       const json = await safeParseJson<{ success?: boolean; notification?: UserNotification }>(res);
@@ -5335,7 +5456,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const deletePublishedNotification = (id: string) => {
     lastLocalMutationAtRef.current = Date.now();
     setPublishedNotifications((prev) => prev.filter((n) => n.id !== id));
-    fetch(`/api/notifications/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+    fetch(`/api/notifications/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: getAdminAuthHeaders()
+    }).catch(() => {});
     addToast('info', t('নোটিফিকেশন মুছে ফেলা হয়েছে', 'Notification Removed'), '');
   };
 
@@ -5370,10 +5494,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (typeof window !== 'undefined') {
       const p = window.location.pathname.replace(/\/+$/, '').toLowerCase() || '/';
       if (p === '/tracking') return 'tracking';
-      let persistedAdmin = false;
-      try {
-        persistedAdmin = localStorage.getItem(LOCAL_STORAGE_ADMIN_AUTH) === 'true';
-      } catch {}
+      const persistedAdmin = Boolean(getAdminAuthToken());
       if (isHossainPathInitial() && persistedAdmin) return 'admin';
     }
     return 'store';
@@ -6107,14 +6228,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const fetchStoreSnapshotFromServer = async (notifyOnNewOrders = false, forceFirestore = false) => {
     try {
       // 1. Pull from Express server snapshot if available (conditional sinceVersion for near-zero traffic)
-      const isAdminSess = isAdminLoggedInRef.current;
+      const isAdminSess = isAdminLoggedInRef.current && Boolean(getAdminAuthToken());
       const sinceParam =
         !forceFirestore && hasHydratedFromServerRef.current && serverDataVersionRef.current > 0
           ? `&sinceVersion=${serverDataVersionRef.current}`
           : '';
       const res = await fetch(`/api/store/sync?t=${Date.now()}${sinceParam}`, {
         cache: 'no-store',
-        headers: isAdminSess ? { 'x-admin-session': 'buyone-admin-verified' } : undefined
+        headers: isAdminSess ? getAdminAuthHeaders() : undefined
       });
       if (res.ok) {
         const json = await safeParseJson<{ data?: any; unchanged?: boolean; activeClients?: number; storeDataVersion?: number }>(res);
@@ -6226,7 +6347,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (Array.isArray(data.bulkSmsLogs) && data.bulkSmsLogs.length > 0) {
               setBulkSmsLogs(data.bulkSmsLogs);
             }
-            if (Array.isArray(data.aiReviewQueue) && data.aiReviewQueue.length > 0) {
+            if (Array.isArray(data.aiReviewQueue) && data.aiReviewQueue.length > 0 && isAdminSess) {
               setAiReviewQueue(data.aiReviewQueue);
             }
             if (Array.isArray(data.chatInquiries)) {
@@ -6286,10 +6407,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (Array.isArray(data.affiliateConversions) && !isRecentlyMutatedLocally) setAffiliateConversions(data.affiliateConversions);
             if (Array.isArray(data.affiliatePayouts) && !isRecentlyMutatedLocally) setAffiliatePayouts(data.affiliatePayouts);
           }
-        } else if (!hasHydratedFromServerRef.current) {
+        } else if (!hasHydratedFromServerRef.current && isAdminLoggedInRef.current && getAdminAuthToken()) {
           fetch('/api/store/sync', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
               products,
               orders,
@@ -6329,20 +6450,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       hasHydratedFromServerRef.current = true;
     }
 
-    // 2. Also pull from Hostinger DB / PHP Bridge when enabled (works cross-device without Express)
+    // 2. Also pull from Hostinger DB / PHP Bridge when enabled & Admin authenticated
     try {
       const hDb = settingsRef.current.hostingerDbSettings;
-      if (hDb?.enabled) {
+      if (hDb?.enabled && getAdminAuthToken()) {
         let hostingerOrders: Order[] = [];
         const hRes = await fetch('/api/database/hostinger/orders', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ config: hDb })
         }).catch(() => null);
         if (hRes && hRes.ok) {
           const hJson = await safeParseJson<{ orders?: Order[] }>(hRes);
           if (Array.isArray(hJson?.orders)) hostingerOrders = hJson.orders;
-        } else if (hDb.mode === 'php_bridge' && hDb.phpBridgeUrl) {
+        } else if ((!hRes || hRes.status === 404 || hRes.status === 502) && hDb.mode === 'php_bridge' && hDb.phpBridgeUrl) {
           const phpRes = await fetch(hDb.phpBridgeUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': hDb.phpBridgeSecret || '' },
@@ -6746,17 +6867,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     void fetchStoreSnapshotFromServer(false, true);
   }, [isFirebaseAdminConnected]);
 
-  // Push committed store snapshot updates AFTER initial server hydration completes (never pushes unsaved draft settings)
+  // Push committed store snapshot updates AFTER initial server hydration completes (Admin authenticated only)
   useEffect(() => {
-    if (!hasHydratedFromServerRef.current) return;
+    if (!hasHydratedFromServerRef.current || !isAdminLoggedInRef.current || !getAdminAuthToken()) return;
     const syncTimer = setTimeout(() => {
-      const isAdminSess = isAdminLoggedInRef.current;
+      if (!isAdminLoggedInRef.current || !getAdminAuthToken()) return;
       fetch('/api/store/sync', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(isAdminSess ? { 'x-admin-session': 'buyone-admin-verified' } : {})
-        },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           products,
           orders,
@@ -6906,7 +7024,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Real-time WebSocket connection (/ws) + automatic WebRTC audio signaling + fallback state sync
   const fetchSupportStateFromServer = () => {
-    fetch('/api/support/state')
+    const hasAdmin = isAdminLoggedInRef.current && Boolean(getAdminAuthToken());
+    const url = hasAdmin
+      ? '/api/support/state'
+      : `/api/support/state?visitorSessionId=${encodeURIComponent(visitorSessionId)}`;
+    fetch(url, hasAdmin ? { headers: getAdminAuthHeaders() } : undefined)
       .then((r) => safeParseJson<any>(r))
       .then((data) => {
         if (!data?.success) return;
@@ -6976,7 +7098,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               );
             });
           }
-          if (Array.isArray(msg.aiReviewQueue) && msg.aiReviewQueue.length > 0) {
+          if (Array.isArray(msg.aiReviewQueue) && msg.aiReviewQueue.length > 0 && isAdminLoggedInRef.current && getAdminAuthToken()) {
             setAiReviewQueue(msg.aiReviewQueue);
           }
           if (Array.isArray(msg.chatInquiries)) {
@@ -7018,6 +7140,40 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
               .slice(0, 100);
           });
+          return;
+        }
+
+        if (msg.type === 'wallet:topup_requested' && msg.topUp?.id) {
+          setWalletTopUps((prev) => [msg.topUp, ...prev.filter((w) => w.id !== msg.topUp.id)]);
+          return;
+        }
+
+        if (msg.type === 'wallet:sync') {
+          if (msg.topUp?.id) {
+            setWalletTopUps((prev) => {
+              const exists = prev.some((w) => w.id === msg.topUp.id);
+              if (exists) return prev.map((w) => (w.id === msg.topUp.id ? { ...w, ...msg.topUp } : w));
+              return [msg.topUp, ...prev];
+            });
+          }
+          const myPhoneDigits = String(customerPhoneRef.current || '').replace(/[^0-9]/g, '').slice(-11);
+          const msgPhoneDigits = String(msg.customerPhone || '').replace(/[^0-9]/g, '').slice(-11);
+          if (myPhoneDigits && msgPhoneDigits && myPhoneDigits === msgPhoneDigits && typeof msg.walletBalance === 'number') {
+            setCustomerWalletBalance(msg.walletBalance);
+            safeStorageSetItem('buyonebd_customer_wallet_v3', String(msg.walletBalance));
+            setCustomerProfile((cp) => ({ ...cp, walletBalance: msg.walletBalance }));
+          }
+          if (Array.isArray(msg.userNotifications)) {
+            setPublishedNotifications((prev) => {
+              const map = new Map(prev.map((n) => [n.id, n]));
+              msg.userNotifications.forEach((n: UserNotification) => {
+                if (n?.id) map.set(n.id, n);
+              });
+              return Array.from(map.values())
+                .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+                .slice(0, 100);
+            });
+          }
           return;
         }
 
@@ -8076,7 +8232,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         const res = await fetch('/api/steadfast/create-order', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             apiKey: stdfCfg?.apiKey,
             secretKey: stdfCfg?.secretKey,
@@ -8138,7 +8294,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             };
             fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
               method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
+              headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({ updates: { status: 'shipped', courier: updatedCourier } })
             }).catch(() => {});
             updateOrderInFirestore(updatedOrder).catch(() => {});
@@ -8173,7 +8329,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const res = await fetch('/api/steadfast/status', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           apiKey: stdfCfg?.apiKey,
           secretKey: stdfCfg?.secretKey,
@@ -8220,7 +8376,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           };
           fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ updates: { status: mappedOrderStatus, courier: updatedCourier } })
           }).catch(() => {});
           return { ...o, status: mappedOrderStatus, courier: updatedCourier };
@@ -8270,7 +8426,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [whatsappMessages]);
 
   useEffect(() => {
-    fetch('/api/whatsapp/messages')
+    if (!getAdminAuthToken()) return;
+    fetch('/api/whatsapp/messages', { headers: getAdminAuthHeaders() })
       .then((r) => safeParseJson<{ success?: boolean; messages?: WhatsAppChatMessage[] }>(r))
       .then((data) => {
         if (data?.success && Array.isArray(data.messages) && data.messages.length > 0) {
@@ -8286,7 +8443,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       })
       .catch(() => {});
-  }, []);
+  }, [isAdminLoggedIn]);
 
   const sendMetaWhatsAppMessage = async (payload: {
     to: string;
@@ -8301,7 +8458,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const res = await fetch('/api/whatsapp/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           to: payload.to,
           message: payload.message,
@@ -8363,7 +8520,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const res = await fetch('/api/whatsapp/ai-reply', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           ...payload,
           lang: adminLang
@@ -8740,12 +8897,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Check Customer Fraud Risk / Steadfast Delivery Success Ratio
   const checkCustomerFraudRisk = async (phone: string): Promise<OrderFraudCheck> => {
-    try {
-      const res = await fetch('/api/fraud-check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone })
-      });
+    if (getAdminAuthToken()) {
+      try {
+        const res = await fetch('/api/fraud-check', {
+          method: 'POST',
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ phone })
+        });
       if (res.ok) {
         const raw = await res.text();
         const data = raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null;
@@ -8759,9 +8917,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             riskLevel: data.riskLevel,
             message: data.message
           };
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    }
 
     const phoneSum = phone.split('').reduce((sum, ch) => sum + (parseInt(ch, 10) || 0), 0);
     const successRate = phoneSum % 5 === 0 ? 42 : phoneSum % 7 === 0 ? 74 : 96;
@@ -8793,7 +8952,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (o.id !== orderId) return o;
         fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ updates: { fraudCheck: res } })
         }).catch(() => {});
         return { ...o, fraudCheck: res };
@@ -9201,14 +9360,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Optional Hostinger DB auto-mirror (handles both Node MySQL direct & PHP Bridge mode + 404 direct fallback)
     const hDb = settings.hostingerDbSettings;
-    if (hDb?.enabled && hDb.autoSyncOnOrder) {
+    if (hDb?.enabled && hDb.autoSyncOnOrder && getAdminAuthToken()) {
       fetch('/api/database/hostinger/order', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ order: newOrder, config: hDb })
       })
         .then((resp) => {
-          if (!resp.ok && hDb.mode === 'php_bridge' && hDb.phpBridgeUrl) {
+          if ((resp.status === 404 || resp.status === 502) && hDb.mode === 'php_bridge' && hDb.phpBridgeUrl) {
             fetch(hDb.phpBridgeUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': hDb.phpBridgeSecret || '' },
@@ -9216,15 +9375,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }).catch(() => {});
           }
         })
-        .catch(() => {
-          if (hDb.mode === 'php_bridge' && hDb.phpBridgeUrl) {
-            fetch(hDb.phpBridgeUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': hDb.phpBridgeSecret || '' },
-              body: JSON.stringify({ action: 'upsert_order', tablePrefix: hDb.tablePrefix || 'buyone_', order: newOrder })
-            }).catch(() => {});
-          }
-        });
+        .catch(() => {});
     }
 
     const allowAdminStatus = isFirebaseAdminConnectedRef.current;
@@ -9259,31 +9410,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }, 1500);
       });
 
-    // Send automatic SMTP Order Confirmation Email if configured & enabled
-    if (settings.smtpSettings?.enabled && settings.smtpSettings?.sendOnOrderConfirmation) {
-      const targetEmail =
-        customerProfile?.phone === orderData.customer.phone && customerProfile?.email
-          ? customerProfile.email
-          : settings.smtpSettings.fromEmail || settings.supportEmail;
-      if (targetEmail && targetEmail.includes('@')) {
-        fetch('/api/email/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            smtp: settings.smtpSettings,
-            to: targetEmail,
-            subject:
-              lang === 'bn'
-                ? `অর্ডার কনফার্মড #${newOrderId} - ${settings.storeNameBn || settings.storeName}`
-                : `Order Confirmed #${newOrderId} - ${settings.storeName}`,
-            text:
-              lang === 'bn'
-                ? `আসসালামু আলাইকুম ${orderData.customer.name},\n\nআপনার অর্ডার #${newOrderId} (মোট ৳${total}) সফলভাবে সম্পন্ন হয়েছে!\nডেলিভারি ঠিকানা: ${orderData.customer.address}, ${orderData.customer.district}\nপেমেন্ট: ${orderData.paymentMethod.toUpperCase()}\n\n${settings.storeNameBn || settings.storeName}-এর সাথে থাকার জন্য ধন্যবাদ।`
-                : `Assalamu Alaikum ${orderData.customer.name},\n\nYour order #${newOrderId} for ৳${total} has been placed successfully!\nDelivery Address: ${orderData.customer.address}, ${orderData.customer.district}\nPayment: ${orderData.paymentMethod.toUpperCase()}\n\nThank you for shopping with ${settings.storeName}.`
-          })
-        }).catch(() => {});
-      }
-    }
+    // Server handles optional transactional email securely when configured
 
     // Reset 30-day wallet clock & sync Customer Loyalty Points (both Earned & Redeemed across Customer + Admin CRM)
     const custDigits = String(orderData.customer.phone || '').replace(/[^0-9]/g, '').slice(-11);
@@ -9415,12 +9542,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Prepare Human-in-the-Loop AI Review Queue items automatically for Admin review
     if (
       orderData.source !== 'pos' &&
+      getAdminAuthToken() &&
       settingsRef.current.aiAutopilotSettings?.enabled !== false &&
       settingsRef.current.aiAutopilotSettings?.autoScanNewOrders !== false
     ) {
       fetch('/api/ai/autopilot/scan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           orders: [newOrder],
           products: productsRef.current.slice(0, 10),
@@ -9478,7 +9606,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           };
           fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ updates: { status, courier: updatedCourier } })
           }).catch(() => {});
           updateOrderInFirestore(updatedOrder).catch(() => {});
@@ -9522,7 +9650,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const updatedOrder: Order = { ...ord, courier: nextCourier };
         fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ updates: { courier: nextCourier } })
         }).catch(() => {});
         updateOrderInFirestore(updatedOrder).catch(() => {});
@@ -9558,7 +9686,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const updatedOrder: Order = { ...ord, courier: nextCourier };
         fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ updates: { courier: nextCourier } })
         }).catch(() => {});
         updateOrderInFirestore(updatedOrder).catch(() => {});
@@ -9623,18 +9751,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           updatedAt: nowIso
         };
         finalizedOrder = updatedOrder;
-        fetch(`/api/orders/${encodeURIComponent(ord.id)}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            updates: {
-              status: 'ai_confirmed',
-              aiCallStatus: nextAiCallStatus,
-              courier: nextCourier,
-              updatedAt: nowIso
-            }
-          })
-        }).catch(() => {});
+        if (getAdminAuthToken()) {
+          fetch(`/api/orders/${encodeURIComponent(ord.id)}`, {
+            method: 'PATCH',
+            headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+              updates: {
+                status: 'ai_confirmed',
+                aiCallStatus: nextAiCallStatus,
+                courier: nextCourier,
+                updatedAt: nowIso
+              }
+            })
+          }).catch(() => {});
+        } else {
+          fetch(`/api/orders/${encodeURIComponent(ord.id)}/customer-confirm`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              phone: ord.customer?.phone || customerPhoneRef.current || '',
+              confirmed: true,
+              note: `Confirmed A-to-Z via ${sourceLabel}`
+            })
+          }).catch(() => {});
+        }
         updateOrderInFirestore(updatedOrder, true).catch(() => {});
         return updatedOrder;
       })
@@ -9727,7 +9867,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             updates: {
               status: nextStatus,
@@ -9761,7 +9901,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
     fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ updates })
     }).catch(() => {});
     addToast('success', t('অর্ডার তথ্য সংরক্ষিত', 'Order Saved'), t(`অর্ডার #${orderId} এর তথ্য আপডেট করা হয়েছে।`, `Order #${orderId} updated.`));
@@ -9771,7 +9911,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     knownOrderIdsRef.current.delete(orderId);
     setOrders((prev) => prev.filter((ord) => ord.id !== orderId));
     fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      headers: getAdminAuthHeaders()
     }).catch(() => {});
     deleteOrderFromFirestore(orderId).catch(() => {});
     addToast('info', t('অর্ডার অপসারিত', 'Order Deleted'), t('অর্ডারটি ডাটাবেজ থেকে মুছে দেওয়া হয়েছে।', 'Order removed.'));
@@ -9784,7 +9925,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (action.deleteAll) {
       orderIds.forEach((id) => {
         knownOrderIdsRef.current.delete(id);
-        fetch(`/api/orders/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+        fetch(`/api/orders/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          headers: getAdminAuthHeaders()
+        }).catch(() => {});
         deleteOrderFromFirestore(id).catch(() => {});
       });
       setOrders((prev) => prev.filter((ord) => !idSet.has(ord.id)));
@@ -9832,7 +9976,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           };
           fetch(`/api/orders/${encodeURIComponent(ord.id)}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ updates: { status: nextStatus, courier: updatedCourier } })
           }).catch(() => {});
           updateOrderInFirestore(updatedOrder).catch(() => {});
@@ -9907,18 +10051,31 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               courier: nextCourier,
               updatedAt: nowIso
             };
-            fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                updates: {
-                  status: nextStatus,
-                  aiCallStatus: nextAiCallStatus,
-                  courier: nextCourier,
-                  updatedAt: nowIso
-                }
-              })
-            }).catch(() => {});
+            if (getAdminAuthToken()) {
+              fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+                method: 'PATCH',
+                headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                  updates: {
+                    status: nextStatus,
+                    aiCallStatus: nextAiCallStatus,
+                    courier: nextCourier,
+                    updatedAt: nowIso
+                  }
+                })
+              }).catch(() => {});
+            } else {
+              fetch(`/api/orders/${encodeURIComponent(orderId)}/customer-confirm`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  phone: ord.customer?.phone || customerPhoneRef.current || '',
+                  confirmed,
+                  note: nextAiCallStatus.notes,
+                  callTranscript: transcriptLog
+                })
+              }).catch(() => {});
+            }
             updateOrderInFirestore(updatedOrder, confirmed).catch(() => {});
             return updatedOrder;
           }
@@ -10193,18 +10350,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (isFirebaseAdminConnectedRef.current) {
         await saveAdminPrivateConfigToFirestore(draft).catch(() => {});
       }
-      await fetch('/api/store/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(isAdminLoggedInRef.current ? { 'x-admin-session': 'buyone-admin-verified' } : {})
-        },
-        body: JSON.stringify({
-          settings: draft,
-          categories: categoriesRef.current,
-          sliders: slidersRef.current
-        })
-      }).catch(() => {});
+      if (getAdminAuthToken()) {
+        await fetch('/api/store/sync', {
+          method: 'POST',
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            settings: draft,
+            categories: categoriesRef.current,
+            sliders: slidersRef.current
+          })
+        }).catch(() => {});
+      }
     } catch {}
     addToast(
       'success',
@@ -10357,8 +10513,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         saveResellerToFirestore(next).catch(() => {});
         fetch('/api/partner/update', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'reseller', id, updates })
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            type: 'reseller',
+            id,
+            updates,
+            ...(!getAdminAuthToken() && r.password ? { currentPassword: r.password } : {})
+          })
         }).catch(() => {});
         if (activeReseller?.id === id) setActiveReseller(next);
         return next;
@@ -10378,7 +10539,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         saveResellerToFirestore(next).catch(() => {});
         fetch('/api/partner/update', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ type: 'reseller', id: r.id, updates })
         }).catch(() => {});
         if (activeReseller?.id === r.id) setActiveReseller(next);
@@ -10395,7 +10556,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     deleteResellerFromFirestore(id).catch(() => {});
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'reseller', ids: [id] })
     }).catch(() => {});
     addToast('info', t('রিসেলার অ্যাকাউন্ট মোছা হয়েছে', 'Reseller Account Deleted'), '');
@@ -10410,7 +10571,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     ids.forEach((id) => deleteResellerFromFirestore(id).catch(() => {}));
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'reseller', ids })
     }).catch(() => {});
     addToast('info', t(`${ids.length} জন রিসেলার মুছে ফেলা হয়েছে`, `${ids.length} Resellers Deleted`), '');
@@ -10428,7 +10589,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         saveResellerToFirestore(next).catch(() => {});
         fetch('/api/partner/update', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ type: 'reseller', id, updates })
         }).catch(() => {});
         if (activeReseller?.id === id) setActiveReseller(next);
@@ -10537,7 +10698,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     deleteResellerPayoutFromFirestore(id).catch(() => {});
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'resellerPayout', ids: [id] })
     }).catch(() => {});
     addToast('info', t('পে-আউট রিকোয়েস্ট মোছা হয়েছে', 'Payout Request Deleted'), '');
@@ -10655,8 +10816,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         saveWholesalerToFirestore(next).catch(() => {});
         fetch('/api/partner/update', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'wholesale', id, updates })
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            type: 'wholesale',
+            id,
+            updates,
+            ...(!getAdminAuthToken() && w.password ? { currentPassword: w.password } : {})
+          })
         }).catch(() => {});
         if (activeWholesaler?.id === id) setActiveWholesaler(next);
         return next;
@@ -10684,7 +10850,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     deleteWholesalerFromFirestore(id).catch(() => {});
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'wholesaler', ids: [id] })
     }).catch(() => {});
     addToast('info', t('হোলসেল অ্যাকাউন্ট মোছা হয়েছে', 'Wholesale Account Deleted'), '');
@@ -10701,7 +10867,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         saveWholesalerToFirestore(next).catch(() => {});
         fetch('/api/partner/update', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ type: 'wholesale', id: w.id, updates })
         }).catch(() => {});
         if (activeWholesaler?.id === w.id) setActiveWholesaler(next);
@@ -10720,7 +10886,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     ids.forEach((id) => deleteWholesalerFromFirestore(id).catch(() => {}));
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'wholesaler', ids })
     }).catch(() => {});
     addToast('info', t(`${ids.length}টি হোলসেল অ্যাকাউন্ট মোছা হয়েছে`, `${ids.length} Wholesale Accounts Deleted`), '');
@@ -10772,7 +10938,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     deleteWholesaleQuoteFromFirestore(id).catch(() => {});
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'wholesaleQuote', ids: [id] })
     }).catch(() => {});
     addToast('info', t('কোটেশন মোছা হয়েছে', 'Quote Deleted'), '');
@@ -10801,7 +10967,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     ids.forEach((id) => deleteWholesaleQuoteFromFirestore(id).catch(() => {}));
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'wholesaleQuote', ids })
     }).catch(() => {});
     addToast('info', t(`${ids.length}টি কোটেশন মোছা হয়েছে`, `${ids.length} Quotes Deleted`), '');
@@ -10872,7 +11038,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setResellerTopUps((prev) => prev.filter((r) => r.id !== id));
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'resellerTopUp', ids: [id] })
     }).catch(() => {});
     addToast('info', t('টপ-আপ রিকোয়েস্ট মোছা হয়েছে', 'Top-Up Deleted'), '');
@@ -10972,7 +11138,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     deleteBlogPostFromFirestore(id).catch(() => {});
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'blog', ids: [id] })
     }).catch(() => {});
     addToast('info', t('ব্লগ পোস্ট মুছে ফেলা হয়েছে', 'Blog Post Deleted'), '');
@@ -11002,7 +11168,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     ids.forEach((id) => deleteBlogPostFromFirestore(id).catch(() => {}));
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'blog', ids })
     }).catch(() => {});
     addToast('info', t(`${ids.length}টি ব্লগ মোছা হয়েছে`, `${ids.length} Blog Posts Deleted`), '');
@@ -11112,7 +11278,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     deleteAffiliateFromFirestore(id).catch(() => {});
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'affiliate', ids: [id] })
     }).catch(() => {});
     addToast('info', t('অ্যাফিলিয়েট অ্যাকাউন্ট মোছা হয়েছে', 'Affiliate Deleted'), '');
@@ -11144,7 +11310,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     ids.forEach((id) => deleteAffiliateFromFirestore(id).catch(() => {}));
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'affiliate', ids })
     }).catch(() => {});
     addToast('info', t(`${ids.length} জন অ্যাফিলিয়েট মোছা হয়েছে`, `${ids.length} Affiliates Deleted`), '');
@@ -11237,7 +11403,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setAffiliatePayouts((prev) => prev.filter((p) => p.id !== id));
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'affiliatePayout', ids: [id] })
     }).catch(() => {});
     addToast('info', t('অ্যাফিলিয়েট পে-আউট মোছা হয়েছে', 'Affiliate Payout Deleted'), '');
@@ -11265,7 +11431,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const gmCfg = settingsRef.current.globalMarketingSettings || INITIAL_SETTINGS.globalMarketingSettings!;
       const res = await fetch('/api/marketing/sms-campaign', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           ...payload,
           provider: gmCfg.smsGatewayProvider,
@@ -11300,7 +11466,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setBulkSmsLogs((prev) => prev.filter((l) => l.id !== id));
     fetch('/api/store/delete-item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type: 'bulkSmsLog', ids: [id] })
     }).catch(() => {});
     addToast('info', t('SMS লগ মোছা হয়েছে', 'SMS Log Deleted'), '');
@@ -11352,7 +11518,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setSearchQuery('');
 
     try {
-      await fetch('/api/cache/clear', { method: 'POST', cache: 'no-store' });
+      if (getAdminAuthToken()) {
+        await fetch('/api/cache/clear', {
+          method: 'POST',
+          headers: getAdminAuthHeaders(),
+          cache: 'no-store'
+        });
+      }
       await fetchStoreSnapshotFromServer(false);
     } catch {}
 
@@ -11431,7 +11603,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [aiReviewQueue]);
 
   useEffect(() => {
-    fetch('/api/support/state')
+    if (!getAdminAuthToken()) return;
+    fetch('/api/support/state', { headers: getAdminAuthHeaders() })
       .then((r) => safeParseJson<{ success?: boolean; aiReviewQueue?: AIReviewTask[] }>(r))
       .then((data) => {
         if (data?.success && Array.isArray(data.aiReviewQueue) && data.aiReviewQueue.length > 0) {
@@ -11439,14 +11612,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       })
       .catch(() => {});
-  }, []);
+  }, [isAdminLoggedIn]);
 
   const persistReviewQueue = async (nextQueue: AIReviewTask[]) => {
     const trimmed = nextQueue.slice(0, 120);
     setAiReviewQueue(trimmed);
+    if (!getAdminAuthToken()) return;
     fetch('/api/ai/autopilot/queue', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ tasks: trimmed })
     }).catch(() => {});
   };
@@ -11456,7 +11630,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const res = await fetch('/api/ai/maintenance/audit', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           products: productsRef.current,
           orders: ordersRef.current,
@@ -11500,7 +11674,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const restoreStoreFromServerBackup = async (): Promise<boolean> => {
     try {
-      const res = await fetch('/api/store/backup/restore', { method: 'POST' });
+      const res = await fetch('/api/store/backup/restore', {
+        method: 'POST',
+        headers: getAdminAuthHeaders()
+      });
       const data = await safeParseJson<any>(res);
       if (data?.success) {
         await fetchStoreSnapshotFromServer(true);
@@ -11524,7 +11701,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const res = await fetch('/api/ai/autopilot/scan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           instruction,
           orders: ordersRef.current,
@@ -11862,7 +12039,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const res = await fetch('/api/agent', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: role === 'admin' ? getAdminAuthHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         instruction,
         role,
@@ -12193,7 +12370,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       await fetch(`/api/inquiries/${encodeURIComponent(id)}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(updates)
       });
       addToast('success', t('ইনকোয়ারি আপডেট সম্পন্ন', 'Inquiry Updated'), '');
@@ -12204,7 +12381,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     lastLocalMutationAtRef.current = Date.now();
     setChatInquiries((prev) => prev.filter((q) => q.id !== id));
     try {
-      await fetch(`/api/inquiries/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await fetch(`/api/inquiries/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: getAdminAuthHeaders()
+      });
       addToast('info', t('ইনকোয়ারি মুছে ফেলা হয়েছে', 'Inquiry Deleted'), '');
     } catch {}
   };
@@ -12218,7 +12398,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const idSet = new Set(ids);
     if (action === 'delete') {
       setChatInquiries((prev) => prev.filter((q) => !idSet.has(q.id)));
-      await Promise.all(ids.map((id) => fetch(`/api/inquiries/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {})));
+      await Promise.all(
+        ids.map((id) =>
+          fetch(`/api/inquiries/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+            headers: getAdminAuthHeaders()
+          }).catch(() => {})
+        )
+      );
       addToast('info', t(`${ids.length}টি ইনকোয়ারি মোছা হয়েছে`, `Deleted ${ids.length} Inquiries`), '');
     } else {
       const nowIso = new Date().toISOString();
@@ -12229,7 +12416,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ids.map((id) =>
           fetch(`/api/inquiries/${encodeURIComponent(id)}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ status: action })
           }).catch(() => {})
         )
@@ -12287,7 +12474,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const channelConfig = settingsRef.current?.socialAutoConfig?.[post.platform];
       const res = await fetch('/api/social/dispatch-now', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ postId, post, channelConfig })
       });
       const json = await safeParseJson<any>(res);
@@ -12440,7 +12627,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const activePool = visibleStoreProductsRef.current.length > 0 ? visibleStoreProductsRef.current : productsRef.current;
       const res = await fetch('/api/ai/team-run', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           focusPrompt,
           lang: adminLang,
@@ -12528,7 +12715,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const res = await fetch('/api/ai/full-autopilot-run', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           orders: ordersRef.current,
           chatInquiries: chatInquiriesRef.current,
@@ -12555,7 +12742,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const res = await fetch('/api/ai/auto-marketing/run-now', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           suiteSettingsOverride: settingsRef.current.autoMarketingSuite,
           n8nAutomationOverride: settingsRef.current.n8nAutomation,
@@ -12667,6 +12854,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         sendPasswordResetOtp,
         resetCustomerPassword,
         logoutCustomer,
+        hydrateCustomerAccountData,
         openCustomerPortal,
         customerAccounts,
         adjustSpecificCustomerBalance,
@@ -12815,6 +13003,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         adminSessionRemainingSec,
         lockAdminSessionNow,
         loginAdmin,
+        claimAdminCredentials,
         logoutAdmin,
         chatInquiries,
         submitChatInquiry,

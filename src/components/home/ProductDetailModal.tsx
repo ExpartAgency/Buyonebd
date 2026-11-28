@@ -24,12 +24,75 @@ import {
   Heart,
   Scale,
   Sparkles,
-  MapPin
+  MapPin,
+  Calendar
 } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
 import { WaitlistModal } from '../common/WaitlistModal';
 import { BD_DISTRICTS } from '../../data/initialData';
+
+export function calculateEstimatedDeliveryRange(
+  zone: 'dhaka_inside' | 'dhaka_sub' | 'dhaka_outside',
+  lang: 'en' | 'bn' = 'en',
+  baseDate: Date = new Date()
+): {
+  minDate: Date;
+  maxDate: Date;
+  dateRangeLabel: string;
+  windowLabel: string;
+  cutoffOffset: number;
+} {
+  const cutoffOffset = baseDate.getHours() >= 17 ? 1 : 0;
+  const skipFridays = zone === 'dhaka_outside';
+
+  const addTransitDays = (start: Date, days: number): Date => {
+    const result = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    let added = 0;
+    while (added < days) {
+      result.setDate(result.getDate() + 1);
+      if (skipFridays && result.getDay() === 5) continue;
+      added += 1;
+    }
+    return result;
+  };
+
+  let minDays = 1;
+  let maxDays = 2;
+  if (zone === 'dhaka_inside') {
+    minDays = 1 + cutoffOffset;
+    maxDays = 2 + cutoffOffset;
+  } else if (zone === 'dhaka_sub') {
+    minDays = 1 + cutoffOffset;
+    maxDays = 3 + cutoffOffset;
+  } else {
+    minDays = 2 + cutoffOffset;
+    maxDays = 4 + cutoffOffset;
+  }
+
+  const minDate = addTransitDays(baseDate, minDays);
+  const maxDate = addTransitDays(baseDate, maxDays);
+  const fmt = new Intl.DateTimeFormat(lang === 'bn' ? 'bn-BD' : 'en-US', {
+    month: 'short',
+    day: 'numeric'
+  });
+
+  const dateRangeLabel = `${fmt.format(minDate)} – ${fmt.format(maxDate)}`;
+  const windowLabel =
+    zone === 'dhaka_inside'
+      ? lang === 'bn'
+        ? '২৪ ঘন্টার মধ্যে ডেলিভারি'
+        : 'Within 24 Hours'
+      : zone === 'dhaka_sub'
+      ? lang === 'bn'
+        ? '২৪–৪৮ ঘন্টায় ডেলিভারি'
+        : '24–48 Hours'
+      : lang === 'bn'
+      ? '২–৩ কার্যদিবসে ডেলিভারি'
+      : '2–3 Business Days';
+
+  return { minDate, maxDate, dateRangeLabel, windowLabel, cutoffOffset };
+}
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -66,7 +129,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     isWishlisted,
     toggleCompare,
     isComparing,
-    setIsCompareModalOpen
+    setIsCompareModalOpen,
+    customerProfile,
+    isCustomerLoggedIn
   } = useStore();
 
   useEffect(() => {
@@ -82,7 +147,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [isWaitlistOpen, setIsWaitlistOpen] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState<'details' | 'video' | 'reviews' | 'alert'>('details');
-  const [estimatorDistrict, setEstimatorDistrict] = useState<string>('Dhaka - Inside City');
+  const [estimatorDistrict, setEstimatorDistrict] = useState<string>(() =>
+    isCustomerLoggedIn && customerProfile?.district ? customerProfile.district : 'Dhaka - Inside City'
+  );
 
   // Interactive Zoom State
   const [isZoomed, setIsZoomed] = useState(false);
@@ -240,12 +307,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     : selectedDistObj.zone === 'dhaka_sub'
     ? product.customDeliveryFees?.dhakaSub ?? settings.deliveryFees.dhakaSub
     : product.customDeliveryFees?.dhakaOutside ?? settings.deliveryFees.dhakaOutside;
-  const estimatedEta =
-    selectedDistObj.zone === 'dhaka_inside'
-      ? t('২৪ ঘন্টার মধ্যে ডেলিভারি', 'Within 24 Hours')
-      : selectedDistObj.zone === 'dhaka_sub'
-      ? t('২৪–৪৮ ঘন্টায় ডেলিভারি', '24–48 Hours')
-      : t('২–৩ কার্যদিবসে ডেলিভারি', '2–3 Business Days');
+  const deliveryRange = calculateEstimatedDeliveryRange(selectedDistObj.zone, lang);
+  const estimatedEta = deliveryRange.windowLabel;
 
   // Category & Subcategory labels in active language
   const catObj = categories.find((c) => c.slug === product.category);
@@ -562,6 +625,16 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     </span>
                   </div>
 
+                  <div className="flex items-center justify-between gap-2 tabular-nums pt-1 border-t border-slate-200/70 dark:border-slate-700/70">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{t('সম্ভাব্য ডেলিভারি তারিখ:', 'Estimated Delivery:')}</span>
+                    </div>
+                    <span className="text-[11px] font-black text-slate-900 dark:text-white">
+                      {deliveryRange.dateRangeLabel}
+                    </span>
+                  </div>
+
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>
@@ -833,10 +906,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       <span>{t(settings.singleProductCms?.notifyMeBtnBn || 'স্টকে এলে জানান', settings.singleProductCms?.notifyMeBtnEn || 'Notify Me When Available')}</span>
                     </button>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={handleOrderNow}
-                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm py-3.5 px-4 rounded-2xl shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm py-3 sm:py-3.5 px-2.5 sm:px-4 rounded-2xl shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
                       >
                         <span>
                           {t(
@@ -846,30 +919,30 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                               : settings.cmsTexts.orderNowBtnEn
                           )}
                         </span>
-                        <ArrowRight className="w-4 h-4" />
+                        <ArrowRight className="w-4 h-4 shrink-0" />
                       </button>
-                      <a
-                        href={waOrderHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm py-3.5 px-4 rounded-2xl border border-emerald-500/40 flex items-center justify-center gap-2 transition-all active:scale-95 whitespace-nowrap"
+
+                      <button
+                        onClick={handleAddToCart}
+                        className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black text-xs sm:text-sm py-3 sm:py-3.5 px-2.5 sm:px-4 rounded-2xl border border-slate-700 shadow-lg flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
                       >
-                        <MessageCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span>{t('WhatsApp-এ অর্ডার করুন', 'Order Via WhatsApp')}</span>
-                      </a>
+                        <ShoppingBag className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>{t('কার্টে রাখুন', 'Add to Cart')}</span>
+                      </button>
                     </div>
                   )}
 
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      onClick={handleAddToCart}
-                      disabled={isOutOfStock}
-                      className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 text-slate-800 dark:text-white font-bold text-xs py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <ShoppingBag className="w-3.5 h-3.5" />
-                      <span>{t('কার্টে রাখুন', 'Add to Cart')}</span>
-                    </button>
+                  <a
+                    href={waOrderHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm py-3 px-4 rounded-2xl border border-emerald-500/40 flex items-center justify-center gap-2 transition-all active:scale-95 whitespace-nowrap"
+                  >
+                    <MessageCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{t('WhatsApp-এ অর্ডার করুন', 'Order Via WhatsApp')}</span>
+                  </a>
 
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       onClick={() => setActiveTab('alert')}
                       className="bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-800 dark:text-emerald-300 font-bold text-xs py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-emerald-200 dark:border-emerald-800"

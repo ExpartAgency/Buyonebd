@@ -49,6 +49,7 @@ export const CustomerDashboardModal: React.FC = () => {
     setCustomerDashboardTab: setActiveTab,
     isCustomerLoggedIn,
     setIsCustomerLoginOpen,
+    hydrateCustomerAccountData,
     userNotifications,
     unreadNotificationsCount,
     markNotificationRead,
@@ -83,9 +84,11 @@ export const CustomerDashboardModal: React.FC = () => {
   } = useStore();
 
   const [notifFilter, setNotifFilter] = useState<'all' | UserNotificationCategory>('all');
+  const [orderStatusFilter, setOrderStatusFilter] = useState<'all' | 'pending' | 'processing' | 'shipped' | 'delivered'>('all');
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [isAddBalanceOpen, setIsAddBalanceOpen] = useState(false);
+  const [isSubmittingTopUp, setIsSubmittingTopUp] = useState(false);
   const [topUpMethod, setTopUpMethod] = useState<WalletTopUpMethod>('bkash');
   const [topUpAmount, setTopUpAmount] = useState<string>('500');
   const [topUpSender, setTopUpSender] = useState<string>(customerProfile.phone || '');
@@ -110,6 +113,12 @@ export const CustomerDashboardModal: React.FC = () => {
     });
   }, [customerProfile]);
 
+  useEffect(() => {
+    if (isCustomerDashboardOpen && isCustomerLoggedIn && customerProfile.phone) {
+      void hydrateCustomerAccountData(customerProfile.phone);
+    }
+  }, [isCustomerDashboardOpen, isCustomerLoggedIn, customerProfile.phone]);
+
   const [nowTick, setNowTick] = useState(Date.now());
   useEffect(() => {
     if (!isCustomerDashboardOpen) return;
@@ -131,10 +140,38 @@ export const CustomerDashboardModal: React.FC = () => {
 
   if (!isCustomerDashboardOpen) return null;
 
-  const pendingCount = orders.filter((o) => o.status === 'pending').length;
-  const confirmedCount = orders.filter((o) => o.status === 'ai_confirmed' || o.status === 'processing').length;
-  const shippedCount = orders.filter((o) => o.status === 'shipped').length;
-  const deliveredCount = orders.filter((o) => o.status === 'delivered').length;
+  const normalizedCustPhone = (customerProfile.phone || '').replace(/[^0-9]/g, '').slice(-11);
+  const normalizedCustEmail = (customerProfile.email || '').trim().toLowerCase();
+  const customerOrders = isCustomerLoggedIn
+    ? orders.filter((ord) => {
+        const ordPhone = (ord.customer?.phone || '').replace(/[^0-9]/g, '').slice(-11);
+        const ordEmail = String((ord.customer as { email?: string } | undefined)?.email || '').trim().toLowerCase();
+        if (normalizedCustPhone && ordPhone && ordPhone === normalizedCustPhone) return true;
+        if (normalizedCustEmail && ordEmail && ordEmail === normalizedCustEmail) return true;
+        return false;
+      })
+    : [];
+
+  const filteredCustomerOrders = customerOrders.filter((ord) => {
+    if (orderStatusFilter === 'all') return true;
+    if (orderStatusFilter === 'pending') return ord.status === 'pending';
+    if (orderStatusFilter === 'processing') return ord.status === 'ai_confirmed' || ord.status === 'processing';
+    if (orderStatusFilter === 'shipped') return ord.status === 'shipped';
+    if (orderStatusFilter === 'delivered') return ord.status === 'delivered';
+    return true;
+  });
+
+  const customerWalletTopUps = isCustomerLoggedIn
+    ? walletTopUps.filter((w) => {
+        const wPhone = (w.customerPhone || '').replace(/[^0-9]/g, '').slice(-11);
+        return normalizedCustPhone && wPhone === normalizedCustPhone;
+      })
+    : [];
+
+  const pendingCount = customerOrders.filter((o) => o.status === 'pending').length;
+  const confirmedCount = customerOrders.filter((o) => o.status === 'ai_confirmed' || o.status === 'processing').length;
+  const shippedCount = customerOrders.filter((o) => o.status === 'shipped').length;
+  const deliveredCount = customerOrders.filter((o) => o.status === 'delivered').length;
 
   const recentlyViewedProducts = (customerProfile.browsingHistory || [])
     .map((id) => visibleStoreProducts.find((p) => p.id === id))
@@ -186,49 +223,19 @@ export const CustomerDashboardModal: React.FC = () => {
         role="dialog"
         aria-modal="true"
       >
-        {/* Temu-Style Gradient Account Header */}
-        <div className="relative bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 p-4 sm:p-6 text-white border-b border-slate-800 shrink-0">
-          <div className="absolute top-3.5 right-3.5 flex items-center gap-2">
-            {isCustomerLoggedIn ? (
-              <button
-                onClick={logoutCustomer}
-                className="px-2.5 py-1.5 rounded-full bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                title={t('সাইন আউট', 'Sign Out')}
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{t('লগআউট', 'Logout')}</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  setIsCustomerDashboardOpen(false);
-                  setIsCustomerLoginOpen(true);
-                }}
-                className="px-2.5 py-1.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-              >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>{t('লগইন / রেজিস্টার', 'Sign In')}</span>
-              </button>
-            )}
-            <button
-              onClick={() => setIsCustomerDashboardOpen(false)}
-              className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
-              aria-label="Close"
-            >
-              <X className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pr-16 sm:pr-24">
-            <div className="flex items-center gap-3.5 min-w-0">
-              <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-amber-400 p-0.5 shadow-lg shadow-emerald-500/20 shrink-0">
+        {/* Responsive Gradient Account Header */}
+        <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 p-4 sm:p-6 text-white border-b border-slate-800 shrink-0">
+          {/* Top Identity Row + Non-overlapping Controls */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-amber-400 p-0.5 shadow-lg shadow-emerald-500/20 shrink-0">
                 <div className="w-full h-full rounded-[14px] bg-slate-900 flex items-center justify-center text-emerald-400">
-                  <User className="w-7 h-7" />
+                  <User className="w-6 h-6 sm:w-7 sm:h-7" />
                 </div>
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <h2 className="text-lg sm:text-xl font-black text-white truncate">
+                  <h2 className="text-base sm:text-xl font-black text-white truncate">
                     {isCustomerLoggedIn ? customerProfile.name : t('কাস্টমার অ্যাপ ড্যাশবোর্ড', 'Customer App Dashboard')}
                   </h2>
                   {isCustomerLoggedIn && customerProfile.username && (
@@ -237,7 +244,7 @@ export const CustomerDashboardModal: React.FC = () => {
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-400 flex items-center gap-2 mt-0.5 truncate">
+                <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5 truncate">
                   {isCustomerLoggedIn ? (
                     <>
                       <Phone className="w-3 h-3 text-emerald-400 shrink-0" />
@@ -246,81 +253,132 @@ export const CustomerDashboardModal: React.FC = () => {
                       <span className="truncate">{customerProfile.district}</span>
                     </>
                   ) : (
-                    <span>{t('অর্ডার আপডেট, প্রোমো অফার ও প্রাইস ড্রপ অ্যালার্ট', 'Order Status, Promotional Alerts & Price Drops')}</span>
+                    <span className="truncate">{t('অর্ডার আপডেট, প্রোমো অফার ও প্রাইস ড্রপ অ্যালার্ট', 'Order Status, Promotional Alerts & Price Drops')}</span>
                   )}
                 </p>
               </div>
             </div>
 
-            {/* Balance Cards: Lifetime Wallet + 48h Spin Bonus + Points */}
-            <div className="flex flex-wrap items-center gap-2 shrink-0 tabular-nums">
-              <div className="bg-white/10 backdrop-blur-md px-3 py-2 rounded-2xl border border-emerald-400/30 text-left">
-                <span className="text-[10px] uppercase font-bold text-emerald-300 block">
-                  {t('আজীবন ওয়ালেট', 'Lifetime Wallet')}
-                </span>
-                <span className="text-base sm:text-lg font-black text-white font-mono">
-                  ৳{customerWalletBalance.toLocaleString()}
-                </span>
-              </div>
-              <div className="bg-white/10 backdrop-blur-md px-3 py-2 rounded-2xl border border-sky-400/30 text-left">
-                <span className="text-[10px] uppercase font-bold text-sky-300 block">
-                  {t('৪৮ঘণ্টা স্পিন বোনাস', '48h Spin Bonus')}
-                </span>
-                <span className="text-base sm:text-lg font-black text-white font-mono">
-                  ৳{activeSpinBonus.toLocaleString()}
-                </span>
-              </div>
-              <div className="bg-white/10 backdrop-blur-md px-3 py-2 rounded-2xl border border-amber-400/30 text-left">
-                <span className="text-[10px] uppercase font-bold text-amber-300 block">
-                  {t('আমার পয়েন্টস', 'My Points')}
-                </span>
-                <span className="text-base sm:text-lg font-black text-amber-400 font-mono">
-                  {customerProfile.loyaltyPoints}
-                </span>
-              </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {isCustomerLoggedIn ? (
+                <button
+                  type="button"
+                  onClick={logoutCustomer}
+                  className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                  title={t('সাইন আউট', 'Sign Out')}
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{t('লগআউট', 'Logout')}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomerDashboardOpen(false);
+                    setIsCustomerLoginOpen(true);
+                  }}
+                  className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>{t('লগইন / রেজিস্টার', 'Sign In')}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsCustomerDashboardOpen(false)}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
             </div>
           </div>
 
-          {/* Temu-Style Order Pipeline Bar */}
-          <div className="mt-4 grid grid-cols-4 gap-1.5 sm:gap-2 bg-white/5 border border-white/10 rounded-2xl p-2 text-center">
+          {/* Balanced KPI Balance Strip (Clean 3-Column Grid below header controls) */}
+          <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3 tabular-nums">
+            <div className="bg-white/10 backdrop-blur-md px-3 py-2.5 rounded-2xl border border-emerald-400/30 text-left min-w-0">
+              <span className="text-[10px] uppercase font-bold text-emerald-300 block truncate">
+                {t('আজীবন ওয়ালেট', 'Lifetime Wallet')}
+              </span>
+              <span className="text-sm sm:text-lg font-black text-white font-mono">
+                ৳{customerWalletBalance.toLocaleString()}
+              </span>
+            </div>
+            <div className="bg-white/10 backdrop-blur-md px-3 py-2.5 rounded-2xl border border-sky-400/30 text-left min-w-0">
+              <span className="text-[10px] uppercase font-bold text-sky-300 block truncate">
+                {t('৪৮ঘণ্টা স্পিন বোনাস', '48h Spin Bonus')}
+              </span>
+              <span className="text-sm sm:text-lg font-black text-white font-mono">
+                ৳{activeSpinBonus.toLocaleString()}
+              </span>
+            </div>
+            <div className="bg-white/10 backdrop-blur-md px-3 py-2.5 rounded-2xl border border-amber-400/30 text-left min-w-0">
+              <span className="text-[10px] uppercase font-bold text-amber-300 block truncate">
+                {t('আমার পয়েন্টস', 'My Points')}
+              </span>
+              <span className="text-sm sm:text-lg font-black text-amber-400 font-mono">
+                {customerProfile.loyaltyPoints}
+              </span>
+            </div>
+          </div>
+
+          {/* Order Pipeline Bar */}
+          <div className="mt-3 grid grid-cols-4 gap-1.5 sm:gap-2 bg-white/5 border border-white/10 rounded-2xl p-2 text-center">
             <button
-              onClick={() => setActiveTab('orders')}
+              type="button"
+              onClick={() => {
+                setOrderStatusFilter('pending');
+                setActiveTab('orders');
+              }}
               className="py-1.5 px-1 rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
             >
               <span className="text-sm sm:text-base font-black text-amber-400 block font-mono">{pendingCount}</span>
-              <span className="text-[10px] text-slate-300 font-semibold block">{t('পেন্ডিং', 'Unpaid/New')}</span>
+              <span className="text-[10px] text-slate-300 font-semibold block truncate">{t('পেন্ডিং', 'Pending')}</span>
             </button>
             <button
-              onClick={() => setActiveTab('orders')}
+              type="button"
+              onClick={() => {
+                setOrderStatusFilter('processing');
+                setActiveTab('orders');
+              }}
               className="py-1.5 px-1 rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
             >
               <span className="text-sm sm:text-base font-black text-emerald-400 block font-mono">{confirmedCount}</span>
-              <span className="text-[10px] text-slate-300 font-semibold block">{t('প্রসেসিং', 'Processing')}</span>
+              <span className="text-[10px] text-slate-300 font-semibold block truncate">{t('প্রসেসিং', 'Processing')}</span>
             </button>
             <button
-              onClick={() => setActiveTab('orders')}
+              type="button"
+              onClick={() => {
+                setOrderStatusFilter('shipped');
+                setActiveTab('orders');
+              }}
               className="py-1.5 px-1 rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
             >
               <span className="text-sm sm:text-base font-black text-sky-400 block font-mono">{shippedCount}</span>
-              <span className="text-[10px] text-slate-300 font-semibold block">{t('শিপড', 'Shipped')}</span>
+              <span className="text-[10px] text-slate-300 font-semibold block truncate">{t('শিপড', 'Shipped')}</span>
             </button>
             <button
-              onClick={() => setActiveTab('orders')}
+              type="button"
+              onClick={() => {
+                setOrderStatusFilter('delivered');
+                setActiveTab('orders');
+              }}
               className="py-1.5 px-1 rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
             >
               <span className="text-sm sm:text-base font-black text-teal-300 block font-mono">{deliveredCount}</span>
-              <span className="text-[10px] text-slate-300 font-semibold block">{t('ডেলিভার্ড', 'Delivered')}</span>
+              <span className="text-[10px] text-slate-300 font-semibold block truncate">{t('ডেলিভার্ড', 'Delivered')}</span>
             </button>
           </div>
 
           {/* Sub-Navigation Tabs */}
-          <div className="flex items-center gap-1.5 mt-4 pt-3 border-t border-slate-800/80 overflow-x-auto scrollbar-none text-xs font-bold">
+          <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-800/80 overflow-x-auto pb-1 text-xs font-bold">
             <button
+              type="button"
               onClick={() => setActiveTab('notifications')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
+              className={`px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'notifications'
                   ? 'bg-emerald-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  : 'text-slate-300 hover:text-white bg-white/5 hover:bg-white/10'
               }`}
             >
               <Bell className="w-3.5 h-3.5" />
@@ -332,55 +390,60 @@ export const CustomerDashboardModal: React.FC = () => {
               )}
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('wallet')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
+              className={`px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'wallet'
                   ? 'bg-emerald-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  : 'text-slate-300 hover:text-white bg-white/5 hover:bg-white/10'
               }`}
             >
               <Wallet className="w-3.5 h-3.5" />
               <span>{t('ওয়ালেট ও কুপন', 'Spin Wallet & Coupons')}</span>
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('orders')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
+              className={`px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'orders'
                   ? 'bg-emerald-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  : 'text-slate-300 hover:text-white bg-white/5 hover:bg-white/10'
               }`}
             >
               <Package className="w-3.5 h-3.5" />
-              <span>{t('আমার অর্ডার', 'My Orders')} ({orders.length})</span>
+              <span>{t('অর্ডার হিস্ট্রি', 'Order History')} ({customerOrders.length})</span>
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('history')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
+              className={`px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'history'
                   ? 'bg-emerald-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  : 'text-slate-300 hover:text-white bg-white/5 hover:bg-white/10'
               }`}
             >
               <Heart className="w-3.5 h-3.5" />
               <span>{t('রিসেন্ট ও উইশলিস্ট', 'Viewed & Saved')}</span>
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('alerts')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
+              className={`px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'alerts'
                   ? 'bg-emerald-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  : 'text-slate-300 hover:text-white bg-white/5 hover:bg-white/10'
               }`}
             >
               <TrendingDown className="w-3.5 h-3.5" />
               <span>{t('প্রাইস অ্যালার্ট', 'Price Alerts')}</span>
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('profile')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
+              className={`px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'profile'
                   ? 'bg-emerald-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  : 'text-slate-300 hover:text-white bg-white/5 hover:bg-white/10'
               }`}
             >
               <MapPin className="w-3.5 h-3.5" />
@@ -760,8 +823,9 @@ export const CustomerDashboardModal: React.FC = () => {
                   : enabledMethods[0] || 'bkash';
                 const activeAccount = methodsMap[activeMethodKey];
 
-                const handleTopUpSubmit = (e: React.FormEvent) => {
+                const handleTopUpSubmit = async (e: React.FormEvent) => {
                   e.preventDefault();
+                  if (isSubmittingTopUp) return;
                   const amt = Number(topUpAmount);
                   if (!amt || amt <= 0 || !topUpSender.trim() || !topUpTrxId.trim()) {
                     addToast(
@@ -771,17 +835,19 @@ export const CustomerDashboardModal: React.FC = () => {
                     );
                     return;
                   }
-                  const res = requestWalletTopUp({
-                    method: activeMethodKey,
-                    amount: amt,
-                    senderNumber: topUpSender,
-                    trxId: topUpTrxId
-                  });
-                  if (res.success) {
-                    setTopUpTrxId('');
-                    if (res.status === 'approved') {
-                      audioEngine.playSuccessChime();
+                  setIsSubmittingTopUp(true);
+                  try {
+                    const res = await requestWalletTopUp({
+                      method: activeMethodKey,
+                      amount: amt,
+                      senderNumber: topUpSender,
+                      trxId: topUpTrxId
+                    });
+                    if (res.success) {
+                      setTopUpTrxId('');
                     }
+                  } finally {
+                    setIsSubmittingTopUp(false);
                   }
                 };
 
@@ -795,8 +861,8 @@ export const CustomerDashboardModal: React.FC = () => {
                         </h4>
                         <p className="text-[11px] text-slate-500">
                           {t(
-                            `সর্বনিম্ন ৳${wCfg?.minTopUp ?? 50} - সর্বোচ্চ ৳${(wCfg?.maxTopUp ?? 50000).toLocaleString()} | ব্যাকএন্ড অনুমোদনের সাথে সাথে ব্যালেন্স যুক্ত হবে`,
-                            `Min ৳${wCfg?.minTopUp ?? 50} - Max ৳${(wCfg?.maxTopUp ?? 50000).toLocaleString()} | Controlled & verified by Admin Desk`
+                            `সর্বনিম্ন ৳${wCfg?.minTopUp ?? 50} - সর্বোচ্চ ৳${(wCfg?.maxTopUp ?? 50000).toLocaleString()} | অ্যাডমিন ড্যাশবোর্ড থেকে যাচাই ও অনুমোদনের পর ব্যালেন্স যুক্ত হবে`,
+                            `Min ৳${wCfg?.minTopUp ?? 50} - Max ৳${(wCfg?.maxTopUp ?? 50000).toLocaleString()} | Balance is added only after Admin Dashboard verification`
                           )}
                         </p>
                       </div>
@@ -925,22 +991,27 @@ export const CustomerDashboardModal: React.FC = () => {
 
                         <button
                           type="submit"
-                          className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                          disabled={isSubmittingTopUp}
+                          className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow cursor-pointer disabled:opacity-60"
                         >
                           <Send className="w-3.5 h-3.5" />
-                          <span>{t('ব্যালেন্স অ্যাড রিকোয়েস্ট পাঠান', 'Submit Add Balance Request')}</span>
+                          <span>
+                            {isSubmittingTopUp
+                              ? t('পাঠানো হচ্ছে...', 'Submitting...')
+                              : t('ব্যালেন্স অ্যাড রিকোয়েস্ট পাঠান', 'Submit Add Balance Request')}
+                          </span>
                         </button>
                       </form>
                     )}
 
                     {/* Recent Customer Top-Up Requests */}
-                    {walletTopUps.length > 0 && (
+                    {customerWalletTopUps.length > 0 && (
                       <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
                         <span className="text-[11px] font-bold text-slate-500 block">
                           {t('সাম্প্রতিক ব্যালেন্স রিকোয়েস্ট:', 'Recent Add Balance History:')}
                         </span>
                         <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                          {walletTopUps.slice(0, 5).map((req) => (
+                          {customerWalletTopUps.slice(0, 5).map((req) => (
                             <div
                               key={req.id}
                               className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs"
@@ -1184,87 +1255,207 @@ export const CustomerDashboardModal: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 2: Orders */}
-          {activeTab === 'orders' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="font-black text-sm text-slate-900 dark:text-white">
-                  {t('আপনার অর্ডারসমূহ', 'Your Orders')}
-                </h3>
-                <span className="text-xs text-slate-500">
-                  {t(`মোট ${orders.length} টি অর্ডার`, `Total ${orders.length} Orders`)}
-                </span>
-              </div>
+          {/* TAB 2: Customer-Scoped Order History & 1-Click Re-Order */}
+          {activeTab === 'orders' && (() => {
+            const getStatusBadge = (st: string) => {
+              if (st === 'delivered') {
+                return {
+                  label: t('ডেলিভার্ড', 'Delivered'),
+                  cls: 'bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800'
+                };
+              }
+              if (st === 'shipped') {
+                return {
+                  label: t('শিপড', 'Shipped'),
+                  cls: 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
+                };
+              }
+              if (st === 'processing' || st === 'ai_confirmed') {
+                return {
+                  label: t('প্রসেসিং', 'Processing'),
+                  cls: 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                };
+              }
+              if (st === 'cancelled' || st === 'returned') {
+                return {
+                  label: t('বাতিল / রিটার্ন', 'Cancelled'),
+                  cls: 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                };
+              }
+              return {
+                label: t('পেন্ডিং', 'Pending'),
+                cls: 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+              };
+            };
 
-              {orders.length === 0 ? (
-                <div className="text-center py-10 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
-                  <Package className="w-10 h-10 text-slate-400 mx-auto mb-2" />
-                  <p className="text-sm font-bold text-slate-600 dark:text-slate-300">
-                    {t('এখনও কোনো অর্ডার করেননি', 'No orders placed yet')}
-                  </p>
+            return (
+              <div className="space-y-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-black text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                    <Package className="w-4 h-4 text-emerald-600" />
+                    <span>{t('অর্ডার হিস্ট্রি ও রি-অর্ডার', 'Order History & Re-Order')}</span>
+                  </h3>
+                  <span className="text-xs font-semibold text-slate-500 tabular-nums">
+                    {t(`মোট ${customerOrders.length} টি অর্ডার`, `${customerOrders.length} Order(s)`)}
+                  </span>
                 </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {orders.map((ord) => (
-                    <div
-                      key={ord.id}
-                      className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-emerald-400 transition-colors"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono font-black text-xs text-emerald-600 dark:text-emerald-400">
-                            #{ord.id}
-                          </span>
-                          <span className="text-[11px] text-slate-400">
-                            {new Date(ord.createdAt).toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US')}
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 uppercase">
-                            {ord.status.replace('_', ' ')}
-                          </span>
-                        </div>
-                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-1 line-clamp-2">
-                          {ord.items.map((i) => `${lang === 'bn' ? (i.productTitleBn || i.productTitle) : (i.productTitle || i.productTitleBn)} ×${i.quantity}`).join(', ')}
-                        </p>
-                        <div className="flex items-center gap-2 text-xs font-mono font-black text-slate-900 dark:text-white mt-1">
-                          <span>৳{ord.pricing.total.toLocaleString()}</span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                            {ord.payment.method.toUpperCase()}
-                          </span>
-                        </div>
-                      </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const matchedFirst = products.find((p) => p.id === ord.items?.[0]?.productId);
-                            ord.items?.forEach((it) => {
-                              const found = products.find((p) => p.id === it.productId);
-                              if (found) addToCart(found, it.quantity, it.selectedColor, it.selectedSize, it.selectedAttributes);
-                            });
-                            setIsCustomerDashboardOpen(false);
-                            openOneClickCheckout(ord.items?.length === 1 && matchedFirst ? matchedFirst : null);
-                          }}
-                          className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          <span>{t('আবার অর্ডার', 'Re-Order')}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleTrackOrder(ord.courier.trackingCode || ord.id)}
-                          className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
-                        >
-                          <Truck className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>{t('লাইভ ট্র্যাকিং', 'Live Track')}</span>
-                        </button>
-                      </div>
+                {!isCustomerLoggedIn ? (
+                  <div className="text-center py-10 px-4 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-3">
+                    <Package className="w-10 h-10 text-emerald-500 mx-auto" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-black text-slate-800 dark:text-white">
+                        {t('আপনার অর্ডার হিস্ট্রি দেখতে সাইন ইন করুন', 'Sign in to view your Order History')}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {t(
+                          'আপনার মোবাইল নম্বর দিয়ে লগইন করলে সকল পূর্বের অর্ডার, স্ট্যাটাস এবং ১-ক্লিকে রি-অর্ডার দেখতে পাবেন।',
+                          'Sign in with your phone or email to view past orders, live status, and 1-click re-order.'
+                        )}
+                      </p>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomerDashboardOpen(false);
+                        setIsCustomerLoginOpen(true);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <LogIn className="w-3.5 h-3.5" />
+                      <span>{t('লগইন / রেজিস্টার করুন', 'Sign In / Register')}</span>
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {/* Filter Chips */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                      {(
+                        [
+                          { id: 'all', label: t(`সব (${customerOrders.length})`, `All (${customerOrders.length})`) },
+                          { id: 'pending', label: t(`পেন্ডিং (${pendingCount})`, `Pending (${pendingCount})`) },
+                          { id: 'processing', label: t(`প্রসেসিং (${confirmedCount})`, `Processing (${confirmedCount})`) },
+                          { id: 'shipped', label: t(`শিপড (${shippedCount})`, `Shipped (${shippedCount})`) },
+                          { id: 'delivered', label: t(`ডেলিভার্ড (${deliveredCount})`, `Delivered (${deliveredCount})`) }
+                        ] as const
+                      ).map((chip) => (
+                        <button
+                          key={chip.id}
+                          type="button"
+                          onClick={() => setOrderStatusFilter(chip.id)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer border transition-colors ${
+                            orderStatusFilter === chip.id
+                              ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm'
+                              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-400'
+                          }`}
+                        >
+                          {chip.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {filteredCustomerOrders.length === 0 ? (
+                      <div className="text-center py-10 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
+                        <Package className="w-10 h-10 text-slate-400 mx-auto mb-2" />
+                        <p className="text-sm font-bold text-slate-600 dark:text-slate-300">
+                          {t('এই ক্যাটাগরিতে কোনো অর্ডার নেই', 'No matching orders found')}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {filteredCustomerOrders.map((ord) => {
+                          const badge = getStatusBadge(ord.status);
+                          const firstThumb = products.find((p) => p.id === ord.items?.[0]?.productId)?.images?.[0];
+                          return (
+                            <div
+                              key={ord.id}
+                              className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-emerald-400 transition-colors"
+                            >
+                              <div className="flex items-start gap-3 min-w-0">
+                                {firstThumb ? (
+                                  <img
+                                    src={firstThumb}
+                                    alt=""
+                                    className="w-12 h-12 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                                  />
+                                ) : (
+                                  <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                                    <Package className="w-5 h-5 text-slate-400" />
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-mono font-black text-xs text-emerald-600 dark:text-emerald-400">
+                                      #{ord.id}
+                                    </span>
+                                    <span className="text-[11px] text-slate-400">
+                                      {new Date(ord.createdAt).toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US')}
+                                    </span>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${badge.cls}`}>
+                                      {badge.label}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-1 line-clamp-2">
+                                    {ord.items
+                                      .map((i) => `${lang === 'bn' ? (i.productTitleBn || i.productTitle) : (i.productTitle || i.productTitleBn)} ×${i.quantity}`)
+                                      .join(', ')}
+                                  </p>
+                                  <div className="flex items-center gap-2 text-xs font-mono font-black text-slate-900 dark:text-white mt-1 tabular-nums">
+                                    <span>৳{ord.pricing.total.toLocaleString()}</span>
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                      {ord.payment.method.toUpperCase()}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const matchedItems = (ord.items || [])
+                                      .map((it) => ({ item: it, prod: products.find((p) => p.id === it.productId) }))
+                                      .filter((x) => Boolean(x.prod));
+                                    if (matchedItems.length === 0) {
+                                      addToast(
+                                        'warning',
+                                        t('পণ্য পাওয়া যায়নি', 'Products Unavailable'),
+                                        t('এই অর্ডারের পণ্য বর্তমানে স্টকে বা ক্যাটালগে নেই।', 'Items from this order are currently unavailable.')
+                                      );
+                                      return;
+                                    }
+                                    matchedItems.forEach(({ item, prod }) => {
+                                      if (prod) {
+                                        addToCart(prod, item.quantity, item.selectedColor, item.selectedSize, item.selectedAttributes);
+                                      }
+                                    });
+                                    setIsCustomerDashboardOpen(false);
+                                    openOneClickCheckout(matchedItems.length === 1 ? matchedItems[0].prod! : null);
+                                  }}
+                                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                                >
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                  <span>{t('আবার অর্ডার', 'Re-Order')}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTrackOrder(ord.courier.trackingCode || ord.id)}
+                                  className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                                >
+                                  <Truck className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span>{t('লাইভ ট্র্যাকিং', 'Live Track')}</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {/* TAB 3: Recently Viewed & Wishlist (Temu Browsing History) */}
           {activeTab === 'history' && (

@@ -14,6 +14,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
+import { safeHref } from '../../utils/safeUrl';
 import { AffiliateAccount } from '../../types';
 import { BulkSectionShell, BulkCommandBar } from './BulkSectionShell';
 
@@ -363,7 +364,7 @@ export const AffiliateAdminView: React.FC = () => {
                     <td className="py-3 px-3">
                       {aff.channelUrl ? (
                         <a
-                          href={aff.channelUrl.startsWith('http') ? aff.channelUrl : `https://${aff.channelUrl}`}
+                          href={safeHref(aff.channelUrl)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-emerald-400 hover:underline inline-flex items-center gap-1"

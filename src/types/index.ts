@@ -1081,6 +1081,8 @@ export interface WalletTopUpRequest {
   adminNote?: string;
   createdAt: string;
   processedAt?: string;
+  decidedAt?: string;
+  decidedBy?: string;
   activityLog?: WalletTopUpActivity[];
 }
 

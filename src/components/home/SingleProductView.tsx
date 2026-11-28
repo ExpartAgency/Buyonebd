@@ -27,7 +27,8 @@ import {
   Sparkles,
   Heart,
   Scale,
-  MapPin
+  MapPin,
+  X
 } from 'lucide-react';
 import { Product } from '../../types';
 import { useStore } from '../../context/StoreContext';
@@ -182,6 +183,16 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
 
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [mediaMode, setMediaMode] = useState<'images' | 'video'>('images');
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isLightboxOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsLightboxOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isLightboxOpen]);
   const [selectedColor, setSelectedColor] = useState(product.colors?.[0] || '');
   const [selectedSize, setSelectedSize] = useState(product.sizes?.[0] || '');
   const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>(() => {
@@ -574,11 +585,11 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
               </div>
             ) : (
               <div
-                className="relative aspect-square rounded-3xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-800 cursor-crosshair select-none group"
+                className="relative aspect-square rounded-3xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-800 cursor-zoom-in select-none group"
                 onMouseEnter={() => setIsZoomed(true)}
                 onMouseLeave={() => setIsZoomed(false)}
                 onMouseMove={handleMouseMove}
-                onClick={() => setIsZoomed(!isZoomed)}
+                onClick={() => setIsLightboxOpen(true)}
               >
                 {(images[selectedImageIndex]?.trim() || images[0]?.trim()) ? (
                   <img
@@ -586,7 +597,7 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     alt={lang === 'bn' ? product.titleBn : product.title}
                     referrerPolicy="no-referrer"
                     className={`w-full h-full object-cover transition-transform duration-200 ${
-                      isZoomed ? 'scale-150' : 'scale-100'
+                      isZoomed ? 'scale-125' : 'scale-100'
                     }`}
                     style={isZoomed ? { transformOrigin: `${zoomPos.x}% ${zoomPos.y}%` } : undefined}
                   />
@@ -594,20 +605,20 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   <div className="w-full h-full bg-slate-200 dark:bg-slate-800" />
                 )}
 
-                {/* Top Left Discount Badge */}
+                {/* Top Left Discount Badge (Compact) */}
                 {discountPercent > 0 && (
-                  <div className="absolute top-3 left-3 sm:top-4 sm:left-4 pointer-events-none">
-                    <span className="inline-flex bg-emerald-600 text-white text-[11px] font-black px-2.5 py-1 rounded-xl shadow-md tabular-nums">
+                  <div className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3 pointer-events-none">
+                    <span className="inline-flex bg-emerald-600 text-white text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-lg shadow-sm tabular-nums">
                       -{discountPercent}% {t('ছাড়', 'OFF')}
                     </span>
                   </div>
                 )}
 
-                {/* Top Right Flash Deal Badge */}
+                {/* Top Right Flash Deal Badge (Compact) */}
                 {isFlashActive && (
-                  <div className="absolute top-3 right-3 sm:top-4 sm:right-4 pointer-events-none">
-                    <span className="bg-rose-600 text-white text-[11px] font-bold px-2.5 py-1 rounded-xl shadow-md flex items-center gap-1">
-                      <Zap className="w-3 h-3 fill-amber-300 text-amber-300" />
+                  <div className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 pointer-events-none">
+                    <span className="bg-rose-600 text-white text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-lg shadow-sm flex items-center gap-1">
+                      <Zap className="w-2.5 h-2.5 fill-amber-300 text-amber-300" />
                       <span>{t('ফ্ল্যাশ ডিল', 'FLASH DEAL')}</span>
                     </span>
                   </div>
@@ -639,14 +650,14 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                   </>
                 )}
 
-                {/* Bottom Counter & Zoom Hint */}
-                <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between pointer-events-none">
-                  <span className="bg-black/60 backdrop-blur-md text-white text-[10px] font-mono font-bold px-2.5 py-1 rounded-lg tabular-nums">
+                {/* Bottom Counter & Click-to-View Hint */}
+                <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none">
+                  <span className="bg-black/60 backdrop-blur-md text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg tabular-nums">
                     {selectedImageIndex + 1} / {images.length}
                   </span>
-                  <span className="bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1.5">
-                    <ZoomIn className="w-3.5 h-3.5" />
-                    <span>{t('জুম করতে স্পর্শ করুন', 'Hover / Tap to zoom')}</span>
+                  <span className="bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
+                    <ZoomIn className="w-3 h-3" />
+                    <span>{t('বড় করে দেখতে ক্লিক করুন', 'Click to view full image')}</span>
                   </span>
                 </div>
               </div>
@@ -1111,14 +1122,14 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                     </span>
                   </button>
                 ) : (
-                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2.5 min-w-0">
+                  <div className="flex-1 grid grid-cols-2 gap-2 sm:gap-2.5 min-w-0">
                     <button
                       type="button"
                       onClick={() => openOneClickCheckout(product)}
                       style={{ backgroundColor: settings.themeColors?.primary || '#059669' }}
-                      className="w-full py-3.5 sm:py-4 px-5 hover:opacity-95 text-white font-black text-sm rounded-2xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
+                      className="w-full py-3 sm:py-4 px-2.5 sm:px-5 hover:opacity-95 text-white font-black text-xs sm:text-sm rounded-2xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
                     >
-                      <Zap className="w-5 h-5 text-amber-300 fill-amber-300 shrink-0" />
+                      <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300 fill-amber-300 shrink-0" />
                       <span>
                         {t(
                           settings.cmsTexts?.orderNowBtnBn || 'এখনই কিনুন',
@@ -1134,9 +1145,9 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
                       onClick={() => {
                         addToCart(product, quantity, selectedColor, selectedSize, selectedAttributes);
                       }}
-                      className="w-full py-3.5 sm:py-4 px-5 bg-slate-900 hover:bg-slate-800 text-white font-black text-sm rounded-2xl border border-slate-700 shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
+                      className="w-full py-3 sm:py-4 px-2.5 sm:px-5 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs sm:text-sm rounded-2xl border border-slate-700 shadow-lg flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
                     >
-                      <ShoppingBag className="w-5 h-5 text-emerald-400 shrink-0" />
+                      <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400 shrink-0" />
                       <span>{t('কার্টে রাখুন', 'Add to Cart')}</span>
                     </button>
                   </div>
@@ -1860,6 +1871,72 @@ export const SingleProductView: React.FC<SingleProductViewProps> = ({ product, o
       )}
 
       <WaitlistModal product={waitlistProduct} onClose={() => setWaitlistProduct(null)} />
+
+      {/* Fullscreen Image Lightbox Modal */}
+      {isLightboxOpen && (
+        <div
+          className="fixed inset-0 z-[100] bg-slate-950/92 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-fade-in"
+          onClick={() => setIsLightboxOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={displayTitle}
+        >
+          <div className="w-full max-w-4xl flex items-center justify-between text-white mb-3 px-1">
+            <span className="text-xs sm:text-sm font-bold truncate pr-4">{displayTitle}</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs font-mono bg-white/10 px-2.5 py-1 rounded-lg tabular-nums">
+                {selectedImageIndex + 1} / {images.length}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsLightboxOpen(false);
+                }}
+                aria-label={t('বন্ধ করুন', 'Close')}
+                className="p-2 rounded-full bg-white/15 hover:bg-white/25 text-white cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div
+            className="relative max-w-4xl w-full flex items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {(images[selectedImageIndex]?.trim() || images[0]?.trim()) && (
+              <img
+                src={images[selectedImageIndex]?.trim() || images[0]?.trim()}
+                alt={displayTitle}
+                referrerPolicy="no-referrer"
+                className="max-h-[78vh] w-auto max-w-full object-contain rounded-2xl shadow-2xl border border-white/10 bg-white/5"
+              />
+            )}
+
+            {images.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setSelectedImageIndex((i) => (i - 1 + images.length) % images.length)}
+                  className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 text-slate-900 shadow-lg flex items-center justify-center hover:scale-105 cursor-pointer"
+                  aria-label="Previous image"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedImageIndex((i) => (i + 1) % images.length)}
+                  className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 text-slate-900 shadow-lg flex items-center justify-center hover:scale-105 cursor-pointer"
+                  aria-label="Next image"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

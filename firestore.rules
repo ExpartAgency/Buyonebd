@@ -365,7 +365,7 @@ service cloud.firestore {
     }
 
     match /reviews/{reviewId} {
-      allow get: if isValidId(reviewId);
+      allow get: if resource.data.isApproved == true || isAdmin();
       allow list: if resource.data.isApproved == true || isAdmin();
       allow create: if isValidId(reviewId)
         && isValidReviewPayload(incoming())

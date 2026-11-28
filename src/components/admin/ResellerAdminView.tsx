@@ -21,6 +21,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
+import { safeHref } from '../../utils/safeUrl';
 import { ResellerAccount, ResellerPayoutRequest } from '../../types';
 import { BulkSectionShell, BulkCommandBar } from './BulkSectionShell';
 
@@ -480,7 +481,7 @@ export const ResellerAdminView: React.FC<ResellerAdminViewProps> = ({ onOpenWhat
                       <p className="text-slate-200">{r.district}</p>
                       {r.fbPageUrl && (
                         <a
-                          href={r.fbPageUrl.startsWith('http') ? r.fbPageUrl : `https://${r.fbPageUrl}`}
+                          href={safeHref(r.fbPageUrl)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-[11px] text-emerald-400 hover:underline inline-flex items-center gap-1"

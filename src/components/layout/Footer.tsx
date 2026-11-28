@@ -1,6 +1,7 @@
 import React from 'react';
 import { Phone, Mail, MapPin, ShieldCheck, MessageCircle, Globe, Sparkles } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
+import { safeHref } from '../../utils/safeUrl';
 
 export const Footer: React.FC = () => {
   const {
@@ -35,7 +36,10 @@ export const Footer: React.FC = () => {
     } else if (actionType === 'store') {
       goHome();
     } else if (url) {
-      window.open(url, '_blank', 'noopener,noreferrer');
+      const target = safeHref(url, '');
+      if (target && target !== '#') {
+        window.open(target, '_blank', 'noopener,noreferrer');
+      }
     }
   };
 
@@ -86,7 +90,7 @@ export const Footer: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2 pt-1">
               {footer?.facebookUrl && (
                 <a
-                  href={footer.facebookUrl}
+                  href={safeHref(footer.facebookUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-blue-500 text-slate-300 hover:text-blue-400 text-[11px] font-bold transition-colors"
@@ -96,7 +100,7 @@ export const Footer: React.FC = () => {
               )}
               {footer?.instagramUrl && (
                 <a
-                  href={footer.instagramUrl}
+                  href={safeHref(footer.instagramUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-pink-500 text-slate-300 hover:text-pink-400 text-[11px] font-bold transition-colors"
@@ -106,7 +110,7 @@ export const Footer: React.FC = () => {
               )}
               {footer?.tiktokUrl && (
                 <a
-                  href={footer.tiktokUrl}
+                  href={safeHref(footer.tiktokUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500 text-slate-300 hover:text-cyan-400 text-[11px] font-bold transition-colors"
@@ -116,7 +120,7 @@ export const Footer: React.FC = () => {
               )}
               {footer?.youtubeUrl && (
                 <a
-                  href={footer.youtubeUrl}
+                  href={safeHref(footer.youtubeUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-rose-500 text-slate-300 hover:text-rose-400 text-[11px] font-bold transition-colors"

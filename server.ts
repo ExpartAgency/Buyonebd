@@ -2,6 +2,8 @@ import express from 'express';
 import http from 'http';
 import https from 'https';
 import crypto from 'crypto';
+import dns from 'dns';
+import net from 'net';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
@@ -27,8 +29,15 @@ if (!fs.existsSync(GENERATED_MEDIA_DIR)) {
 const app = express();
 app.disable('x-powered-by');
 app.use('/generated-media', express.static(GENERATED_MEDIA_DIR, { maxAge: '30d', immutable: true }));
-const port = parseInt(process.env.PORT || '3000', 10);
 const isProd = process.env.NODE_ENV === 'production';
+const nginxPort = process.env.NGINX_PORT ? parseInt(process.env.NGINX_PORT, 10) : NaN;
+const envPort = process.env.PORT ? parseInt(process.env.PORT, 10) : NaN;
+const port =
+  isProd && Number.isNaN(nginxPort) && !Number.isNaN(envPort)
+    ? envPort
+    : !Number.isNaN(envPort) && envPort !== nginxPort && envPort !== 8080
+    ? envPort
+    : parseInt(process.env.DEFAULT_APP_PORT || '3000', 10);
 
 // Security Headers Middleware (iframe-compatible for preview & hardened for production)
 app.use((req, res, next) => {
@@ -148,6 +157,160 @@ app.use('/api/store/sync', createRateLimiter('store_sync', 90, 60 * 1000));
 app.use('/api/ai', createRateLimiter('ai_endpoints', 35, 60 * 1000));
 app.use('/api/agent', createRateLimiter('agent', 40, 60 * 1000));
 app.use('/api/admin', createRateLimiter('admin_auth', 25, 60 * 1000));
+app.use('/api/wallet', createRateLimiter('wallet', 35, 60 * 1000));
+
+const ADMIN_SESSION_SECRET =
+  (process.env.ADMIN_SESSION_SECRET && process.env.ADMIN_SESSION_SECRET.trim()) ||
+  crypto.randomBytes(32).toString('hex');
+
+const FIREBASE_APPLET_CONFIG = (() => {
+  try {
+    const cfgPath = path.join(__dirname, 'firebase-applet-config.json');
+    if (fs.existsSync(cfgPath)) {
+      return JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    }
+  } catch {}
+  return {};
+})();
+
+function hashAdminPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+function verifyPasswordScrypt(password: string, stored: string): boolean {
+  try {
+    const [salt, expectedHex] = String(stored || '').split(':');
+    if (!salt || !expectedHex) return false;
+    const derived = crypto.scryptSync(password, salt, 64);
+    const expected = Buffer.from(expectedHex, 'hex');
+    if (derived.length !== expected.length) return false;
+    return crypto.timingSafeEqual(derived, expected);
+  } catch {
+    return false;
+  }
+}
+
+function safeEqualStrings(a: string, b: string): boolean {
+  const hA = crypto.createHash('sha256').update(String(a)).digest();
+  const hB = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(hA, hB);
+}
+
+function signAdminSessionToken(email: string, ttlMs: number): string {
+  const payload = JSON.stringify({ email, exp: Date.now() + ttlMs });
+  const encoded = Buffer.from(payload).toString('base64url');
+  const sig = crypto.createHmac('sha256', ADMIN_SESSION_SECRET).update(encoded).digest('base64url');
+  return `${encoded}.${sig}`;
+}
+
+function verifyAdminSessionToken(token: string): { email: string; exp: number } | null {
+  try {
+    const raw = String(token || '').trim();
+    const parts = raw.split('.');
+    if (parts.length !== 2) return null;
+    const [encoded, providedSig] = parts;
+    if (!encoded || !providedSig) return null;
+    const expectedSig = crypto.createHmac('sha256', ADMIN_SESSION_SECRET).update(encoded).digest('base64url');
+    const a = Buffer.from(providedSig);
+    const b = Buffer.from(expectedSig);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    if (!decoded || typeof decoded.exp !== 'number' || decoded.exp <= Date.now()) return null;
+    return { email: String(decoded.email || 'admin'), exp: decoded.exp };
+  } catch {
+    return null;
+  }
+}
+
+function extractAdminToken(req: express.Request): string {
+  const auth = String(req.headers.authorization || '').trim();
+  if (/^Bearer\s+/i.test(auth)) {
+    return auth.replace(/^Bearer\s+/i, '').trim();
+  }
+  const hdr = req.headers['x-admin-token'];
+  return typeof hdr === 'string' ? hdr.trim() : '';
+}
+
+function isVerifiedAdminRequest(req: express.Request): boolean {
+  const token = extractAdminToken(req);
+  if (!token) return false;
+  return Boolean(verifyAdminSessionToken(token));
+}
+
+function requireAdminAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  if (!isVerifiedAdminRequest(req)) {
+    return res.status(401).json({
+      success: false,
+      error: 'Admin authentication required.'
+    });
+  }
+  return next();
+}
+
+function isPrivateOrReservedIp(ipRaw: string): boolean {
+  const ip = String(ipRaw || '').trim().replace(/^::ffff:/i, '').toLowerCase();
+  if (!ip) return true;
+  if (ip === 'localhost' || ip === '::1' || ip === '::' || ip === '0.0.0.0') return true;
+  const v4Match = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4Match) {
+    const [a, b] = [Number(v4Match[1]), Number(v4Match[2])];
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    if (a >= 224) return true;
+    return false;
+  }
+  if (ip.startsWith('fe80:') || ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('::1')) {
+    return true;
+  }
+  return false;
+}
+
+async function assertSafeExternalUrl(rawUrl: string): Promise<URL> {
+  let parsed: URL;
+  try {
+    parsed = new URL(String(rawUrl || '').trim());
+  } catch {
+    throw new Error('Invalid external URL.');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('Only HTTP/HTTPS external URLs are allowed.');
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error('Embedded credentials in URLs are not allowed.');
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (
+    !host ||
+    host === 'localhost' ||
+    host === 'metadata.google.internal' ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal')
+  ) {
+    throw new Error('Restricted internal or local destination URL is blocked.');
+  }
+  if (net.isIP(host)) {
+    if (isPrivateOrReservedIp(host)) {
+      throw new Error('Private or loopback IP addresses are blocked.');
+    }
+    return parsed;
+  }
+  try {
+    const records = await dns.promises.lookup(host, { all: true });
+    for (const rec of records) {
+      if (isPrivateOrReservedIp(rec.address)) {
+        throw new Error('Destination resolves to a private or restricted IP address.');
+      }
+    }
+  } catch (err: any) {
+    if (err?.message && err.message.includes('restricted')) throw err;
+  }
+  return parsed;
+}
 
 // Initialize GoogleGenAI server-side client with v1alpha for high-grade speech
 const ai = new GoogleGenAI({
@@ -1016,6 +1179,9 @@ function buildLocalAgentPlan(params: {
 app.post('/api/agent', async (req, res) => {
   try {
     const { instruction, role = 'admin', lang = 'bn', context = {} } = req.body || {};
+    if (role !== 'customer' && !isVerifiedAdminRequest(req)) {
+      return res.status(401).json({ success: false, error: 'Admin authentication required.' });
+    }
     if (!instruction || !String(instruction).trim()) {
       return res.status(400).json({ success: false, error: 'instruction is required' });
     }
@@ -1497,7 +1663,7 @@ function buildAutopilotReviewTasks(input: any) {
   return generated;
 }
 
-app.post('/api/ai/autopilot/scan', async (req, res) => {
+app.post('/api/ai/autopilot/scan', requireAdminAuth, async (req, res) => {
   try {
     const body = req.body || {};
     const current = loadStoreData() || {};
@@ -1555,7 +1721,7 @@ app.post('/api/ai/autopilot/scan', async (req, res) => {
   }
 });
 
-app.post('/api/ai/autopilot/queue', (req, res) => {
+app.post('/api/ai/autopilot/queue', requireAdminAuth, (req, res) => {
   try {
     const { tasks } = req.body || {};
     if (!Array.isArray(tasks)) {
@@ -1572,7 +1738,7 @@ app.post('/api/ai/autopilot/queue', (req, res) => {
 });
 
 // Full Website Maintenance & Health Audit AI Endpoint
-app.post('/api/ai/maintenance/audit', (req, res) => {
+app.post('/api/ai/maintenance/audit', requireAdminAuth, (req, res) => {
   try {
     const body = req.body || {};
     const current = loadStoreData() || {};
@@ -1783,7 +1949,7 @@ app.post('/api/ai/maintenance/audit', (req, res) => {
 });
 
 // AI RFM Audience Segment & Campaign Generator
-app.post('/api/ai/marketing/campaign', async (req, res) => {
+app.post('/api/ai/marketing/campaign', requireAdminAuth, async (req, res) => {
   try {
     const { lang = 'bn', segment = 'vip_buyers', goal = 'repeat_order' } = req.body || {};
     const saved = loadStoreData() || {};
@@ -1964,12 +2130,37 @@ function stripAdminOnlyBlobsForStorefront(data: any) {
   return storefrontCore;
 }
 
+function redactOrderForPublic(o: any) {
+  if (!o || typeof o !== 'object') return o;
+  return {
+    id: o.id,
+    status: o.status,
+    createdAt: o.createdAt,
+    updatedAt: o.updatedAt,
+    items: Array.isArray(o.items)
+      ? o.items.map((it: any) => ({
+          productId: it?.productId,
+          quantity: Math.max(1, Number(it?.quantity) || 1)
+        }))
+      : [],
+    customer: {
+      name: 'Verified Buyer',
+      phone: '',
+      district: o.customer?.district || '',
+      address: '',
+      thana: '',
+      note: ''
+    }
+  };
+}
+
 app.get('/api/store/sync', (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   const data = loadStoreData();
   const activeClients = Math.max(1, activeWsClients.size);
   const sinceVersion = Number(req.query?.sinceVersion || 0);
   const currentVersion = Number(data?.storeDataVersion || 0);
+  const isAdminSession = isVerifiedAdminRequest(req);
   if (sinceVersion > 0 && currentVersion > 0 && sinceVersion === currentVersion) {
     return res.json({
       success: true,
@@ -1978,15 +2169,15 @@ app.get('/api/store/sync', (req, res) => {
       activeClients
     });
   }
-  const isAdminSession = req.headers['x-admin-session'] === 'buyone-admin-verified';
   const shouldMask = data?.settings?.securitySettings?.maskPublicSecrets !== false;
   let responseData = !isAdminSession && shouldMask ? redactSensitiveSettingsForPublic(data) : data;
   if (!isAdminSession) {
     responseData = stripAdminOnlyBlobsForStorefront(responseData);
   }
-  const cleanOrders = Array.isArray(responseData?.orders)
+  const rawCleanOrders = Array.isArray(responseData?.orders)
     ? responseData.orders.filter((o: any) => o && o.id && !DEMO_FAKE_ORDER_IDS.has(String(o.id)))
     : [];
+  const cleanOrders = isAdminSession ? rawCleanOrders : rawCleanOrders.map(redactOrderForPublic);
   const cleanAbandoned = Array.isArray(responseData?.abandonedCarts)
     ? responseData.abandonedCarts.filter((c: any) => c && c.id && !DEMO_FAKE_ABANDONED_CART_IDS.has(String(c.id)))
     : [];
@@ -2053,7 +2244,7 @@ app.post('/api/reviews', (req, res) => {
   }
 });
 
-app.post('/api/store/sync', (req, res) => {
+app.post('/api/store/sync', requireAdminAuth, (req, res) => {
   const {
     products,
     orders,
@@ -2292,7 +2483,7 @@ app.post('/api/store/sync', (req, res) => {
     dataVersion: updated.storeDataVersion,
     reason: 'store_sync'
   });
-  const isAdminSession = req.headers['x-admin-session'] === 'buyone-admin-verified';
+  const isAdminSession = isVerifiedAdminRequest(req);
   const shouldMask = updated?.settings?.securitySettings?.maskPublicSecrets !== false;
   let payloadOut = !isAdminSession && shouldMask ? redactSensitiveSettingsForPublic(updated) : updated;
   if (!isAdminSession) payloadOut = stripAdminOnlyBlobsForStorefront(payloadOut);
@@ -2309,7 +2500,7 @@ app.post('/api/store/sync', (req, res) => {
 });
 
 // Safe Rolling Backup & Restore Endpoints (Guarantees No Data Loss)
-app.get('/api/store/backup', (_req, res) => {
+app.get('/api/store/backup', requireAdminAuth, (_req, res) => {
   try {
     const hasBackup = fs.existsSync(STORE_BACKUP_FILE);
     const hasMain = fs.existsSync(STORE_FILE);
@@ -2336,7 +2527,7 @@ app.get('/api/store/backup', (_req, res) => {
   }
 });
 
-app.post('/api/store/backup/restore', (_req, res) => {
+app.post('/api/store/backup/restore', requireAdminAuth, (_req, res) => {
   try {
     if (!fs.existsSync(STORE_BACKUP_FILE)) {
       const current = loadStoreData();
@@ -2358,12 +2549,24 @@ app.post('/api/store/backup/restore', (_req, res) => {
 app.post('/api/partner/register', (req, res) => {
   const body = req.body || {};
   const partnerType = body.type || body.role;
-  const account = body.account || body.partner;
-  if (!partnerType || !account || !account.phone) {
+  const rawAcc = body.account || body.partner;
+  if (!partnerType || !rawAcc || !rawAcc.phone) {
     return res.status(400).json({ success: false, error: 'Partner type and account details required.' });
   }
+  const {
+    status: _ignoreStatus,
+    walletBalance: _ignoreWallet,
+    totalEarnings: _ignoreEarnings,
+    totalOrders: _ignoreOrders,
+    tier: _ignoreTier,
+    commissionPercent: _ignoreComm,
+    ...safeAccount
+  } = rawAcc;
   const current = loadStoreData() || {};
-  const cleanPhone = String(account.phone || '').replace(/[^0-9]/g, '').slice(-11);
+  const cleanPhone = String(rawAcc.phone || '').replace(/[^0-9]/g, '').slice(-11);
+  if (cleanPhone.length < 10) {
+    return res.status(400).json({ success: false, error: 'Valid phone number is required.' });
+  }
   if (partnerType === 'reseller') {
     const list: any[] = Array.isArray(current.resellers) ? current.resellers : [];
     const dup = list.find((r) => String(r.phone || '').replace(/[^0-9]/g, '').slice(-11) === cleanPhone);
@@ -2372,10 +2575,13 @@ app.post('/api/partner/register', (req, res) => {
     }
     const autoApprove = Boolean(current?.settings?.resellerSettings?.autoApprove);
     const created = {
-      ...account,
-      id: account.id || `res-${Date.now()}`,
-      status: account.status || (autoApprove ? 'approved' : 'pending'),
-      createdAt: account.createdAt || new Date().toISOString(),
+      ...safeAccount,
+      id: rawAcc.id || `res-${Date.now()}`,
+      status: autoApprove ? 'approved' : 'pending',
+      walletBalance: 0,
+      totalEarnings: 0,
+      totalOrders: 0,
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
     current.resellers = [created, ...list];
@@ -2391,10 +2597,11 @@ app.post('/api/partner/register', (req, res) => {
     }
     const autoApprove = Boolean(current?.settings?.wholesaleSettings?.autoApprove);
     const created = {
-      ...account,
-      id: account.id || `whs-${Date.now()}`,
-      status: account.status || (autoApprove ? 'approved' : 'pending'),
-      createdAt: account.createdAt || new Date().toISOString(),
+      ...safeAccount,
+      id: rawAcc.id || `whs-${Date.now()}`,
+      status: autoApprove ? 'approved' : 'pending',
+      totalOrders: 0,
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
     current.wholesalers = [created, ...list];
@@ -2409,11 +2616,16 @@ app.post('/api/partner/register', (req, res) => {
       return res.status(409).json({ success: false, error: 'An affiliate account with this phone number already exists.' });
     }
     const autoApprove = Boolean(current?.settings?.affiliateSettings?.autoApprove);
+    const defaultComm = Number(current?.settings?.affiliateSettings?.defaultCommissionPercent) || 8;
     const created = {
-      ...account,
-      id: account.id || `aff-${Date.now()}`,
-      status: account.status || (autoApprove ? 'approved' : 'pending'),
-      createdAt: account.createdAt || new Date().toISOString(),
+      ...safeAccount,
+      id: rawAcc.id || `aff-${Date.now()}`,
+      status: autoApprove ? 'approved' : 'pending',
+      walletBalance: 0,
+      totalEarnings: 0,
+      totalOrders: 0,
+      commissionPercent: defaultComm,
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
     current.affiliates = [created, ...list];
@@ -2428,54 +2640,52 @@ app.post('/api/partner/update', (req, res) => {
   const body = req.body || {};
   const partnerType = body.type || body.role || 'reseller';
   const id = String(body.id || '').trim();
-  const updates = body.updates || body.account || body.partner || {};
+  const rawUpdates = body.updates || body.account || body.partner || {};
+  const currentPassword = String(body.currentPassword || body.password || '');
   if (!id) {
     return res.status(400).json({ success: false, error: 'Partner id is required.' });
   }
+  const isAdmin = isVerifiedAdminRequest(req);
   const current = loadStoreData() || {};
-  if (partnerType === 'reseller') {
-    const list: any[] = Array.isArray(current.resellers) ? current.resellers : [];
-    const idx = list.findIndex((r) => r && r.id === id);
-    if (idx === -1) {
-      return res.status(404).json({ success: false, error: 'Reseller not found.' });
+  const filterPartnerSelfUpdates = (u: any) => {
+    const allowed = [
+      'name', 'district', 'address', 'fbPageUrl', 'bkashNumber', 'nagadNumber',
+      'bankDetails', 'companyName', 'contactName', 'email', 'tradeLicenseNo',
+      'nidNumber', 'businessType', 'monthlyVolumeEstimate', 'channelUrl'
+    ];
+    const cleanOut: Record<string, any> = {};
+    for (const k of allowed) {
+      if (u[k] !== undefined) cleanOut[k] = u[k];
     }
-    const updatedAcc = { ...list[idx], ...updates, id, updatedAt: new Date().toISOString() };
-    list[idx] = updatedAcc;
-    current.resellers = list;
-    saveStoreData(current);
-    broadcastWs({ type: 'partner:sync', resellers: list.map((r: any) => ({ ...r, password: '' })) });
-    return res.json({ success: true, partner: { ...updatedAcc, password: '' } });
-  }
-  if (partnerType === 'wholesale') {
-    const list: any[] = Array.isArray(current.wholesalers) ? current.wholesalers : [];
-    const idx = list.findIndex((w) => w && w.id === id);
+    return cleanOut;
+  };
+  const applyPartnerUpdate = (listKey: 'resellers' | 'wholesalers' | 'affiliates', wsField: string, notFoundMsg: string) => {
+    const list: any[] = Array.isArray(current[listKey]) ? current[listKey] : [];
+    const idx = list.findIndex((item) => item && item.id === id);
     if (idx === -1) {
-      return res.status(404).json({ success: false, error: 'Wholesaler not found.' });
+      return res.status(404).json({ success: false, error: notFoundMsg });
     }
-    const updatedAcc = { ...list[idx], ...updates, id, updatedAt: new Date().toISOString() };
-    list[idx] = updatedAcc;
-    current.wholesalers = list;
-    saveStoreData(current);
-    broadcastWs({ type: 'partner:sync', wholesalers: list.map((w: any) => ({ ...w, password: '' })) });
-    return res.json({ success: true, partner: { ...updatedAcc, password: '' } });
-  }
-  if (partnerType === 'affiliate') {
-    const list: any[] = Array.isArray(current.affiliates) ? current.affiliates : [];
-    const idx = list.findIndex((a) => a && a.id === id);
-    if (idx === -1) {
-      return res.status(404).json({ success: false, error: 'Affiliate not found.' });
+    const existing = list[idx];
+    if (!isAdmin) {
+      if (!existing.password || !currentPassword || String(existing.password) !== currentPassword) {
+        return res.status(401).json({ success: false, error: 'Authentication required to update partner profile.' });
+      }
     }
-    const updatedAcc = { ...list[idx], ...updates, id, updatedAt: new Date().toISOString() };
+    const safeUpdates = isAdmin ? rawUpdates : filterPartnerSelfUpdates(rawUpdates);
+    const updatedAcc = { ...existing, ...safeUpdates, id, updatedAt: new Date().toISOString() };
     list[idx] = updatedAcc;
-    current.affiliates = list;
+    current[listKey] = list;
     saveStoreData(current);
-    broadcastWs({ type: 'partner:sync', affiliates: list.map((a: any) => ({ ...a, password: '' })) });
+    broadcastWs({ type: 'partner:sync', [wsField]: list.map((x: any) => ({ ...x, password: '' })) });
     return res.json({ success: true, partner: { ...updatedAcc, password: '' } });
-  }
+  };
+  if (partnerType === 'reseller') return applyPartnerUpdate('resellers', 'resellers', 'Reseller not found.');
+  if (partnerType === 'wholesale') return applyPartnerUpdate('wholesalers', 'wholesalers', 'Wholesaler not found.');
+  if (partnerType === 'affiliate') return applyPartnerUpdate('affiliates', 'affiliates', 'Affiliate not found.');
   return res.status(400).json({ success: false, error: 'Invalid partner type.' });
 });
 
-app.post('/api/store/delete-item', (req, res) => {
+app.post('/api/store/delete-item', requireAdminAuth, (req, res) => {
   const { type, ids } = req.body || {};
   const idSet = new Set((Array.isArray(ids) ? ids : []).map((x) => String(x || '').trim()).filter(Boolean));
   if (!type || idSet.size === 0) {
@@ -2599,15 +2809,24 @@ app.post('/api/partner/login', (req, res) => {
 
 // Atomic Cross-Device Order Endpoints (with Blocklist, Duplicate Flood Protection & Hostinger MySQL auto-mirror)
 app.post('/api/orders', async (req, res) => {
-  const { order } = req.body || {};
-  if (!order || !order.id) {
+  const rawOrder = req.body?.order;
+  if (!rawOrder || !rawOrder.id) {
     return res.status(400).json({ success: false, error: 'Order payload with id is required.' });
   }
+  if (!Array.isArray(rawOrder.items) || rawOrder.items.length === 0) {
+    return res.status(400).json({ success: false, error: 'Order must contain at least one item.' });
+  }
+  const customerName = String(rawOrder?.customer?.name || '').trim();
+  const cleanPhone = String(rawOrder?.customer?.phone || '').replace(/[^0-9]/g, '').slice(-11);
+  if (!customerName || cleanPhone.length < 10) {
+    return res.status(400).json({ success: false, error: 'Customer name and valid phone number are required.' });
+  }
+
+  const isAdmin = isVerifiedAdminRequest(req);
   const current = loadStoreData() || {};
   const secCfg = current?.settings?.securitySettings || {};
-  const cleanPhone = String(order?.customer?.phone || '').replace(/[^0-9]/g, '').slice(-11);
 
-  if (order.source !== 'pos' && Array.isArray(secCfg.blockedPhones) && cleanPhone) {
+  if (rawOrder.source !== 'pos' && Array.isArray(secCfg.blockedPhones) && cleanPhone) {
     const isBlocked = secCfg.blockedPhones.some(
       (bp: string) => String(bp).replace(/[^0-9]/g, '').slice(-11) === cleanPhone
     );
@@ -2620,16 +2839,34 @@ app.post('/api/orders', async (req, res) => {
     }
   }
 
+  const order = {
+    ...rawOrder,
+    status: isAdmin ? (rawOrder.status || 'pending') : 'pending'
+  };
+
   const existingOrders: any[] = Array.isArray(current.orders) ? current.orders : [];
   const nextOrders = [order, ...existingOrders.filter((o) => o && o.id !== order.id)];
   current.orders = nextOrders;
   if (Array.isArray(current.deletedOrderIds)) {
     current.deletedOrderIds = current.deletedOrderIds.filter((id: string) => id !== order.id);
   }
+  try {
+    const newTasks = buildAutopilotReviewTasks({
+      orders: nextOrders,
+      products: current.products || [],
+      abandonedCarts: current.abandonedCarts || [],
+      resellers: current.resellers || [],
+      settings: current.settings || {},
+      existingQueue: current.aiReviewQueue || []
+    });
+    if (newTasks.length > 0) {
+      current.aiReviewQueue = [...newTasks, ...(Array.isArray(current.aiReviewQueue) ? current.aiReviewQueue : [])].slice(0, 120);
+      broadcastWs({ type: 'ai_queue:sync', aiReviewQueue: current.aiReviewQueue });
+    }
+  } catch {}
   current.lastUpdated = new Date().toISOString();
   saveStoreData(current);
 
-  // If Hostinger MySQL auto-sync is enabled on backend, mirror the order automatically
   const hCfg = resolveHostingerConfig();
   if (hCfg.enabled && hCfg.mode === 'mysql_direct' && hCfg.autoSyncOnOrder && hCfg.database && hCfg.user) {
     upsertOrderToHostingerMysql(hCfg, order).catch((err) => {
@@ -2637,10 +2874,87 @@ app.post('/api/orders', async (req, res) => {
     });
   }
 
+  try {
+    const smtpCfg = current?.settings?.smtpSettings;
+    const customerEmail = String(order?.customer?.email || '').trim();
+    if (smtpCfg?.host && smtpCfg?.user && smtpCfg?.pass && customerEmail.includes('@')) {
+      const { transporter, fromHeader } = createSmtpTransporter(smtpCfg);
+      transporter
+        .sendMail({
+          from: fromHeader,
+          to: customerEmail,
+          subject: `Order Confirmed #${order.id} — ${current?.settings?.storeName || 'BuyOne BD'}`,
+          text: `Thank you ${customerName}! Your order #${order.id} (Total: BDT ${order?.pricing?.total || 0}) has been received and is pending verification.`
+        })
+        .catch(() => {});
+    }
+  } catch {}
+
   return res.json({ success: true, order, totalOrders: nextOrders.length });
 });
 
-app.patch('/api/orders/:id', (req, res) => {
+app.get('/api/orders/track', (req, res) => {
+  const idParam = String(req.query?.id || '').trim();
+  const trackingParam = String(req.query?.trackingCode || '').trim();
+  const phoneDigits = String(req.query?.phone || '').replace(/[^0-9]/g, '').slice(-11);
+  if (!idParam && !trackingParam && phoneDigits.length < 10) {
+    return res.status(400).json({ success: false, error: 'Order id, trackingCode, or valid phone number is required.' });
+  }
+  const saved = loadStoreData() || {};
+  const delIds = new Set(Array.isArray(saved.deletedOrderIds) ? saved.deletedOrderIds.map(String) : []);
+  const allOrders: any[] = Array.isArray(saved.orders) ? saved.orders : [];
+  const matches = allOrders.filter((o) => {
+    if (!o || !o.id || delIds.has(String(o.id)) || DEMO_FAKE_ORDER_IDS.has(String(o.id))) return false;
+    if (idParam && String(o.id).toLowerCase() === idParam.toLowerCase()) return true;
+    if (trackingParam && String(o?.courier?.trackingCode || '').toLowerCase() === trackingParam.toLowerCase()) return true;
+    if (phoneDigits.length >= 10) {
+      const ordPhone = String(o?.customer?.phone || '').replace(/[^0-9]/g, '').slice(-11);
+      if (ordPhone && ordPhone === phoneDigits) return true;
+    }
+    return false;
+  });
+  return res.json({ success: true, orders: matches });
+});
+
+app.post('/api/orders/:id/customer-confirm', (req, res) => {
+  const { id } = req.params;
+  const { phone, confirmed = true, note = '', callTranscript = [] } = req.body || {};
+  const cleanPhone = String(phone || '').replace(/[^0-9]/g, '').slice(-11);
+  if (!id || cleanPhone.length < 10) {
+    return res.status(400).json({ success: false, error: 'Valid order id and customer phone are required.' });
+  }
+  const current = loadStoreData() || {};
+  const list: any[] = Array.isArray(current.orders) ? current.orders : [];
+  const target = list.find((o) => o && o.id === id);
+  if (!target) {
+    return res.status(404).json({ success: false, error: 'Order not found.' });
+  }
+  const targetPhone = String(target?.customer?.phone || '').replace(/[^0-9]/g, '').slice(-11);
+  if (!targetPhone || targetPhone !== cleanPhone) {
+    return res.status(403).json({ success: false, error: 'Phone number does not match this order.' });
+  }
+  const nowIso = new Date().toISOString();
+  const nextStatus = confirmed ? 'ai_confirmed' : 'on_hold';
+  const updatedOrder = {
+    ...target,
+    status: nextStatus,
+    updatedAt: nowIso,
+    aiCallStatus: {
+      ...(target.aiCallStatus || {}),
+      attempted: true,
+      customerConfirmed: Boolean(confirmed),
+      lastCallAt: nowIso,
+      ...(note ? { notes: String(note).slice(0, 400) } : {}),
+      ...(Array.isArray(callTranscript) && callTranscript.length > 0 ? { transcript: callTranscript.slice(0, 30) } : {})
+    }
+  };
+  current.orders = list.map((o) => (o && o.id === id ? updatedOrder : o));
+  current.lastUpdated = nowIso;
+  saveStoreData(current);
+  return res.json({ success: true, order: updatedOrder });
+});
+
+app.patch('/api/orders/:id', requireAdminAuth, (req, res) => {
   const { id } = req.params;
   const updates = req.body?.updates || req.body || {};
   const current = loadStoreData() || {};
@@ -2699,7 +3013,7 @@ app.patch('/api/orders/:id', (req, res) => {
   return res.json({ success: true, order: updatedOrder });
 });
 
-app.post('/api/notifications/publish', (req, res) => {
+app.post('/api/notifications/publish', requireAdminAuth, (req, res) => {
   const {
     category = 'promo',
     title,
@@ -2747,7 +3061,7 @@ app.post('/api/notifications/publish', (req, res) => {
   return res.json({ success: true, notification: notif, userNotifications: current.userNotifications });
 });
 
-app.delete('/api/notifications/:id', (req, res) => {
+app.delete('/api/notifications/:id', requireAdminAuth, (req, res) => {
   const { id } = req.params;
   const current = loadStoreData() || {};
   current.userNotifications = (Array.isArray(current.userNotifications) ? current.userNotifications : []).filter(
@@ -2759,7 +3073,7 @@ app.delete('/api/notifications/:id', (req, res) => {
   return res.json({ success: true, userNotifications: current.userNotifications });
 });
 
-app.delete('/api/orders/:id', (req, res) => {
+app.delete('/api/orders/:id', requireAdminAuth, (req, res) => {
   const { id } = req.params;
   const current = loadStoreData() || {};
   const existingOrders: any[] = Array.isArray(current.orders) ? current.orders : [];
@@ -2772,7 +3086,7 @@ app.delete('/api/orders/:id', (req, res) => {
 });
 
 // Non-Destructive Cache Clear & Global Storefront Auto-Refresh Endpoint (Preserves all products, orders, settings, customers, media)
-app.post('/api/cache/clear', (_req, res) => {
+app.post('/api/cache/clear', requireAdminAuth, (_req, res) => {
   const clearedAudioEntries = audioCache.size;
   audioCache.clear();
   const current = loadStoreData() || {};
@@ -2793,7 +3107,7 @@ app.post('/api/cache/clear', (_req, res) => {
   });
 });
 
-app.post('/api/cache/purge', (_req, res) => {
+app.post('/api/cache/purge', requireAdminAuth, (_req, res) => {
   audioCache.clear();
   const current = loadStoreData() || {};
   current.storeDataVersion = Date.now();
@@ -2804,6 +3118,274 @@ app.post('/api/cache/purge', (_req, res) => {
     reason: 'price_rating_sales_update'
   });
   return res.json({ success: true, dataVersion: current.storeDataVersion });
+});
+
+// Strict Manual Admin Approval MFS Wallet Top-Up Endpoints (Zero Auto-Approve)
+app.post('/api/wallet/topup', (req, res) => {
+  try {
+    const clean = sanitizeInput(req.body || {});
+    const customerPhoneRaw = String(clean.customerPhone || '').trim();
+    const phoneDigits = customerPhoneRaw.replace(/[^0-9]/g, '').slice(-11);
+    const amount = Math.round(Number(clean.amount) || 0);
+    const senderNumber = String(clean.senderNumber || '').trim();
+    const trxId = String(clean.trxId || '').trim();
+    const method = ['bkash', 'nagad', 'rocket', 'upay'].includes(clean.method) ? clean.method : 'bkash';
+
+    if (phoneDigits.length < 10) {
+      return res.status(400).json({ success: false, error: 'Valid customer phone number is required.' });
+    }
+    if (!Number.isFinite(amount) || amount < 50 || amount > 100000) {
+      return res.status(400).json({ success: false, error: 'Top-up amount must be between ৳50 and ৳100,000.' });
+    }
+    if (!senderNumber || !trxId || trxId.length < 4) {
+      return res.status(400).json({ success: false, error: 'Sender number and Transaction ID are required.' });
+    }
+
+    const current = loadStoreData() || {};
+    const list: any[] = Array.isArray(current.walletTopUps) ? current.walletTopUps : [];
+    const dupTrx = list.find(
+      (w) => w && String(w.trxId || '').trim().toLowerCase() === trxId.toLowerCase() && w.status !== 'rejected'
+    );
+    if (dupTrx) {
+      return res.status(409).json({ success: false, error: 'This Transaction ID has already been submitted.' });
+    }
+
+    const nowIso = new Date().toISOString();
+    const topUp = {
+      id: `mfs-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
+      customerPhone: customerPhoneRaw,
+      customerName: String(clean.customerName || 'Customer').slice(0, 120),
+      method,
+      amount,
+      senderNumber: senderNumber.slice(0, 32),
+      trxId: trxId.slice(0, 64),
+      status: 'pending' as const,
+      createdAt: nowIso
+    };
+    current.walletTopUps = [topUp, ...list].slice(0, 300);
+    current.lastUpdated = nowIso;
+    saveStoreData(current);
+    broadcastWs({ type: 'wallet:topup_requested', topUp });
+
+    return res.json({
+      success: true,
+      topUp,
+      message: 'Top-up request submitted and awaiting manual admin approval.'
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to submit wallet top-up' });
+  }
+});
+
+app.get('/api/wallet/topups', (req, res) => {
+  const saved = loadStoreData() || {};
+  const list: any[] = Array.isArray(saved.walletTopUps) ? saved.walletTopUps : [];
+  if (isVerifiedAdminRequest(req)) {
+    return res.json({ success: true, topUps: list });
+  }
+  const phoneDigits = String(req.query?.phone || '').replace(/[^0-9]/g, '').slice(-11);
+  if (phoneDigits.length < 10) {
+    return res.status(400).json({ success: false, error: 'Valid phone parameter is required.' });
+  }
+  const matchedTopUps = list.filter(
+    (w) => w && String(w.customerPhone || '').replace(/[^0-9]/g, '').slice(-11) === phoneDigits
+  );
+  const accounts: any[] = Array.isArray(saved.customerAccounts) ? saved.customerAccounts : [];
+  const acc = accounts.find(
+    (a) => a && String(a.phone || '').replace(/[^0-9]/g, '').slice(-11) === phoneDigits
+  );
+  return res.json({
+    success: true,
+    topUps: matchedTopUps,
+    walletBalance: acc ? Number(acc.lifetimeWalletBalance ?? acc.walletBalance ?? 0) : 0,
+    lifetimeWalletBalance: acc ? Number(acc.lifetimeWalletBalance ?? acc.walletBalance ?? 0) : 0,
+    promoBalance: acc ? Number(acc.promoBalance ?? 0) : 0,
+    promoExpiresAt: acc?.promoExpiresAt || null
+  });
+});
+
+app.post('/api/wallet/topup/:id/decision', requireAdminAuth, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { decision, reason = '' } = req.body || {};
+    if (decision !== 'approved' && decision !== 'rejected') {
+      return res.status(400).json({ success: false, error: "decision must be 'approved' or 'rejected'." });
+    }
+    const current = loadStoreData() || {};
+    const list: any[] = Array.isArray(current.walletTopUps) ? [...current.walletTopUps] : [];
+    const idx = list.findIndex((w) => w && w.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ success: false, error: 'Wallet top-up request not found.' });
+    }
+    const existing = list[idx];
+    if (existing.status !== 'pending') {
+      return res.status(409).json({
+        success: false,
+        error: `Top-up request is already ${existing.status} and cannot be processed twice.`
+      });
+    }
+    const nowIso = new Date().toISOString();
+    const updatedTopUp = {
+      ...existing,
+      status: decision,
+      decidedAt: nowIso,
+      rejectionReason: decision === 'rejected' ? String(reason || '').slice(0, 240) : undefined
+    };
+    list[idx] = updatedTopUp;
+    current.walletTopUps = list;
+
+    let updatedWalletBalance: number | undefined;
+    if (decision === 'approved') {
+      const targetPhoneDigits = String(existing.customerPhone || '').replace(/[^0-9]/g, '').slice(-11);
+      const accounts: any[] = Array.isArray(current.customerAccounts) ? [...current.customerAccounts] : [];
+      const accIdx = accounts.findIndex(
+        (a) => a && String(a.phone || '').replace(/[^0-9]/g, '').slice(-11) === targetPhoneDigits
+      );
+      const creditAmount = Math.max(0, Number(existing.amount) || 0);
+      if (accIdx !== -1) {
+        const acc = accounts[accIdx];
+        const nextLifetime = Number(acc.lifetimeWalletBalance ?? acc.walletBalance ?? 0) + creditAmount;
+        accounts[accIdx] = {
+          ...acc,
+          lifetimeWalletBalance: nextLifetime,
+          walletBalance: nextLifetime + (Number(acc.promoBalance) || 0),
+          updatedAt: nowIso
+        };
+        updatedWalletBalance = nextLifetime;
+      } else {
+        updatedWalletBalance = creditAmount;
+        accounts.unshift({
+          phone: existing.customerPhone,
+          name: existing.customerName || 'Customer',
+          lifetimeWalletBalance: creditAmount,
+          walletBalance: creditAmount,
+          promoBalance: 0,
+          loyaltyPoints: 0,
+          createdAt: nowIso,
+          updatedAt: nowIso
+        });
+      }
+      current.customerAccounts = accounts;
+    }
+
+    const notif = {
+      id: `notif-wallet-${id}-${decision}-${Date.now()}`,
+      category: 'promo',
+      title:
+        decision === 'approved'
+          ? `Wallet Top-Up Approved (+৳${Number(existing.amount || 0).toLocaleString()})`
+          : `Wallet Top-Up Rejected (৳${Number(existing.amount || 0).toLocaleString()})`,
+      titleBn:
+        decision === 'approved'
+          ? `ওয়ালেট টপ-আপ অনুমোদিত (+৳${Number(existing.amount || 0).toLocaleString()})`
+          : `ওয়ালেট টপ-আপ বাতিল হয়েছে (৳${Number(existing.amount || 0).toLocaleString()})`,
+      message:
+        decision === 'approved'
+          ? `৳${Number(existing.amount || 0).toLocaleString()} added to your Lifetime Wallet (${existing.method.toUpperCase()} TrxID: ${existing.trxId}).`
+          : `Your ${existing.method.toUpperCase()} request (TrxID: ${existing.trxId}) was rejected.${reason ? ` Reason: ${reason}` : ''}`,
+      messageBn:
+        decision === 'approved'
+          ? `আপনার লাইফটাইম ওয়ালেটে ৳${Number(existing.amount || 0).toLocaleString()} যোগ করা হয়েছে (${existing.method.toUpperCase()} TrxID: ${existing.trxId})।`
+          : `আপনার ${existing.method.toUpperCase()} টপ-আপ অনুরোধটি (TrxID: ${existing.trxId}) বাতিল করা হয়েছে।${reason ? ` কারণ: ${reason}` : ''}`,
+      createdAt: nowIso,
+      actionType: 'open_wallet',
+      targetPhone: existing.customerPhone
+    };
+    current.userNotifications = [notif, ...(Array.isArray(current.userNotifications) ? current.userNotifications : [])].slice(0, 120);
+    current.lastUpdated = nowIso;
+    saveStoreData(current);
+    broadcastWs({
+      type: 'wallet:sync',
+      topUp: updatedTopUp,
+      customerPhone: existing.customerPhone,
+      walletBalance: updatedWalletBalance,
+      userNotifications: current.userNotifications
+    });
+
+    return res.json({
+      success: true,
+      topUp: updatedTopUp,
+      walletBalance: updatedWalletBalance
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Wallet decision failed' });
+  }
+});
+
+// Storefront Public Customer Price Alerts & Password Reset OTP
+app.post('/api/price-alerts', (req, res) => {
+  try {
+    const clean = sanitizeInput(req.body || {});
+    const productId = String(clean.productId || '').trim();
+    const contact = String(clean.contact || '').trim();
+    const targetPrice = Math.max(1, Math.round(Number(clean.targetPrice) || 0));
+    if (!productId || !contact) {
+      return res.status(400).json({ success: false, error: 'productId and contact are required.' });
+    }
+    const current = loadStoreData() || {};
+    const alert = {
+      id: `pa-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
+      productId,
+      contact: contact.slice(0, 160),
+      targetPrice,
+      notified: false,
+      createdAt: new Date().toISOString()
+    };
+    current.priceAlerts = [alert, ...(Array.isArray(current.priceAlerts) ? current.priceAlerts : [])].slice(0, 300);
+    saveStoreData(current);
+    return res.json({ success: true, alert });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to save price alert' });
+  }
+});
+
+app.post('/api/customer/forgot-password', async (req, res) => {
+  try {
+    const identifier = String(req.body?.identifier || '').trim().toLowerCase();
+    const digits = identifier.replace(/[^0-9]/g, '').slice(-11);
+    if (!identifier) {
+      return res.status(400).json({ success: false, error: 'Phone number or email is required.' });
+    }
+    const current = loadStoreData() || {};
+    const accounts: any[] = Array.isArray(current.customerAccounts) ? current.customerAccounts : [];
+    const matched = accounts.find((a) => {
+      const p = String(a?.phone || '').replace(/[^0-9]/g, '').slice(-11);
+      const em = String(a?.email || '').trim().toLowerCase();
+      return (digits.length >= 10 && p === digits) || (em && em === identifier);
+    });
+    if (matched) {
+      const otpCode = String(crypto.randomInt(100000, 999999));
+      const smtpCfg = current?.settings?.smtpSettings;
+      if (smtpCfg?.host && smtpCfg?.user && smtpCfg?.pass && matched.email?.includes('@')) {
+        try {
+          const { transporter, fromHeader } = createSmtpTransporter(smtpCfg);
+          await transporter.sendMail({
+            from: fromHeader,
+            to: matched.email,
+            subject: 'BuyOne BD Password Reset Code',
+            text: `Your BuyOne BD verification code is ${otpCode}. Valid for 15 minutes.`
+          });
+        } catch {}
+      }
+      current.securityLogs = [
+        {
+          id: `sec-otp-${Date.now()}`,
+          event: 'Customer Password Reset Requested',
+          detail: `OTP issued for customer ${matched.name || matched.phone}`,
+          severity: 'info',
+          timestamp: new Date().toISOString()
+        },
+        ...(Array.isArray(current.securityLogs) ? current.securityLogs : [])
+      ].slice(0, 150);
+      saveStoreData(current);
+    }
+    return res.json({
+      success: true,
+      message: 'If a matching customer account exists, password reset instructions have been processed.'
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Reset request failed' });
+  }
 });
 
 // Real Steadfast Portal API v1 Proxy (https://portal.steadfast.com.bd/api/v1)
@@ -2823,18 +3405,12 @@ function resolveSteadfastCreds(bodyInput?: any) {
   return { apiKey, secretKey, baseUrl };
 }
 
-function steadfastHttpRequest(
+async function steadfastHttpRequest(
   endpointUrl: string,
   options: { method: 'GET' | 'POST'; apiKey: string; secretKey: string; body?: any }
 ): Promise<{ statusCode: number; parsed: any; rawText: string; isHtmlError: boolean }> {
+  const parsedUrl = await assertSafeExternalUrl(endpointUrl);
   return new Promise((resolve, reject) => {
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(endpointUrl);
-    } catch (e: any) {
-      return reject(new Error(`Invalid Steadfast URL: ${endpointUrl}`));
-    }
-
     const payloadStr = options.body !== undefined ? JSON.stringify(options.body) : '';
     const isHttps = parsedUrl.protocol === 'https:';
     const mod = isHttps ? https : http;
@@ -2907,7 +3483,7 @@ function steadfastHttpRequest(
   });
 }
 
-app.post('/api/steadfast/balance', async (req, res) => {
+app.post('/api/steadfast/balance', requireAdminAuth, async (req, res) => {
   try {
     const { apiKey, secretKey, baseUrl } = resolveSteadfastCreds(req.body);
     if (!apiKey || !secretKey) {
@@ -2939,7 +3515,8 @@ app.post('/api/steadfast/balance', async (req, res) => {
       data: parsed
     });
   } catch (err: any) {
-    return res.status(502).json({
+    const isBlocked = /Invalid external|Only HTTP|restricted|Private or loopback|Embedded credentials/i.test(err?.message || '');
+    return res.status(isBlocked ? 400 : 502).json({
       ok: false,
       success: false,
       error: err?.message || 'Failed to connect to Steadfast Portal API'
@@ -2947,7 +3524,7 @@ app.post('/api/steadfast/balance', async (req, res) => {
   }
 });
 
-app.post('/api/steadfast/create-order', async (req, res) => {
+app.post('/api/steadfast/create-order', requireAdminAuth, async (req, res) => {
   try {
     const { invoice, recipient_name, recipient_phone, recipient_address, cod_amount, note } = req.body || {};
     const { apiKey, secretKey, baseUrl } = resolveSteadfastCreds(req.body);
@@ -3002,7 +3579,7 @@ app.post('/api/steadfast/create-order', async (req, res) => {
   }
 });
 
-app.post('/api/steadfast/status', async (req, res) => {
+app.post('/api/steadfast/status', requireAdminAuth, async (req, res) => {
   try {
     const { consignmentId, invoice, trackingCode } = req.body || {};
     const { apiKey, secretKey, baseUrl } = resolveSteadfastCreds(req.body);
@@ -3047,7 +3624,7 @@ app.post('/api/steadfast/status', async (req, res) => {
   }
 });
 
-app.post('/api/fraud-check', (req, res) => {
+app.post('/api/fraud-check', requireAdminAuth, (req, res) => {
   const { phone } = req.body || {};
   const cleanPhone = String(phone || '').replace(/[^0-9]/g, '').slice(-11);
   if (!cleanPhone) {
@@ -3107,7 +3684,7 @@ function createSmtpTransporter(smtpInput?: any) {
     port,
     secure,
     auth: { user, pass },
-    tls: { rejectUnauthorized: false },
+    tls: { minVersion: 'TLSv1.2' },
     connectionTimeout: 12000,
     greetingTimeout: 10000
   });
@@ -3115,7 +3692,7 @@ function createSmtpTransporter(smtpInput?: any) {
   return { transporter, fromHeader: `"${fromName}" <${fromEmail}>`, host, port };
 }
 
-app.post('/api/email/test', async (req, res) => {
+app.post('/api/email/test', requireAdminAuth, async (req, res) => {
   try {
     const { smtp, toEmail } = req.body || {};
     const recipient = String(toEmail || smtp?.fromEmail || smtp?.user || '').trim();
@@ -3153,7 +3730,7 @@ app.post('/api/email/test', async (req, res) => {
   }
 });
 
-app.post('/api/email/send', async (req, res) => {
+app.post('/api/email/send', requireAdminAuth, async (req, res) => {
   try {
     const { smtp, to, toList, subject, text, html } = req.body || {};
     const recipients = Array.isArray(toList) && toList.length > 0
@@ -3325,22 +3902,44 @@ app.post('/api/tracking/pixel', async (req, res) => {
   }
 });
 
-app.get('/api/tracking/events', (_req, res) => {
+app.get('/api/tracking/events', requireAdminAuth, (_req, res) => {
   const saved = loadStoreData() || {};
   return res.json({ success: true, events: saved.pixelEvents || [] });
 });
 
 // Bidirectional Support Desk API (Customer Browsing Logs, Live Support Chats, Backend Browser Calls)
-app.get('/api/support/state', (_req, res) => {
+app.get('/api/support/state', (req, res) => {
   const saved = loadStoreData() || {};
+  if (isVerifiedAdminRequest(req)) {
+    return res.json({
+      success: true,
+      browsingHistory: saved.browsingHistory || [],
+      supportChats: saved.supportChats || [],
+      browserCalls: saved.browserCalls || [],
+      whatsappMessages: saved.whatsappMessages || [],
+      aiReviewQueue: saved.aiReviewQueue || [],
+      pixelEvents: saved.pixelEvents || []
+    });
+  }
+  const visitorSessionId = String(req.query?.visitorSessionId || '').trim();
+  const supportChats = visitorSessionId
+    ? (Array.isArray(saved.supportChats) ? saved.supportChats : []).filter(
+        (c: any) => c && String(c.visitorSessionId || '') === visitorSessionId
+      )
+    : [];
+  const browserCalls = visitorSessionId
+    ? (Array.isArray(saved.browserCalls) ? saved.browserCalls : []).filter(
+        (c: any) => c && String(c.visitorSessionId || '') === visitorSessionId
+      )
+    : [];
   return res.json({
     success: true,
-    browsingHistory: saved.browsingHistory || [],
-    supportChats: saved.supportChats || [],
-    browserCalls: saved.browserCalls || [],
-    whatsappMessages: saved.whatsappMessages || [],
-    aiReviewQueue: saved.aiReviewQueue || [],
-    pixelEvents: saved.pixelEvents || []
+    browsingHistory: [],
+    supportChats,
+    browserCalls,
+    whatsappMessages: [],
+    aiReviewQueue: [],
+    pixelEvents: []
   });
 });
 
@@ -3431,7 +4030,7 @@ app.post('/api/analytics/visit', (req, res) => {
   }
 });
 
-app.get('/api/analytics/visitors', (_req, res) => {
+app.get('/api/analytics/visitors', requireAdminAuth, (_req, res) => {
   const saved = loadStoreData() || {};
   const visitors: any[] = (Array.isArray(saved.visitorLogs) ? saved.visitorLogs : []).map((v: any) => ({
     ...v,
@@ -3465,7 +4064,7 @@ app.post('/api/analytics/product-view', (req, res) => {
   }
 });
 
-app.post('/api/analytics/product-view/set', (req, res) => {
+app.post('/api/analytics/product-view/set', requireAdminAuth, (req, res) => {
   try {
     const { productId, count } = req.body || {};
     const saved = loadStoreData() || {};
@@ -3488,7 +4087,7 @@ app.post('/api/analytics/product-view/set', (req, res) => {
 });
 
 // Fast Google & Search Engine Indexing via IndexNow Protocol
-app.post('/api/seo/indexnow', async (req, res) => {
+app.post('/api/seo/indexnow', requireAdminAuth, async (req, res) => {
   try {
     const saved = loadStoreData() || {};
     const canonicalBase = (
@@ -3673,7 +4272,7 @@ app.get('/api/feeds/social-queue.json', (req, res) => {
 });
 
 // BD Bulk SMS Campaign Dispatch Endpoint
-app.post('/api/marketing/sms-campaign', async (req, res) => {
+app.post('/api/marketing/sms-campaign', requireAdminAuth, async (req, res) => {
   const { title = 'Promo Campaign', segment = 'all_customers', recipients = [], message, provider, apiKey, senderId } = req.body || {};
   if (!message || !String(message).trim()) {
     return res.status(400).json({ success: false, error: 'SMS message body is required.' });
@@ -3730,7 +4329,7 @@ app.post('/api/marketing/sms-campaign', async (req, res) => {
 });
 
 // AI Marketing Copy, Reels Script, Worldwide/Probashi & SEO Metadata Generator
-app.post('/api/ai/marketing', async (req, res) => {
+app.post('/api/ai/marketing', requireAdminAuth, async (req, res) => {
   const {
     productTitle = 'BuyOne BD Featured Collection',
     category = 'General',
@@ -4011,7 +4610,7 @@ app.post('/api/whatsapp/webhook', (req, res) => {
 });
 
 // Get WhatsApp Conversation Thread History
-app.get('/api/whatsapp/messages', (_req, res) => {
+app.get('/api/whatsapp/messages', requireAdminAuth, (_req, res) => {
   const saved = loadStoreData() || {};
   return res.json({
     success: true,
@@ -4072,7 +4671,7 @@ app.post('/api/whatsapp/customer-inquiry', (req, res) => {
 });
 
 // Meta WhatsApp Cloud API Live / Simulated Message Sender (Persists to Thread & Broadcasts Live)
-app.post('/api/whatsapp/send', async (req, res) => {
+app.post('/api/whatsapp/send', requireAdminAuth, async (req, res) => {
   try {
     const {
       to,
@@ -4191,7 +4790,7 @@ app.post('/api/whatsapp/send', async (req, res) => {
 });
 
 // AI Draft Assistant for WhatsApp Reseller & Customer Support (Admin Dashboard)
-app.post('/api/whatsapp/ai-reply', async (req, res) => {
+app.post('/api/whatsapp/ai-reply', requireAdminAuth, async (req, res) => {
   try {
     const {
       contactName = 'Partner',
@@ -4332,7 +4931,7 @@ async function openHostingerMysqlConnection(cfg: ReturnType<typeof resolveHostin
     user: cfg.user,
     password: cfg.password,
     database: cfg.database,
-    ssl: cfg.ssl ? { rejectUnauthorized: false } : undefined,
+    ssl: cfg.ssl ? { minVersion: 'TLSv1.2' } : undefined,
     connectTimeout: 5000
   });
 }
@@ -4430,13 +5029,14 @@ async function upsertOrderToHostingerMysql(cfg: ReturnType<typeof resolveHosting
   }
 }
 
-app.post('/api/database/hostinger/test', async (req, res) => {
+app.post('/api/database/hostinger/test', requireAdminAuth, async (req, res) => {
   const cfg = resolveHostingerConfig(req.body?.config);
   if (cfg.mode === 'php_bridge') {
     if (!cfg.phpBridgeUrl) {
       return res.status(400).json({ success: false, error: 'Hostinger PHP Bridge URL is required.' });
     }
     try {
+      await assertSafeExternalUrl(cfg.phpBridgeUrl);
       const resp = await fetch(cfg.phpBridgeUrl, {
         method: 'POST',
         headers: {
@@ -4459,7 +5059,7 @@ app.post('/api/database/hostinger/test', async (req, res) => {
         tables: data.tables || []
       });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || 'Failed to reach PHP Bridge URL' });
+      return res.status(400).json({ success: false, error: err?.message || 'Failed to reach PHP Bridge URL' });
     }
   }
 
@@ -4487,13 +5087,14 @@ app.post('/api/database/hostinger/test', async (req, res) => {
   }
 });
 
-app.post('/api/database/hostinger/init-schema', async (req, res) => {
+app.post('/api/database/hostinger/init-schema', requireAdminAuth, async (req, res) => {
   const cfg = resolveHostingerConfig(req.body?.config);
   if (cfg.mode === 'php_bridge') {
     if (!cfg.phpBridgeUrl) {
       return res.status(400).json({ success: false, error: 'Hostinger PHP Bridge URL is required.' });
     }
     try {
+      await assertSafeExternalUrl(cfg.phpBridgeUrl);
       const resp = await fetch(cfg.phpBridgeUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': cfg.phpBridgeSecret },
@@ -4505,7 +5106,7 @@ app.post('/api/database/hostinger/init-schema', async (req, res) => {
       }
       return res.json({ success: true, tables: data.tables || [] });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || 'PHP Bridge schema init failed' });
+      return res.status(400).json({ success: false, error: err?.message || 'PHP Bridge schema init failed' });
     }
   }
 
@@ -4521,7 +5122,7 @@ app.post('/api/database/hostinger/init-schema', async (req, res) => {
   }
 });
 
-app.post('/api/database/hostinger/sync-push', async (req, res) => {
+app.post('/api/database/hostinger/sync-push', requireAdminAuth, async (req, res) => {
   const cfg = resolveHostingerConfig(req.body?.config);
   const payload = req.body?.payload || loadStoreData() || {};
 
@@ -4530,6 +5131,7 @@ app.post('/api/database/hostinger/sync-push', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Hostinger PHP Bridge URL is required.' });
     }
     try {
+      await assertSafeExternalUrl(cfg.phpBridgeUrl);
       const resp = await fetch(cfg.phpBridgeUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': cfg.phpBridgeSecret },
@@ -4656,13 +5258,14 @@ app.post('/api/database/hostinger/sync-push', async (req, res) => {
   }
 });
 
-app.post('/api/database/hostinger/sync-pull', async (req, res) => {
+app.post('/api/database/hostinger/sync-pull', requireAdminAuth, async (req, res) => {
   const cfg = resolveHostingerConfig(req.body?.config);
   if (cfg.mode === 'php_bridge') {
     if (!cfg.phpBridgeUrl) {
       return res.status(400).json({ success: false, error: 'Hostinger PHP Bridge URL is required.' });
     }
     try {
+      await assertSafeExternalUrl(cfg.phpBridgeUrl);
       const resp = await fetch(cfg.phpBridgeUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': cfg.phpBridgeSecret },
@@ -4674,7 +5277,7 @@ app.post('/api/database/hostinger/sync-pull', async (req, res) => {
       }
       return res.json({ success: true, payload: data.payload });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || 'PHP Bridge pull failed' });
+      return res.status(400).json({ success: false, error: err?.message || 'PHP Bridge pull failed' });
     }
   }
 
@@ -4712,7 +5315,7 @@ app.post('/api/database/hostinger/sync-pull', async (req, res) => {
   }
 });
 
-app.post('/api/database/hostinger/order', async (req, res) => {
+app.post('/api/database/hostinger/order', requireAdminAuth, async (req, res) => {
   const { order, config } = req.body || {};
   if (!order?.id) {
     return res.status(400).json({ success: false, error: 'Order payload required.' });
@@ -4723,6 +5326,7 @@ app.post('/api/database/hostinger/order', async (req, res) => {
       return res.status(400).json({ success: false, error: 'PHP Bridge URL not set.' });
     }
     try {
+      await assertSafeExternalUrl(cfg.phpBridgeUrl);
       const resp = await fetch(cfg.phpBridgeUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': cfg.phpBridgeSecret },
@@ -4731,7 +5335,7 @@ app.post('/api/database/hostinger/order', async (req, res) => {
       const data = await resp.json().catch(() => null);
       return res.status(resp.ok ? 200 : 400).json(data || { success: resp.ok });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || 'Bridge order sync failed' });
+      return res.status(400).json({ success: false, error: err?.message || 'Bridge order sync failed' });
     }
   }
   try {
@@ -4742,13 +5346,14 @@ app.post('/api/database/hostinger/order', async (req, res) => {
   }
 });
 
-app.post('/api/database/hostinger/orders', async (req, res) => {
+app.post('/api/database/hostinger/orders', requireAdminAuth, async (req, res) => {
   const cfg = resolveHostingerConfig(req.body?.config);
   if (cfg.mode === 'php_bridge') {
     if (!cfg.phpBridgeUrl) {
       return res.status(400).json({ success: false, error: 'PHP Bridge URL not set.' });
     }
     try {
+      await assertSafeExternalUrl(cfg.phpBridgeUrl);
       const resp = await fetch(cfg.phpBridgeUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Bridge-Secret': cfg.phpBridgeSecret },
@@ -4757,7 +5362,7 @@ app.post('/api/database/hostinger/orders', async (req, res) => {
       const data = await resp.json().catch(() => null);
       return res.status(resp.ok ? 200 : 400).json(data || { success: false, orders: [] });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || 'Bridge orders pull failed' });
+      return res.status(400).json({ success: false, error: err?.message || 'Bridge orders pull failed' });
     }
   }
   let conn: mysql.Connection | null = null;
@@ -4775,7 +5380,7 @@ app.post('/api/database/hostinger/orders', async (req, res) => {
 });
 
 // Out-of-Stock Waitlist REST Fallback Endpoints
-app.get('/api/waitlist', (_req, res) => {
+app.get('/api/waitlist', requireAdminAuth, (_req, res) => {
   const saved = loadStoreData() || {};
   return res.json({ success: true, entries: Array.isArray(saved.waitlist) ? saved.waitlist : [] });
 });
@@ -4882,14 +5487,6 @@ function injectDynamicSeoIntoHtml(html: string): string {
 
 // Security Auth Lockout, Customer Chat Inquiries, Social Auto-Scheduler & AI Company Team APIs
 const adminLoginAttempts = new Map<string, { failures: number; lockedUntil: number }>();
-const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.createHash('sha256').update(process.env.GEMINI_API_KEY || 'buyonebd_hossain_shield_v1').digest('hex');
-
-function signAdminSessionToken(email: string, ttlMs: number): string {
-  const payload = JSON.stringify({ email, exp: Date.now() + ttlMs });
-  const encoded = Buffer.from(payload).toString('base64url');
-  const sig = crypto.createHmac('sha256', ADMIN_SESSION_SECRET).update(encoded).digest('base64url');
-  return `${encoded}.${sig}`;
-}
 
 function appendServerSecurityEvent(event: string, detail: string, severity: 'info' | 'warning' | 'blocked') {
   try {
@@ -4906,6 +5503,50 @@ function appendServerSecurityEvent(event: string, detail: string, severity: 'inf
     saveStoreData(saved);
   } catch {}
 }
+
+app.get('/api/admin/auth/status', (_req, res) => {
+  const saved = loadStoreData() || {};
+  const envConfigured = Boolean(process.env.ADMIN_PASSCODE && process.env.ADMIN_PASSCODE.trim());
+  const claimConfigured = Boolean(saved?.adminCredentials?.passwordHash);
+  return res.json({
+    success: true,
+    isConfigured: envConfigured || claimConfigured,
+    envConfigured,
+    claimAllowed: !envConfigured && !claimConfigured
+  });
+});
+
+app.post('/api/admin/auth/claim', (req, res) => {
+  const ip = getClientIp(req);
+  const saved = loadStoreData() || {};
+  const envPass = String(process.env.ADMIN_PASSCODE || '').trim();
+  if (envPass || saved?.adminCredentials?.passwordHash) {
+    return res.status(403).json({
+      success: false,
+      error: 'Admin credentials are already configured.'
+    });
+  }
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const password = String(req.body?.password || '');
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ success: false, error: 'Valid admin email is required.' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ success: false, error: 'Admin password must be at least 8 characters.' });
+  }
+  const sec = saved?.settings?.securitySettings || {};
+  const idleMinutes = Math.max(5, Number(sec.idleLogoutMinutes) || 60);
+  saved.adminCredentials = {
+    email,
+    passwordHash: hashAdminPassword(password),
+    claimedAt: new Date().toISOString(),
+    claimedFromIp: ip
+  };
+  saveStoreData(saved);
+  const token = signAdminSessionToken(email, idleMinutes * 60 * 1000);
+  appendServerSecurityEvent('Admin Credentials Claimed', `First-run admin account configured for ${email}`, 'info');
+  return res.json({ success: true, token, email, expiresInMinutes: idleMinutes });
+});
 
 app.post('/api/admin/auth/login', (req, res) => {
   const ip = getClientIp(req);
@@ -4926,10 +5567,29 @@ app.post('/api/admin/auth/login', (req, res) => {
   const password = String(req.body?.password || '');
   const pin = String(req.body?.pin || '');
 
-  const expectedPin = sec.adminPinEnabled && sec.adminPin ? String(sec.adminPin) : '';
-  const validCreds = email === 'hossain@gmail.com' && password === 'Hossain777@#$' && (!expectedPin || pin === expectedPin);
+  const envPass = String(process.env.ADMIN_PASSCODE || '').trim();
+  const claimed = saved?.adminCredentials;
+  if (!envPass && !claimed?.passwordHash) {
+    return res.status(403).json({
+      success: false,
+      claimRequired: true,
+      error: 'Admin password has not been claimed yet. Complete first-run setup to set your password.'
+    });
+  }
 
-  if (!validCreds) {
+  const expectedPin = sec.adminPinEnabled && sec.adminPin ? String(sec.adminPin) : '';
+  const pinOk = !expectedPin || safeEqualStrings(pin, expectedPin);
+
+  let emailAndPassOk = false;
+  if (envPass) {
+    const expectedEnvEmail = String(process.env.ADMIN_EMAIL || claimed?.email || 'hossain@gmail.com').trim().toLowerCase();
+    emailAndPassOk = safeEqualStrings(email, expectedEnvEmail) && safeEqualStrings(password, envPass);
+  } else if (claimed?.passwordHash) {
+    const expectedClaimEmail = String(claimed.email || 'hossain@gmail.com').trim().toLowerCase();
+    emailAndPassOk = safeEqualStrings(email, expectedClaimEmail) && verifyPasswordScrypt(password, claimed.passwordHash);
+  }
+
+  if (!emailAndPassOk || !pinOk) {
     const nextFailures = attempt.failures + 1;
     const lockedUntil = nextFailures >= maxAttempts ? Date.now() + lockoutMs : 0;
     adminLoginAttempts.set(ip, { failures: nextFailures, lockedUntil });
@@ -4952,12 +5612,52 @@ app.post('/api/admin/auth/login', (req, res) => {
   return res.json({ success: true, token, expiresInMinutes: idleMinutes });
 });
 
-app.get('/api/security/logs', (_req, res) => {
+app.post('/api/admin/auth/firebase-session', async (req, res) => {
+  try {
+    const idToken = String(req.body?.idToken || '').trim();
+    const apiKey = String(process.env.VITE_FIREBASE_API_KEY || FIREBASE_APPLET_CONFIG?.apiKey || '').trim();
+    if (!idToken || !apiKey) {
+      return res.status(400).json({ success: false, error: 'Firebase ID token is required.' });
+    }
+    const lookupRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken })
+    });
+    const lookupData: any = await lookupRes.json().catch(() => null);
+    const fbUser = Array.isArray(lookupData?.users) ? lookupData.users[0] : null;
+    if (!lookupRes.ok || !fbUser?.localId || !fbUser?.email) {
+      return res.status(401).json({ success: false, error: 'Invalid Firebase authentication token.' });
+    }
+    const email = String(fbUser.email).trim().toLowerCase();
+    const isVerified = Boolean(fbUser.emailVerified);
+    let authorized = isVerified && email === 'buyonebd@gmail.com';
+    if (!authorized && isVerified && FIREBASE_APPLET_CONFIG?.projectId && FIREBASE_APPLET_CONFIG?.firestoreDatabaseId) {
+      try {
+        const fsUrl = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(FIREBASE_APPLET_CONFIG.projectId)}/databases/${encodeURIComponent(FIREBASE_APPLET_CONFIG.firestoreDatabaseId)}/documents/admins/${encodeURIComponent(fbUser.localId)}`;
+        const fsRes = await fetch(fsUrl, { headers: { Authorization: `Bearer ${idToken}` } });
+        if (fsRes.ok) authorized = true;
+      } catch {}
+    }
+    if (!authorized) {
+      return res.status(403).json({ success: false, error: 'Account is not authorized for admin access.' });
+    }
+    const saved = loadStoreData() || {};
+    const idleMinutes = Math.max(5, Number(saved?.settings?.securitySettings?.idleLogoutMinutes) || 60);
+    const token = signAdminSessionToken(email, idleMinutes * 60 * 1000);
+    appendServerSecurityEvent('Admin Firebase Verified', `Verified Google session for ${email}`, 'info');
+    return res.json({ success: true, token, email, expiresInMinutes: idleMinutes });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Firebase session verification failed' });
+  }
+});
+
+app.get('/api/security/logs', requireAdminAuth, (_req, res) => {
   const saved = loadStoreData() || {};
   return res.json({ success: true, securityLogs: saved.securityLogs || [] });
 });
 
-app.post('/api/security/block-ip', (req, res) => {
+app.post('/api/security/block-ip', requireAdminAuth, (req, res) => {
   const ip = String(req.body?.ip || '').trim();
   if (!ip) return res.status(400).json({ success: false, error: 'IP required' });
   const saved = loadStoreData() || {};
@@ -4973,7 +5673,7 @@ app.post('/api/security/block-ip', (req, res) => {
 });
 
 // Chat Inquiries CRUD API (/api/inquiries)
-app.get('/api/inquiries', (_req, res) => {
+app.get('/api/inquiries', requireAdminAuth, (_req, res) => {
   const saved = loadStoreData() || {};
   return res.json({ success: true, inquiries: saved.chatInquiries || [] });
 });
@@ -5059,7 +5759,7 @@ app.post('/api/inquiries', (req, res) => {
   return res.json({ success: true, inquiry: item, inquiries: saved.chatInquiries, supportChats: saved.supportChats });
 });
 
-app.patch('/api/inquiries/:id', (req, res) => {
+app.patch('/api/inquiries/:id', requireAdminAuth, (req, res) => {
   const clean = sanitizeInput(req.body || {});
   const id = req.params.id;
   const saved = loadStoreData() || {};
@@ -5073,7 +5773,7 @@ app.patch('/api/inquiries/:id', (req, res) => {
   return res.json({ success: true, inquiries: saved.chatInquiries });
 });
 
-app.delete('/api/inquiries/:id', (req, res) => {
+app.delete('/api/inquiries/:id', requireAdminAuth, (req, res) => {
   const id = req.params.id;
   const saved = loadStoreData() || {};
   const list: any[] = Array.isArray(saved.chatInquiries) ? saved.chatInquiries : [];
@@ -5168,6 +5868,7 @@ async function generateViralMediaAssetsForProduct(
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 8000);
         try {
+          await assertSafeExternalUrl(rawImageUrl);
           const imgRes = await fetch(rawImageUrl, { signal: ctrl.signal });
           if (imgRes.ok) {
             const arrBuf = await imgRes.arrayBuffer();
@@ -5546,7 +6247,7 @@ Requirements:
   };
 }
 
-app.post('/api/ai/social-caption', async (req, res) => {
+app.post('/api/ai/social-caption', requireAdminAuth, async (req, res) => {
   try {
     const { product, platform = 'facebook', lang = 'bn', storeName = 'BuyOne BD', originUrl } = req.body || {};
     if (!product) return res.status(400).json({ success: false, error: 'Product is required' });
@@ -5571,6 +6272,7 @@ async function pushBatchToN8nWebhook(
     return { ok: false, message: 'No n8n Master Webhook URL configured.' };
   }
   try {
+    await assertSafeExternalUrl(url);
     const resp = await fetch(url, {
       method: 'POST',
       headers: {
@@ -5636,6 +6338,7 @@ async function dispatchSocialPostItem(
   // 1. Channel-specific Webhook (Make / Zapier / n8n / Custom Server)
   if (channelCfg?.webhookUrl && /^https?:\/\//i.test(channelCfg.webhookUrl)) {
     try {
+      await assertSafeExternalUrl(channelCfg.webhookUrl);
       const resp = await fetch(channelCfg.webhookUrl, {
         method: 'POST',
         headers: {
@@ -5835,10 +6538,11 @@ async function dispatchSocialPostItem(
   };
 }
 
-app.post('/api/social/test-channel', async (req, res) => {
+app.post('/api/social/test-channel', requireAdminAuth, async (req, res) => {
   try {
     const { platform = 'facebook', config = {} } = req.body || {};
     if (config.webhookUrl && /^https?:\/\//i.test(config.webhookUrl)) {
+      await assertSafeExternalUrl(config.webhookUrl);
       const resp = await fetch(config.webhookUrl, {
         method: 'POST',
         headers: {
@@ -5912,7 +6616,7 @@ app.post('/api/social/test-channel', async (req, res) => {
   }
 });
 
-app.post('/api/social/run-cycle-now', async (req, res) => {
+app.post('/api/social/run-cycle-now', requireAdminAuth, async (req, res) => {
   try {
     const platformParam =
       typeof req.body?.platform === 'string' && req.body.platform.trim()
@@ -6017,7 +6721,7 @@ app.post('/api/social/run-cycle-now', async (req, res) => {
   }
 });
 
-app.post('/api/social/dispatch-now', async (req, res) => {
+app.post('/api/social/dispatch-now', requireAdminAuth, async (req, res) => {
   const { postId, post: incomingPost, channelConfig } = req.body || {};
   const saved = loadStoreData() || {};
   const posts: any[] = Array.isArray(saved.socialPosts) ? [...saved.socialPosts] : [];
@@ -6242,7 +6946,7 @@ function buildN8nWorkflowTemplate(originUrl: string, storeName: string, n8nCfg: 
   };
 }
 
-app.get('/api/n8n/workflow.json', (req, res) => {
+app.get('/api/n8n/workflow.json', requireAdminAuth, (req, res) => {
   const saved = loadStoreData() || {};
   const originUrl = resolvePublicOrigin(req, saved);
   const storeName = saved?.settings?.storeName || 'BuyOne BD';
@@ -6253,7 +6957,7 @@ app.get('/api/n8n/workflow.json', (req, res) => {
   return res.json(workflow);
 });
 
-app.post('/api/n8n/test', async (req, res) => {
+app.post('/api/n8n/test', requireAdminAuth, async (req, res) => {
   try {
     const saved = loadStoreData() || {};
     const originUrl = resolvePublicOrigin(req, saved);
@@ -6299,8 +7003,11 @@ app.post('/api/n8n/callback', (req, res) => {
     const saved = loadStoreData() || {};
     const configuredSecret = String(saved?.settings?.n8nAutomation?.webhookSecret || '').trim();
     const providedSecret = String(req.headers['x-buyonebd-secret'] || req.body?.secret || '').trim();
-    if (configuredSecret && providedSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && configuredSecret !== providedSecret) {
       return res.status(403).json({ success: false, error: 'Invalid webhook secret.' });
+    }
+    if (!configuredSecret && !isVerifiedAdminRequest(req)) {
+      return res.status(401).json({ success: false, error: 'Webhook secret not configured or missing admin authentication.' });
     }
     const { postId, status = 'published', externalPostId = '', errorNote = '' } = req.body || {};
     const nowIso = new Date().toISOString();
@@ -6339,7 +7046,7 @@ app.post('/api/n8n/callback', (req, res) => {
 });
 
 // 1-Click Full AI Viral Auto-Post Studio (Generates Promo Banner PNG + Reel MP4 Video + Viral Hashtags + Pushes All Social & n8n)
-app.post('/api/ai/viral-autopilot-post', async (req, res) => {
+app.post('/api/ai/viral-autopilot-post', requireAdminAuth, async (req, res) => {
   try {
     const saved = loadStoreData() || {};
     const originUrl = resolvePublicOrigin(req, saved);
@@ -6520,7 +7227,7 @@ app.post('/api/ai/viral-autopilot-post', async (req, res) => {
   }
 });
 
-app.post('/api/n8n/trigger-all', async (req, res) => {
+app.post('/api/n8n/trigger-all', requireAdminAuth, async (req, res) => {
   try {
     const saved = loadStoreData() || {};
     const originUrl = resolvePublicOrigin(req, saved);
@@ -6553,7 +7260,7 @@ app.post('/api/n8n/trigger-all', async (req, res) => {
 });
 
 // Zero-Cost AI 4-Platform Organic Viral Marketing Blitz (/api/ai/free-social-blitz)
-app.post('/api/ai/free-social-blitz', async (req, res) => {
+app.post('/api/ai/free-social-blitz', requireAdminAuth, async (req, res) => {
   try {
     if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({ success: false, error: 'GEMINI_API_KEY is not configured on the server.' });
@@ -6620,7 +7327,7 @@ Generate copy in ${targetLang} tailored for each free channel (no paid ads).`;
 });
 
 // Multi-Channel Zero-Ad-Spend All-Bangladesh Free Traffic Pack (/api/ai/free-channel-pack)
-app.post('/api/ai/free-channel-pack', async (req, res) => {
+app.post('/api/ai/free-channel-pack', requireAdminAuth, async (req, res) => {
   try {
     const {
       product: rawProduct,
@@ -6738,7 +7445,7 @@ Language: ${targetLang}. Make Facebook Group variants natural & non-spammy, TikT
 });
 
 // 1-Click All-Bangladesh Free Channels AI Auto-Poster (/api/ai/bd-free-channels-autopost)
-app.post('/api/ai/bd-free-channels-autopost', async (req, res) => {
+app.post('/api/ai/bd-free-channels-autopost', requireAdminAuth, async (req, res) => {
   try {
     const saved = loadStoreData() || {};
     const visibleProducts = getVisibleCatalogProducts(saved).filter((p: any) => Number(p.stock ?? 0) > 0);
@@ -6879,7 +7586,7 @@ app.post('/api/ai/bd-free-channels-autopost', async (req, res) => {
 });
 
 // Solo-Founder Full Website AI Autopilot Command (/api/ai/full-autopilot-run)
-app.post('/api/ai/full-autopilot-run', async (req, res) => {
+app.post('/api/ai/full-autopilot-run', requireAdminAuth, async (req, res) => {
   try {
     if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({ success: false, error: 'GEMINI_API_KEY is not configured on the server.' });
@@ -6966,7 +7673,7 @@ ${JSON.stringify(contextPayload)}`,
 });
 
 // Autonomous AI Company Team Briefing (/api/ai/team-run) using Gemini 4 Hydrogen
-app.post('/api/ai/team-run', async (req, res) => {
+app.post('/api/ai/team-run', requireAdminAuth, async (req, res) => {
   try {
     if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({ success: false, error: 'GEMINI_API_KEY is not configured on the server.' });
@@ -7308,65 +8015,73 @@ async function runAutonomousMarketingSweep(
       }
     }
 
-    // 4. Autonomous Product SEO Enricher (fills missing metaTitle / metaDescription without modifying price/stock)
-    if (suiteActive && suiteCfg.autoSeoProductEnricher && Array.isArray(saved.products) && process.env.GEMINI_API_KEY) {
+    // 4. Autonomous Product SEO Enricher (fills missing metaTitle / metaDescription without modifying price/stock, works with or without GEMINI_API_KEY)
+    if (suiteActive && suiteCfg.autoSeoProductEnricher && Array.isArray(saved.products)) {
       const missingSeo = catalog.filter(
         (p) => !p?.seo?.metaTitle?.trim() || !p?.seo?.metaDescription?.trim()
-      ).slice(0, 2);
+      ).slice(0, 3);
       for (const prod of missingSeo) {
-        try {
-          const aiResp = await ai.models.generateContent({
-            model: 'gemini-4-hydrogen',
-            contents: `Generate high-CTR Google SEO metadata for Bangladesh e-commerce store "${storeName}":
+        let seoObj: any = {
+          metaTitle: `${prod.title} Price in BD — Buy Original | ${storeName}`.slice(0, 75),
+          metaDescription: `Order ${prod.title} at ৳${Number(prod.price || 0).toLocaleString()} from ${storeName}. Fast 64-district Cash on Delivery across Bangladesh with 7-day replacement guarantee.`.slice(0, 165),
+          keywords: `${prod.title}, ${prod.category || 'deals'}, BuyOne BD, Cash on Delivery Bangladesh`
+        };
+        if (process.env.GEMINI_API_KEY) {
+          try {
+            const aiResp = await ai.models.generateContent({
+              model: 'gemini-4-hydrogen',
+              contents: `Generate high-CTR Google SEO metadata for Bangladesh e-commerce store "${storeName}":
 Product: ${prod.title} (${prod.titleBn || ''})
 Price: ৳${prod.price}
 Category: ${prod.category}
 Description: ${String(prod.description || prod.descriptionBn || '').slice(0, 300)}`,
-            config: {
-              responseMimeType: 'application/json',
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  metaTitle: { type: Type.STRING },
-                  metaDescription: { type: Type.STRING },
-                  keywords: { type: Type.STRING }
-                },
-                required: ['metaTitle', 'metaDescription', 'keywords']
+              config: {
+                responseMimeType: 'application/json',
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    metaTitle: { type: Type.STRING },
+                    metaDescription: { type: Type.STRING },
+                    keywords: { type: Type.STRING }
+                  },
+                  required: ['metaTitle', 'metaDescription', 'keywords']
+                }
               }
-            }
-          });
-          const seoObj = JSON.parse(aiResp.text || '{}');
-          if (seoObj.metaTitle) {
-            const slugBase = String(prod.seo?.slug || prod.title || prod.id)
-              .toLowerCase()
-              .replace(/[^a-z0-9]+/g, '-')
-              .replace(/(^-|-$)/g, '') || prod.id;
-            saved.products = saved.products.map((item: any) =>
-              item.id === prod.id
-                ? {
-                    ...item,
-                    seo: {
-                      ...(item.seo || {}),
-                      slug: item.seo?.slug || slugBase,
-                      metaTitle: String(seoObj.metaTitle).slice(0, 75),
-                      metaDescription: String(seoObj.metaDescription || '').slice(0, 165),
-                      keywords: String(seoObj.keywords || '')
-                    }
+            });
+            const parsedSeo = JSON.parse(aiResp.text || '{}');
+            if (parsedSeo.metaTitle) seoObj = parsedSeo;
+          } catch {}
+        }
+        if (seoObj.metaTitle) {
+          const slugBase = String(prod.seo?.slug || prod.title || prod.id)
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/(^-|-$)/g, '') || prod.id;
+          saved.products = saved.products.map((item: any) =>
+            item.id === prod.id
+              ? {
+                  ...item,
+                  seo: {
+                    ...(item.seo || {}),
+                    slug: item.seo?.slug || slugBase,
+                    metaTitle: String(seoObj.metaTitle).slice(0, 75),
+                    metaDescription: String(seoObj.metaDescription || '').slice(0, 165),
+                    keywords: String(seoObj.keywords || '')
                   }
-                : item
-            );
-            enrichedSeoCount++;
-            changed = true;
-          }
-        } catch {}
+                }
+              : item
+          );
+          enrichedSeoCount++;
+          changed = true;
+        }
       }
       if (enrichedSeoCount > 0) {
         actionsTaken.push(`Optimized Google SEO tags for ${enrichedSeoCount} products`);
       }
     }
 
-    // 5. Autonomous SEO Buying-Guide Blog Publisher (drives free organic search traffic)
-    if (suiteActive && suiteCfg.autoWeeklyBlogPublisher && catalog.length > 0 && process.env.GEMINI_API_KEY) {
+    // 5. Autonomous SEO Buying-Guide Blog Publisher (drives free organic search traffic, zero-key template fallback supported)
+    if (suiteActive && suiteCfg.autoWeeklyBlogPublisher && catalog.length > 0) {
       const lastBlogMs = suiteCfg.lastBlogAutoAt ? new Date(suiteCfg.lastBlogAutoAt).getTime() : 0;
       const blogIntervalMs = 72 * 3600 * 1000;
       const shouldRunBlog =
@@ -7375,27 +8090,44 @@ Description: ${String(prod.description || prod.descriptionBn || '').slice(0, 300
       if (shouldRunBlog) {
         try {
           const featured = catalog[Math.floor(Math.random() * catalog.length)];
-          const aiResp = await ai.models.generateContent({
-            model: 'gemini-4-hydrogen',
-            contents: `Write a helpful SEO e-commerce buying guide article for ${storeName} in Bangladesh featuring "${featured.titleBn || featured.title}" (Price ৳${featured.price}, Category: ${featured.category}). Provide bilingual English and Bengali fields so customers find us on Google Search.`,
-            config: {
-              responseMimeType: 'application/json',
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  title: { type: Type.STRING },
-                  titleBn: { type: Type.STRING },
-                  excerpt: { type: Type.STRING },
-                  excerptBn: { type: Type.STRING },
-                  content: { type: Type.STRING },
-                  contentBn: { type: Type.STRING },
-                  seoDescription: { type: Type.STRING }
-                },
-                required: ['title', 'titleBn', 'excerpt', 'excerptBn', 'content', 'contentBn']
-              }
-            }
-          });
-          const b = JSON.parse(aiResp.text || '{}');
+          const featTitleEn = featured.title || 'Featured Product';
+          const featTitleBn = featured.titleBn || featTitleEn;
+          const featPrice = Number(featured.price || 0).toLocaleString();
+          let b: any = {
+            title: `${featTitleEn} Price in Bangladesh — Complete Buying Guide`,
+            titleBn: `${featTitleBn} দাম ও ব্যবহার গাইড — বাংলাদেশে অরিজিনাল পণ্য`,
+            excerpt: `Discover why ${featTitleEn} (৳${featPrice}) is trending across Dhaka & all 64 districts with Cash on Delivery.`,
+            excerptBn: `মাত্র ৳${featPrice} টাকায় অরিজিনাল ${featTitleBn} কিনুন কোনো অগ্রিম ছাড়াই ৬৪ জেলায় ক্যাশ অন ডেলিভারিতে।`,
+            content: `${featTitleEn} stands out in ${featured.category || 'daily essentials'} for its reliable performance and verified build quality. At ${storeName}, you can order for ৳${featPrice} with zero advance payment across all 64 districts of Bangladesh and a 7-day easy replacement guarantee.`,
+            contentBn: `${featTitleBn} বর্তমানে বাংলাদেশের ক্রেতাদের কাছে অত্যন্ত জনপ্রিয় একটি পণ্য। ${storeName} থেকে মাত্র ৳${featPrice} টাকায় অরিজিনাল পণ্যটি অর্ডার করতে পারবেন কোনো অগ্রিম পেমেন্ট ছাড়াই। দেশের ৬৪ জেলায় দ্রুত হোম ডেলিভারি এবং ৭ দিনের সহজ রিপ্লেসমেন্ট সুবিধা রয়েছে।`,
+            seoDescription: `Order original ${featTitleEn} at ৳${featPrice} from ${storeName} with fast Cash on Delivery across Bangladesh.`
+          };
+          if (process.env.GEMINI_API_KEY) {
+            try {
+              const aiResp = await ai.models.generateContent({
+                model: 'gemini-4-hydrogen',
+                contents: `Write a helpful SEO e-commerce buying guide article for ${storeName} in Bangladesh featuring "${featTitleBn}" (Price ৳${featured.price}, Category: ${featured.category}). Provide bilingual English and Bengali fields so customers find us on Google Search.`,
+                config: {
+                  responseMimeType: 'application/json',
+                  responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                      title: { type: Type.STRING },
+                      titleBn: { type: Type.STRING },
+                      excerpt: { type: Type.STRING },
+                      excerptBn: { type: Type.STRING },
+                      content: { type: Type.STRING },
+                      contentBn: { type: Type.STRING },
+                      seoDescription: { type: Type.STRING }
+                    },
+                    required: ['title', 'titleBn', 'excerpt', 'excerptBn', 'content', 'contentBn']
+                  }
+                }
+              });
+              const parsedBlog = JSON.parse(aiResp.text || '{}');
+              if (parsedBlog.title && parsedBlog.content) b = parsedBlog;
+            } catch {}
+          }
           if (b.title && b.content) {
             const slug = `${String(b.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 48)}-${Date.now().toString().slice(-4)}`;
             const newBlog = {
@@ -7410,7 +8142,7 @@ Description: ${String(prod.description || prod.descriptionBn || '').slice(0, 300
               category: featured.category || 'Shopping Guide',
               categoryBn: featured.categoryBn || 'শপিং গাইড',
               coverImage: featured.images?.[0] || '',
-              author: `${storeName} AI Editorial`,
+              author: `${storeName} Editorial`,
               tags: ['BuyOneBD', 'Bangladesh', featured.category || 'Guide'],
               seoTitle: b.title,
               seoDescription: b.seoDescription || b.excerpt || '',
@@ -7556,12 +8288,12 @@ Mention 64-district Cash on Delivery & 7-day replacement warranty. Return plain 
   }
 }
 
-app.get('/api/ai/auto-marketing/logs', (_req, res) => {
+app.get('/api/ai/auto-marketing/logs', requireAdminAuth, (_req, res) => {
   const saved = loadStoreData() || {};
   return res.json({ success: true, logs: saved.autoMarketingLogs || [] });
 });
 
-app.post('/api/ai/auto-marketing/run-now', async (req, res) => {
+app.post('/api/ai/auto-marketing/run-now', requireAdminAuth, async (req, res) => {
   try {
     const saved = loadStoreData() || {};
     if (req.body?.suiteSettingsOverride && typeof req.body.suiteSettingsOverride === 'object') {
@@ -7771,7 +8503,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/ai/admin-insights', async (req, res) => {
+  app.post('/api/ai/admin-insights', requireAdminAuth, async (req, res) => {
     try {
       const { lang = 'bn' } = req.body || {};
       const saved = loadStoreData() || {};
@@ -8007,7 +8739,7 @@ async function startServer() {
   });
 
   // Bilingual AI Product Description & Highlights Generator (separate pure English & pure Bangla sections)
-  app.post('/api/ai/product-description', async (req, res) => {
+  app.post('/api/ai/product-description', requireAdminAuth, async (req, res) => {
     try {
       const {
         title = '',
@@ -8327,7 +9059,7 @@ Existing BN draft: ${String(existingDescriptionBn || '').slice(0, 300)}`;
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false, watch: null },
       appType: 'spa',
     });
     app.use(async (req, res, next) => {
@@ -8358,7 +9090,7 @@ Existing BN draft: ${String(existingDescriptionBn || '').slice(0, 300)}`;
     });
     app.use(vite.middlewares);
   } else {
-    app.use('/assets', express.static(path.join(__dirname, 'dist', 'assets'), { maxAge: '7d', immutable: true }));
+    app.use('/assets', express.static(path.join(__dirname, 'dist', 'assets'), { maxAge: '365d', immutable: true }));
     app.use(express.static(path.join(__dirname, 'dist'), { index: false, maxAge: '0' }));
     app.get('*', (_req, res) => {
       try {
@@ -8380,6 +9112,12 @@ Existing BN draft: ${String(existingDescriptionBn || '').slice(0, 300)}`;
 
   httpServer.listen(port, '0.0.0.0', () => {
     console.log(`Server running at http://0.0.0.0:${port} (mode: ${isProd ? 'production' : 'development'})`);
+    setTimeout(() => {
+      const saved = loadStoreData();
+      if (saved) {
+        runAutonomousMarketingSweep(saved, { trigger: 'background_daemon', forceAll: false }).catch(() => {});
+      }
+    }, 8000);
   });
 }
 

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { SEOSettings } from '../../types';
+import { getAdminAuthHeaders } from '../../utils/adminAuth';
 
 interface SEOManagerViewProps {
   onImageUpload: (
@@ -698,7 +699,7 @@ const SEOManagerExtras: React.FC<{
       const origin = typeof window !== 'undefined' ? window.location.origin : seo.canonicalUrl || 'https://buyonebd.com';
       const res = await fetch('/api/seo/indexnow', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({ url: origin, urls: [`${origin}/`, `${origin}/about`, `${origin}/sitemap.xml`] })
       });
       const data = await res.json();
@@ -720,7 +721,7 @@ const SEOManagerExtras: React.FC<{
     try {
       const res = await fetch('/api/ai/marketing', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminAuthHeaders(),
         body: JSON.stringify({
           mode: 'seo',
           productTitle: seo.metaTitle || 'BuyOne BD Online Store',

@@ -27,6 +27,12 @@ export default defineConfig(() => {
             if (id.includes('node_modules/motion/') || id.includes('node_modules/framer-motion/')) {
               return 'motion-vendor';
             }
+            if (id.includes('node_modules/@google/genai/')) {
+              return 'genai-vendor';
+            }
+            if (id.includes('node_modules/qrcode/') || id.includes('node_modules/canvas-confetti/')) {
+              return 'utils-vendor';
+            }
           }
         }
       }
